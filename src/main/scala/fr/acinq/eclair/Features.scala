@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair
 
+import com.typesafe.config.Config
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import scodec.bits.{BitVector, ByteVector}
 
@@ -42,7 +43,7 @@ trait Feature {
     case FeatureSupport.Optional => optional
   }
 
-  override def toString: String = rfcName
+  override def toString = rfcName
 
 }
 // @formatter:on
@@ -56,6 +57,18 @@ case class Features(activated: Set[ActivatedFeature], unknown: Set[UnknownFeatur
   def hasFeature(feature: Feature, support: Option[FeatureSupport] = None): Boolean = support match {
     case Some(s) => activated.contains(ActivatedFeature(feature, s))
     case None => hasFeature(feature, Some(Optional)) || hasFeature(feature, Some(Mandatory))
+  }
+
+  /** NB: this method is not reflexive, see [[Features.areCompatible]] if you want symmetric validation. */
+  def areSupported(remoteFeatures: Features): Boolean = {
+    // we allow unknown odd features (it's ok to be odd)
+    val unknownFeaturesOk = remoteFeatures.unknown.forall(_.bitIndex % 2 == 1)
+    // we verify that we activated every mandatory feature they require
+    val knownFeaturesOk = remoteFeatures.activated.forall {
+      case ActivatedFeature(_, Optional) => true
+      case ActivatedFeature(feature, Mandatory) => hasFeature(feature)
+    }
+    unknownFeaturesOk && knownFeaturesOk
   }
 
   def toByteVector: ByteVector = {
@@ -142,6 +155,24 @@ object Features {
     val mandatory = 18
   }
 
+  case object AnchorOutputs extends Feature {
+    val rfcName = "option_anchor_outputs"
+    val mandatory = 20
+  }
+
+  // TODO: @t-bast: update feature bits once spec-ed (currently reserved here: https://github.com/lightningnetwork/lightning-rfc/issues/605)
+  // We're not advertising these bits yet in our announcements, clients have to assume support.
+  // This is why we haven't added them yet to `areSupported`.
+  case object TrampolinePayment extends Feature {
+    val rfcName = "trampoline_payment"
+    val mandatory = 50
+  }
+
+  case object KeySend extends Feature {
+    val rfcName = "keysend"
+    val mandatory = 54
+  }
+
   case object ChainSwap extends Feature {
     val rfcName = "chain_swap"
     val mandatory = 32770
@@ -161,28 +192,24 @@ object Features {
     PaymentSecret,
     BasicMultiPartPayment,
     Wumbo,
+    TrampolinePayment,
     StaticRemoteKey,
-    ChainSwap,
-    HostedChannels
-  )
-
-  private val supportedMandatoryFeatures: Set[Feature] = Set(
-    OptionDataLossProtect,
-    ChannelRangeQueries,
-    VariableLengthOnion,
-    ChannelRangeQueriesExtended,
-    PaymentSecret,
-    BasicMultiPartPayment,
-    Wumbo,
-    ChainSwap,
-    HostedChannels
+    AnchorOutputs,
+    KeySend,
+    HostedChannels,
+    ChainSwap
   )
 
   // Features may depend on other features, as specified in Bolt 9.
   private val featuresDependency = Map(
     ChannelRangeQueriesExtended -> (ChannelRangeQueries :: Nil),
-    PaymentSecret -> (VariableLengthOnion :: Nil),
-    BasicMultiPartPayment -> (PaymentSecret :: Nil)
+    // This dependency requirement was added to the spec after the Phoenix release, which means Phoenix users have "invalid"
+    // invoices in their payment history. We choose to treat such invoices as valid; this is a harmless spec violation.
+    // PaymentSecret -> (VariableLengthOnion :: Nil),
+    BasicMultiPartPayment -> (PaymentSecret :: Nil),
+    AnchorOutputs -> (StaticRemoteKey :: Nil),
+    TrampolinePayment -> (PaymentSecret :: Nil),
+    KeySend -> (VariableLengthOnion :: Nil)
   )
 
   case class FeatureException(message: String) extends IllegalArgumentException(message)
@@ -192,16 +219,8 @@ object Features {
       FeatureException(s"$feature is set but is missing a dependency (${dependencies.filter(d => !features.hasFeature(d)).mkString(" and ")})")
   }
 
-  /**
-   * A feature set is supported if all even bits are supported.
-   * We just ignore unknown odd bits.
-   */
-  def areSupported(features: Features): Boolean = {
-    !features.unknown.exists(_.bitIndex % 2 == 0) && features.activated.forall {
-      case ActivatedFeature(_, Optional) => true
-      case ActivatedFeature(feature, Mandatory) => supportedMandatoryFeatures.contains(feature)
-    }
-  }
+  /** Returns true if both feature sets are compatible. */
+  def areCompatible(ours: Features, theirs: Features): Boolean = ours.areSupported(theirs) && theirs.areSupported(ours)
 
   /** returns true if both have at least optional support */
   def canUseFeature(localFeatures: Features, remoteFeatures: Features, feature: Feature): Boolean = {

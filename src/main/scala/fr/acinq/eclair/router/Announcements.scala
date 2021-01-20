@@ -26,8 +26,8 @@ import shapeless.HNil
 import scala.concurrent.duration._
 
 /**
-  * Created by PM on 03/02/2017.
-  */
+ * Created by PM on 03/02/2017.
+ */
 object Announcements {
 
   def channelAnnouncementWitnessEncode(chainHash: ByteVector32, shortChannelId: ShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, bitcoinKey1: PublicKey, bitcoinKey2: PublicKey, features: Features, unknownFields: ByteVector): ByteVector =
@@ -39,16 +39,14 @@ object Announcements {
   def channelUpdateWitnessEncode(chainHash: ByteVector32, shortChannelId: ShortChannelId, timestamp: Long, messageFlags: Byte, channelFlags: Byte, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, htlcMaximumMsat: Option[MilliSatoshi], unknownFields: ByteVector): ByteVector =
     sha256(sha256(serializationResult(LightningMessageCodecs.channelUpdateWitnessCodec.encode(chainHash :: shortChannelId :: timestamp :: messageFlags :: channelFlags :: cltvExpiryDelta :: htlcMinimumMsat :: feeBaseMsat :: feeProportionalMillionths :: htlcMaximumMsat :: unknownFields :: HNil))))
 
-  def signChannelAnnouncement(chainHash: ByteVector32, shortChannelId: ShortChannelId, localNodeSecret: PrivateKey, remoteNodeId: PublicKey, localFundingPrivKey: PrivateKey, remoteFundingKey: PublicKey, features: Features): (ByteVector64, ByteVector64) = {
-    val witness = if (isNode1(localNodeSecret.publicKey, remoteNodeId)) {
-      channelAnnouncementWitnessEncode(chainHash, shortChannelId, localNodeSecret.publicKey, remoteNodeId, localFundingPrivKey.publicKey, remoteFundingKey, features, unknownFields = ByteVector.empty)
+  def generateChannelAnnouncementWitness(chainHash: ByteVector32, shortChannelId: ShortChannelId, localNodeId: PublicKey, remoteNodeId: PublicKey, localFundingKey: PublicKey, remoteFundingKey: PublicKey, features: Features): ByteVector =
+    if (isNode1(localNodeId, remoteNodeId)) {
+      channelAnnouncementWitnessEncode(chainHash, shortChannelId, localNodeId, remoteNodeId, localFundingKey, remoteFundingKey, features, unknownFields = ByteVector.empty)
     } else {
-      channelAnnouncementWitnessEncode(chainHash, shortChannelId, remoteNodeId, localNodeSecret.publicKey, remoteFundingKey, localFundingPrivKey.publicKey, features, unknownFields = ByteVector.empty)
+      channelAnnouncementWitnessEncode(chainHash, shortChannelId, remoteNodeId, localNodeId, remoteFundingKey, localFundingKey, features, unknownFields = ByteVector.empty)
     }
-    val nodeSig = Crypto.sign(witness, localNodeSecret)
-    val bitcoinSig = Crypto.sign(witness, localFundingPrivKey)
-    (nodeSig, bitcoinSig)
-  }
+
+  def signChannelAnnouncement(witness: ByteVector, key: PrivateKey): ByteVector64 = Crypto.sign(witness, key)
 
   def makeChannelAnnouncement(chainHash: ByteVector32, shortChannelId: ShortChannelId, localNodeId: PublicKey, remoteNodeId: PublicKey, localFundingKey: PublicKey, remoteFundingKey: PublicKey, localNodeSignature: ByteVector64, remoteNodeSignature: ByteVector64, localBitcoinSignature: ByteVector64, remoteBitcoinSignature: ByteVector64): ChannelAnnouncement = {
     val (nodeId1, nodeId2, bitcoinKey1, bitcoinKey2, nodeSignature1, nodeSignature2, bitcoinSignature1, bitcoinSignature2) =
@@ -88,37 +86,37 @@ object Announcements {
   }
 
   /**
-    * BOLT 7:
-    * The creating node MUST set node-id-1 and node-id-2 to the public keys of the
-    * two nodes who are operating the channel, such that node-id-1 is the numerically-lesser
-    * of the two DER encoded keys sorted in ascending numerical order,
-    *
-    * @return true if localNodeId is node1
-    */
+   * BOLT 7:
+   * The creating node MUST set node-id-1 and node-id-2 to the public keys of the
+   * two nodes who are operating the channel, such that node-id-1 is the numerically-lesser
+   * of the two DER encoded keys sorted in ascending numerical order,
+   *
+   * @return true if localNodeId is node1
+   */
   def isNode1(localNodeId: PublicKey, remoteNodeId: PublicKey): Boolean = LexicographicalOrdering.isLessThan(localNodeId.value, remoteNodeId.value)
 
   /**
-    * BOLT 7:
-    * The creating node [...] MUST set the direction bit of flags to 0 if
-    * the creating node is node-id-1 in that message, otherwise 1.
-    *
-    * @return true if the node who sent these flags is node1
-    */
+   * BOLT 7:
+   * The creating node [...] MUST set the direction bit of flags to 0 if
+   * the creating node is node-id-1 in that message, otherwise 1.
+   *
+   * @return true if the node who sent these flags is node1
+   */
   def isNode1(channelFlags: Byte): Boolean = (channelFlags & 1) == 0
 
   /**
-    * A node MAY create and send a channel_update with the disable bit set to
-    * signal the temporary unavailability of a channel
-    *
-    * @return
-    */
+   * A node MAY create and send a channel_update with the disable bit set to
+   * signal the temporary unavailability of a channel
+   *
+   * @return
+   */
   def isEnabled(channelFlags: Byte): Boolean = (channelFlags & 2) == 0
 
   /**
-    * This method compares channel updates, ignoring fields that don't matter, like signature or timestamp
-    *
-    * @return true if channel updates are "equal"
-    */
+   * This method compares channel updates, ignoring fields that don't matter, like signature or timestamp
+   *
+   * @return true if channel updates are "equal"
+   */
   def areSame(u1: ChannelUpdate, u2: ChannelUpdate): Boolean =
     u1.copy(signature = ByteVector64.Zeroes, timestamp = 0) == u2.copy(signature = ByteVector64.Zeroes, timestamp = 0)
 

@@ -2,7 +2,6 @@ package immortan.crypto
 
 import fr.acinq.eclair._
 import fr.acinq.bitcoin._
-import scala.util.{Success, Try}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.wire.{Color, NodeAddress, NodeAnnouncement}
 import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId}
@@ -76,14 +75,6 @@ object Tools {
   def randomKeyPair: KeyPair = {
     val pk: PrivateKey = randomKey
     KeyPair(pk.publicKey.value, pk.value)
-  }
-
-  def isValidFinalScriptPubkey(raw: ByteVector): Boolean = Try(Script parse raw) match {
-    case Success(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pkh, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) => pkh.size == 20
-    case Success(OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil) => scriptHash.size == 20
-    case Success(OP_0 :: OP_PUSHDATA(pubkeyHash, _) :: Nil) if pubkeyHash.length == 20 => true
-    case Success(OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil) if scriptHash.length == 32 => true
-    case _ => false
   }
 }
 

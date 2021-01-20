@@ -21,6 +21,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering, Protocol, Satoshi}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
 import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.router.Announcements
 import scodec.bits.ByteVector
@@ -31,7 +32,7 @@ import java.nio.ByteOrder
  */
 
 // @formatter:off
-sealed trait LightningMessage
+sealed trait LightningMessage extends Serializable
 sealed trait SetupMessage extends LightningMessage
 sealed trait ChannelMessage extends LightningMessage
 sealed trait HtlcMessage extends LightningMessage
@@ -42,6 +43,7 @@ sealed trait HasTemporaryChannelId extends LightningMessage { def temporaryChann
 sealed trait HasChannelId extends LightningMessage { def channelId: ByteVector32 } // <- not in the spec
 sealed trait HasChainHash extends LightningMessage { def chainHash: ByteVector32 } // <- not in the spec
 sealed trait UpdateMessage extends HtlcMessage // <- not in the spec
+sealed trait HtlcSettlementMessage extends UpdateMessage { def id: Long } // <- not in the spec
 // @formatter:on
 
 case class Init(features: Features, tlvs: TlvStream[InitTlv] = TlvStream.empty) extends SetupMessage {
@@ -68,7 +70,7 @@ case class OpenChannel(chainHash: ByteVector32,
                        maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
                        channelReserveSatoshis: Satoshi,
                        htlcMinimumMsat: MilliSatoshi,
-                       feeratePerKw: Long,
+                       feeratePerKw: FeeratePerKw,
                        toSelfDelay: CltvExpiryDelta,
                        maxAcceptedHtlcs: Int,
                        fundingPubkey: PublicKey,
@@ -96,15 +98,23 @@ case class AcceptChannel(temporaryChannelId: ByteVector32,
                          firstPerCommitmentPoint: PublicKey,
                          tlvStream: TlvStream[AcceptChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId
 
-case class FundingCreated(temporaryChannelId: ByteVector32, fundingTxid: ByteVector32, fundingOutputIndex: Int, signature: ByteVector64) extends ChannelMessage with HasTemporaryChannelId
+case class FundingCreated(temporaryChannelId: ByteVector32,
+                          fundingTxid: ByteVector32,
+                          fundingOutputIndex: Int,
+                          signature: ByteVector64) extends ChannelMessage with HasTemporaryChannelId
 
-case class FundingSigned(channelId: ByteVector32, signature: ByteVector64) extends ChannelMessage with HasChannelId
+case class FundingSigned(channelId: ByteVector32,
+                         signature: ByteVector64) extends ChannelMessage with HasChannelId
 
-case class FundingLocked(channelId: ByteVector32, nextPerCommitmentPoint: PublicKey) extends ChannelMessage with HasChannelId
+case class FundingLocked(channelId: ByteVector32,
+                         nextPerCommitmentPoint: PublicKey) extends ChannelMessage with HasChannelId
 
-case class Shutdown(channelId: ByteVector32, scriptPubKey: ByteVector) extends ChannelMessage with HasChannelId
+case class Shutdown(channelId: ByteVector32,
+                    scriptPubKey: ByteVector) extends ChannelMessage with HasChannelId
 
-case class ClosingSigned(channelId: ByteVector32, feeSatoshis: Satoshi, signature: ByteVector64) extends ChannelMessage with HasChannelId
+case class ClosingSigned(channelId: ByteVector32,
+                         feeSatoshis: Satoshi,
+                         signature: ByteVector64) extends ChannelMessage with HasChannelId
 
 case class UpdateAddHtlc(channelId: ByteVector32,
                          id: Long,
@@ -116,19 +126,19 @@ case class UpdateAddHtlc(channelId: ByteVector32,
   lazy val internalId: Option[UpdateAddTlv.InternalId] = tlvStream.get[UpdateAddTlv.InternalId]
 }
 
-case class UpdateFulfillHtlc(channelId: ByteVector32, id: Long, paymentPreimage: ByteVector32) extends HtlcMessage with UpdateMessage with HasChannelId {
+case class UpdateFulfillHtlc(channelId: ByteVector32, id: Long, paymentPreimage: ByteVector32) extends HtlcMessage with UpdateMessage with HasChannelId with HtlcSettlementMessage {
   lazy val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage)
 }
 
-case class UpdateFailHtlc(channelId: ByteVector32, id: Long, reason: ByteVector) extends HtlcMessage with UpdateMessage with HasChannelId
+case class UpdateFailHtlc(channelId: ByteVector32, id: Long, reason: ByteVector) extends HtlcMessage with UpdateMessage with HasChannelId with HtlcSettlementMessage
 
-case class UpdateFailMalformedHtlc(channelId: ByteVector32, id: Long, onionHash: ByteVector32, failureCode: Int) extends HtlcMessage with UpdateMessage with HasChannelId
+case class UpdateFailMalformedHtlc(channelId: ByteVector32, id: Long, onionHash: ByteVector32, failureCode: Int) extends HtlcMessage with UpdateMessage with HasChannelId with HtlcSettlementMessage
 
 case class CommitSig(channelId: ByteVector32, signature: ByteVector64, htlcSignatures: List[ByteVector64] = Nil) extends HtlcMessage with HasChannelId
 
 case class RevokeAndAck(channelId: ByteVector32, perCommitmentSecret: PrivateKey, nextPerCommitmentPoint: PublicKey) extends HtlcMessage with HasChannelId
 
-case class UpdateFee(channelId: ByteVector32, feeratePerKw: Long) extends ChannelMessage with UpdateMessage with HasChannelId
+case class UpdateFee(channelId: ByteVector32, feeratePerKw: FeeratePerKw) extends ChannelMessage with UpdateMessage with HasChannelId
 
 case class AnnouncementSignatures(channelId: ByteVector32, shortChannelId: ShortChannelId, nodeSignature: ByteVector64, bitcoinSignature: ByteVector64) extends RoutingMessage with HasChannelId
 
@@ -278,29 +288,19 @@ object EncodingType {
 }
 // @formatter:on
 
-case class EncodedShortChannelIds(encoding: EncodingType, array: List[ShortChannelId] = Nil)
+case class EncodedShortChannelIds(encoding: EncodingType, array: List[ShortChannelId])
 
-case class QueryShortChannelIds(chainHash: ByteVector32,
-                                shortChannelIds: EncodedShortChannelIds,
-                                tlvStream: TlvStream[QueryShortChannelIdsTlv] = TlvStream.empty) extends RoutingMessage with HasChainHash {
+case class QueryShortChannelIds(chainHash: ByteVector32, shortChannelIds: EncodedShortChannelIds, tlvStream: TlvStream[QueryShortChannelIdsTlv] = TlvStream.empty) extends RoutingMessage with HasChainHash {
   val queryFlags_opt: Option[QueryShortChannelIdsTlv.EncodedQueryFlags] = tlvStream.get[QueryShortChannelIdsTlv.EncodedQueryFlags]
 }
 
 case class ReplyShortChannelIdsEnd(chainHash: ByteVector32, complete: Byte) extends RoutingMessage with HasChainHash
 
-case class QueryChannelRange(chainHash: ByteVector32,
-                             firstBlockNum: Long,
-                             numberOfBlocks: Long,
-                             tlvStream: TlvStream[QueryChannelRangeTlv] = TlvStream.empty) extends RoutingMessage {
+case class QueryChannelRange(chainHash: ByteVector32, firstBlockNum: Long, numberOfBlocks: Long, tlvStream: TlvStream[QueryChannelRangeTlv] = TlvStream.empty) extends RoutingMessage {
   val queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags] = tlvStream.get[QueryChannelRangeTlv.QueryFlags]
 }
 
-case class ReplyChannelRange(chainHash: ByteVector32,
-                             firstBlockNum: Long,
-                             numberOfBlocks: Long,
-                             syncComplete: Byte,
-                             shortChannelIds: EncodedShortChannelIds,
-                             tlvStream: TlvStream[ReplyChannelRangeTlv] = TlvStream.empty) extends RoutingMessage {
+case class ReplyChannelRange(chainHash: ByteVector32, firstBlockNum: Long, numberOfBlocks: Long, syncComplete: Byte, shortChannelIds: EncodedShortChannelIds, tlvStream: TlvStream[ReplyChannelRangeTlv] = TlvStream.empty) extends RoutingMessage {
   val timestamps: ReplyChannelRangeTlv.EncodedTimestamps = tlvStream.get[ReplyChannelRangeTlv.EncodedTimestamps].get
   val checksums: ReplyChannelRangeTlv.EncodedChecksums = tlvStream.get[ReplyChannelRangeTlv.EncodedChecksums].get
 }
@@ -319,10 +319,29 @@ object ReplyChannelRange {
   }
 }
 
-
 case class GossipTimestampFilter(chainHash: ByteVector32, firstTimestamp: Long, timestampRange: Long) extends RoutingMessage with HasChainHash
 
+// NB: blank lines to minimize merge conflicts
+
+//
+
+//
+
+//
+
+//
+
+//
+
+//
+
+//
+
+//
+
 case class UnknownMessage(tag: Int, data: ByteVector) extends LightningMessage
+
+//
 
 // HOSTED CHANNELS
 

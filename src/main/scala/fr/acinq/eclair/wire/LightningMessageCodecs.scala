@@ -73,7 +73,7 @@ object LightningMessageCodecs {
       ("maxHtlcValueInFlightMsat" | uint64) ::
       ("channelReserveSatoshis" | satoshi) ::
       ("htlcMinimumMsat" | millisatoshi) ::
-      ("feeratePerKw" | uint32) ::
+      ("feeratePerKw" | feeratePerKw) ::
       ("toSelfDelay" | cltvExpiryDelta) ::
       ("maxAcceptedHtlcs" | uint16) ::
       ("fundingPubkey" | publicKey) ::
@@ -163,7 +163,7 @@ object LightningMessageCodecs {
 
   val updateFeeCodec: Codec[UpdateFee] = (
     ("channelId" | bytes32) ::
-      ("feeratePerKw" | uint32)).as[UpdateFee]
+      ("feeratePerKw" | feeratePerKw)).as[UpdateFee]
 
   val announcementSignaturesCodec: Codec[AnnouncementSignatures] = (
     ("channelId" | bytes32) ::

@@ -43,6 +43,50 @@ object Router {
 
   case class AssistedChannel(extraHop: ExtraHop, nextNodeId: PublicKey)
 
+  trait Hop {
+    /** @return the id of the start node. */
+    def nodeId: PublicKey
+
+    /** @return the id of the end node. */
+    def nextNodeId: PublicKey
+
+    /**
+     * @param amount amount to be forwarded.
+     * @return total fee required by the current hop.
+     */
+    def fee(amount: MilliSatoshi): MilliSatoshi
+
+    /** @return cltv delta required by the current hop. */
+    def cltvExpiryDelta: CltvExpiryDelta
+  }
+
+  /**
+   * A directed hop between two connected nodes using a specific channel.
+   *
+   * @param nodeId     id of the start node.
+   * @param nextNodeId id of the end node.
+   * @param lastUpdate last update of the channel used for the hop.
+   */
+  case class ChannelHop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate) extends Hop {
+    override def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(lastUpdate.feeBaseMsat, lastUpdate.feeProportionalMillionths, amount)
+
+    override lazy val cltvExpiryDelta: CltvExpiryDelta = lastUpdate.cltvExpiryDelta
+  }
+
+  /**
+   * A directed hop between two trampoline nodes.
+   * These nodes need not be connected and we don't need to know a route between them.
+   * The start node will compute the route to the end node itself when it receives our payment.
+   *
+   * @param nodeId          id of the start node.
+   * @param nextNodeId      id of the end node.
+   * @param cltvExpiryDelta cltv expiry delta.
+   * @param fee             total fee for that hop.
+   */
+  case class NodeHop(nodeId: PublicKey, nextNodeId: PublicKey, cltvExpiryDelta: CltvExpiryDelta, fee: MilliSatoshi) extends Hop {
+    override def fee(amount: MilliSatoshi): MilliSatoshi = fee
+  }
+
   case class RouteParams(maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: CltvExpiryDelta) {
     def getMaxFee(amount: MilliSatoshi): MilliSatoshi = maxFeeBase.max(amount * maxFeePct)
   }
@@ -63,7 +107,7 @@ object Router {
 
     lazy val fee: MilliSatoshi = weight.costs.head - weight.costs.last
 
-    lazy val amountPerDescAndCap: Seq[PaymentDescCapacity] = weight.costs.tail zip hops.tail.map(_.toDescAndCapacity) // We don't care about first route and amount since it belongs to local channel
+    lazy val amountPerDescAndCap: Seq[PaymentDescCapacity] = weight.costs.tail zip hops.tail.map(_.toDescAndCapacity) // We don't care about first hop and amount since it belongs to local channel
 
     def getEdgeForNode(nodeId: PublicKey): Option[GraphEdge] = hops.find(_.desc.from == nodeId) // This method retrieves the edge that we used when we built the route
   }

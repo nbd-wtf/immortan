@@ -65,8 +65,8 @@ object CommsTower {
       theirInit = Some(remoteInit)
 
       if (!thread.isCompleted) {
-        val areSupported = Features.areSupported(remoteInit.features)
-        if (areSupported) for (lst <- listeners1) lst.onOperational(me, remoteInit) // They have not disconnected yet
+        val areComaptible = Features.areCompatible(ourInit.features, remoteInit.features)
+        if (areComaptible) for (lst <- listeners1) lst.onOperational(me, remoteInit) // They have not disconnected yet
         else disconnect // Their features are not supported and they have not disconnected yet, so we disconnect
       }
     }
