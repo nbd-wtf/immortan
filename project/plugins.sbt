@@ -1,0 +1,1 @@
+addSbtPlugin("net.bzzt" % "sbt-reproducible-builds" % "0.24")
