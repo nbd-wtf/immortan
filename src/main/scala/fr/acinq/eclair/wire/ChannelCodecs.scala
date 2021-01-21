@@ -140,22 +140,6 @@ object ChannelCodecs {
       ("sentAfterLocalCommitIndex" | uint64overflow) ::
       ("reSignAsap" | bool8)).as[WaitingForRevocation]
 
-  val localColdCodec: Codec[Origin.LocalCold] = ("id" | uuid).as[Origin.LocalCold]
-
-  val localCodec: Codec[Origin.Local] = localColdCodec.xmap[Origin.Local](o => o: Origin.Local, o => Origin.LocalCold(o.id))
-
-  val relayedColdCodec: Codec[Origin.ChannelRelayedCold] = (
-    ("originChannelId" | bytes32) ::
-      ("originHtlcId" | int64) ::
-      ("amountIn" | millisatoshi) ::
-      ("amountOut" | millisatoshi)).as[Origin.ChannelRelayedCold]
-
-  val relayedCodec: Codec[Origin.ChannelRelayed] = relayedColdCodec.xmap[Origin.ChannelRelayed](o => o: Origin.ChannelRelayed, o => Origin.ChannelRelayedCold(o.originChannelId, o.originHtlcId, o.amountIn, o.amountOut))
-
-  val trampolineRelayedColdCodec: Codec[Origin.TrampolineRelayedCold] = listOfN(uint16, bytes32 ~ int64).as[Origin.TrampolineRelayedCold]
-
-  val trampolineRelayedCodec: Codec[Origin.TrampolineRelayed] = trampolineRelayedColdCodec.xmap[Origin.TrampolineRelayed](o => o: Origin.TrampolineRelayed, o => Origin.TrampolineRelayedCold(o.htlcs))
-
   val spentMapCodec: Codec[Map[OutPoint, ByteVector32]] = mapCodec(outPointCodec, bytes32)
 
   def localParamsCodec(channelVersion: ChannelVersion): Codec[LocalParams] = (
