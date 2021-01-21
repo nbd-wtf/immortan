@@ -20,22 +20,20 @@ import fr.acinq.bitcoin.{BlockHeader, ByteVector32}
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
 
 trait HeaderDb {
-  def addHeader(height: Int, header: BlockHeader): Unit
-
-  def addHeaders(startHeight: Int, headers: Seq[BlockHeader]): Unit
+  def addHeaders(startHeight: Int, headers: Seq[BlockHeader] = Nil): Unit
 
   def getHeader(height: Int): Option[BlockHeader]
 
-  // used only in unit tests
-  def getHeader(blockHash: ByteVector32): Option[(Int, BlockHeader)]
+  type HeightAndHeader = (Int, BlockHeader)
+  def getHeader(blockHash: ByteVector32): Option[HeightAndHeader]
 
-  def getHeaders(startHeight: Int, maxCount: Option[Int]): Seq[BlockHeader]
+  def getHeaders(startHeight: Int, maxCount: Int): Seq[BlockHeader]
 
-  def getTip: Option[(Int, BlockHeader)]
+  def getTip: Option[HeightAndHeader]
 }
 
 trait WalletDb extends HeaderDb {
   def persist(data: PersistentData): Unit
 
-  def readPersistentData(): Option[PersistentData]
+  def readPersistentData: Option[PersistentData]
 }
