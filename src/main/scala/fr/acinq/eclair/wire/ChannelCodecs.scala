@@ -85,13 +85,6 @@ object ChannelCodecs {
       ("localFulfilled" | setCodec(updateAddHtlcCodec))
   }.as[CommitmentSpec]
 
-
-  val outPointCodec: Codec[OutPoint] = lengthDelimited(bytes.xmap(d => OutPoint.read(d.toArray), d => OutPoint.write(d)))
-
-  val txOutCodec: Codec[TxOut] = lengthDelimited(bytes.xmap(d => TxOut.read(d.toArray), d => TxOut.write(d)))
-
-  val txCodec: Codec[Transaction] = lengthDelimited(bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d)))
-
   val inputInfoCodec: Codec[InputInfo] = (
     ("outPoint" | outPointCodec) ::
       ("txOut" | txOutCodec) ::
