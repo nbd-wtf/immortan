@@ -22,7 +22,7 @@ libraryDependencies += "io.spray" % "spray-json_2.11" % "1.3.5" // Immortan
 
 libraryDependencies += "com.typesafe.akka" % "akka-actor_2.11" % "2.3.14"
 
-libraryDependencies += "org.openlabtesting.netty" % "netty-all" % "4.1.48.Final"
+libraryDependencies += "io.netty" % "netty-all" % "4.1.42.Final"
 
 libraryDependencies += "com.softwaremill.sttp" % "json4s_2.11" % "1.3.9"
 
