@@ -397,9 +397,6 @@ object Helpers {
       case _ => None
     }
 
-    // used only to compute tx weights and estimate fees
-    lazy val dummyPublicKey = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey
-
     def isValidFinalScriptPubkey(scriptPubKey: ByteVector): Boolean = {
       Try(Script.parse(scriptPubKey)) match {
         case Success(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubkeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) if pubkeyHash.size == 20 => true
@@ -414,7 +411,7 @@ object Helpers {
       import commitments._
       // this is just to estimate the weight, it depends on size of the pubkey scripts
       val dummyClosingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, Satoshi(0), Satoshi(0), localCommit.spec)
-      val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, dummyPublicKey, remoteParams.fundingPubKey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig).tx)
+      val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, invalidPubKey, remoteParams.fundingPubKey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig).tx)
       Transactions.weight2fee(feeratePerKw, closingWeight)
     }
 
@@ -464,8 +461,7 @@ object Helpers {
         attempt
       } match {
         case Success(Right(txinfo)) => Some(txinfo)
-        case Success(Left(skipped)) => None
-        case Failure(t) => None
+        case _ => None
       }
     }
 
