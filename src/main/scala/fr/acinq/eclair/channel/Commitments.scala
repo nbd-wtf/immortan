@@ -53,7 +53,6 @@ trait AbstractCommitments {
   def capacity: Satoshi
   def availableBalanceForReceive: MilliSatoshi
   def availableBalanceForSend: MilliSatoshi
-  def originChannels: Map[Long, Origin]
   def channelId: ByteVector32
   def announceChannel: Boolean
 }
@@ -68,15 +67,19 @@ trait AbstractCommitments {
  * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next per-commitment point
  */
 case class Commitments(channelVersion: ChannelVersion,
-                       localParams: LocalParams, remoteParams: RemoteParams,
+                       localParams: LocalParams,
+                       remoteParams: RemoteParams,
                        channelFlags: Byte,
-                       localCommit: LocalCommit, remoteCommit: RemoteCommit,
-                       localChanges: LocalChanges, remoteChanges: RemoteChanges,
-                       localNextHtlcId: Long, remoteNextHtlcId: Long,
-                       originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
+                       localCommit: LocalCommit,
+                       remoteCommit: RemoteCommit,
+                       localChanges: LocalChanges,
+                       remoteChanges: RemoteChanges,
+                       localNextHtlcId: Long,
+                       remoteNextHtlcId: Long,
                        remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey],
                        commitInput: InputInfo,
-                       remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32) extends AbstractCommitments {
+                       remotePerCommitmentSecrets: ShaChain,
+                       channelId: ByteVector32) extends AbstractCommitments {
 
   require(channelVersion.paysDirectlyToWallet == localParams.walletStaticPaymentBasepoint.isDefined, s"localParams.walletStaticPaymentBasepoint must be defined only for commitments that pay directly to our wallet (version=$channelVersion)")
 
@@ -282,7 +285,7 @@ object Commitments {
     // let's compute the current commitment *as seen by them* with this change taken into account
     val add = UpdateAddHtlc(commitments.channelId, commitments.localNextHtlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     // we increment the local htlc index and add an entry to the origins map
-    val commitments1 = addLocalProposal(commitments, add).copy(localNextHtlcId = commitments.localNextHtlcId + 1, originChannels = commitments.originChannels + (add.id -> cmd.origin))
+    val commitments1 = addLocalProposal(commitments, add).copy(localNextHtlcId = commitments.localNextHtlcId + 1)
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
     val remoteCommit1 = commitments1.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments1.remoteCommit)
     val reduced = CommitmentSpec.reduce(remoteCommit1.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
@@ -387,13 +390,9 @@ object Commitments {
       case None => Left(UnknownHtlcId(commitments.channelId, cmd.id))
     }
 
-  def receiveFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): Either[ChannelException, (Commitments, Origin, UpdateAddHtlc)] =
+  def receiveFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): Either[ChannelException, (Commitments, UpdateAddHtlc)] =
     commitments.getOutgoingHtlcCrossSigned(fulfill.id) match {
-      case Some(htlc) if htlc.paymentHash == sha256(fulfill.paymentPreimage) => commitments.originChannels.get(fulfill.id) match {
-        case Some(origin) =>
-          Right(addRemoteProposal(commitments, fulfill), origin, htlc)
-        case None => Left(UnknownHtlcId(commitments.channelId, fulfill.id))
-      }
+      case Some(htlc) if htlc.paymentHash == fulfill.paymentHash => Right(addRemoteProposal(commitments, fulfill), htlc)
       case Some(_) => Left(InvalidHtlcPreimage(commitments.channelId, fulfill.id))
       case None => Left(UnknownHtlcId(commitments.channelId, fulfill.id))
     }
@@ -427,25 +426,19 @@ object Commitments {
     }
   }
 
-  def receiveFail(commitments: Commitments, fail: UpdateFailHtlc): Either[ChannelException, (Commitments, Origin, UpdateAddHtlc)] =
+  def receiveFail(commitments: Commitments, fail: UpdateFailHtlc): Either[ChannelException, (Commitments, UpdateAddHtlc)] =
     commitments.getOutgoingHtlcCrossSigned(fail.id) match {
-      case Some(htlc) => commitments.originChannels.get(fail.id) match {
-        case Some(origin) => Right(addRemoteProposal(commitments, fail), origin, htlc)
-        case None => Left(UnknownHtlcId(commitments.channelId, fail.id))
-      }
+      case Some(htlc) => Right(addRemoteProposal(commitments, fail), htlc)
       case None => Left(UnknownHtlcId(commitments.channelId, fail.id))
     }
 
-  def receiveFailMalformed(commitments: Commitments, fail: UpdateFailMalformedHtlc): Either[ChannelException, (Commitments, Origin, UpdateAddHtlc)] = {
+  def receiveFailMalformed(commitments: Commitments, fail: UpdateFailMalformedHtlc): Either[ChannelException, (Commitments, UpdateAddHtlc)] = {
     // A receiving node MUST fail the channel if the BADONION bit in failure_code is not set for update_fail_malformed_htlc.
     if ((fail.failureCode & FailureMessageCodecs.BADONION) == 0) {
       Left(InvalidFailureCode(commitments.channelId))
     } else {
       commitments.getOutgoingHtlcCrossSigned(fail.id) match {
-        case Some(htlc) => commitments.originChannels.get(fail.id) match {
-          case Some(origin) => Right(addRemoteProposal(commitments, fail), origin, htlc)
-          case None => Left(UnknownHtlcId(commitments.channelId, fail.id))
-        }
+        case Some(htlc) => Right(addRemoteProposal(commitments, fail), htlc)
         case None => Left(UnknownHtlcId(commitments.channelId, fail.id))
       }
     }
@@ -633,14 +626,12 @@ object Commitments {
         // (since fulfill/fail are sent by remote, they are (1) signed by them, (2) revoked by us, (3) signed by us, (4) revoked by them
         val completedOutgoingHtlcs = commitments.remoteCommit.spec.htlcs.collect(incoming).map(_.id) -- theirNextCommit.spec.htlcs.collect(incoming).map(_.id)
         // we remove the newly completed htlcs from the origin map
-        val originChannels1 = commitments.originChannels -- completedOutgoingHtlcs
         val commitments1 = commitments.copy(
           localChanges = localChanges.copy(signed = Nil, acked = localChanges.acked ++ localChanges.signed),
           remoteChanges = remoteChanges.copy(signed = Nil),
           remoteCommit = theirNextCommit,
           remoteNextCommitInfo = Right(revocation.nextPerCommitmentPoint),
-          remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret.value, 0xFFFFFFFFFFFFL - commitments.remoteCommit.index),
-          originChannels = originChannels1)
+          remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret.value, 0xFFFFFFFFFFFFL - commitments.remoteCommit.index))
         Right(commitments1)
       case Right(_) =>
         Left(UnexpectedRevocation(commitments.channelId))
