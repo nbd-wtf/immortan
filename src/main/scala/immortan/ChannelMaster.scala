@@ -6,28 +6,25 @@ import immortan.crypto.Tools._
 import immortan.ChannelMaster._
 import immortan.PaymentStatus._
 import immortan.PaymentFailure._
-
 import scala.concurrent.duration._
 import com.softwaremill.quicklens._
 import immortan.utils.{Rx, ThrottledWork}
 import rx.lang.scala.{Observable, Subscription}
 import immortan.ChannelListener.{Incoming, Malfunction, Transition}
-
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
+import fr.acinq.eclair.transactions.{RemoteFailed, MalformAndAdd, FailAndAdd}
 import immortan.crypto.{CMDAddImpossible, CanBeRepliedTo, StateMachine, Tools}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DescAndCapacity, GraphEdge}
-import fr.acinq.eclair.crypto.Sphinx.{DecryptedPacket, FailurePacket, PacketAndSecrets, PaymentPacket}
 import immortan.HostedChannel.{OPEN, SLEEPING, SUSPENDED, isOperational, isOperationalAndOpen}
+import fr.acinq.eclair.crypto.Sphinx.{DecryptedPacket, FailurePacket, PacketAndSecrets, PaymentPacket}
 import fr.acinq.eclair.router.Router.{ChannelDesc, NoRouteAvailable, Route, RouteFound, RouteParams, RouteRequest, RouteResponse}
 import fr.acinq.eclair.wire.OnionCodecs.MissingRequiredTlv
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.bitcoin.Crypto.PublicKey
 import java.util.concurrent.Executors
-
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.crypto.Sphinx
-
 import scala.util.Random.shuffle
 import scala.collection.mutable
 import scodec.bits.ByteVector

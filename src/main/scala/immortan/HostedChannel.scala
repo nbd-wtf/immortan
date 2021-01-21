@@ -7,8 +7,12 @@ import immortan.HCErrorCodes._
 import immortan.crypto.Tools._
 import immortan.HostedChannel._
 import immortan.ChannelListener._
+
+import fr.acinq.eclair.transactions.{CommitmentSpec, IncomingHtlc, OutgoingHtlc}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import java.util.concurrent.Executors
 import fr.acinq.bitcoin.ByteVector64
+import fr.acinq.bitcoin.SatoshiLong
 import scala.concurrent.Future
 import scodec.bits.ByteVector
 import scala.util.Failure
@@ -138,22 +142,22 @@ abstract class HostedChannel extends StateMachine[ChannelData] { me =>
       // Process their fulfill in any state to make sure we always get a preimage
       // fails/fulfills when SUSPENDED are ignored because they may fulfill afterwards
       case (hc: HostedCommits, fulfill: UpdateFulfillHtlc, SLEEPING | OPEN | SUSPENDED) =>
-        val isPresent = hc.nextLocalSpec.findHtlcById(fulfill.id, isIncoming = false).isDefined
         // Technically peer may send a preimage any time, even if new LCSS has not been reached yet
+        val isPresent = hc.nextLocalSpec.findIncomingHtlcById(fulfill.id).isDefined
         if (isPresent) BECOME(hc.addRemoteProposal(fulfill), state)
         events.fulfillReceived(fulfill)
 
 
       case (hc: HostedCommits, fail: UpdateFailHtlc, OPEN) =>
         // For both types of Fail we only consider them when channel is OPEN and only accept them if our outgoing payment has not been resolved already
-        val isNotResolvedYet = hc.localSpec.findHtlcById(fail.id, isIncoming = false).isDefined && hc.nextLocalSpec.findHtlcById(fail.id, isIncoming = false).isDefined
-        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(fail), OPEN) else throw new LightningException("Peer failed an HTLC which is either not cross-signed or does not exist")
+        val isNotResolvedYet = hc.localSpec.findOutgoingHtlcById(fail.id).isDefined && hc.nextLocalSpec.findOutgoingHtlcById(fail.id).isDefined
+        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(fail), OPEN) else throw new LightningException
 
 
       case (hc: HostedCommits, fail: UpdateFailMalformedHtlc, OPEN) =>
         if (fail.failureCode.&(FailureMessageCodecs.BADONION) == 0) throw new LightningException("Wrong failure code for malformed onion")
-        val isNotResolvedYet = hc.localSpec.findHtlcById(fail.id, isIncoming = false).isDefined && hc.nextLocalSpec.findHtlcById(fail.id, isIncoming = false).isDefined
-        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(fail), OPEN) else throw new LightningException("Peer malformed-failed an HTLC which is either not cross-signed or does not exist")
+        val isNotResolvedYet = hc.localSpec.findOutgoingHtlcById(fail.id).isDefined && hc.nextLocalSpec.findOutgoingHtlcById(fail.id).isDefined
+        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(fail), OPEN) else throw new LightningException
 
 
       case (hc: HostedCommits, cmd: CMD_ADD_HTLC, currentState) =>
@@ -298,9 +302,8 @@ abstract class HostedChannel extends StateMachine[ChannelData] { me =>
   }
 
   def restoreCommits(localLCSS: LastCrossSignedState, ext: NodeAnnouncementExt): HostedCommits = {
-    val inHtlcs = for (incomingHtlc <- localLCSS.incomingHtlcs) yield Htlc(incoming = true, incomingHtlc)
-    val outHtlcs = for (outgoingHtlc <- localLCSS.outgoingHtlcs) yield Htlc(incoming = false, outgoingHtlc)
-    val localSpec = CommitmentSpec(feeratePerKw = 0L, localLCSS.localBalanceMsat, localLCSS.remoteBalanceMsat, htlcs = (inHtlcs ++ outHtlcs).toSet)
+    val inFlightHtlcs = localLCSS.incomingHtlcs.map(IncomingHtlc) ++ localLCSS.outgoingHtlcs.map(OutgoingHtlc)
+    val localSpec = CommitmentSpec(FeeratePerKw(0L.sat), localLCSS.localBalanceMsat, localLCSS.remoteBalanceMsat, inFlightHtlcs.toSet)
     HostedCommits(ext, localLCSS, nextLocalUpdates = Nil, nextRemoteUpdates = Nil, localSpec, updateOpt = None, localError = None, remoteError = None)
   }
 

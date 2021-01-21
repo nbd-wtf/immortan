@@ -16,9 +16,10 @@
 
 package fr.acinq.eclair.transactions
 
-import fr.acinq.eclair.MilliSatoshi
-import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair._
 import fr.acinq.eclair.wire._
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import scodec.bits.ByteVector
 
 /**
  * Created by PM on 07/12/2016.
@@ -44,16 +45,6 @@ object CommitmentOutput {
 
 sealed trait DirectedHtlc {
   val add: UpdateAddHtlc
-
-  def opposite: DirectedHtlc = this match {
-    case IncomingHtlc(_) => OutgoingHtlc(add)
-    case OutgoingHtlc(_) => IncomingHtlc(add)
-  }
-
-  def direction: String = this match {
-    case IncomingHtlc(_) => "IN"
-    case OutgoingHtlc(_) => "OUT"
-  }
 }
 
 object DirectedHtlc {
@@ -70,31 +61,32 @@ case class IncomingHtlc(add: UpdateAddHtlc) extends DirectedHtlc
 
 case class OutgoingHtlc(add: UpdateAddHtlc) extends DirectedHtlc
 
-/*
-case class CommitmentSpec(feeratePerKw: Long, toLocal: MilliSatoshi, toRemote: MilliSatoshi, htlcs: Set[Htlc] = Set.empty,
-                          remoteFailed: Set[FailAndAdd] = Set.empty, remoteMalformed: Set[MalformAndAdd] = Set.empty,
-                          localFulfilled: Set[UpdateAddHtlc] = Set.empty) {
+trait RemoteFailed {
+  val ourAdd: UpdateAddHtlc
+  val partId: ByteVector = ourAdd.internalId.get.data
+}
 
-  lazy val incomingAdds: Set[UpdateAddHtlc] = htlcs.collect { case Htlc(true, add) => add }
+case class FailAndAdd(theirFail: UpdateFailHtlc, ourAdd: UpdateAddHtlc) extends RemoteFailed
 
-  lazy val outgoingAdds: Set[UpdateAddHtlc] = htlcs.collect { case Htlc(false, add) => add }
+case class MalformAndAdd(theirMalform: UpdateFailMalformedHtlc, ourAdd: UpdateAddHtlc) extends RemoteFailed
+
+final case class CommitmentSpec(feeratePerKw: FeeratePerKw, toLocal: MilliSatoshi, toRemote: MilliSatoshi,
+                                htlcs: Set[DirectedHtlc] = Set.empty, remoteFailed: Set[FailAndAdd] = Set.empty,
+                                remoteMalformed: Set[MalformAndAdd] = Set.empty, localFulfilled: Set[UpdateAddHtlc] = Set.empty) {
+
+  lazy val incomingAdds: Set[UpdateAddHtlc] = htlcs.collect(DirectedHtlc.incoming)
+
+  lazy val outgoingAdds: Set[UpdateAddHtlc] = htlcs.collect(DirectedHtlc.outgoing)
 
   lazy val incomingAddsSum: MilliSatoshi = incomingAdds.foldLeft(0L.msat) { case (accumulator, inAdd) => accumulator + inAdd.amountMsat }
 
   lazy val outgoingAddsSum: MilliSatoshi = outgoingAdds.foldLeft(0L.msat) { case (accumulator, outAdd) => accumulator + outAdd.amountMsat }
 
-  def findHtlcById(id: Long, isIncoming: Boolean): Option[Htlc] = htlcs.find(htlc => htlc.add.id == id && htlc.incoming == isIncoming)
-}
- */
-
-final case class CommitmentSpec(htlcs: Set[DirectedHtlc],
-                                feeratePerKw: FeeratePerKw,
-                                toLocal: MilliSatoshi,
-                                toRemote: MilliSatoshi) {
-
   def findIncomingHtlcById(id: Long): Option[IncomingHtlc] = htlcs.collectFirst { case htlc: IncomingHtlc if htlc.add.id == id => htlc }
 
   def findOutgoingHtlcById(id: Long): Option[OutgoingHtlc] = htlcs.collectFirst { case htlc: OutgoingHtlc if htlc.add.id == id => htlc }
+
+  def withoutHistory: CommitmentSpec = copy(remoteFailed = Set.empty, remoteMalformed = Set.empty, localFulfilled = Set.empty)
 }
 
 object CommitmentSpec {
@@ -112,7 +104,7 @@ object CommitmentSpec {
 
   def fulfillIncomingHtlc(spec: CommitmentSpec, htlcId: Long): CommitmentSpec = {
     spec.findIncomingHtlcById(htlcId) match {
-      case Some(htlc) => spec.copy(toLocal = spec.toLocal + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
+      case Some(htlc) => spec.copy(toLocal = spec.toLocal + htlc.add.amountMsat, htlcs = spec.htlcs - htlc, localFulfilled = spec.localFulfilled + htlc.add)
       case None => throw new RuntimeException(s"cannot find htlc id=$htlcId")
     }
   }
@@ -131,15 +123,22 @@ object CommitmentSpec {
     }
   }
 
-  def failOutgoingHtlc(spec: CommitmentSpec, htlcId: Long): CommitmentSpec = {
+  def failOutgoingHtlc(spec: CommitmentSpec, htlcId: Long, u: UpdateFailHtlc): CommitmentSpec = {
     spec.findOutgoingHtlcById(htlcId) match {
-      case Some(htlc) => spec.copy(toLocal = spec.toLocal + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
+      case Some(htlc) => spec.copy(toLocal = spec.toLocal + htlc.add.amountMsat, htlcs = spec.htlcs - htlc, remoteFailed = spec.remoteFailed + FailAndAdd(u, htlc.add))
       case None => throw new RuntimeException(s"cannot find htlc id=$htlcId")
     }
   }
 
-  def reduce(localCommitSpec: CommitmentSpec, localChanges: List[UpdateMessage], remoteChanges: List[UpdateMessage]): CommitmentSpec = {
-    val spec1 = localChanges.foldLeft(localCommitSpec) {
+  def failOutgoingMalformedHtlc(spec: CommitmentSpec, htlcId: Long, u: UpdateFailMalformedHtlc): CommitmentSpec = {
+    spec.findOutgoingHtlcById(htlcId) match {
+      case Some(htlc) => spec.copy(toLocal = spec.toLocal + htlc.add.amountMsat, htlcs = spec.htlcs - htlc, remoteMalformed = spec.remoteMalformed + MalformAndAdd(u, htlc.add))
+      case None => throw new RuntimeException(s"cannot find htlc id=$htlcId")
+    }
+  }
+
+  def reduce(localCommitSpec: CommitmentSpec, localChanges: List[LightningMessage] = Nil, remoteChanges: List[LightningMessage] = Nil): CommitmentSpec = {
+    val spec1 = localChanges.foldLeft(localCommitSpec.withoutHistory) {
       case (spec, u: UpdateAddHtlc) => addHtlc(spec, OutgoingHtlc(u))
       case (spec, _) => spec
     }
@@ -155,8 +154,8 @@ object CommitmentSpec {
     }
     val spec4 = remoteChanges.foldLeft(spec3) {
       case (spec, u: UpdateFulfillHtlc) => fulfillOutgoingHtlc(spec, u.id)
-      case (spec, u: UpdateFailHtlc) => failOutgoingHtlc(spec, u.id)
-      case (spec, u: UpdateFailMalformedHtlc) => failOutgoingHtlc(spec, u.id)
+      case (spec, u: UpdateFailHtlc) => failOutgoingHtlc(spec, u.id, u)
+      case (spec, u: UpdateFailMalformedHtlc) => failOutgoingMalformedHtlc(spec, u.id, u)
       case (spec, _) => spec
     }
     val spec5 = (localChanges ++ remoteChanges).foldLeft(spec4) {
@@ -165,5 +164,4 @@ object CommitmentSpec {
     }
     spec5
   }
-
 }

@@ -5,6 +5,7 @@ import spray.json._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
+import fr.acinq.eclair.transactions.{CommitmentSpec, MalformAndAdd, FailAndAdd}
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
@@ -13,7 +14,7 @@ import scodec.bits.{BitVector, ByteVector}
 import scodec.Codec
 
 
-object ImplicitJsonFormats extends DefaultJsonProtocol { me =>
+object ImplicitJsonFormats extends DefaultJsonProtocol {
   def to[T : JsonFormat](raw: String): T = raw.parseJson.convertTo[T]
   val json2String: JsValue => String = (_: JsValue).convertTo[String]
   val TAG = "tag"
@@ -54,13 +55,9 @@ object ImplicitJsonFormats extends DefaultJsonProtocol { me =>
   implicit val publicKeyFmt: JsonFormat[PublicKey] = sCodecJsonFmt(publicKey)
   implicit val bytes32Fmt: JsonFormat[ByteVector32] = sCodecJsonFmt(bytes32)
 
-  implicit val failAndAddFmt: JsonFormat[FailAndAdd] = jsonFormat[UpdateFailHtlc, UpdateAddHtlc, FailAndAdd](FailAndAdd.apply, "theirFail", "ourAdd")
-  implicit val malformAndAddFmt: JsonFormat[MalformAndAdd] = jsonFormat[UpdateFailMalformedHtlc, UpdateAddHtlc, MalformAndAdd](MalformAndAdd.apply, "theirMalform", "ourAdd")
-  implicit val htlcFmt: JsonFormat[Htlc] = jsonFormat[Boolean, UpdateAddHtlc, Htlc](Htlc.apply, "incoming", "add")
-
-  implicit val commitmentSpecFmt: JsonFormat[CommitmentSpec] =
-    jsonFormat[Long, MilliSatoshi, MilliSatoshi, Set[Htlc], Set[FailAndAdd], Set[MalformAndAdd], Set[UpdateAddHtlc],
-      CommitmentSpec](CommitmentSpec.apply, "feeratePerKw", "toLocal", "toRemote", "htlcs", "remoteFailed", "remoteMalformed", "localFulfilled")
+  implicit val failAndAddFmt: JsonFormat[FailAndAdd] = sCodecJsonFmt(wire.ChannelCodecs.failAndAddCodec)
+  implicit val malformAndAddFmt: JsonFormat[MalformAndAdd] = sCodecJsonFmt(wire.ChannelCodecs.malformAndAddCodec)
+  implicit val commitmentSpecFmt: JsonFormat[CommitmentSpec] = sCodecJsonFmt(wire.ChannelCodecs.commitmentSpecCodec)
 
   implicit val nodeAnnouncementExtFmt: JsonFormat[NodeAnnouncementExt] = jsonFormat[NodeAnnouncement, NodeAnnouncementExt](NodeAnnouncementExt.apply, "na")
 

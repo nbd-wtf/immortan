@@ -19,8 +19,10 @@ package fr.acinq.eclair.wire
 import scodec.codecs._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire.CommonCodecs._
-import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{OutPoint, Transaction, TxOut}
+import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
+import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, FailAndAdd, IncomingHtlc, MalformAndAdd, OutgoingHtlc}
+import fr.acinq.eclair.wire.LightningMessageCodecs.{updateAddHtlcCodec, updateFailHtlcCodec, updateFailMalformedHtlcCodec}
 import scodec.Codec
 
 
@@ -55,4 +57,28 @@ object ChannelCodecs {
    * byte-aligned boolean codec
    */
   val bool8: Codec[Boolean] = bool(8)
+
+  val htlcCodec: Codec[DirectedHtlc] = discriminated[DirectedHtlc].by(bool8)
+    .typecase(true, lengthDelimited(updateAddHtlcCodec).as[IncomingHtlc])
+    .typecase(false, lengthDelimited(updateAddHtlcCodec).as[OutgoingHtlc])
+
+  val failAndAddCodec: Codec[FailAndAdd] = {
+    ("theirFail" | updateFailHtlcCodec) ::
+      ("ourAdd" | updateAddHtlcCodec)
+  }.as[FailAndAdd]
+
+  val malformAndAddCodec: Codec[MalformAndAdd] = {
+    ("theirMalform" | updateFailMalformedHtlcCodec) ::
+      ("ourAdd" | updateAddHtlcCodec)
+  }.as[MalformAndAdd]
+
+  val commitmentSpecCodec: Codec[CommitmentSpec] = {
+    ("feeratePerKw" | feeratePerKw) ::
+      ("toLocal" | millisatoshi) ::
+      ("toRemote" | millisatoshi) ::
+      ("htlcs" | setCodec(htlcCodec)) ::
+      ("remoteFailed" | setCodec(failAndAddCodec)) ::
+      ("remoteMalformed" | setCodec(malformAndAddCodec)) ::
+      ("localFulfilled" | setCodec(updateAddHtlcCodec))
+  }.as[CommitmentSpec]
 }
