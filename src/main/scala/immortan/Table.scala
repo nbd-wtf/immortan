@@ -137,3 +137,19 @@ object PaymentTable extends Table {
     createTable :: addIndex1 :: addIndex2 :: addIndex3 :: Nil
   }
 }
+
+object ElectrumHeadersTable extends Table {
+  val (table, height, blockHash, header) = ("headers", "height", "blockhash", "header")
+  val addHeaderSql = s"INSERT OR IGNORE INTO $table VALUES (?, ?, ?)"
+
+  val selectHeaderByHeightSql = s"SELECT $header FROM $table WHERE $height = ?"
+  val selectByBlockHashSql = s"SELECT $height, $header FROM $table WHERE $blockHash = ?"
+  val selectHeadersSql = s"SELECT $height, $header FROM $table WHERE $height >= ? ORDER BY $height LIMIT ?"
+  val selectTipSql = s"SELECT $height, $header FROM $table INNER JOIN (SELECT MAX($height) AS maxHeight FROM $table) t1 ON $height = t1.maxHeight"
+
+  def createStatements: Seq[String] = {
+    val createTable = s"CREATE TABLE IF NOT EXISTS $table($height INTEGER NOT NULL PRIMARY KEY, $blockHash BLOB NOT NULL, $header BLOB NOT NULL)"
+    val addIndex1 = s"CREATE INDEX IF NOT EXISTS idx1$table ON $table ($height)"
+    createTable :: addIndex1 :: Nil
+  }
+}
