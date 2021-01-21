@@ -24,6 +24,28 @@ Whatever possible is taken from Acinq's [Eclair](https://github.com/ACINQ/eclair
 Not yet ready for use, under heavy development. Detailed technical descriptions and integration tutorials will be provided once internal structures stabilize enough.
 
 
+### Supporting project
+
+Immortan is an open source library free to use by anyone, development is made possible entirely by the support of these awesome backers:
+
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="middle">
+        <a href="https://lnbig.com/" target="_blank">
+          <img width="146px" src="https://i.imgur.com/W4A92Ym.png">
+        </a>
+      </td>
+      <td align="center" valign="middle">
+        <a href="http://lightblock.me/" target="_blank">
+          lightblock.me
+        </a>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+
 ### Library users
 
 - An updated, private-routing-enabled, fully autonomous [BLW](https://github.com/btcontract/lnwallet).
