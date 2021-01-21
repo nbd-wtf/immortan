@@ -61,7 +61,7 @@ case class UnreadableRemoteFailure(route: Route) extends PaymentFailure {
 }
 
 case class RemoteFailure(packet: Sphinx.DecryptedFailurePacket, route: Route) extends PaymentFailure {
-  def originChannelId: String = route.getEdgeForNode(packet.originNode).map(_.desc.shortChannelId.toString).getOrElse("unknown")
+  def originChannelId: String = route.getEdgeForNode(packet.originNode).map(_.updExt.update.shortChannelId.toString).getOrElse("trampoline")
   override def translate: String = s"REMOTE: ${packet.failureMessage.message}\nChannel: $originChannelId"
 }
 
@@ -87,8 +87,8 @@ case class PaymentSenderData(cmd: CMD_SEND_MPP, parts: Map[ByteVector, PartStatu
   def withLocalFailure(reason: String, amount: MilliSatoshi): PaymentSenderData = copy(failures = LocalFailure(reason, amount) +: failures)
   def withoutPartId(partId: ByteVector): PaymentSenderData = copy(parts = parts - partId)
 
+  def successfulUpdates: Iterable[ChannelUpdate] = inFlights.flatMap(_.route.routedPerChannelHop).map { case (_, chanHop) => chanHop.edge.updExt.update }
   def inFlights: Iterable[InFlightInfo] = parts.values.collect { case wait: WaitForRouteOrInFlight => wait.flight }.flatten
-  def successfulUpdates: Iterable[ChannelUpdate] = inFlights.flatMap(_.route.hops).map(_.updExt.update)
   def closestCltvExpiry: InFlightInfo = inFlights.minBy(_.route.weight.cltv)
   def totalFee: MilliSatoshi = inFlights.map(_.route.fee).sum
 }
@@ -346,8 +346,8 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
         val currentUsedCapacities: mutable.Map[DescAndCapacity, MilliSatoshi] = getUsedCapacities
         val currentUsedDescs = mapKeys[DescAndCapacity, MilliSatoshi, ChannelDesc](currentUsedCapacities, _.desc, defVal = 0L.msat)
         val ignoreChansFailedTimes = data.chanFailedTimes collect { case (desc, failTimes) if failTimes >= pf.routerConf.maxChannelFailures => desc }
-        val ignoreChansCanNotHandle = currentUsedCapacities collect { case (DescAndCapacity(desc, capacity), used) if used + req.amount >= capacity => desc }
-        val ignoreChansFailedAtAmount = data.chanFailedAtAmount collect { case (desc, failedAt) if failedAt - currentUsedDescs(desc) - req.leeway <= req.amount => desc }
+        val ignoreChansCanNotHandle = currentUsedCapacities collect { case (DescAndCapacity(desc, capacity), used) if used + req.amount >= capacity - req.amount / 24 => desc }
+        val ignoreChansFailedAtAmount = data.chanFailedAtAmount collect { case (desc, failedAt) if failedAt - currentUsedDescs(desc) - req.amount / 8 <= req.amount => desc }
         val ignoreNodes = data.nodeFailedWithUnknownUpdateTimes collect { case (nodeId, failTimes) if failTimes >= pf.routerConf.maxStrangeNodeFailures => nodeId }
         val ignoreChans = ignoreChansFailedTimes.toSet ++ ignoreChansCanNotHandle ++ ignoreChansFailedAtAmount
         val request1 = req.copy(ignoreNodes = ignoreNodes.toSet, ignoreChannels = ignoreChans)
@@ -425,8 +425,8 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
       // This gets supposedly used capacities of external channels in a routing graph
       // we need this to exclude channels which definitely can't route a given amount right now
       val accumulator = mutable.Map.empty[DescAndCapacity, MilliSatoshi] withDefaultValue 0L.msat
-      val descsAndCaps = data.payments.values.flatMap(_.data.inFlights).flatMap(_.route.amountPerDescAndCap)
-      descsAndCaps foreach { case (amount, dnc) => accumulator(dnc) += amount }
+      val descsAndCaps = data.payments.values.flatMap(_.data.inFlights).flatMap(_.route.routedPerChannelHop)
+      descsAndCaps.foreach { case (amount, chanHop) => accumulator(chanHop.edge.toDescAndCapacity) += amount }
       accumulator
     }
 
@@ -566,9 +566,8 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
                 PaymentMaster doProcess NodeFailed(originNodeId, pf.routerConf.maxStrangeNodeFailures * 32)
               }
 
-              // Record a remote error and keep trying
-              val data1 = data.withRemoteFailure(info.route, pkt)
-              resolveRemoteFail(data1, wait)
+              // Record a remote error and keep trying the rest of routes
+              resolveRemoteFail(data.withRemoteFailure(info.route, pkt), wait)
 
             case pkt @ Sphinx.DecryptedFailurePacket(nodeId, _: Node) =>
               // Node may become fine on next payment, but ban it for current attempts
@@ -576,14 +575,18 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
               resolveRemoteFail(data.withRemoteFailure(info.route, pkt), wait)
 
             case pkt @ Sphinx.DecryptedFailurePacket(nodeId, _) =>
-              // Generic channel failure, ignore it for this and next payment, note that we are guaranteed to find a failed edge for returned nodeId
-              PaymentMaster doProcess ChannelFailed(info.route.getEdgeForNode(nodeId).get.toDescAndCapacity, pf.routerConf.maxChannelFailures * 2)
+              info.route.getEdgeForNode(nodeId).map(_.toDescAndCapacity) match {
+                case Some(dnc) => PaymentMaster doProcess ChannelFailed(dnc, pf.routerConf.maxChannelFailures * 2) // Generic channel failure, ignore for rest of attempts
+                case None => PaymentMaster doProcess NodeFailed(nodeId, pf.routerConf.maxStrangeNodeFailures) // Trampoline node failure, will be better addressed later
+              }
+
+              // Record a remote error and keep trying the rest of routes
               resolveRemoteFail(data.withRemoteFailure(info.route, pkt), wait)
 
           } getOrElse {
             val failure = UnreadableRemoteFailure(info.route)
             // Select nodes between our peer and final payee, they are least likely to send garbage
-            val nodesInBetween = info.route.hops.map(_.desc.to).drop(1).dropRight(1)
+            val nodesInBetween = info.route.hops.map(_.nextNodeId).drop(1).dropRight(1)
 
             if (nodesInBetween.isEmpty) {
               // Garbage is sent by our peer or final payee, fail a payment
@@ -655,9 +658,9 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
     // Turn "in-flight" into "waiting for route" and expect for subsequent `CMDAskForRoute`
     private def resolveRemoteFail(data1: PaymentSenderData, wait: WaitForRouteOrInFlight): Unit =
       shuffle(PaymentMaster.currentSendable.toSeq) collectFirst { case (cnc, chanSendable) if chanSendable >= wait.amount => cnc.chan } match {
-        case Some(chan) if wait.remoteAttempts < pf.routerConf.maxRemoteAttempts => become(data.copy(parts = data.parts + wait.oneMoreRemoteAttempt(chan).tuple), PENDING)
-        case _ if canBeSplit(wait.amount) => become(data.withoutPartId(wait.partId), PENDING) doProcess SplitIntoHalves(wait.amount)
-        case _ => self abortAndNotify data.withoutPartId(wait.partId).withLocalFailure(RUN_OUT_OF_RETRY_ATTEMPTS, wait.amount)
+        case Some(chan) if wait.remoteAttempts < pf.routerConf.maxRemoteAttempts => become(data1.copy(parts = data1.parts + wait.oneMoreRemoteAttempt(chan).tuple), PENDING)
+        case _ if canBeSplit(wait.amount) => become(data1.withoutPartId(wait.partId), PENDING) doProcess SplitIntoHalves(wait.amount)
+        case _ => self abortAndNotify data1.withoutPartId(wait.partId).withLocalFailure(RUN_OUT_OF_RETRY_ATTEMPTS, wait.amount)
       }
 
     private def abortAndNotify(data1: PaymentSenderData): Unit = {

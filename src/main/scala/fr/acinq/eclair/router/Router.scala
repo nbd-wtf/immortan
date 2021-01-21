@@ -19,8 +19,8 @@ package fr.acinq.eclair.router
 import fr.acinq.eclair._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{GraphStructure, RichWeight}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.router.Graph.RichWeight
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.ByteVector32
 import scodec.bits.ByteVector
@@ -28,6 +28,7 @@ import scodec.bits.ByteVector
 
 case class ChannelUpdateExt(update: ChannelUpdate, crc32: Long, score: Long, useHeuristics: Boolean) {
   def withNewUpdate(cu: ChannelUpdate): ChannelUpdateExt = copy(crc32 = Sync.getChecksum(cu), update = cu)
+  lazy val capacity: MilliSatoshi = update.htlcMaximumMsat.get // All updates MUST have htlcMaximumMsat
 }
 
 object Router {
@@ -62,15 +63,12 @@ object Router {
 
   /**
    * A directed hop between two connected nodes using a specific channel.
-   *
-   * @param nodeId     id of the start node.
-   * @param nextNodeId id of the end node.
-   * @param lastUpdate last update of the channel used for the hop.
    */
-  case class ChannelHop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate) extends Hop {
-    override def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(lastUpdate.feeBaseMsat, lastUpdate.feeProportionalMillionths, amount)
-
-    override lazy val cltvExpiryDelta: CltvExpiryDelta = lastUpdate.cltvExpiryDelta
+  case class ChannelHop(edge: GraphEdge) extends Hop {
+    override def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(edge.updExt.update.feeBaseMsat, edge.updExt.update.feeProportionalMillionths, amount)
+    override val cltvExpiryDelta: CltvExpiryDelta = edge.updExt.update.cltvExpiryDelta
+    override val nextNodeId: PublicKey = edge.desc.to
+    override val nodeId: PublicKey = edge.desc.from
   }
 
   /**
@@ -93,23 +91,21 @@ object Router {
 
   case class RouteRequest(paymentHash: ByteVector32, partId: ByteVector, source: PublicKey,
                           target: PublicKey, amount: MilliSatoshi, localEdge: GraphEdge, routeParams: RouteParams,
-                          ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[ChannelDesc] = Set.empty) {
+                          ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[ChannelDesc] = Set.empty)
 
-    // Once temporary channel error occurs we remember that channel as failed-at-amount, it can later be retried again for a new and smaller shard amount
-    // However, there needs to be a delta between failed-at-amount and smaller shard amount, otherwise undesired retries like 1003sat/1002sat/... can happen
-    lazy val leeway: MilliSatoshi = amount / 8
-  }
+  type RoutedPerHop = (MilliSatoshi, Hop)
+  type RoutedPerChannelHop = (MilliSatoshi, ChannelHop)
 
-  type PaymentDescCapacity = (MilliSatoshi, GraphStructure.DescAndCapacity)
-
-  case class Route(weight: RichWeight, hops: Seq[GraphEdge] = Nil) {
+  case class Route(weight: RichWeight, hops: Seq[Hop] = Nil) {
     require(hops.nonEmpty, "Route cannot be empty")
 
     lazy val fee: MilliSatoshi = weight.costs.head - weight.costs.last
 
-    lazy val amountPerDescAndCap: Seq[PaymentDescCapacity] = weight.costs.tail zip hops.tail.map(_.toDescAndCapacity) // We don't care about first hop and amount since it belongs to local channel
+    lazy val routedPerHop: Seq[RoutedPerHop] = weight.costs.tail.zip(hops.tail) // We don't care about first hop and amount
 
-    def getEdgeForNode(nodeId: PublicKey): Option[GraphEdge] = hops.find(_.desc.from == nodeId) // This method retrieves the edge that we used when we built the route
+    lazy val routedPerChannelHop: Seq[RoutedPerChannelHop] = routedPerHop.collect { case (amount, chanHop: ChannelHop) => amount -> chanHop }
+
+    def getEdgeForNode(nodeId: PublicKey): Option[GraphEdge] = routedPerChannelHop.collectFirst { case (_, chanHop) if nodeId == chanHop.nodeId => chanHop.edge }
   }
 
   sealed trait RouteResponse { def paymentHash: ByteVector32 }

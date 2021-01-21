@@ -31,7 +31,7 @@ import scala.concurrent.duration._
 object RouteCalculation {
   def handleRouteRequest(graph: DirectedGraph, routerConf: RouterConf, r: RouteRequest): RouteResponse =
     findRouteInternal(graph, r.source, r.target, r.amount, r.ignoreChannels, r.ignoreNodes, r.routeParams) match {
-      case Some(searchResult) => RouteFound(r.paymentHash, r.partId, Route(searchResult.weight, searchResult.path))
+      case Some(searchResult) => RouteFound(r.paymentHash, r.partId, Route(searchResult.weight, searchResult.path.map(ChannelHop)))
       case _ => NoRouteAvailable(r.paymentHash, r.partId)
     }
 
@@ -62,7 +62,7 @@ object RouteCalculation {
   val ROUTE_MAX_LENGTH = 20
 
   /** Max allowed CLTV for a route (two weeks) */
-  val DEFAULT_ROUTE_MAX_CLTV = CltvExpiryDelta(2016)
+  val DEFAULT_ROUTE_MAX_CLTV: CltvExpiryDelta = CltvExpiryDelta(2016)
 
   @tailrec
   private def findRouteInternal(g: DirectedGraph,

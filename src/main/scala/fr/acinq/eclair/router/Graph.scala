@@ -130,15 +130,14 @@ object Graph {
       if (current.key != sourceNode) {
         val currentWeight = bestWeights.get(current.key) // NB: there is always an entry for the current in the 'bestWeights' map
         // build the neighbors with optional extra edges
-        val neighborEdges = g.getIncomingEdgesOf(current.key)
-        neighborEdges.foreach { edge =>
+        g.getIncomingEdgesOf(current.key).foreach { edge =>
           val neighbor = edge.desc.from
 
           val neighborWeight = addEdgeWeight(sender, edge, currentWeight, latestBlockExpectedStampMsecs)
 
           val currentCost = currentWeight.costs.head
 
-          val canRelayAmount = currentCost <= edge.capacity && edge.updExt.update.htlcMaximumMsat.forall(currentCost <= _) && currentCost >= edge.updExt.update.htlcMinimumMsat
+          val canRelayAmount = currentCost <= edge.updExt.capacity && edge.updExt.update.htlcMaximumMsat.forall(currentCost <= _) && currentCost >= edge.updExt.update.htlcMinimumMsat
 
           if (canRelayAmount && boundaries(neighborWeight) && !ignoredEdges.contains(edge.desc) && !ignoredVertices.contains(neighbor)) {
             val previousNeighborWeight = bestWeights.getOrDefaultValue(neighbor)
@@ -159,7 +158,7 @@ object Graph {
     }
 
     if (targetFound) {
-      val edgePath = new mutable.ArrayBuffer[GraphEdge](20)
+      val edgePath = new mutable.ArrayBuffer[GraphEdge](RouteCalculation.ROUTE_MAX_LENGTH)
       var current = bestEdges.get(sourceNode)
       while (null != current) {
         edgePath += current
@@ -191,7 +190,7 @@ object Graph {
       val ageFactor = normalize(chanStampMsecs, BLOCK_300K_STAMP_MSEC, latestBlockExpectedStampMsecs)
 
       // Every edge is weighted by channel capacity, larger channels add less weight
-      val capFactor = 1 - normalize(edge.capacity.toLong, CAPACITY_CHANNEL_LOW.toLong, CAPACITY_CHANNEL_HIGH.toLong)
+      val capFactor = 1 - normalize(edge.updExt.capacity.toLong, CAPACITY_CHANNEL_LOW.toLong, CAPACITY_CHANNEL_HIGH.toLong)
 
       // Every edge is weighted by its cltv-delta value, normalized
       val cltvFactor = normalize(edge.updExt.update.cltvExpiryDelta.toInt, CLTV_LOW, CLTV_HIGH)
@@ -260,18 +259,8 @@ object Graph {
   object GraphStructure {
     case class DescAndCapacity(desc: ChannelDesc, capacity: MilliSatoshi)
 
-    /**
-     * Representation of an edge of the graph
-     *
-     * @param desc        channel description
-     * @param updExt      channel info with extra info
-     */
     case class GraphEdge(desc: ChannelDesc, updExt: ChannelUpdateExt) {
-      lazy val capacity: MilliSatoshi = updExt.update.htlcMaximumMsat.get // All updates MUST have htlcMaximumMsat
-
-      def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(updExt.update.feeBaseMsat, updExt.update.feeProportionalMillionths, amount)
-
-      def toDescAndCapacity: DescAndCapacity = DescAndCapacity(desc, capacity)
+      def toDescAndCapacity: DescAndCapacity = DescAndCapacity(desc, updExt.capacity)
     }
 
     /** A graph data structure that uses an adjacency list, stores the incoming edges of the neighbors */
@@ -301,10 +290,13 @@ object Graph {
        * @param desc the channel description associated to the edge that will be removed
        * @return a new graph without this edge
        */
-      def removeEdge(desc: ChannelDesc): DirectedGraph = containsEdge(desc) match {
-        case true => DirectedGraph(vertices.updated(desc.to, vertices(desc.to).filterNot(_.desc == desc)))
-        case false => this
-      }
+      def removeEdge(desc: ChannelDesc): DirectedGraph =
+        if (containsEdge(desc)) {
+          val v1 = vertices(desc.to).filterNot(_.desc == desc)
+          DirectedGraph(vertices.updated(desc.to, v1))
+        } else {
+          this
+        }
 
       def removeEdges(descList: Iterable[ChannelDesc]): DirectedGraph = descList.foldLeft(this)(_ removeEdge _)
 

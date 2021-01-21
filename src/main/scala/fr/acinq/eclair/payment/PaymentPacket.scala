@@ -175,7 +175,7 @@ object OutgoingPacket {
       case ((amount, expiry, payloads), hop) =>
         val payload = hop match {
           // Since we don't have any scenario where we add tlv data for intermediate hops, we use legacy payloads.
-          case hop: ChannelHop => Onion.RelayLegacyPayload(hop.lastUpdate.shortChannelId, amount, expiry)
+          case hop: ChannelHop => Onion.RelayLegacyPayload(hop.edge.updExt.update.shortChannelId, amount, expiry)
           case hop: NodeHop => Onion.createNodeRelayPayload(amount, expiry, hop.nextNodeId)
         }
         (amount + hop.fee(amount), expiry + hop.cltvExpiryDelta, payload +: payloads)
