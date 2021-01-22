@@ -16,50 +16,16 @@
 
 package fr.acinq.eclair.channel
 
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.wire._
+import scodec.bits.{BitVector, ByteVector}
+import fr.acinq.eclair.crypto.Sphinx.{DecryptedPacket, PacketAndSecrets}
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitTx, CommitmentFormat, DefaultCommitmentFormat}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.CommitmentSpec
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitTx, CommitmentFormat, DefaultCommitmentFormat}
-import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
-import scodec.bits.{BitVector, ByteVector}
-
-/**
- * Created by PM on 20/05/2016.
- */
-
-// @formatter:off
-
-/*
-       .d8888b. 88888888888     d8888 88888888888 8888888888 .d8888b.
-      d88P  Y88b    888        d88888     888     888       d88P  Y88b
-      Y88b.         888       d88P888     888     888       Y88b.
-       "Y888b.      888      d88P 888     888     8888888    "Y888b.
-          "Y88b.    888     d88P  888     888     888           "Y88b.
-            "888    888    d88P   888     888     888             "888
-      Y88b  d88P    888   d8888888888     888     888       Y88b  d88P
-       "Y8888P"     888  d88P     888     888     8888888888 "Y8888P"
- */
-sealed trait State
-case object WAIT_FOR_INIT_INTERNAL extends State
-case object WAIT_FOR_OPEN_CHANNEL extends State
-case object WAIT_FOR_ACCEPT_CHANNEL extends State
-case object WAIT_FOR_FUNDING_INTERNAL extends State
-case object WAIT_FOR_FUNDING_CREATED extends State
-case object WAIT_FOR_FUNDING_SIGNED extends State
-case object WAIT_FOR_FUNDING_CONFIRMED extends State
-case object WAIT_FOR_FUNDING_LOCKED extends State
-case object NORMAL extends State
-case object SHUTDOWN extends State
-case object NEGOTIATING extends State
-case object CLOSING extends State
-case object CLOSED extends State
-case object OFFLINE extends State
-case object SYNCING extends State
-case object WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT extends State
-case object ERR_FUNDING_LOST extends State
-case object ERR_INFORMATION_LEAK extends State
+import fr.acinq.eclair.wire.Onion.FinalPayload
+import fr.acinq.bitcoin.Crypto.PublicKey
 
 /*
       8888888888 888     888 8888888888 888b    888 88888888888 .d8888b.
@@ -82,11 +48,11 @@ case class INPUT_INIT_FUNDER(temporaryChannelId: ByteVector32,
                              remoteInit: Init,
                              channelFlags: Byte,
                              channelVersion: ChannelVersion)
-case class INPUT_INIT_FUNDEE(temporaryChannelId: ByteVector32, localParams: LocalParams, remoteInit: Init, channelVersion: ChannelVersion)
-case object INPUT_CLOSE_COMPLETE_TIMEOUT // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
-case object INPUT_DISCONNECTED
-case class INPUT_RECONNECTED(localInit: Init, remoteInit: Init)
-case class INPUT_RESTORED(data: HasCommitments)
+
+case class INPUT_INIT_FUNDEE(temporaryChannelId: ByteVector32,
+                             localParams: LocalParams,
+                             remoteInit: Init,
+                             channelVersion: ChannelVersion)
 
 sealed trait BitcoinEvent
 case object BITCOIN_FUNDING_PUBLISH_FAILED extends BitcoinEvent
@@ -111,26 +77,27 @@ case class BITCOIN_PARENT_TX_CONFIRMED(childTx: Transaction) extends BitcoinEven
        "Y8888P"   "Y88888P"  888       888 888       888 d88P     888 888    Y888 8888888P"   "Y8888P"
  */
 
-/** should not be used directly */
 sealed trait Command
-sealed trait HasReplyToCommand extends Command
-sealed trait HasOptionalReplyToCommand extends Command
+sealed trait AddResolution { val add: UpdateAddHtlc }
+sealed trait BadAddResolution extends Command with AddResolution
 
-final case class CMD_ADD_HTLC(amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, commit: Boolean = false) extends HasReplyToCommand
-sealed trait HtlcSettlementCommand extends HasOptionalReplyToCommand { def id: Long }
-final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, commit: Boolean = false) extends HtlcSettlementCommand
-final case class CMD_FAIL_HTLC(id: Long, reason: Either[ByteVector, FailureMessage], commit: Boolean = false) extends HtlcSettlementCommand
-final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: ByteVector32, failureCode: Int, commit: Boolean = false) extends HtlcSettlementCommand
-final case class CMD_UPDATE_FEE(feeratePerKw: FeeratePerKw, commit: Boolean = false) extends HasOptionalReplyToCommand
-case object CMD_SIGN extends HasOptionalReplyToCommand
+case class CMD_FAIL_HTLC(reason: Either[ByteVector, FailureMessage], add: UpdateAddHtlc) extends BadAddResolution
+case class CMD_FAIL_MALFORMED_HTLC(onionHash: ByteVector32, failureCode: Int, add: UpdateAddHtlc) extends BadAddResolution
+case class FinalPayloadSpec(packet: DecryptedPacket, payload: FinalPayload, add: UpdateAddHtlc) extends AddResolution
+case class CMD_FULFILL_HTLC(preimage: ByteVector32, add: UpdateAddHtlc) extends Command with AddResolution
 
-sealed trait CloseCommand extends HasReplyToCommand
-final case class CMD_CLOSE(scriptPubKey: Option[ByteVector]) extends CloseCommand
-case object CMD_FORCECLOSE extends CloseCommand
-final case class CMD_UPDATE_RELAY_FEE(feeBase: MilliSatoshi, feeProportionalMillionths: Long) extends HasReplyToCommand
-case object CMD_GETSTATE extends HasReplyToCommand
-case object CMD_GETSTATEDATA extends HasReplyToCommand
-case object CMD_GETINFO extends HasReplyToCommand
+case class CMD_ADD_HTLC(internalId: ByteVector, firstAmount: MilliSatoshi, paymentHash: ByteVector32,
+                        cltvExpiry: CltvExpiry, packetAndSecrets: PacketAndSecrets, payload: FinalPayload) extends Command
+
+case class CMD_HOSTED_STATE_OVERRIDE(so: StateOverride) extends Command
+case class HC_CMD_RESIZE(delta: Satoshi) extends Command
+
+case object CMD_INCOMING_TIMEOUT extends Command
+case object CMD_CHAIN_TIP_KNOWN extends Command
+case object CMD_CHAIN_TIP_LOST extends Command
+case object CMD_SOCKET_OFFLINE extends Command
+case object CMD_SOCKET_ONLINE extends Command
+case object CMD_SIGN extends Command
 
 /*
       8888888b.        d8888 88888888888     d8888

@@ -12,10 +12,4 @@ object HCErrorCodes {
   final val ERR_HOSTED_MANUAL_SUSPEND = "0008"
   final val ERR_HOSTED_INVALID_RESIZE = "0009"
   final val ERR_MISSING_CHANNEL = "0010"
-
-  val ERR_NOT_ENOUGH_BALANCE = 1
-  val ERR_TOO_MUCH_IN_FLIGHT = 2
-  val ERR_AMOUNT_TOO_SMALL = 3
-  val ERR_TOO_MANY_HTLC = 4
-  val ERR_NOT_OPEN = 5
 }

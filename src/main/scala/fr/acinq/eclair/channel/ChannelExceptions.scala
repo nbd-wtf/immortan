@@ -70,11 +70,11 @@ case class ForcedLocalCommit                   (override val channelId: ByteVect
 case class UnexpectedHtlcId                    (override val channelId: ByteVector32, expected: Long, actual: Long) extends ChannelException(channelId, s"unexpected htlc id: expected=$expected actual=$actual")
 case class ExpiryTooSmall                      (override val channelId: ByteVector32, minimum: CltvExpiry, actual: CltvExpiry, blockCount: Long) extends ChannelException(channelId, s"expiry too small: minimum=$minimum actual=$actual blockCount=$blockCount")
 case class ExpiryTooBig                        (override val channelId: ByteVector32, maximum: CltvExpiry, actual: CltvExpiry, blockCount: Long) extends ChannelException(channelId, s"expiry too big: maximum=$maximum actual=$actual blockCount=$blockCount")
-case class HtlcValueTooSmall                   (override val channelId: ByteVector32, minimum: MilliSatoshi, actual: MilliSatoshi) extends ChannelException(channelId, s"htlc value too small: minimum=$minimum actual=$actual")
-case class HtlcValueTooHighInFlight            (override val channelId: ByteVector32, maximum: UInt64, actual: MilliSatoshi) extends ChannelException(channelId, s"in-flight htlcs hold too much value: maximum=$maximum actual=$actual")
-case class TooManyAcceptedHtlcs                (override val channelId: ByteVector32, maximum: Long) extends ChannelException(channelId, s"too many accepted htlcs: maximum=$maximum")
-case class InsufficientFunds                   (override val channelId: ByteVector32, amount: MilliSatoshi, missing: Satoshi, reserve: Satoshi, fees: Satoshi) extends ChannelException(channelId, s"insufficient funds: missing=$missing reserve=$reserve fees=$fees")
-case class RemoteCannotAffordFeesForNewHtlc    (override val channelId: ByteVector32, amount: MilliSatoshi, missing: Satoshi, reserve: Satoshi, fees: Satoshi) extends ChannelException(channelId, s"remote can't afford increased commit tx fees once new HTLC is added: missing=$missing reserve=$reserve fees=$fees")
+case class HtlcValueTooSmall                   (override val channelId: ByteVector32) extends ChannelException(channelId, s"htlc value too small")
+case class HtlcValueTooHighInFlight            (override val channelId: ByteVector32) extends ChannelException(channelId, s"in-flight htlcs hold too much value")
+case class TooManyAcceptedHtlcs                (override val channelId: ByteVector32) extends ChannelException(channelId, s"too many accepted htlcs")
+case class InsufficientFunds                   (override val channelId: ByteVector32) extends ChannelException(channelId, s"insufficient funds")
+case class RemoteCannotAffordFeesForNewHtlc    (override val channelId: ByteVector32, amount: MilliSatoshi, missing: Satoshi) extends ChannelException(channelId, s"remote can't afford increased commit tx fees once new HTLC is added: missing=$missing")
 case class InvalidHtlcPreimage                 (override val channelId: ByteVector32, id: Long) extends ChannelException(channelId, s"invalid htlc preimage for htlc id=$id")
 case class UnknownHtlcId                       (override val channelId: ByteVector32, id: Long) extends ChannelException(channelId, s"unknown htlc id=$id")
 case class CannotExtractSharedSecret           (override val channelId: ByteVector32, htlc: UpdateAddHtlc) extends ChannelException(channelId, s"can't extract shared secret: paymentHash=${htlc.paymentHash} onion=${htlc.onionRoutingPacket}")
@@ -89,5 +89,5 @@ case class CommitmentSyncError                 (override val channelId: ByteVect
 case class RevocationSyncError                 (override val channelId: ByteVector32) extends ChannelException(channelId, "revocation sync error")
 case class InvalidFailureCode                  (override val channelId: ByteVector32) extends ChannelException(channelId, "UpdateFailMalformedHtlc message doesn't have BADONION bit set")
 case class PleasePublishYourCommitment         (override val channelId: ByteVector32) extends ChannelException(channelId, "please publish your local commitment")
-case class CommandUnavailableInThisState       (override val channelId: ByteVector32, command: String, state: State) extends ChannelException(channelId, s"cannot execute command=$command in state=$state")
 // @formatter:on
+case class HtlcAddImpossible(reason: ChannelException, cmd: CMD_ADD_HTLC) extends RuntimeException

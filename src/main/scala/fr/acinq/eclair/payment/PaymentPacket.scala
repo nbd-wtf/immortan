@@ -21,7 +21,7 @@ import java.util.UUID
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC, CannotExtractSharedSecret}
+import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CannotExtractSharedSecret}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.wire._
@@ -238,16 +238,6 @@ object OutgoingPacket {
   }
   // @formatter:on
 
-  /**
-   * Build the command to add an HTLC with the given final payload and using the provided hops.
-   *
-   * @return the command and the onion shared secrets (used to decrypt the error in case of payment failure)
-   */
-  def buildCommand(paymentHash: ByteVector32, hops: Seq[ChannelHop], finalPayload: Onion.FinalPayload): (CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)]) = {
-    val (firstAmount, firstExpiry, onion) = buildPacket(Sphinx.PaymentPacket)(paymentHash, hops, finalPayload)
-    CMD_ADD_HTLC(firstAmount, paymentHash, firstExpiry, onion.packet, commit = true) -> onion.sharedSecrets
-  }
-
   def buildHtlcFailure(nodeSecret: PrivateKey, cmd: CMD_FAIL_HTLC, add: UpdateAddHtlc): Either[CannotExtractSharedSecret, UpdateFailHtlc] = {
     Sphinx.PaymentPacket.peel(nodeSecret, add.paymentHash, add.onionRoutingPacket) match {
       case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) =>
@@ -255,7 +245,7 @@ object OutgoingPacket {
           case Left(forwarded) => Sphinx.FailurePacket.wrap(forwarded, sharedSecret)
           case Right(failure) => Sphinx.FailurePacket.create(sharedSecret, failure)
         }
-        Right(UpdateFailHtlc(add.channelId, cmd.id, reason))
+        Right(UpdateFailHtlc(add.channelId, cmd.add.id, reason))
       case Left(_) => Left(CannotExtractSharedSecret(add.channelId, add))
     }
   }

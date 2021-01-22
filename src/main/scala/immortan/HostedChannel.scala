@@ -7,7 +7,7 @@ import immortan.HCErrorCodes._
 import immortan.crypto.Tools._
 import immortan.HostedChannel._
 import immortan.ChannelListener._
-
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions.{CommitmentSpec, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import java.util.concurrent.Executors
@@ -86,13 +86,13 @@ abstract class HostedChannel extends StateMachine[ChannelData] { me =>
 
 
       case (WaitRemoteHostedReply(announceExt, refundScriptPubKey, _), init: InitHostedChannel, WAIT_FOR_ACCEPT) =>
-        if (init.liabilityDeadlineBlockdays < LNParams.minHostedLiabilityBlockdays) throw new LightningException("Their liability deadline is too low")
-        if (init.initialClientBalanceMsat > init.channelCapacityMsat) throw new LightningException("Their init balance for us is larger than capacity")
-        if (init.minimalOnchainRefundAmountSatoshis > LNParams.minHostedOnChainRefund) throw new LightningException("Their min refund is too high")
-        if (init.channelCapacityMsat < LNParams.minHostedOnChainRefund) throw new LightningException("Their proposed channel capacity is too low")
-        if (UInt64(100000000L) > init.maxHtlcValueInFlightMsat) throw new LightningException("Their max value in-flight is too low")
-        if (init.htlcMinimumMsat > 546000L.msat) throw new LightningException("Their minimal payment size is too high")
-        if (init.maxAcceptedHtlcs < 1) throw new LightningException("They can accept too few payments")
+        if (init.liabilityDeadlineBlockdays < LNParams.minHostedLiabilityBlockdays) throw new RuntimeException("Their liability deadline is too low")
+        if (init.initialClientBalanceMsat > init.channelCapacityMsat) throw new RuntimeException("Their init balance for us is larger than capacity")
+        if (init.minimalOnchainRefundAmountSatoshis > LNParams.minHostedOnChainRefund) throw new RuntimeException("Their min refund is too high")
+        if (init.channelCapacityMsat < LNParams.minHostedOnChainRefund) throw new RuntimeException("Their proposed channel capacity is too low")
+        if (UInt64(100000000L) > init.maxHtlcValueInFlightMsat) throw new RuntimeException("Their max value in-flight is too low")
+        if (init.htlcMinimumMsat > 546000L.msat) throw new RuntimeException("Their minimal payment size is too high")
+        if (init.maxAcceptedHtlcs < 1) throw new RuntimeException("They can accept too few payments")
 
         val localHalfSignedHC =
           restoreCommits(LastCrossSignedState(isHost = false, refundScriptPubKey, init, currentBlockDay, init.initialClientBalanceMsat,
@@ -110,10 +110,10 @@ abstract class HostedChannel extends StateMachine[ChannelData] { me =>
         val isRemoteSigOk = localCompleteLCSS.verifyRemoteSig(localHalfSignedHC.announce.na.nodeId)
         val isBlockDayWrong = isBlockDayOutOfSync(remoteSU.blockDay)
 
-        if (isBlockDayWrong) throw new LightningException("Their blockday is wrong")
-        if (!isRemoteSigOk) throw new LightningException("Their signature is wrong")
-        if (!isRightRemoteUpdateNumber) throw new LightningException("Their remote update number is wrong")
-        if (!isRightLocalUpdateNumber) throw new LightningException("Their local update number is wrong")
+        if (isBlockDayWrong) throw new RuntimeException("Their blockday is wrong")
+        if (!isRemoteSigOk) throw new RuntimeException("Their signature is wrong")
+        if (!isRightRemoteUpdateNumber) throw new RuntimeException("Their remote update number is wrong")
+        if (!isRightLocalUpdateNumber) throw new RuntimeException("Their local update number is wrong")
         become(me STORE localHalfSignedHC.copy(lastCrossSignedState = localCompleteLCSS), OPEN)
 
 
@@ -151,19 +151,23 @@ abstract class HostedChannel extends StateMachine[ChannelData] { me =>
       case (hc: HostedCommits, fail: UpdateFailHtlc, OPEN) =>
         // For both types of Fail we only consider them when channel is OPEN and only accept them if our outgoing payment has not been resolved already
         val isNotResolvedYet = hc.localSpec.findOutgoingHtlcById(fail.id).isDefined && hc.nextLocalSpec.findOutgoingHtlcById(fail.id).isDefined
-        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(fail), OPEN) else throw new LightningException
+        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(fail), OPEN) else throw UnknownHtlcId(hc.announce.nodeSpecificHostedChanId, fail.id)
 
 
       case (hc: HostedCommits, fail: UpdateFailMalformedHtlc, OPEN) =>
-        if (fail.failureCode.&(FailureMessageCodecs.BADONION) == 0) throw new LightningException("Wrong failure code for malformed onion")
+        if (fail.failureCode.&(FailureMessageCodecs.BADONION) == 0) throw InvalidFailureCode(hc.announce.nodeSpecificHostedChanId)
         val isNotResolvedYet = hc.localSpec.findOutgoingHtlcById(fail.id).isDefined && hc.nextLocalSpec.findOutgoingHtlcById(fail.id).isDefined
-        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(fail), OPEN) else throw new LightningException
+        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(fail), OPEN) else throw UnknownHtlcId(hc.announce.nodeSpecificHostedChanId, fail.id)
 
 
-      case (hc: HostedCommits, cmd: CMD_ADD_HTLC, currentState) =>
-        if (OPEN != currentState) throw CMDAddImpossible(cmd, ERR_NOT_OPEN)
+      case (hc: HostedCommits, cmd: CMD_ADD_HTLC, notOpenState) if OPEN != notOpenState =>
+        val unavailable = ChannelUnavailable(hc.announce.nodeSpecificHostedChanId)
+        throw HtlcAddImpossible(unavailable, cmd)
+
+
+      case (hc: HostedCommits, cmd: CMD_ADD_HTLC, OPEN) =>
         val (hostedCommits1, updateAddHtlcMsg) = hc.sendAdd(cmd)
-        BECOME(hostedCommits1, state)
+        BECOME(hostedCommits1, OPEN)
         SEND(updateAddHtlcMsg)
         doProcess(CMD_SIGN)
 
@@ -192,7 +196,7 @@ abstract class HostedChannel extends StateMachine[ChannelData] { me =>
 
 
       // In SLEEPING | SUSPENDED state this will not be accepted by peer, but will make pending shard invisible to `unansweredIncoming` method
-      case (hc: HostedCommits, CMD_FAIL_HTLC(reason, add), SLEEPING | OPEN | SUSPENDED) if hc.unansweredIncoming.contains(add) =>
+      case (hc: HostedCommits, CMD_FAIL_HTLC(Left(reason), add), SLEEPING | OPEN | SUSPENDED) if hc.unansweredIncoming.contains(add) =>
         val updateFail = UpdateFailHtlc(hc.announce.nodeSpecificHostedChanId, add.id, reason)
         STORE_BECOME_SEND(hc.addLocalProposal(updateFail), state, updateFail)
 
@@ -283,10 +287,10 @@ abstract class HostedChannel extends StateMachine[ChannelData] { me =>
             localUpdates = remoteSO.remoteUpdates, remoteUpdates = remoteSO.localUpdates, blockDay = remoteSO.blockDay, remoteSigOfLocal = remoteSO.localSigOfRemoteLCSS)
             .withLocalSigOfRemote(data.announce.nodeSpecificPrivKey)
 
-        if (localBalance < 0L.msat) throw new LightningException("Provided updated local balance is larger than capacity")
-        if (remoteSO.localUpdates < hc.lastCrossSignedState.remoteUpdates) throw new LightningException("Provided local update number from remote host is wrong")
-        if (remoteSO.remoteUpdates < hc.lastCrossSignedState.localUpdates) throw new LightningException("Provided remote update number from remote host is wrong")
-        if (remoteSO.blockDay < hc.lastCrossSignedState.blockDay) throw new LightningException("Provided override blockday from remote host is not acceptable")
+        if (localBalance < 0L.msat) throw new RuntimeException("Provided updated local balance is larger than capacity")
+        if (remoteSO.localUpdates < hc.lastCrossSignedState.remoteUpdates) throw new RuntimeException("Provided local update number from remote host is wrong")
+        if (remoteSO.remoteUpdates < hc.lastCrossSignedState.localUpdates) throw new RuntimeException("Provided remote update number from remote host is wrong")
+        if (remoteSO.blockDay < hc.lastCrossSignedState.blockDay) throw new RuntimeException("Provided override blockday from remote host is not acceptable")
         require(completeLocalLCSS.verifyRemoteSig(hc.announce.na.nodeId), "Provided override signature from remote host is wrong")
         STORE_BECOME_SEND(restoreCommits(completeLocalLCSS, hc.announce), OPEN, completeLocalLCSS.stateUpdate)
 

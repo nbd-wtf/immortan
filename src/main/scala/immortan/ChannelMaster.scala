@@ -6,14 +6,15 @@ import immortan.crypto.Tools._
 import immortan.ChannelMaster._
 import immortan.PaymentStatus._
 import immortan.PaymentFailure._
+import fr.acinq.eclair.channel._
 import scala.concurrent.duration._
 import com.softwaremill.quicklens._
 import immortan.utils.{Rx, ThrottledWork}
 import rx.lang.scala.{Observable, Subscription}
+import immortan.crypto.{CanBeRepliedTo, StateMachine, Tools}
 import immortan.ChannelListener.{Incoming, Malfunction, Transition}
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
-import fr.acinq.eclair.transactions.{RemoteFailed, MalformAndAdd, FailAndAdd}
-import immortan.crypto.{CMDAddImpossible, CanBeRepliedTo, StateMachine, Tools}
+import fr.acinq.eclair.transactions.{FailAndAdd, MalformAndAdd, RemoteFailed}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DescAndCapacity, GraphEdge}
 import immortan.HostedChannel.{OPEN, SLEEPING, SUSPENDED, isOperational, isOperationalAndOpen}
 import fr.acinq.eclair.crypto.Sphinx.{DecryptedPacket, FailurePacket, PacketAndSecrets, PaymentPacket}
@@ -192,7 +193,11 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
 
   def incorrectDetails(add: UpdateAddHtlc): IncorrectOrUnknownPaymentDetails = IncorrectOrUnknownPaymentDetails(add.amountMsat, cl.currentChainTip)
   def failFinalPayloadSpec(fail: FailureMessage, finalPayloadSpec: FinalPayloadSpec): CMD_FAIL_HTLC = failHtlc(finalPayloadSpec.packet, fail, finalPayloadSpec.add)
-  def failHtlc(packet: DecryptedPacket, fail: FailureMessage, add: UpdateAddHtlc): CMD_FAIL_HTLC = CMD_FAIL_HTLC(FailurePacket.create(packet.sharedSecret, fail), add)
+
+  def failHtlc(packet: DecryptedPacket, fail: FailureMessage, add: UpdateAddHtlc): CMD_FAIL_HTLC = {
+    val localFailurePacket = FailurePacket.create(packet.sharedSecret, fail)
+    CMD_FAIL_HTLC(Left(localFailurePacket), add)
+  }
 
   private def clearCaches(resolve: FinalPayloadSpec) = {
     getPaymentInfoMemo.remove(resolve.add.paymentHash)
@@ -374,7 +379,7 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
         val atTimes1 = data.nodeFailedWithUnknownUpdateTimes.updated(nodeId, newNodeFailedTimes)
         become(data.copy(nodeFailedWithUnknownUpdateTimes = atTimes1), state)
 
-      case (error: CMDAddImpossible, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
+      case (error: HtlcAddImpossible, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
         data.payments.get(error.cmd.paymentHash).foreach(_ doProcess error)
         self process CMDAskForRoute
 
@@ -404,7 +409,7 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
     }
 
     override def fulfillReceived(fulfill: UpdateFulfillHtlc): Unit = self process fulfill
-    override def onException: PartialFunction[Malfunction, Unit] = { case (_, error: CMDAddImpossible) => self process error }
+    override def onException: PartialFunction[Malfunction, Unit] = { case (_, error: HtlcAddImpossible) => self process error }
     override def onBecome: PartialFunction[Transition, Unit] = { case (_, _, _, SLEEPING | SUSPENDED, OPEN) => self process CMDChanGotOnline }
 
     private def relayOrCreateSender(paymentHash: ByteVector32, msg: Any): Unit = data.payments.get(paymentHash) match {
@@ -461,7 +466,7 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
 
     def doProcess(msg: Any): Unit = (msg, state) match {
       case (cmd: CMD_SEND_MPP, INIT | ABORTED) => assignToChans(PaymentMaster.currentSendable, PaymentSenderData(cmd, Map.empty), cmd.totalAmount)
-      case (localError: CMDAddImpossible, ABORTED) => self abortAndNotify data.withoutPartId(localError.cmd.internalId)
+      case (localError: HtlcAddImpossible, ABORTED) => self abortAndNotify data.withoutPartId(localError.cmd.internalId)
       case (reject: RemoteFailed, ABORTED) => self abortAndNotify data.withoutPartId(reject.partId)
 
       case (reject: RemoteFailed, INIT) =>
@@ -509,12 +514,14 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
           wait.chan process cmdAdd
         }
 
-      case (CMDAddImpossible(cmd, code), PENDING) =>
+      case (HtlcAddImpossible(reason, cmd), PENDING) =>
         data.parts.values collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isDefined && wait.partId == cmd.internalId =>
-          PaymentMaster currentSendableExcept wait collectFirst { case (cnc, chanSendable) if chanSendable >= wait.amount => cnc.chan } match {
-            case Some(anotherCapableChan) => become(data.copy(parts = data.parts + wait.oneMoreLocalAttempt(anotherCapableChan).tuple), PENDING)
-            case None if HCErrorCodes.ERR_NOT_OPEN == code => assignToChans(PaymentMaster.currentSendable, data.withoutPartId(wait.partId), wait.amount)
-            case None => self abortAndNotify data.withoutPartId(wait.partId).withLocalFailure(RUN_OUT_OF_RETRY_ATTEMPTS, wait.amount)
+          val anotherChanOpt = PaymentMaster currentSendableExcept wait collectFirst { case (cnc, chanSendable) if chanSendable >= wait.amount => cnc.chan }
+
+          (anotherChanOpt, reason) match {
+            case (Some(anotherChan), _) => become(data.copy(parts = data.parts + wait.oneMoreLocalAttempt(anotherChan).tuple), PENDING)
+            case (None, _: ChannelUnavailable) => assignToChans(PaymentMaster.currentSendable, data.withoutPartId(wait.partId), wait.amount)
+            case (None, _) => self abortAndNotify data.withoutPartId(wait.partId).withLocalFailure(RUN_OUT_OF_RETRY_ATTEMPTS, wait.amount)
           }
         }
 

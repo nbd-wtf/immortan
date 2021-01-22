@@ -2,6 +2,7 @@ package immortan.fsm
 
 import immortan._
 import immortan.ChannelListener.{Incoming, Transition}
+import fr.acinq.eclair.channel.HC_CMD_RESIZE
 import immortan.HostedChannel.SUSPENDED
 import fr.acinq.bitcoin.Satoshi
 

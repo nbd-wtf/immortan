@@ -78,9 +78,6 @@ object Tools {
   }
 }
 
-class LightningException(reason: String = "Lightning related failure") extends RuntimeException(reason)
-case class CMDAddImpossible(cmd: immortan.CMD_ADD_HTLC, code: Int) extends LightningException
-
 trait CanBeRepliedTo {
   def process(reply: Any): Unit
 }

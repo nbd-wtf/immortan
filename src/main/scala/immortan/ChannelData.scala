@@ -2,12 +2,11 @@ package immortan
 
 import fr.acinq.eclair._
 import fr.acinq.eclair.wire._
-import immortan.HCErrorCodes._
+import fr.acinq.eclair.channel._
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
-import immortan.crypto.{CMDAddImpossible, LightningException}
-import fr.acinq.eclair.channel.HostedChannelVersion
 import fr.acinq.eclair.transactions.CommitmentSpec
+import fr.acinq.bitcoin.SatoshiLong
 import scodec.bits.ByteVector
 
 
@@ -51,19 +50,19 @@ case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: La
     val add = UpdateAddHtlc(announce.nodeSpecificHostedChanId, nextTotalLocal + 1, cmd.firstAmount, cmd.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet, internalId)
     val commits1: HostedCommits = addLocalProposal(add)
 
-    if (commits1.nextLocalSpec.toLocal < 0L.msat) throw CMDAddImpossible(cmd, ERR_NOT_ENOUGH_BALANCE)
-    if (cmd.payload.amount < lastCrossSignedState.initHostedChannel.htlcMinimumMsat) throw CMDAddImpossible(cmd, ERR_AMOUNT_TOO_SMALL)
-    if (UInt64(commits1.nextLocalSpec.outgoingAddsSum.toLong) > lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat) throw CMDAddImpossible(cmd, ERR_TOO_MUCH_IN_FLIGHT)
-    if (commits1.nextLocalSpec.outgoingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) throw CMDAddImpossible(cmd, ERR_TOO_MANY_HTLC)
-    commits1 -> add
+    if (commits1.nextLocalSpec.toLocal < 0L.msat) throw HtlcAddImpossible(InsufficientFunds(announce.nodeSpecificHostedChanId), cmd)
+    if (cmd.payload.amount < lastCrossSignedState.initHostedChannel.htlcMinimumMsat) throw HtlcAddImpossible(HtlcValueTooSmall(announce.nodeSpecificHostedChanId), cmd)
+    if (UInt64(commits1.nextLocalSpec.outgoingAddsSum.toLong) > lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat) throw HtlcAddImpossible(HtlcValueTooHighInFlight(announce.nodeSpecificHostedChanId), cmd)
+    if (commits1.nextLocalSpec.outgoingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) throw HtlcAddImpossible(TooManyAcceptedHtlcs(announce.nodeSpecificHostedChanId), cmd)
+    (commits1, add)
   }
 
   def receiveAdd(add: UpdateAddHtlc): ChannelData = {
     val commits1: HostedCommits = addRemoteProposal(add)
-    if (add.id != nextTotalRemote + 1) throw new LightningException
-    if (commits1.nextLocalSpec.toRemote < 0L.msat) throw new LightningException
-    if (UInt64(commits1.nextLocalSpec.incomingAddsSum.toLong) > lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat) throw new LightningException
-    if (commits1.nextLocalSpec.incomingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) throw new LightningException
+    if (commits1.nextLocalSpec.toRemote < 0L.msat) throw InsufficientFunds(announce.nodeSpecificHostedChanId)
+    if (add.id != nextTotalRemote + 1) throw UnexpectedHtlcId(announce.nodeSpecificHostedChanId, expected = nextTotalRemote + 1, actual = add.id)
+    if (UInt64(commits1.nextLocalSpec.incomingAddsSum.toLong) > lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat) throw HtlcValueTooHighInFlight(announce.nodeSpecificHostedChanId)
+    if (commits1.nextLocalSpec.incomingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) throw TooManyAcceptedHtlcs(announce.nodeSpecificHostedChanId)
     commits1
   }
 
