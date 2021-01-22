@@ -33,8 +33,8 @@ class EarnDotComFeeProvider(readTimeOut: Duration)(implicit http: SttpBackend[Fu
 
   import EarnDotComFeeProvider._
 
-  implicit val formats = DefaultFormats
-  implicit val serialization = Serialization
+  implicit val formats: DefaultFormats.type = DefaultFormats
+  implicit val serialization: Serialization.type = Serialization
 
   val uri = uri"https://bitcoinfees.earn.com/api/v1/fees/list"
 
