@@ -1,30 +1,27 @@
 package immortan
 
-import java.io.ByteArrayInputStream
-import java.nio.ByteOrder
-import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
-
 import fr.acinq.eclair._
 import fr.acinq.eclair.wire._
-import immortan.crypto.Tools._
 import fr.acinq.eclair.Features._
 import fr.acinq.bitcoin.DeterministicWallet._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.eclair.channel.{ChannelData, LocalParams}
+import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt}
+import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
+import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, FeatureSupport, Features}
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, Protocol, Satoshi, SatoshiLong}
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKB, FeeratePerKw, FeerateTolerance, FeeratesPerKB, FeeratesPerKw, OnChainFeeConf}
-import fr.acinq.eclair.channel.LocalParams
-import fr.acinq.eclair.crypto.Generators
-import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
-import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, FeatureSupport, Features}
-import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt}
-import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, TransactionWithInputInfo, TxOwner}
+import fr.acinq.eclair.payment.PaymentRequest
 import immortan.SyncMaster.ShortChanIdSet
+import fr.acinq.eclair.crypto.Generators
 import immortan.crypto.Noise.KeyPair
-import scodec.bits.ByteVector
-
+import java.io.ByteArrayInputStream
 import scala.collection.mutable
+import scodec.bits.ByteVector
+import immortan.crypto.Tools
+import java.nio.ByteOrder
 
 
 object LNParams {
@@ -85,7 +82,7 @@ object LNParams {
   var format: StorageFormat = _
   var channelMaster: ChannelMaster = _
 
-  val blockCount = new AtomicLong(0)
+  val blockCount = new AtomicLong(0L)
   val feeratesPerKB = new AtomicReference[FeeratesPerKB](null)
   val feeratesPerKw = new AtomicReference[FeeratesPerKw](null)
 
@@ -97,6 +94,8 @@ object LNParams {
   val onChainFeeConf: OnChainFeeConf =
     OnChainFeeConf(FeeTargets(fundingBlockTarget = 6, commitmentBlockTarget = 6, mutualCloseBlockTarget = 36, claimMainBlockTarget = 36),
       feeEstimator, closeOnOfflineMismatch = false, updateFeeMinDiffRatio = 0.1, FeerateTolerance(0.5, 10), perNodeFeerateTolerance = Map.empty)
+
+  def currentBlockDay: Long = blockCount.get / blocksPerDay
 }
 
 // Extension wrappers
@@ -115,11 +114,11 @@ case class NodeAnnouncementExt(na: NodeAnnouncement) {
   lazy val nodeSpecificPubKey: PublicKey = nodeSpecificPrivKey.publicKey
 
   lazy val nodeSpecificPkap: KeyPairAndPubKey = KeyPairAndPubKey(KeyPair(nodeSpecificPubKey.value, nodeSpecificPrivKey.value), na.nodeId)
-  lazy val nodeSpecificHostedChanId: ByteVector32 = hostedChanId(nodeSpecificPubKey.value, na.nodeId.value)
+  lazy val nodeSpecificHostedChanId: ByteVector32 = Tools.hostedChanId(nodeSpecificPubKey.value, na.nodeId.value)
 
   private def derivePrivKey(path: KeyPath) = derivePrivateKey(nodeSpecificExtendedKey, path)
-  private val channelPrivateKeys: mutable.Map[KeyPath, ExtendedPrivateKey] = memoize(derivePrivKey)
-  private val channelPublicKeys: mutable.Map[KeyPath, ExtendedPublicKey] = memoize(channelPrivateKeys andThen publicKey)
+  private val channelPrivateKeys: mutable.Map[KeyPath, ExtendedPrivateKey] = Tools.memoize(derivePrivKey)
+  private val channelPublicKeys: mutable.Map[KeyPath, ExtendedPublicKey] = Tools.memoize(channelPrivateKeys andThen publicKey)
 
   private def internalKeyPath(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Seq[Long] = channelKeyPath.path :+ hardened(index)
 
@@ -184,7 +183,7 @@ case class NodeAnnouncementExt(na: NodeAnnouncement) {
    * @return a signature generated with the private key that matches the input
    *         extended public key
    */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 =
+  def sign(tx: Transactions.TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: Transactions.TxOwner, commitmentFormat: Transactions.CommitmentFormat): ByteVector64 =
     Transactions.sign(tx, channelPrivateKeys(publicKey.path).privateKey, txOwner, commitmentFormat)
 
   /**
@@ -198,7 +197,7 @@ case class NodeAnnouncementExt(na: NodeAnnouncement) {
    * @return a signature generated with a private key generated from the input keys's matching
    *         private key and the remote point.
    */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 =
+  def sign(tx: Transactions.TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: Transactions.TxOwner, commitmentFormat: Transactions.CommitmentFormat): ByteVector64 =
     Transactions.sign(tx, Generators.derivePrivKey(channelPrivateKeys(publicKey.path).privateKey, remotePoint), txOwner, commitmentFormat)
 
   /**
@@ -212,7 +211,7 @@ case class NodeAnnouncementExt(na: NodeAnnouncement) {
    * @return a signature generated with a private key generated from the input keys's matching
    *         private key and the remote secret.
    */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 =
+  def sign(tx: Transactions.TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey, txOwner: Transactions.TxOwner, commitmentFormat: Transactions.CommitmentFormat): ByteVector64 =
     Transactions.sign(tx, Generators.revocationPrivKey(channelPrivateKeys(publicKey.path).privateKey, remoteSecret), txOwner, commitmentFormat)
 
   def signChannelAnnouncement(witness: ByteVector, fundingKeyPath: KeyPath): ByteVector64 =
@@ -249,8 +248,8 @@ trait NetworkDataStore {
 }
 
 trait PaymentDBUpdater {
-  def replaceOutgoingPayment(nodeId: PublicKey, prex: PaymentRequestExt, desc: PaymentDescription, action: Option[PaymentAction], finalAmount: MilliSatoshi, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc): Unit
-  def replaceIncomingPayment(prex: PaymentRequestExt, preimage: ByteVector32, description: PaymentDescription, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc): Unit
+  def replaceOutgoingPayment(nodeId: PublicKey, prex: PaymentRequestExt, desc: PaymentDescription, action: Option[PaymentAction], finalAmount: MilliSatoshi, balanceSnap: MilliSatoshi, fiatRateSnap: Tools.Fiat2Btc): Unit
+  def replaceIncomingPayment(prex: PaymentRequestExt, preimage: ByteVector32, description: PaymentDescription, balanceSnap: MilliSatoshi, fiatRateSnap: Tools.Fiat2Btc): Unit
   // These MUST be the only two methods capable of updating payment state to SUCCEEDED
   def updOkOutgoing(upd: UpdateFulfillHtlc, fee: MilliSatoshi): Unit
   def updStatusIncoming(add: UpdateAddHtlc, status: String): Unit
@@ -270,12 +269,12 @@ trait ChainLink {
 }
 
 trait ChainLinkListener {
-  def onTrustedChainTipKnown: Unit = none
-  def onCompleteChainDisconnect: Unit = none
+  def onTrustedChainTipKnown: Unit = Tools.none
+  def onCompleteChainDisconnect: Unit = Tools.none
 }
 
 trait ChannelBag {
-  def all: List[HostedCommits]
+  def all: List[ChannelData]
   def delete(chanId: ByteVector32): Unit
-  def put(chanId: ByteVector32, data: HostedCommits): HostedCommits
+  def put(chanId: ByteVector32, data: ChannelData): ChannelData
 }

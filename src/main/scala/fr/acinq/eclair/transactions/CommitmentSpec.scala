@@ -78,10 +78,6 @@ final case class CommitmentSpec(feeratePerKw: FeeratePerKw, toLocal: MilliSatosh
 
   lazy val outgoingAdds: Set[UpdateAddHtlc] = htlcs.collect(DirectedHtlc.outgoing)
 
-  lazy val incomingAddsSum: MilliSatoshi = incomingAdds.foldLeft(0L.msat) { case (accumulator, inAdd) => accumulator + inAdd.amountMsat }
-
-  lazy val outgoingAddsSum: MilliSatoshi = outgoingAdds.foldLeft(0L.msat) { case (accumulator, outAdd) => accumulator + outAdd.amountMsat }
-
   def findIncomingHtlcById(id: Long): Option[IncomingHtlc] = htlcs.collectFirst { case htlc: IncomingHtlc if htlc.add.id == id => htlc }
 
   def findOutgoingHtlcById(id: Long): Option[OutgoingHtlc] = htlcs.collectFirst { case htlc: OutgoingHtlc if htlc.add.id == id => htlc }

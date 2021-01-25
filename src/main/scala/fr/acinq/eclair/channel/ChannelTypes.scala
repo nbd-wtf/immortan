@@ -110,17 +110,12 @@ case object CMD_SIGN extends Command
       8888888P" d88P     888     888  d88P     888
  */
 
-sealed trait Data {
-  def channelId: ByteVector32
-}
+trait ChannelData
 
-case object Nothing extends Data {
-  val channelId: ByteVector32 = ByteVector32.Zeroes
-}
+case object Nothing extends ChannelData
 
-sealed trait HasCommitments extends Data {
-  val channelId: ByteVector32 = commitments.channelId
-  def commitments: Commitments
+sealed trait HasNormalCommitments extends ChannelData {
+  def commitments: NormalCommits
 }
 
 case class ClosingTxProposed(unsignedTx: Transaction, localClosingSigned: ClosingSigned)
@@ -145,10 +140,10 @@ case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Optio
 }
 case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], mainPenaltyTx: Option[Transaction], htlcPenaltyTxs: List[Transaction], claimHtlcDelayedPenaltyTxs: List[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32])
 
-final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_FUNDEE) extends Data {
+final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_FUNDEE) extends ChannelData {
   val channelId: ByteVector32 = initFundee.temporaryChannelId
 }
-final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_FUNDER, lastSent: OpenChannel) extends Data {
+final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_FUNDER, lastSent: OpenChannel) extends ChannelData {
   val channelId: ByteVector32 = initFunder.temporaryChannelId
 }
 final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: ByteVector32,
@@ -160,7 +155,7 @@ final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: ByteVector32
                                                 initialRelayFees_opt: Option[(MilliSatoshi, Int)],
                                                 remoteFirstPerCommitmentPoint: PublicKey,
                                                 channelVersion: ChannelVersion,
-                                                lastSent: OpenChannel) extends Data {
+                                                lastSent: OpenChannel) extends ChannelData {
   val channelId: ByteVector32 = temporaryChannelId
 }
 final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: ByteVector32,
@@ -173,7 +168,7 @@ final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: ByteVector32,
                                                remoteFirstPerCommitmentPoint: PublicKey,
                                                channelFlags: Byte,
                                                channelVersion: ChannelVersion,
-                                               lastSent: AcceptChannel) extends Data {
+                                               lastSent: AcceptChannel) extends ChannelData {
   val channelId: ByteVector32 = temporaryChannelId
 }
 final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: ByteVector32,
@@ -187,31 +182,31 @@ final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: ByteVector32,
                                               remoteCommit: RemoteCommit,
                                               channelFlags: Byte,
                                               channelVersion: ChannelVersion,
-                                              lastSent: FundingCreated) extends Data
-final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
+                                              lastSent: FundingCreated) extends ChannelData
+final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: NormalCommits,
                                                  fundingTx: Option[Transaction],
                                                  initialRelayFees_opt: Option[(MilliSatoshi, Int)],
                                                  waitingSince: Long, // how long have we been waiting for the funding tx to confirm
                                                  deferred: Option[FundingLocked],
-                                                 lastSent: Either[FundingCreated, FundingSigned]) extends Data with HasCommitments
-final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: Commitments, shortChannelId: ShortChannelId, lastSent: FundingLocked, initialRelayFees_opt: Option[(MilliSatoshi, Int)]) extends Data with HasCommitments
-final case class DATA_NORMAL(commitments: Commitments,
+                                                 lastSent: Either[FundingCreated, FundingSigned]) extends ChannelData with HasNormalCommitments
+final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: NormalCommits, shortChannelId: ShortChannelId, lastSent: FundingLocked, initialRelayFees_opt: Option[(MilliSatoshi, Int)]) extends ChannelData with HasNormalCommitments
+final case class DATA_NORMAL(commitments: NormalCommits,
                              shortChannelId: ShortChannelId,
                              buried: Boolean,
                              channelAnnouncement: Option[ChannelAnnouncement],
                              channelUpdate: ChannelUpdate,
                              localShutdown: Option[Shutdown],
-                             remoteShutdown: Option[Shutdown]) extends Data with HasCommitments
-final case class DATA_SHUTDOWN(commitments: Commitments,
-                               localShutdown: Shutdown, remoteShutdown: Shutdown) extends Data with HasCommitments
-final case class DATA_NEGOTIATING(commitments: Commitments,
+                             remoteShutdown: Option[Shutdown]) extends ChannelData with HasNormalCommitments
+final case class DATA_SHUTDOWN(commitments: NormalCommits,
+                               localShutdown: Shutdown, remoteShutdown: Shutdown) extends ChannelData with HasNormalCommitments
+final case class DATA_NEGOTIATING(commitments: NormalCommits,
                                   localShutdown: Shutdown, remoteShutdown: Shutdown,
                                   closingTxProposed: List[List[ClosingTxProposed]], // one list for every negotiation (there can be several in case of disconnection)
-                                  bestUnpublishedClosingTx_opt: Option[Transaction]) extends Data with HasCommitments {
+                                  bestUnpublishedClosingTx_opt: Option[Transaction]) extends ChannelData with HasNormalCommitments {
   require(closingTxProposed.nonEmpty, "there must always be a list for the current negotiation")
   require(!commitments.localParams.isFunder || closingTxProposed.forall(_.nonEmpty), "funder must have at least one closing signature for every negotation attempt because it initiates the closing")
 }
-final case class DATA_CLOSING(commitments: Commitments,
+final case class DATA_CLOSING(commitments: NormalCommits,
                               fundingTx: Option[Transaction], // this will be non-empty if we are funder and we got in closing while waiting for our own tx to be published
                               waitingSince: Long, // how long since we initiated the closing
                               mutualCloseProposed: List[Transaction], // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
@@ -220,12 +215,12 @@ final case class DATA_CLOSING(commitments: Commitments,
                               remoteCommitPublished: Option[RemoteCommitPublished] = None,
                               nextRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               futureRemoteCommitPublished: Option[RemoteCommitPublished] = None,
-                              revokedCommitPublished: List[RevokedCommitPublished] = Nil) extends Data with HasCommitments {
+                              revokedCommitPublished: List[RevokedCommitPublished] = Nil) extends ChannelData with HasNormalCommitments {
   val spendingTxes: Seq[Transaction] = mutualClosePublished ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: futureRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
   require(spendingTxes.nonEmpty, "there must be at least one tx published in this state")
 }
 
-final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
+final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: NormalCommits, remoteChannelReestablish: ChannelReestablish) extends ChannelData with HasNormalCommitments
 
 
 /**

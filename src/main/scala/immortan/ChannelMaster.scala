@@ -16,7 +16,7 @@ import immortan.ChannelListener.{Incoming, Malfunction, Transition}
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import fr.acinq.eclair.transactions.{FailAndAdd, MalformAndAdd, RemoteFailed}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DescAndCapacity, GraphEdge}
-import immortan.HostedChannel.{OPEN, SLEEPING, SUSPENDED, isOperational, isOperationalAndOpen}
+import immortan.Channel.{OPEN, SLEEPING, SUSPENDED, isOperational, isOperationalAndOpen}
 import fr.acinq.eclair.crypto.Sphinx.{DecryptedPacket, FailurePacket, PacketAndSecrets, PaymentPacket}
 import fr.acinq.eclair.router.Router.{ChannelDesc, NoRouteAvailable, Route, RouteFound, RouteParams, RouteRequest, RouteResponse}
 import fr.acinq.eclair.wire.OnionCodecs.MissingRequiredTlv
@@ -76,7 +76,6 @@ case class WaitForBetterConditions(partId: ByteVector, amount: MilliSatoshi) ext
 case class WaitForRouteOrInFlight(partId: ByteVector, amount: MilliSatoshi, chan: HostedChannel, flight: Option[InFlightInfo], localFailed: List[HostedChannel] = Nil, remoteAttempts: Int = 0) extends PartStatus {
   def oneMoreRemoteAttempt(newHostedChannel: HostedChannel): WaitForRouteOrInFlight = copy(flight = None, remoteAttempts = remoteAttempts + 1, chan = newHostedChannel)
   def oneMoreLocalAttempt(newHostedChannel: HostedChannel): WaitForRouteOrInFlight = copy(flight = None, localFailed = allFailedChans, chan = newHostedChannel)
-  lazy val amountWithFees: MilliSatoshi = flight match { case Some(info) => info.route.weight.costs.head case None => amount }
   lazy val allFailedChans: List[HostedChannel] = chan :: localFailed
 }
 
@@ -119,7 +118,7 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
   val sockChannelBridge: ConnectionListener
 
   val operationalListeners: Set[ChannelListener] = Set(this, PaymentMaster) // All established channels must have these listeners
-  var all: List[HostedChannel] = for (data <- chanBag.all) yield mkHostedChannel(operationalListeners, data) // All channels we have
+  var all: List[Channel] = for (data <- chanBag.all) yield Channel.make(operationalListeners, data, chanBag) // All channels we have
   var listeners: Set[ChannelMasterListener] = Set.empty // Listeners interested in LN payment lifecycle events
 
   val events: ChannelMasterListener = new ChannelMasterListener {
@@ -151,26 +150,25 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
     delayedOfflineTask = Rx.ioQueue.delay(3.hours).subscribe(_ => disconnectAll, none).toSome
   }
 
-  def mkHostedChannel(initListeners: Set[ChannelListener], cd: ChannelData): HostedChannel = new HostedChannel {
-    def SEND(msg: LightningMessage *): Unit = for (work <- CommsTower.workers get data.announce.nodeSpecificPkap) msg foreach work.handler.process
-    def STORE(channelData: HostedCommits): HostedCommits = chanBag.put(channelData.announce.nodeSpecificHostedChanId, channelData)
-    def currentBlockDay: Long = cl.currentChainTip / LNParams.blocksPerDay
-    listeners = initListeners
-    doProcess(cd)
-  }
+  def inChannelOutgoingHtlcs: List[UpdateAddHtlc] = all.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing)
+  def fromNode(nodeId: PublicKey): List[ChanAndCommits] = all.flatMap(Channel.chanAndCommitsOpt).filter(_.commits.announce.na.nodeId == nodeId)
+  def findById(chanId: ByteVector32): Option[ChanAndCommits] = all.flatMap(Channel.chanAndCommitsOpt).find(_.commits.channelId == chanId)
 
-  def inChannelOutgoingHtlcs: List[UpdateAddHtlc] = all.flatMap(_.chanAndCommitsOpt).flatMap(_.commits.allOutgoing)
-  def fromNode(nodeId: PublicKey): List[HostedChannel] = for (chan <- all if chan.data.announce.na.nodeId == nodeId) yield chan
-  def findById(from: List[HostedChannel], chanId: ByteVector32): Option[HostedChannel] = from.find(_.data.announce.nodeSpecificHostedChanId == chanId)
-  def initConnect: Unit = for (chan <- all) CommsTower.listen(Set(sockBrandingBridge, sockChannelBridge), chan.data.announce.nodeSpecificPkap, chan.data.announce.na, LNParams.hcInit)
+  def initConnect: Unit = {
+    val listeners = Set(sockBrandingBridge, sockChannelBridge)
+    all.flatMap(Channel.chanAndCommitsOpt).map(_.commits).foreach {
+      case cs: HostedCommits => CommsTower.listen(listeners, cs.announce.nodeSpecificPkap, cs.announce.na, LNParams.hcInit)
+      case cs: NormalCommits => CommsTower.listen(listeners, cs.announce.nodeSpecificPkap, cs.announce.na, LNParams.normInit)
+    }
+  }
 
   // RECEIVE/SEND UTILITIES
 
   def maxReceivableInfo: Option[CommitsAndMax] = {
-    val canReceive = all.flatMap(_.chanAndCommitsOpt).filter(_.commits.updateOpt.isDefined).sortBy(_.commits.nextLocalSpec.toRemote)
+    val canReceive = all.flatMap(Channel.chanAndCommitsOpt).filter(_.commits.updateOpt.isDefined).sortBy(_.commits.availableBalanceForReceive)
     // Example: (5, 50, 60, 100) -> (50, 60, 100), receivable = 50*3 = 150 (the idea is for smallest remaining channel to be able to handle an evenly split amount)
-    val withoutSmall = canReceive.dropWhile(_.commits.nextLocalSpec.toRemote * canReceive.size < canReceive.last.commits.nextLocalSpec.toRemote).takeRight(4)
-    val candidates = for (cs <- withoutSmall.indices map withoutSmall.drop) yield CommitsAndMax(cs, cs.head.commits.nextLocalSpec.toRemote * cs.size)
+    val withoutSmall = canReceive.dropWhile(_.commits.availableBalanceForReceive * canReceive.size < canReceive.last.commits.availableBalanceForReceive).takeRight(4)
+    val candidates = for (cs <- withoutSmall.indices map withoutSmall.drop) yield CommitsAndMax(cs, cs.head.commits.availableBalanceForReceive * cs.size)
     if (candidates.isEmpty) None else candidates.maxBy(_.maxReceivable).toSome
   }
 
@@ -252,7 +250,7 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
     */
 
   override def stateUpdated(hc: HostedCommits): Unit = {
-    val allChansAndCommits: List[ChanAndCommits] = all.flatMap(_.chanAndCommitsOpt)
+    val allChansAndCommits: List[ChanAndCommits] = all.flatMap(Channel.chanAndCommitsOpt)
     val allRevealedHashes: Set[ByteVector32] = allChansAndCommits.flatMap(_.commits.revealedHashes).toSet // Payment hashes where preimage is revealed, but state is not updated yet
     val allFulfilledAdds = toMapBy[ByteVector32, AddResolution](allChansAndCommits.flatMap(_.commits.localSpec.localFulfilled).map(initialResolveMemo), _.add.paymentHash) // Settled shards
     val allIncomingAdds = toMapBy[ByteVector32, AddResolution](allChansAndCommits.flatMap(_.commits.localSpec.incomingAdds).map(initialResolveMemo), _.add.paymentHash) // Unsettled shards
@@ -285,8 +283,8 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
 
     // This method should always be executed in channel context
     // Using doProcess makes sure no external message gets intertwined in resolution
-    for (cmd <- badRightAway) findById(all, cmd.add.channelId).foreach(_ doProcess cmd)
-    for (cmd <- results.flatten) findById(all, cmd.add.channelId).foreach(_ doProcess cmd)
+    for (cmd <- badRightAway) findById(cmd.add.channelId).foreach(_.chan doProcess cmd)
+    for (cmd <- results.flatten) findById(cmd.add.channelId).foreach(_.chan doProcess cmd)
     for (chan <- all) chan doProcess CMD_SIGN
   }
 
@@ -441,22 +439,22 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
     def currentSendableExcept(wait: WaitForRouteOrInFlight): mutable.Map[ChanAndCommits, MilliSatoshi] =
       getSendable(all filter isOperationalAndOpen diff wait.allFailedChans)
 
-    // This gets what can be sent through given channels with waiting parts taken into account
-    def getSendable(chans: List[HostedChannel] = Nil): mutable.Map[ChanAndCommits, MilliSatoshi] = {
-      val waits: mutable.Map[HostedChannel, MilliSatoshi] = mutable.Map.empty[HostedChannel, MilliSatoshi] withDefaultValue 0L.msat
+    // What can be sent through given channels with waiting parts taken into account
+    def getSendable(chans: List[Channel] = Nil): mutable.Map[ChanAndCommits, MilliSatoshi] = {
+      val allPartIds: Set[ByteVector] = data.payments.values.flatMap(_.data.parts.values).map(_.partId).toSet
       val finals: mutable.Map[ChanAndCommits, MilliSatoshi] = mutable.Map.empty[ChanAndCommits, MilliSatoshi] withDefaultValue 0L.msat
+      def x(commits: Commitments) = commits.allOutgoing.flatMap(_.internalId)
 
-      data.payments.values.flatMap(_.data.parts.values) collect { case wait: WaitForRouteOrInFlight => waits(wait.chan) += wait.amountWithFees }
       // Adding waiting amounts and then removing outgoing adds is necessary to always have an accurate view because access to channel data is concurrent
       // Example 1: chan toLocal=100, 10 in-flight AND IS present in channel already, resulting sendable = 90 (toLocal with in-flight) - 10 (wait) + 10 (in-flight) = 90
       // Example 2: chan toLocal=100, 10 in-flight AND IS NOT preset in channel yet, resulting sendable = 100 (toLocal) - 10 (wait) + 0 (no in-flight in chan) = 90
-      chans.flatMap(_.chanAndCommitsOpt).foreach(cnc => finals(cnc) = feeFreeBalance(cnc) - waits(cnc.chan) + cnc.commits.nextLocalSpec.outgoingAddsSum)
+      chans.flatMap(Channel.chanAndCommitsOpt).foreach(cnc => finals(cnc) = feeFreeBalance(cnc) - cnc.commits.allOutgoing.filter(add => allPartIds contains add.internalId.))
       finals.filter { case (cnc, sendable) => sendable >= cnc.commits.lastCrossSignedState.initHostedChannel.htlcMinimumMsat }
     }
 
     def feeFreeBalance(cnc: ChanAndCommits): MilliSatoshi = {
       // For larger payments proportional fee will offset a base one, for smaller base one is more important
-      val withoutBaseFee = cnc.commits.nextLocalSpec.toLocal - LNParams.routerConf.searchMaxFeeBase
+      val withoutBaseFee = cnc.commits.availableBalanceForSend - LNParams.routerConf.searchMaxFeeBase
       withoutBaseFee - withoutBaseFee * LNParams.routerConf.searchMaxFeePct
     }
   }

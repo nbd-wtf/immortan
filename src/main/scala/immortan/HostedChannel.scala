@@ -1,75 +1,34 @@
 package immortan
 
 import fr.acinq.eclair._
-import immortan.crypto._
+import immortan.Channel._
 import fr.acinq.eclair.wire._
 import immortan.HCErrorCodes._
 import immortan.crypto.Tools._
-import immortan.HostedChannel._
-import immortan.ChannelListener._
 import fr.acinq.eclair.channel._
+
 import fr.acinq.eclair.transactions.{CommitmentSpec, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import java.util.concurrent.Executors
 import fr.acinq.bitcoin.ByteVector64
 import fr.acinq.bitcoin.SatoshiLong
-import scala.concurrent.Future
 import scodec.bits.ByteVector
-import scala.util.Failure
 
 
 object HostedChannel {
-  val WAIT_FOR_INIT = "WAIT-FOR-INIT"
-  val WAIT_FOR_ACCEPT = "WAIT-FOR-ACCEPT"
-  // All states below are persisted
-  val SUSPENDED = "SUSPENDED"
-  val SLEEPING = "SLEEPING"
-  val OPEN = "OPEN"
-
-  // Single stacking thread for all channels, must be used when asking channels for pending payments to avoid race conditions
-  implicit val channelContext: scala.concurrent.ExecutionContextExecutor = scala.concurrent.ExecutionContext fromExecutor Executors.newSingleThreadExecutor
-  def isOperational(chan: HostedChannel): Boolean = chan.data match { case hc: HostedCommits => hc.getError.isEmpty case _ => false }
-  def isOperationalAndOpen(chan: HostedChannel): Boolean = isOperational(chan) && OPEN == chan.state
+  def make(initListeners: Set[ChannelListener], cs: HostedCommits, bag: ChannelBag): HostedChannel = new HostedChannel {
+    def SEND(msg: LightningMessage *): Unit = for (work <- CommsTower.workers get cs.announce.nodeSpecificPkap) msg foreach work.handler.process
+    def STORE(d1: ChannelData): ChannelData = bag.put(cs.channelId, d1)
+    listeners = initListeners
+    doProcess(cs)
+  }
 }
 
-case class ChanAndCommits(chan: HostedChannel, commits: HostedCommits)
-case class CommitsAndMax(commits: List[ChanAndCommits], maxReceivable: MilliSatoshi)
-
-abstract class HostedChannel extends StateMachine[ChannelData] { me =>
-  def isBlockDayOutOfSync(blockDay: Long): Boolean = math.abs(blockDay - currentBlockDay) > 1
-  def process(change: Any): Unit = Future(me doProcess change) onComplete { case Failure(why) => events.onException(me -> why) case _ => }
-  def chanAndCommitsOpt: Option[ChanAndCommits] = data match { case hc: HostedCommits => ChanAndCommits(me, hc).toSome case _ => None }
-
-  def currentBlockDay: Long
-  def SEND(msg: LightningMessage *): Unit
-  def STORE(data: HostedCommits): HostedCommits
-
-  def BECOME(data1: ChannelData, state1: String): Unit = {
-    // Transition must be defined before vars are updated
-    val trans = (me, data, data1, state, state1)
-    super.become(data1, state1)
-    events.onBecome(trans)
-  }
-
-  def STORE_BECOME_SEND(data1: HostedCommits, state1: String, lnMessage: LightningMessage *): Unit = {
-    // store goes first to ensure we retain an updated data before revealing it if anything goes wrong
-
-    STORE(data1)
-    SEND(lnMessage:_*)
-    BECOME(data1, state1)
-  }
-
+abstract class HostedChannel extends Channel { me =>
   private var isChainHeightKnown: Boolean = false
   private var isSocketConnected: Boolean = false
-  var listeners = Set.empty[ChannelListener]
 
-  val events: ChannelListener = new ChannelListener {
-    override def onProcessSuccess: PartialFunction[Incoming, Unit] = { case ps => for (lst <- listeners if lst.onProcessSuccess isDefinedAt ps) lst onProcessSuccess ps }
-    override def onException: PartialFunction[Malfunction, Unit] = { case failure => for (lst <- listeners if lst.onException isDefinedAt failure) lst onException failure }
-    override def onBecome: PartialFunction[Transition, Unit] = { case transition => for (lst <- listeners if lst.onBecome isDefinedAt transition) lst onBecome transition }
-    override def fulfillReceived(fulfill: UpdateFulfillHtlc): Unit = for (lst <- listeners) lst fulfillReceived fulfill
-    override def stateUpdated(hc: HostedCommits): Unit = for (lst <- listeners) lst stateUpdated hc
-  }
+  def isBlockDayOutOfSync(blockDay: Long): Boolean =
+    math.abs(blockDay - LNParams.currentBlockDay) > 1
 
   def doProcess(change: Any): Unit = {
     Tuple3(data, change, state) match {
@@ -95,9 +54,9 @@ abstract class HostedChannel extends StateMachine[ChannelData] { me =>
         if (init.maxAcceptedHtlcs < 1) throw new RuntimeException("They can accept too few payments")
 
         val localHalfSignedHC =
-          restoreCommits(LastCrossSignedState(isHost = false, refundScriptPubKey, init, currentBlockDay, init.initialClientBalanceMsat,
+          restoreCommits(LastCrossSignedState(isHost = false, refundScriptPubKey, init, LNParams.currentBlockDay, init.initialClientBalanceMsat,
             init.channelCapacityMsat - init.initialClientBalanceMsat, localUpdates = 0L, remoteUpdates = 0L, incomingHtlcs = Nil, outgoingHtlcs = Nil,
-            localSigOfRemote = ByteVector64.Zeroes, remoteSigOfLocal = ByteVector64.Zeroes).withLocalSigOfRemote(data.announce.nodeSpecificPrivKey), announceExt)
+            localSigOfRemote = ByteVector64.Zeroes, remoteSigOfLocal = ByteVector64.Zeroes).withLocalSigOfRemote(announceExt.nodeSpecificPrivKey), announceExt)
 
         BECOME(WaitRemoteHostedStateUpdate(announceExt, localHalfSignedHC), WAIT_FOR_ACCEPT)
         SEND(localHalfSignedHC.lastCrossSignedState.stateUpdate)
@@ -120,7 +79,7 @@ abstract class HostedChannel extends StateMachine[ChannelData] { me =>
       case (wait: WaitRemoteHostedReply, remoteLCSS: LastCrossSignedState, WAIT_FOR_ACCEPT) =>
         // We have expected InitHostedChannel but got LastCrossSignedState so this channel exists already
         // make sure our signature match and if so then become OPEN using host supplied state data
-        val isLocalSigOk = remoteLCSS.verifyRemoteSig(data.announce.nodeSpecificPubKey)
+        val isLocalSigOk = remoteLCSS.verifyRemoteSig(wait.announce.nodeSpecificPubKey)
         val isRemoteSigOk = remoteLCSS.reverse.verifyRemoteSig(wait.announce.na.nodeId)
         val hc = restoreCommits(remoteLCSS.reverse, wait.announce)
 
@@ -151,17 +110,17 @@ abstract class HostedChannel extends StateMachine[ChannelData] { me =>
       case (hc: HostedCommits, fail: UpdateFailHtlc, OPEN) =>
         // For both types of Fail we only consider them when channel is OPEN and only accept them if our outgoing payment has not been resolved already
         val isNotResolvedYet = hc.localSpec.findOutgoingHtlcById(fail.id).isDefined && hc.nextLocalSpec.findOutgoingHtlcById(fail.id).isDefined
-        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(fail), OPEN) else throw UnknownHtlcId(hc.announce.nodeSpecificHostedChanId, fail.id)
+        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(fail), OPEN) else throw UnknownHtlcId(hc.channelId, fail.id)
 
 
       case (hc: HostedCommits, fail: UpdateFailMalformedHtlc, OPEN) =>
-        if (fail.failureCode.&(FailureMessageCodecs.BADONION) == 0) throw InvalidFailureCode(hc.announce.nodeSpecificHostedChanId)
+        if (fail.failureCode.&(FailureMessageCodecs.BADONION) == 0) throw InvalidFailureCode(hc.channelId)
         val isNotResolvedYet = hc.localSpec.findOutgoingHtlcById(fail.id).isDefined && hc.nextLocalSpec.findOutgoingHtlcById(fail.id).isDefined
-        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(fail), OPEN) else throw UnknownHtlcId(hc.announce.nodeSpecificHostedChanId, fail.id)
+        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(fail), OPEN) else throw UnknownHtlcId(hc.channelId, fail.id)
 
 
       case (hc: HostedCommits, cmd: CMD_ADD_HTLC, notOpenState) if OPEN != notOpenState =>
-        val unavailable = ChannelUnavailable(hc.announce.nodeSpecificHostedChanId)
+        val unavailable = ChannelUnavailable(hc.channelId)
         throw HtlcAddImpossible(unavailable, cmd)
 
 
@@ -173,8 +132,8 @@ abstract class HostedChannel extends StateMachine[ChannelData] { me =>
 
 
       case (hc: HostedCommits, CMD_SIGN, OPEN) if hc.nextLocalUpdates.nonEmpty || hc.resizeProposal.isDefined =>
-        val nextLocalLCSS = hc.resizeProposal.map(hc.withResize).getOrElse(hc).nextLocalUnsignedLCSS(currentBlockDay)
-        SEND(nextLocalLCSS.withLocalSigOfRemote(data.announce.nodeSpecificPrivKey).stateUpdate)
+        val nextLocalLCSS = hc.resizeProposal.map(hc.withResize).getOrElse(hc).nextLocalUnsignedLCSS(LNParams.currentBlockDay)
+        SEND(nextLocalLCSS.withLocalSigOfRemote(hc.announce.nodeSpecificPrivKey).stateUpdate)
 
 
       // CMD_SIGN will be sent by ChannelMaster
@@ -184,22 +143,17 @@ abstract class HostedChannel extends StateMachine[ChannelData] { me =>
 
 
       // In SLEEPING | SUSPENDED state we still send a preimage to get it resolved, then notify user on UI because normal resolution is impossible
-      case (hc: HostedCommits, CMD_FULFILL_HTLC(preimage, add), SLEEPING | OPEN | SUSPENDED) if hc.unansweredIncoming.contains(add) =>
-        val updateFulfill = UpdateFulfillHtlc(hc.announce.nodeSpecificHostedChanId, add.id, preimage)
+      case (hc: HostedCommits, cmd: CMD_FULFILL_HTLC, SLEEPING | OPEN | SUSPENDED) if hc.unansweredIncoming.contains(cmd.add) =>
+        val updateFulfill = UpdateFulfillHtlc(hc.channelId, cmd.add.id, cmd.preimage)
         STORE_BECOME_SEND(hc.addLocalProposal(updateFulfill), state, updateFulfill)
 
 
       // In SLEEPING | SUSPENDED state this will not be accepted by peer, but will make pending shard invisible to `unansweredIncoming` method
-      case (hc: HostedCommits, CMD_FAIL_MALFORMED_HTLC(onionHash, code, add), SLEEPING | OPEN | SUSPENDED) if hc.unansweredIncoming.contains(add) =>
-        val updateFailMalformed = UpdateFailMalformedHtlc(hc.announce.nodeSpecificHostedChanId, add.id, onionHash, code)
+      case (hc: HostedCommits, cmd: CMD_FAIL_MALFORMED_HTLC, SLEEPING | OPEN | SUSPENDED) if hc.unansweredIncoming.contains(cmd.add) =>
+        val updateFailMalformed = UpdateFailMalformedHtlc(hc.channelId, cmd.add.id, cmd.onionHash, cmd.failureCode)
         STORE_BECOME_SEND(hc.addLocalProposal(updateFailMalformed), state, updateFailMalformed)
 
-
-      // In SLEEPING | SUSPENDED state this will not be accepted by peer, but will make pending shard invisible to `unansweredIncoming` method
-      case (hc: HostedCommits, CMD_FAIL_HTLC(Left(reason), add), SLEEPING | OPEN | SUSPENDED) if hc.unansweredIncoming.contains(add) =>
-        val updateFail = UpdateFailHtlc(hc.announce.nodeSpecificHostedChanId, add.id, reason)
-        STORE_BECOME_SEND(hc.addLocalProposal(updateFail), state, updateFail)
-
+      // TODO: CMD_FAIL_HTLC
 
       case (hc: HostedCommits, CMD_SOCKET_ONLINE, SLEEPING | SUSPENDED) =>
         if (isChainHeightKnown) SEND(hc.getError getOrElse hc.invokeMsg)
@@ -232,7 +186,7 @@ abstract class HostedChannel extends StateMachine[ChannelData] { me =>
         val hc1 = hc.resizeProposal.filter(_ isRemoteResized remoteLCSS).map(hc.withResize).getOrElse(hc) // But they may have a resized one
         val weAreEven = localLCSS.remoteUpdates == remoteLCSS.localUpdates && localLCSS.localUpdates == remoteLCSS.remoteUpdates
         val weAreAhead = localLCSS.remoteUpdates > remoteLCSS.localUpdates || localLCSS.localUpdates > remoteLCSS.remoteUpdates
-        val isLocalSigOk = remoteLCSS.verifyRemoteSig(data.announce.nodeSpecificPubKey)
+        val isLocalSigOk = remoteLCSS.verifyRemoteSig(hc.announce.nodeSpecificPubKey)
         val isRemoteSigOk = remoteLCSS.reverse.verifyRemoteSig(hc.announce.na.nodeId)
 
         if (!isRemoteSigOk) localSuspend(hc1, ERR_HOSTED_WRONG_REMOTE_SIG)
@@ -262,14 +216,14 @@ abstract class HostedChannel extends StateMachine[ChannelData] { me =>
 
 
       case (hc: HostedCommits, cmd: HC_CMD_RESIZE, OPEN | SLEEPING) if hc.resizeProposal.isEmpty =>
-        val resize = ResizeChannel(hc.currentCapacity.truncateToSatoshi + cmd.delta).sign(data.announce.nodeSpecificPrivKey)
+        val resize = ResizeChannel(hc.capacity.truncateToSatoshi + cmd.delta).sign(hc.announce.nodeSpecificPrivKey)
         STORE_BECOME_SEND(hc.copy(resizeProposal = resize.toSome), state, resize)
         doProcess(CMD_SIGN)
 
 
       case (hc: HostedCommits, resize: ResizeChannel, OPEN | SLEEPING) if hc.resizeProposal.isEmpty =>
         // Can happen if we have sent a resize earlier, but then lost channel data and restored from their
-        val isLocalSigOk = resize.verifyClientSig(data.announce.nodeSpecificPubKey)
+        val isLocalSigOk = resize.verifyClientSig(hc.announce.nodeSpecificPubKey)
         if (isLocalSigOk) me STORE hc.copy(resizeProposal = resize.toSome)
         else localSuspend(hc, ERR_HOSTED_INVALID_RESIZE)
 
@@ -280,12 +234,12 @@ abstract class HostedChannel extends StateMachine[ChannelData] { me =>
 
       case (hc: HostedCommits, CMD_HOSTED_STATE_OVERRIDE(remoteSO), SUSPENDED) if isSocketConnected =>
         // User has manually accepted a proposed remote override, now make sure all provided parameters check out
-        val localBalance = hc.currentCapacity - remoteSO.localBalanceMsat
+        val localBalance: MilliSatoshi = hc.capacity - remoteSO.localBalanceMsat
 
         val completeLocalLCSS =
           hc.lastCrossSignedState.copy(incomingHtlcs = Nil, outgoingHtlcs = Nil, localBalanceMsat = localBalance, remoteBalanceMsat = remoteSO.localBalanceMsat,
             localUpdates = remoteSO.remoteUpdates, remoteUpdates = remoteSO.localUpdates, blockDay = remoteSO.blockDay, remoteSigOfLocal = remoteSO.localSigOfRemoteLCSS)
-            .withLocalSigOfRemote(data.announce.nodeSpecificPrivKey)
+            .withLocalSigOfRemote(hc.announce.nodeSpecificPrivKey)
 
         if (localBalance < 0L.msat) throw new RuntimeException("Provided updated local balance is larger than capacity")
         if (remoteSO.localUpdates < hc.lastCrossSignedState.remoteUpdates) throw new RuntimeException("Provided local update number from remote host is wrong")
@@ -312,13 +266,13 @@ abstract class HostedChannel extends StateMachine[ChannelData] { me =>
   }
 
   def localSuspend(hc: HostedCommits, errCode: String): Unit = {
-    val localError = Error(hc.announce.nodeSpecificHostedChanId, ByteVector fromValidHex errCode)
+    val localError = Error(hc.channelId, ByteVector fromValidHex errCode)
     val hc1 = if (hc.localError.isDefined) hc else hc.copy(localError = localError.toSome)
     STORE_BECOME_SEND(hc1, SUSPENDED, localError)
   }
 
   def attemptStateUpdate(remoteSU: StateUpdate, hc: HostedCommits): Unit = {
-    val lcss1 = hc.nextLocalUnsignedLCSS(remoteSU.blockDay).copy(remoteSigOfLocal = remoteSU.localSigOfRemoteLCSS).withLocalSigOfRemote(data.announce.nodeSpecificPrivKey)
+    val lcss1 = hc.nextLocalUnsignedLCSS(remoteSU.blockDay).copy(remoteSigOfLocal = remoteSU.localSigOfRemoteLCSS).withLocalSigOfRemote(hc.announce.nodeSpecificPrivKey)
     val hc1 = hc.copy(lastCrossSignedState = lcss1, localSpec = hc.nextLocalSpec, nextLocalUpdates = Nil, nextRemoteUpdates = Nil)
     val isRemoteSigOk = lcss1.verifyRemoteSig(hc.announce.na.nodeId)
     val isBlockDayWrong = isBlockDayOutOfSync(remoteSU.blockDay)
@@ -341,19 +295,4 @@ abstract class HostedChannel extends StateMachine[ChannelData] { me =>
       events.stateUpdated(hc1)
     }
   }
-}
-
-object ChannelListener {
-  type Malfunction = (HostedChannel, Throwable)
-  type Incoming = (HostedChannel, ChannelData, Any)
-  type Transition = (HostedChannel, ChannelData, ChannelData, String, String)
-}
-
-trait ChannelListener {
-  def onProcessSuccess: PartialFunction[Incoming, Unit] = none
-  def onException: PartialFunction[Malfunction, Unit] = none
-  def onBecome: PartialFunction[Transition, Unit] = none
-
-  def fulfillReceived(fulfill: UpdateFulfillHtlc): Unit = none
-  def stateUpdated(hc: HostedCommits): Unit = none
 }
