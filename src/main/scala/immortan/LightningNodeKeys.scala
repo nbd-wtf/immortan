@@ -43,9 +43,9 @@ case class LightningNodeKeys(extendedNodeKey: ExtendedPrivateKey, xpub: String, 
     derivePrivateKey(extendedNodeKey, chain).privateKey
   }
 
-  def ourFakeNodeIdKey(theirNodeId: PublicKey): PrivateKey = {
+  def ourFakeNodeIdKey(theirNodeId: PublicKey): ExtendedPrivateKey = {
     val chain = hardened(230) :: makeKeyPath(theirNodeId.value)
-    derivePrivateKey(extendedNodeKey, chain).privateKey
+    derivePrivateKey(extendedNodeKey, chain)
   }
 
   def refundPubKey(theirNodeId: PublicKey): ByteVector = {

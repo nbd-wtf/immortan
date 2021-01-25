@@ -30,7 +30,7 @@ object PaymentStatus {
 
 case class PaymentInfo(payeeNodeIdString: String, prString: String, preimageString: String, status: String, stamp: Long, descriptionString: String,
                        actionString: String, paymentHashString: String, received: MilliSatoshi, sent: MilliSatoshi, fee: MilliSatoshi,
-                       balanceSnapshot: MilliSatoshi, fiatRateSnapshotString: String, incoming: Long) {
+                       balanceSnapshot: MilliSatoshi, fiatRatesString: String, chainFeerate: MilliSatoshi, incoming: Long) {
 
   def isIncoming: Boolean = 1 == incoming
   lazy val pr: PaymentRequest = PaymentRequest.read(prString)
@@ -38,7 +38,7 @@ case class PaymentInfo(payeeNodeIdString: String, prString: String, preimageStri
   lazy val preimage: ByteVector32 = ByteVector32(ByteVector fromValidHex preimageString)
   lazy val paymentHash: ByteVector32 = ByteVector32(ByteVector fromValidHex paymentHashString)
 
-  lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRateSnapshotString)
+  lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
   lazy val description: PaymentDescription = to[PaymentDescription](descriptionString)
   lazy val action: PaymentAction = to[PaymentAction](actionString)
 }

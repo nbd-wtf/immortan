@@ -108,7 +108,7 @@ case class SyncWorkerPHCData(phcMaster: PHCSyncMaster,
 case class SyncWorker(master: CanBeRepliedTo, keyPair: KeyPair, ann: NodeAnnouncement, ourInit: Init) extends StateMachine[SyncWorkerData] { me =>
   implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
   def process(changeMessage: Any): Unit = scala.concurrent.Future(me doProcess changeMessage)
-  val pkap: PublicKeyAndPair = PublicKeyAndPair(ann.nodeId, keyPair)
+  val pkap: KeyPairAndPubKey = KeyPairAndPubKey(keyPair, ann.nodeId)
 
   val listener: ConnectionListener = new ConnectionListener {
     override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = me process worker
@@ -224,7 +224,7 @@ abstract class SyncMaster(extraNodes: Set[NodeAnnouncement], excluded: Set[Long]
   def doProcess(change: Any): Unit = (change, data, state) match {
     case (CMDAddSync, data1: SyncMasterShortIdData, SHORT_ID_SYNC) if data1.activeSyncs.size < maxNodesToSyncFrom =>
       // Turns out we don't have enough workers, create one with unused remote nodeId and track its progress
-      val newSyncWorker = getNewSync(data1, syncNodes ++ extraNodes, LNParams.syncInit)
+      val newSyncWorker = getNewSync(data1, syncNodes ++ extraNodes, LNParams.normInit)
 
       // Worker is connecting, tell it to get shortIds once connection is there
       become(data1.copy(activeSyncs = data1.activeSyncs + newSyncWorker), SHORT_ID_SYNC)
@@ -258,7 +258,7 @@ abstract class SyncMaster(extraNodes: Set[NodeAnnouncement], excluded: Set[Long]
 
     case (workerData: SyncWorkerGossipData, data1: SyncMasterGossipData, GOSSIP_SYNC) if data1.activeSyncs.size < maxNodesToSyncFrom =>
       // Turns out one of the workers has disconnected while getting gossip, create one with unused remote nodeId and track its progress
-      val newSyncWorker = getNewSync(data1, syncNodes ++ extraNodes, LNParams.syncInit)
+      val newSyncWorker = getNewSync(data1, syncNodes ++ extraNodes, LNParams.normInit)
 
       // Worker is connecting, tell it to get the rest of gossip once connection is there
       become(data1.copy(activeSyncs = data1.activeSyncs + newSyncWorker), GOSSIP_SYNC)

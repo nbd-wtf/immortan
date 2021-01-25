@@ -6,7 +6,6 @@ import fr.acinq.eclair.channel._
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.transactions.CommitmentSpec
-import fr.acinq.bitcoin.SatoshiLong
 import scodec.bits.ByteVector
 
 

@@ -17,18 +17,18 @@ import scodec.bits.ByteVector
 import java.net.Socket
 
 
-case class PublicKeyAndPair(them: PublicKey, keyPair: KeyPair)
+case class KeyPairAndPubKey(keyPair: KeyPair, them: PublicKey)
 
 object CommsTower {
   type Listeners = Set[ConnectionListener]
-  val workers: mutable.Map[PublicKeyAndPair, Worker] = new ConcurrentHashMap[PublicKeyAndPair, Worker].asScala
-  val listeners: mutable.Map[PublicKeyAndPair, Listeners] = new ConcurrentHashMap[PublicKeyAndPair, Listeners].asScala.withDefaultValue(Set.empty)
+  val workers: mutable.Map[KeyPairAndPubKey, Worker] = new ConcurrentHashMap[KeyPairAndPubKey, Worker].asScala
+  val listeners: mutable.Map[KeyPairAndPubKey, Listeners] = new ConcurrentHashMap[KeyPairAndPubKey, Listeners].asScala.withDefaultValue(Set.empty)
 
   final val PROCESSING_DATA = 1
   final val AWAITING_MESSAGES = 2
   final val AWAITING_PONG = 3
 
-  def listen(listeners1: Set[ConnectionListener], pkap: PublicKeyAndPair, ann: NodeAnnouncement, ourInit: Init): Unit = synchronized {
+  def listen(listeners1: Set[ConnectionListener], pkap: KeyPairAndPubKey, ann: NodeAnnouncement, ourInit: Init): Unit = synchronized {
     // Update and either insert a new worker or fire onOperational on new listeners iff worker currently exists and is online
     // First add listeners, then try to add worker because we may already have a connected worker, but no listeners
     listeners(pkap) ++= listeners1
@@ -42,7 +42,7 @@ object CommsTower {
     }
   }
 
-  def forget(pkap: PublicKeyAndPair): Unit = {
+  def forget(pkap: KeyPairAndPubKey): Unit = {
     // First remove all listeners, then disconnect
     // this ensures listeners won't try to reconnect
 
@@ -50,7 +50,7 @@ object CommsTower {
     workers.get(pkap).foreach(_.disconnect)
   }
 
-  class Worker(val pkap: PublicKeyAndPair, val ann: NodeAnnouncement, ourInit: Init, buffer: Bytes, sock: Socket) { me =>
+  class Worker(val pkap: KeyPairAndPubKey, val ann: NodeAnnouncement, ourInit: Init, buffer: Bytes, sock: Socket) { me =>
     implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
 
     var pingState: Int = AWAITING_MESSAGES
