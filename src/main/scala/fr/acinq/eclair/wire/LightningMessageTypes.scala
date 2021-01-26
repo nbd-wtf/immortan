@@ -26,6 +26,7 @@ import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.router.Announcements
 import scodec.bits.ByteVector
 import java.nio.ByteOrder
+import immortan.LNParams
 
 /**
  * Created by PM on 15/11/2016.
@@ -108,7 +109,7 @@ case class ChannelAnnouncement(nodeSignature1: ByteVector64, nodeSignature2: Byt
   def lite: ChannelAnnouncement =
     copy(nodeSignature1 = ByteVector64.Zeroes, nodeSignature2 = ByteVector64.Zeroes,
       bitcoinSignature1 = ByteVector64.Zeroes, bitcoinSignature2 = ByteVector64.Zeroes,
-      features = Features.empty, chainHash = ByteVector32.Zeroes, // TODO
+      features = Features.empty, chainHash = LNParams.chainHash,
       bitcoinKey1 = invalidPubKey, bitcoinKey2 = invalidPubKey)
 }
 
@@ -200,7 +201,7 @@ case class ChannelUpdate(signature: ByteVector64, chainHash: ByteVector32, short
 
   // Reference useless fields to same objects to reduce memory footprint, make sure it does not erase channelUpdateChecksumCodec fields
 
-  def lite: ChannelUpdate = copy(signature = ByteVector64.Zeroes, chainHash, unknownFields = ByteVector.empty) // TODO: chainHash, db-restored should be the same
+  def lite: ChannelUpdate = copy(signature = ByteVector64.Zeroes, LNParams.chainHash, unknownFields = ByteVector.empty)
 }
 
 sealed trait EncodingType
