@@ -447,10 +447,8 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
       // Wait part may have no route yet (but we expect a route to arrive shortly) or it may be sent to channel but not processed by channel yet
       def waitPartsNotYetInChannel(cnc: ChanAndCommits): PartIdToAmount = waits(cnc.commits.channelId) -- cnc.commits.allOutgoing.map(ourAdd => ourAdd.partId)
       data.payments.values.flatMap(_.data.parts.values).collect { case wait: WaitForRouteOrInFlight => waits(wait.cnc.commits.channelId) += wait.partId -> wait.amount }
-
-      // Adding waiting amounts and then removing outgoing adds is necessary to always have an accurate view because access to channel data is concurrent here
-      // Example 1: chan toLocal=100, 10 in-flight AND IS present in channel already, resulting sendable = 90 (toLocal with in-flight) - 10 (wait) + 10 (in-flight) = 90
-      // Example 2: chan toLocal=100, 10 in-flight AND IS NOT preset in channel yet, resulting sendable = 100 (toLocal) - 10 (wait) + 0 (no in-flight in chan) = 90
+      // Example 1: chan toLocal=100, 10 in-flight AND IS present in channel already, resulting sendable = 90 (toLocal with in-flight) - 0 (in-flight - partId) = 90
+      // Example 2: chan toLocal=100, 10 in-flight AND IS NOT preset in channel yet, resulting sendable = 100 (toLocal) - 10 (in-flight - nothing) = 90
       chans.flatMap(Channel.chanAndCommitsOpt).foreach(cnc => finals(cnc) = feeFreeBalance(cnc) - waitPartsNotYetInChannel(cnc).values.sum)
       finals.filter { case (cnc, sendable) => sendable >= cnc.commits.minSendable }
     }

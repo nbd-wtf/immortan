@@ -55,7 +55,6 @@ trait Commitments {
   val minSendable: MilliSatoshi
   val availableBalanceForSend: MilliSatoshi
   val availableBalanceForReceive: MilliSatoshi
-  val capacity: MilliSatoshi
 
   val revealedHashes: Seq[ByteVector32] // Payment hashes of revealed but unresolved preimages
   val unansweredIncoming: Set[UpdateAddHtlc] // Cross-signed MINUS already resolved by us
@@ -69,8 +68,6 @@ case class NormalCommits(announce: NodeAnnouncementExt, channelVersion: ChannelV
                          startedAt: Long = System.currentTimeMillis) extends Commitments {
 
   val localSpec: CommitmentSpec = localCommit.spec
-
-  val capacity: MilliSatoshi = commitInput.txOut.amount.toMilliSatoshi
 
   val minSendable: MilliSatoshi = remoteParams.htlcMinimum.max(localParams.htlcMinimum)
 

@@ -23,7 +23,6 @@ case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: La
   lazy val invokeMsg: InvokeHostedChannel = InvokeHostedChannel(LNParams.chainHash, lastCrossSignedState.refundScriptPubKey, ByteVector.empty)
   lazy val unansweredIncoming: Set[UpdateAddHtlc] = localSpec.incomingAdds intersect nextLocalSpec.incomingAdds // Cross-signed MINUS already resolved by us
   lazy val allOutgoing: Set[UpdateAddHtlc] = localSpec.outgoingAdds union nextLocalSpec.outgoingAdds // Cross-signed PLUS new payments offered by us
-  lazy val capacity: MilliSatoshi = lastCrossSignedState.initHostedChannel.channelCapacityMsat
   lazy val minSendable: MilliSatoshi = lastCrossSignedState.initHostedChannel.htlcMinimumMsat
   lazy val availableBalanceForReceive: MilliSatoshi = nextLocalSpec.toRemote
   lazy val availableBalanceForSend: MilliSatoshi = nextLocalSpec.toLocal

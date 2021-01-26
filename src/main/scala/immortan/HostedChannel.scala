@@ -216,7 +216,8 @@ abstract class HostedChannel extends Channel { me =>
 
 
       case (hc: HostedCommits, cmd: HC_CMD_RESIZE, OPEN | SLEEPING) if hc.resizeProposal.isEmpty =>
-        val resize = ResizeChannel(hc.capacity.truncateToSatoshi + cmd.delta).sign(hc.announce.nodeSpecificPrivKey)
+        val capacitySat = hc.lastCrossSignedState.initHostedChannel.channelCapacityMsat.truncateToSatoshi
+        val resize = ResizeChannel(capacitySat + cmd.delta).sign(hc.announce.nodeSpecificPrivKey)
         STORE_BECOME_SEND(hc.copy(resizeProposal = resize.toSome), state, resize)
         doProcess(CMD_SIGN)
 
@@ -233,8 +234,8 @@ abstract class HostedChannel extends Channel { me =>
 
 
       case (hc: HostedCommits, CMD_HOSTED_STATE_OVERRIDE(remoteSO), SUSPENDED) if isSocketConnected =>
-        // User has manually accepted a proposed remote override, now make sure all provided parameters check out
-        val localBalance: MilliSatoshi = hc.capacity - remoteSO.localBalanceMsat
+        // User has manually accepted a proposed remote override, now make sure all remote-provided parameters check out
+        val localBalance: MilliSatoshi = hc.lastCrossSignedState.initHostedChannel.channelCapacityMsat - remoteSO.localBalanceMsat
 
         val completeLocalLCSS =
           hc.lastCrossSignedState.copy(incomingHtlcs = Nil, outgoingHtlcs = Nil, localBalanceMsat = localBalance, remoteBalanceMsat = remoteSO.localBalanceMsat,
