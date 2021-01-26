@@ -6,7 +6,7 @@ import immortan.crypto.StateMachine
 import immortan.fsm.SwapOutFeeratesHandler._
 import fr.acinq.eclair.wire.{Init, NodeAnnouncement, SwapOut, SwapOutFeerates, SwapOutRequest}
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
-import immortan.{CommsTower, ConnectionListener, HostedChannel}
+import immortan.{ChanAndCommits, CommsTower, ConnectionListener}
 import java.util.concurrent.Executors
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.Features
@@ -25,7 +25,7 @@ object SwapOutFeeratesHandler {
 
   type SwapOutResponseOpt = Option[SwapOutResponseExt]
   case class FeeratesData(results: Map[NodeAnnouncement, SwapOutResponseOpt], cmdStart: CMDStart)
-  case class CMDStart(channels: Set[HostedChannel] = Set.empty)
+  case class CMDStart(capableCncs: Set[ChanAndCommits] = Set.empty)
   final val minChainFee = Satoshi(253)
 }
 
@@ -71,13 +71,13 @@ abstract class SwapOutFeeratesHandler(ourInit: Init) extends StateMachine[Feerat
       doSearch(force = false)
 
     case (CMDCancel, WAITING_FIRST_RESPONSE | WAITING_REST_OF_RESPONSES) =>
-      // Do not disconnect from remote peer because we have a channel with them, but remove SwapIn listener
-      for (chan <- data.cmdStart.channels) CommsTower.listeners(chan.data.announce.nodeSpecificPkap) -= swapOutListener
+      // Do not disconnect from remote peer because we have a channel with them, but remove this exact SwapIn listener
+      for (cnc <- data.cmdStart.capableCncs) CommsTower.listeners(cnc.commits.announce.nodeSpecificPkap) -= swapOutListener
       become(data, FINALIZED)
 
     case (cmd: CMDStart, null) =>
-      become(freshData = FeeratesData(results = cmd.channels.map(_.data.announce.na -> None).toMap, cmd), WAITING_FIRST_RESPONSE)
-      for (chan <- cmd.channels) CommsTower.listen(Set(swapOutListener), chan.data.announce.nodeSpecificPkap, chan.data.announce.na, ourInit)
+      become(freshData = FeeratesData(results = cmd.capableCncs.map(_.commits.announce.na -> None).toMap, cmd), WAITING_FIRST_RESPONSE)
+      for (cnc <- cmd.capableCncs) CommsTower.listen(Set(swapOutListener), cnc.commits.announce.nodeSpecificPkap, cnc.commits.announce.na, ourInit)
       Rx.ioQueue.delay(30.seconds).foreach(_ => me doSearch true)
 
     case _ =>

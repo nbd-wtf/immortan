@@ -21,8 +21,8 @@ case class KeyPairAndPubKey(keyPair: KeyPair, them: PublicKey)
 
 object CommsTower {
   type Listeners = Set[ConnectionListener]
+  val listeners: mutable.Map[KeyPairAndPubKey, Listeners] = new ConcurrentHashMap[KeyPairAndPubKey, Listeners].asScala withDefaultValue Set.empty
   val workers: mutable.Map[KeyPairAndPubKey, Worker] = new ConcurrentHashMap[KeyPairAndPubKey, Worker].asScala
-  val listeners: mutable.Map[KeyPairAndPubKey, Listeners] = new ConcurrentHashMap[KeyPairAndPubKey, Listeners].asScala.withDefaultValue(Set.empty)
 
   final val PROCESSING_DATA = 1
   final val AWAITING_MESSAGES = 2
@@ -65,9 +65,10 @@ object CommsTower {
       theirInit = Some(remoteInit)
 
       if (!thread.isCompleted) {
-        val areComaptible = Features.areCompatible(ourInit.features, remoteInit.features)
-        if (areComaptible) for (lst <- listeners1) lst.onOperational(me, remoteInit) // They have not disconnected yet
-        else disconnect // Their features are not supported and they have not disconnected yet, so we disconnect
+        val areFeaturesOK = Features.areCompatible(ourInit.features, remoteInit.features)
+        val areNetworksOK = remoteInit.networks.nonEmpty && remoteInit.networks.intersect(ourInit.networks).isEmpty
+        if (areFeaturesOK && areNetworksOK) for (lst <- listeners1) lst.onOperational(me, remoteInit) // They have not disconnected yet
+        else disconnect // Their features are not supported but they have not disconnected yet, so we disconnect right away
       }
     }
 

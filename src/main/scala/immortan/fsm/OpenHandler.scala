@@ -1,10 +1,10 @@
 package immortan.fsm
 
 import immortan._
-import immortan.ChannelListener.{Malfunction, Transition}
-import fr.acinq.eclair.channel.{CMD_CHAIN_TIP_KNOWN, CMD_SOCKET_ONLINE}
+import fr.acinq.eclair.channel.{CMD_CHAIN_TIP_KNOWN, CMD_SOCKET_ONLINE, ChannelData}
 import fr.acinq.eclair.wire.{HostedChannelMessage, Init, LightningMessage}
-import immortan.HostedChannel.{OPEN, SUSPENDED, WAIT_FOR_ACCEPT}
+import immortan.Channel.{OPEN, SUSPENDED, WAIT_FOR_ACCEPT}
+import immortan.ChannelListener.{Malfunction, Transition}
 import fr.acinq.bitcoin.ByteVector32
 import scodec.bits.ByteVector
 
@@ -12,8 +12,12 @@ import scodec.bits.ByteVector
 abstract class OpenHandler(ext: NodeAnnouncementExt, ourInit: Init, format: StorageFormat, cm: ChannelMaster) {
   val peerSpecificSecret: ByteVector32 = format.attachedChannelSecret(theirNodeId = ext.na.nodeId)
   val peerSpecificRefundPubKey: ByteVector = format.keys.refundPubKey(theirNodeId = ext.na.nodeId)
-  val waitData = WaitRemoteHostedReply(ext, peerSpecificRefundPubKey, peerSpecificSecret)
-  val freshChannel: HostedChannel = cm.mkHostedChannel(Set.empty, waitData)
+
+  val freshChannel: HostedChannel = new HostedChannel {
+    def SEND(msg: LightningMessage *): Unit = for (work <- CommsTower.workers get ext.nodeSpecificPkap) msg foreach work.handler.process
+    def STORE(newData: ChannelData): ChannelData = cm.chanBag.put(ext.nodeSpecificHostedChanId, newData)
+    this doProcess WaitRemoteHostedReply(ext, peerSpecificRefundPubKey, peerSpecificSecret)
+  }
 
   def onFailure(channel: HostedChannel, err: Throwable): Unit
   def onPeerDisconnect(worker: CommsTower.Worker): Unit
@@ -30,9 +34,9 @@ abstract class OpenHandler(ext: NodeAnnouncementExt, ourInit: Init, format: Stor
     }
 
     override def onBecome: PartialFunction[Transition, Unit] = {
-      case (_, _, newChannelData, WAIT_FOR_ACCEPT, OPEN | SUSPENDED) =>
-        CommsTower.listeners(newChannelData.announce.nodeSpecificPkap) -= this // Stop sending messages from this connection listener
+      case (_, _, _: HostedCommits, WAIT_FOR_ACCEPT, OPEN | SUSPENDED) =>
         freshChannel.listeners = cm.operationalListeners // Add standard channel listeners to new established channel
+        CommsTower.listeners(ext.nodeSpecificPkap) -= this // Stop sending messages from this connection listener
         cm.all :+= freshChannel // Put this channel to vector of established channels
         cm.initConnect // Add standard connection listeners for this peer
 
@@ -47,6 +51,6 @@ abstract class OpenHandler(ext: NodeAnnouncementExt, ourInit: Init, format: Stor
   }
 
   freshChannel.listeners += makeChanListener
-  val connectionListeners: Set[ConnectionListener] = Set(makeChanListener, cm.sockBrandingBridge)
-  CommsTower.listen(connectionListeners, freshChannel.data.announce.nodeSpecificPkap, ext.na, ourInit)
+  val connectionListeners = Set(makeChanListener, cm.sockBrandingBridge)
+  CommsTower.listen(connectionListeners, ext.nodeSpecificPkap, ext.na, ourInit)
 }

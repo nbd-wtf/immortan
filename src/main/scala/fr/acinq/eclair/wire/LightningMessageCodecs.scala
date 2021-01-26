@@ -132,7 +132,7 @@ object LightningMessageCodecs {
       ("paymentHash" | bytes32) ::
       ("expiry" | cltvExpiry) ::
       ("onionRoutingPacket" | OnionCodecs.paymentOnionPacketCodec) ::
-      ("tlvStream" | UpdateAddTlv.codec)).as[UpdateAddHtlc]
+      ("partId" | varsizebinarydata)).as[UpdateAddHtlc]
 
   val updateFulfillHtlcCodec: Codec[UpdateFulfillHtlc] = (
     ("channelId" | bytes32) ::

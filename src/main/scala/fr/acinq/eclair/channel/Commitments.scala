@@ -52,6 +52,7 @@ trait Commitments {
   val localSpec: CommitmentSpec
   val channelId: ByteVector32
 
+  val minSendable: MilliSatoshi
   val availableBalanceForSend: MilliSatoshi
   val availableBalanceForReceive: MilliSatoshi
   val capacity: MilliSatoshi
@@ -71,10 +72,12 @@ case class NormalCommits(announce: NodeAnnouncementExt, channelVersion: ChannelV
 
   val capacity: MilliSatoshi = commitInput.txOut.amount.toMilliSatoshi
 
-  lazy val revealedHashes: Seq[ByteVector32] = for {
-    UpdateFulfillHtlc(_, id, _) <- localChanges.all
-    IncomingHtlc(add) <- localCommit.spec.findIncomingHtlcById(id)
-  } yield add.paymentHash
+  val minSendable: MilliSatoshi = remoteParams.htlcMinimum.max(localParams.htlcMinimum)
+
+  lazy val revealedHashes: Seq[ByteVector32] = {
+    val ourFulfills = localChanges.all.collect { case fulfill: UpdateFulfillHtlc => fulfill.id }
+    ourFulfills.flatMap(localCommit.spec.findIncomingHtlcById).map(_.add.paymentHash)
+  }
 
   lazy val unansweredIncoming: Set[UpdateAddHtlc] = {
     val remote = remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit)
@@ -251,9 +254,7 @@ object NormalCommits {
       throw HtlcAddImpossible(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockCount = blockHeight), cmd)
     }
 
-    // even if remote advertises support for 0 msat htlc, we limit ourselves to values strictly positive, hence the max(1 msat)
-    val htlcMinimum = commitments.remoteParams.htlcMinimum.max(1.msat)
-    if (cmd.firstAmount < htlcMinimum) {
+    if (cmd.firstAmount < commitments.minSendable) {
       throw HtlcAddImpossible(HtlcValueTooSmall(commitments.channelId), cmd)
     }
 
@@ -265,8 +266,7 @@ object NormalCommits {
     }
 
     // let's compute the current commitment *as seen by them* with this change taken into account
-    val internalId: TlvStream[Tlv] = TlvStream(UpdateAddTlv.InternalId(cmd.internalId) :: Nil)
-    val add = UpdateAddHtlc(commitments.channelId, commitments.localNextHtlcId, cmd.firstAmount, cmd.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet, internalId)
+    val add = UpdateAddHtlc(commitments.channelId, commitments.localNextHtlcId, cmd.firstAmount, cmd.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet, cmd.partId)
     // we increment the local htlc index and add an entry to the origins map
     val commitments1 = addLocalProposal(commitments, add).copy(localNextHtlcId = commitments.localNextHtlcId + 1)
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation

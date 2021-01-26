@@ -73,10 +73,10 @@ case class InFlightInfo(cmd: CMD_ADD_HTLC, route: Route)
 
 case class WaitForBetterConditions(partId: ByteVector, amount: MilliSatoshi) extends PartStatus
 
-case class WaitForRouteOrInFlight(partId: ByteVector, amount: MilliSatoshi, chan: HostedChannel, flight: Option[InFlightInfo], localFailed: List[HostedChannel] = Nil, remoteAttempts: Int = 0) extends PartStatus {
-  def oneMoreRemoteAttempt(newHostedChannel: HostedChannel): WaitForRouteOrInFlight = copy(flight = None, remoteAttempts = remoteAttempts + 1, chan = newHostedChannel)
-  def oneMoreLocalAttempt(newHostedChannel: HostedChannel): WaitForRouteOrInFlight = copy(flight = None, localFailed = allFailedChans, chan = newHostedChannel)
-  lazy val allFailedChans: List[HostedChannel] = chan :: localFailed
+case class WaitForRouteOrInFlight(partId: ByteVector, amount: MilliSatoshi, cnc: ChanAndCommits, flight: Option[InFlightInfo] = None, localFailed: List[Channel] = Nil, remoteAttempts: Int = 0) extends PartStatus {
+  def oneMoreRemoteAttempt(cnc1: ChanAndCommits): WaitForRouteOrInFlight = copy(flight = None, remoteAttempts = remoteAttempts + 1, cnc = cnc1)
+  def oneMoreLocalAttempt(cnc1: ChanAndCommits): WaitForRouteOrInFlight = copy(flight = None, localFailed = localFailedChans, cnc = cnc1)
+  lazy val localFailedChans: List[Channel] = cnc.chan :: localFailed
 }
 
 case class PaymentSenderData(cmd: CMD_SEND_MPP, parts: Map[ByteVector, PartStatus], failures: Failures = Nil) {
@@ -85,7 +85,7 @@ case class PaymentSenderData(cmd: CMD_SEND_MPP, parts: Map[ByteVector, PartStatu
   def withoutPartId(partId: ByteVector): PaymentSenderData = copy(parts = parts - partId)
 
   def successfulUpdates: Iterable[ChannelUpdate] = inFlights.flatMap(_.route.routedPerChannelHop).map { case (_, chanHop) => chanHop.edge.updExt.update }
-  def inFlights: Iterable[InFlightInfo] = parts.values.collect { case wait: WaitForRouteOrInFlight => wait.flight }.flatten
+  def inFlights: Iterable[InFlightInfo] = parts.values.flatMap { case wait: WaitForRouteOrInFlight => wait.flight case _ => None }
   def closestCltvExpiry: InFlightInfo = inFlights.minBy(_.route.weight.cltv)
   def totalFee: MilliSatoshi = inFlights.map(_.route.fee).sum
 }
@@ -99,6 +99,7 @@ case class CMD_SEND_MPP(paymentHash: ByteVector32, totalAmount: MilliSatoshi,
                         targetExpiry: CltvExpiry = CltvExpiry(0), assistedEdges: Set[GraphEdge] = Set.empty)
 
 object ChannelMaster {
+  type PartIdToAmount = Map[ByteVector, MilliSatoshi]
   type HashToResolution = Map[ByteVector32, AddResolution]
   val EXPECTING_PAYMENTS = "state-expecting-payments"
   val WAITING_FOR_ROUTE = "state-waiting-for-route"
@@ -108,7 +109,7 @@ object ChannelMaster {
   val CMDAskForRoute = "cmd-ask-for-route"
 }
 
-abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFinder, var cl: ChainLink) extends ChannelListener {
+abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: PathFinder, var cl: ChainLink) extends ChannelListener {
   private[this] val dummyPaymentSenderData = PaymentSenderData(CMD_SEND_MPP(ByteVector32.Zeroes, totalAmount = 0L.msat, invalidPubKey), Map.empty)
   private[this] val getPaymentInfoMemo = memoize(payBag.getPaymentInfo)
   private[this] val initialResolveMemo = memoize(initialResolve)
@@ -437,22 +438,25 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
       getSendable(all filter isOperationalAndOpen)
 
     def currentSendableExcept(wait: WaitForRouteOrInFlight): mutable.Map[ChanAndCommits, MilliSatoshi] =
-      getSendable(all filter isOperationalAndOpen diff wait.allFailedChans)
+      getSendable(all filter isOperationalAndOpen diff wait.localFailedChans)
 
     // What can be sent through given channels with waiting parts taken into account
     def getSendable(chans: List[Channel] = Nil): mutable.Map[ChanAndCommits, MilliSatoshi] = {
-      val allPartIds: Set[ByteVector] = data.payments.values.flatMap(_.data.parts.values).map(_.partId).toSet
       val finals: mutable.Map[ChanAndCommits, MilliSatoshi] = mutable.Map.empty[ChanAndCommits, MilliSatoshi] withDefaultValue 0L.msat
-      def x(commits: Commitments) = commits.allOutgoing.flatMap(_.internalId)
+      val waits: mutable.Map[ByteVector32, PartIdToAmount] = mutable.Map.empty[ByteVector32, PartIdToAmount] withDefaultValue Map.empty
+      // Wait part may have no route yet (but we expect a route to arrive shortly) or it may be sent to channel but not processed by channel yet
+      def waitPartsNotYetInChannel(cnc: ChanAndCommits): PartIdToAmount = waits(cnc.commits.channelId) -- cnc.commits.allOutgoing.map(ourAdd => ourAdd.partId)
+      data.payments.values.flatMap(_.data.parts.values).collect { case wait: WaitForRouteOrInFlight => waits(wait.cnc.commits.channelId) += wait.partId -> wait.amount }
 
-      // Adding waiting amounts and then removing outgoing adds is necessary to always have an accurate view because access to channel data is concurrent
+      // Adding waiting amounts and then removing outgoing adds is necessary to always have an accurate view because access to channel data is concurrent here
       // Example 1: chan toLocal=100, 10 in-flight AND IS present in channel already, resulting sendable = 90 (toLocal with in-flight) - 10 (wait) + 10 (in-flight) = 90
       // Example 2: chan toLocal=100, 10 in-flight AND IS NOT preset in channel yet, resulting sendable = 100 (toLocal) - 10 (wait) + 0 (no in-flight in chan) = 90
-      chans.flatMap(Channel.chanAndCommitsOpt).foreach(cnc => finals(cnc) = feeFreeBalance(cnc) - cnc.commits.allOutgoing.filter(add => allPartIds contains add.internalId.))
-      finals.filter { case (cnc, sendable) => sendable >= cnc.commits.lastCrossSignedState.initHostedChannel.htlcMinimumMsat }
+      chans.flatMap(Channel.chanAndCommitsOpt).foreach(cnc => finals(cnc) = feeFreeBalance(cnc) - waitPartsNotYetInChannel(cnc).values.sum)
+      finals.filter { case (cnc, sendable) => sendable >= cnc.commits.minSendable }
     }
 
     def feeFreeBalance(cnc: ChanAndCommits): MilliSatoshi = {
+      // This adds a maximum off-chain fee on top of next on-chain fee when another HTLC is added
       // For larger payments proportional fee will offset a base one, for smaller base one is more important
       val withoutBaseFee = cnc.commits.availableBalanceForSend - LNParams.routerConf.searchMaxFeeBase
       withoutBaseFee - withoutBaseFee * LNParams.routerConf.searchMaxFeePct
@@ -464,8 +468,8 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
 
     def doProcess(msg: Any): Unit = (msg, state) match {
       case (cmd: CMD_SEND_MPP, INIT | ABORTED) => assignToChans(PaymentMaster.currentSendable, PaymentSenderData(cmd, Map.empty), cmd.totalAmount)
-      case (localError: HtlcAddImpossible, ABORTED) => self abortAndNotify data.withoutPartId(localError.cmd.internalId)
-      case (reject: RemoteFailed, ABORTED) => self abortAndNotify data.withoutPartId(reject.partId)
+      case (localError: HtlcAddImpossible, ABORTED) => self abortAndNotify data.withoutPartId(localError.cmd.partId)
+      case (reject: RemoteFailed, ABORTED) => self abortAndNotify data.withoutPartId(reject.ourAdd.partId)
 
       case (reject: RemoteFailed, INIT) =>
         val data1 = data.modify(_.cmd.paymentHash).setTo(reject.ourAdd.paymentHash)
@@ -489,15 +493,15 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
 
       case (CMDAskForRoute, PENDING) =>
         data.parts.values collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isEmpty =>
-          val fakeLocalEdge = Tools.mkFakeLocalEdge(from = LNParams.format.keys.ourNodePubKey, toPeer = wait.chan.data.announce.na.nodeId)
+          val fakeLocalEdge = Tools.mkFakeLocalEdge(from = LNParams.format.keys.ourNodePubKey, toPeer = wait.cnc.commits.announce.na.nodeId)
           val params = RouteParams(pf.routerConf.searchMaxFeeBase, pf.routerConf.searchMaxFeePct, pf.routerConf.firstPassMaxRouteLength, pf.routerConf.firstPassMaxCltv)
           PaymentMaster process RouteRequest(data.cmd.paymentHash, partId = wait.partId, LNParams.format.keys.ourNodePubKey, data.cmd.targetNodeId, wait.amount, fakeLocalEdge, params)
         }
 
       case (fail: NoRouteAvailable, PENDING) =>
         data.parts.values collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isEmpty && wait.partId == fail.partId =>
-          PaymentMaster currentSendableExcept wait collectFirst { case (cnc, chanSendable) if chanSendable >= wait.amount => cnc.chan } match {
-            case Some(anotherCapableChan) => become(data.copy(parts = data.parts + wait.oneMoreLocalAttempt(anotherCapableChan).tuple), PENDING)
+          PaymentMaster currentSendableExcept wait collectFirst { case (cnc, chanSendable) if chanSendable >= wait.amount => cnc } match {
+            case Some(anotherCapableCnc) => become(data.copy(parts = data.parts + wait.oneMoreLocalAttempt(anotherCapableCnc).tuple), PENDING)
             case None if canBeSplit(wait.amount) => become(data.withoutPartId(wait.partId), PENDING) doProcess SplitIntoHalves(wait.amount)
             case None => self abortAndNotify data.withoutPartId(wait.partId).withLocalFailure(RUN_OUT_OF_RETRY_ATTEMPTS, wait.amount)
           }
@@ -509,33 +513,34 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
           val (firstAmount, firstExpiry, onion) = OutgoingPacket.buildPacket(Sphinx.PaymentPacket)(data.cmd.paymentHash, found.route.hops, finalPayload)
           val cmdAdd = CMD_ADD_HTLC(wait.partId, firstAmount, data.cmd.paymentHash, firstExpiry, PacketAndSecrets(onion.packet, onion.sharedSecrets), finalPayload)
           become(data.copy(parts = data.parts + wait.copy(flight = InFlightInfo(cmdAdd, found.route).toSome).tuple), PENDING)
-          wait.chan process cmdAdd
+          wait.cnc.chan process cmdAdd
         }
 
       case (HtlcAddImpossible(reason, cmd), PENDING) =>
-        data.parts.values collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isDefined && wait.partId == cmd.internalId =>
-          val anotherChanOpt = PaymentMaster currentSendableExcept wait collectFirst { case (cnc, chanSendable) if chanSendable >= wait.amount => cnc.chan }
+        data.parts.values collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isDefined && wait.partId == cmd.partId =>
+          val anotherCncOpt = PaymentMaster currentSendableExcept wait collectFirst { case (cnc, chanSendable) if chanSendable >= wait.amount => cnc }
 
-          (anotherChanOpt, reason) match {
-            case (Some(anotherChan), _) => become(data.copy(parts = data.parts + wait.oneMoreLocalAttempt(anotherChan).tuple), PENDING)
+          (anotherCncOpt, reason) match {
+            case (Some(anotherCapableCnc), _) => become(data.copy(parts = data.parts + wait.oneMoreLocalAttempt(anotherCapableCnc).tuple), PENDING)
             case (None, _: ChannelUnavailable) => assignToChans(PaymentMaster.currentSendable, data.withoutPartId(wait.partId), wait.amount)
             case (None, _) => self abortAndNotify data.withoutPartId(wait.partId).withLocalFailure(RUN_OUT_OF_RETRY_ATTEMPTS, wait.amount)
           }
         }
 
       case (malform: MalformAndAdd, PENDING) =>
-        data.parts.values collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isDefined && wait.partId == malform.partId =>
-          PaymentMaster currentSendableExcept wait collectFirst { case (cnc, chanSendable) if chanSendable >= wait.amount => cnc.chan } match {
-            case Some(anotherCapableChan) => become(data.copy(parts = data.parts + wait.oneMoreLocalAttempt(anotherCapableChan).tuple), PENDING)
+        data.parts.values collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isDefined && wait.partId == malform.ourAdd.partId =>
+          PaymentMaster currentSendableExcept wait collectFirst { case (otherCnc, chanSendable) if chanSendable >= wait.amount => otherCnc } match {
+            case Some(anotherCapableCnc) => become(data.copy(parts = data.parts + wait.oneMoreLocalAttempt(anotherCapableCnc).tuple), PENDING)
             case None => self abortAndNotify data.withoutPartId(wait.partId).withLocalFailure(PEER_COULD_NOT_PARSE_ONION, wait.amount)
           }
         }
 
-      case (fail: FailAndAdd, PENDING) =>
-        data.parts.values collectFirst { case wait @ WaitForRouteOrInFlight(partId, _, _, Some(info), _, _) if partId == fail.partId =>
-          Sphinx.FailurePacket.decrypt(fail.theirFail.reason, info.cmd.packetAndSecrets.sharedSecrets) map {
+      case (FailAndAdd(theirFail, ourAdd), PENDING) =>
+        data.parts.values collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isDefined && wait.partId == ourAdd.partId =>
+          Sphinx.FailurePacket.decrypt(theirFail.reason, wait.flight.get.cmd.packetAndSecrets.sharedSecrets) map {
             case pkt if pkt.originNode == data.cmd.targetNodeId || PaymentTimeout == pkt.failureMessage =>
-              self abortAndNotify data.withoutPartId(partId).withRemoteFailure(info.route, pkt)
+              val data1 = data.withoutPartId(wait.partId).withRemoteFailure(wait.flight.get.route, pkt)
+              self abortAndNotify data1
 
             case pkt @ Sphinx.DecryptedFailurePacket(originNodeId, failure: Update) =>
               // Pathfinder channels must be fully loaded from db at this point since we have already used them to construct a route
@@ -544,16 +549,15 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
 
               if (isSignatureFine) {
                 pf process failure.update
-                // Edge is guaranteed to be present
-                info.route.getEdgeForNode(originNodeId).get match {
-                  case edge if edge.updExt.update.shortChannelId != failure.update.shortChannelId =>
+                wait.flight.get.route.getEdgeForNode(originNodeId) match {
+                  case Some(edge) if edge.updExt.update.shortChannelId != failure.update.shortChannelId =>
                     // This is fine: remote node has used a different channel than the one we have initially requested
                     // But remote node may send such errors infinitely so increment this specific type of failure
                     // This most likely means an originally requested channel has also been tried and failed
                     PaymentMaster doProcess ChannelFailed(edge.toDescAndCapacity, increment = 1)
                     PaymentMaster doProcess NodeFailed(originNodeId, increment = 1)
 
-                  case edge if edge.updExt.update.core == failure.update.core =>
+                  case Some(edge) if edge.updExt.update.core == failure.update.core =>
                     // Remote node returned the same update we used, channel is most likely imbalanced
                     // Note: we may have it disabled and new update comes enabled: still same update
                     PaymentMaster doProcess ChannelFailed(edge.toDescAndCapacity, increment = 1)
@@ -569,31 +573,31 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
               }
 
               // Record a remote error and keep trying the rest of routes
-              resolveRemoteFail(data.withRemoteFailure(info.route, pkt), wait)
+              resolveRemoteFail(data.withRemoteFailure(wait.flight.get.route, pkt), wait)
 
             case pkt @ Sphinx.DecryptedFailurePacket(nodeId, _: Node) =>
               // Node may become fine on next payment, but ban it for current attempts
               PaymentMaster doProcess NodeFailed(nodeId, pf.routerConf.maxStrangeNodeFailures)
-              resolveRemoteFail(data.withRemoteFailure(info.route, pkt), wait)
+              resolveRemoteFail(data.withRemoteFailure(wait.flight.get.route, pkt), wait)
 
             case pkt @ Sphinx.DecryptedFailurePacket(nodeId, _) =>
-              info.route.getEdgeForNode(nodeId).map(_.toDescAndCapacity) match {
+              wait.flight.get.route.getEdgeForNode(nodeId).map(_.toDescAndCapacity) match {
                 case Some(dnc) => PaymentMaster doProcess ChannelFailed(dnc, pf.routerConf.maxChannelFailures * 2) // Generic channel failure, ignore for rest of attempts
                 case None => PaymentMaster doProcess NodeFailed(nodeId, pf.routerConf.maxStrangeNodeFailures) // Trampoline node failure, will be better addressed later
               }
 
               // Record a remote error and keep trying the rest of routes
-              resolveRemoteFail(data.withRemoteFailure(info.route, pkt), wait)
+              resolveRemoteFail(data.withRemoteFailure(wait.flight.get.route, pkt), wait)
 
           } getOrElse {
-            val failure = UnreadableRemoteFailure(info.route)
+            val failure = UnreadableRemoteFailure(wait.flight.get.route)
             // Select nodes between our peer and final payee, they are least likely to send garbage
-            val nodesInBetween = info.route.hops.map(_.nextNodeId).drop(1).dropRight(1)
+            val nodesInBetween = wait.flight.get.route.hops.map(_.nextNodeId).drop(1).dropRight(1)
 
             if (nodesInBetween.isEmpty) {
               // Garbage is sent by our peer or final payee, fail a payment
               val data1 = data.copy(failures = failure +: data.failures)
-              self abortAndNotify data1.withoutPartId(partId)
+              self abortAndNotify data1.withoutPartId(wait.partId)
             } else {
               // We don't know which exact remote node is sending garbage, exclude a random one for current attempts
               PaymentMaster doProcess NodeFailed(shuffle(nodesInBetween).head, pf.routerConf.maxStrangeNodeFailures)
@@ -621,19 +625,18 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
       // this method always sets a new partId to assigned parts so old payment statuses in data must be cleared before calling it
 
       directChansFirst.foldLeft(Map.empty[ByteVector, PartStatus] -> amount) {
-        case (collectedSoFar @ (accumulator, leftover), (cnc, chanSendable)) if leftover > 0L.msat =>
+        case ((accumulator, leftover), (cnc, chanSendable)) if leftover > 0L.msat =>
           // If leftover becomes less than theoretical sendable minimum then we must bump it upwards
-          val minSendable = cnc.commits.lastCrossSignedState.initHostedChannel.htlcMinimumMsat
-          // Example: leftover=500, minSendable=10, chanSendable=200 -> sending 200
-          // Example: leftover=300, minSendable=10, chanSendable=400 -> sending 300
-          // Example: leftover=6, minSendable=10, chanSendable=200 -> sending 10
-          // Example: leftover=6, minSendable=10, chanSendable=8 -> skipping
-          val finalAmount = leftover max minSendable min chanSendable
+          // Example: channel leftover=500, minSendable=10, chanSendable=200 -> sending 200
+          // Example: channel leftover=300, minSendable=10, chanSendable=400 -> sending 300
+          // Example: channel leftover=6, minSendable=10, chanSendable=200 -> sending 10
+          // Example: channel leftover=6, minSendable=10, chanSendable=8 -> skipping
+          val finalAmount = leftover max cnc.commits.minSendable min chanSendable
 
-          if (finalAmount >= minSendable) {
-            val wait = WaitForRouteOrInFlight(randomBytes(8), finalAmount, cnc.chan, None)
+          if (finalAmount >= cnc.commits.minSendable) {
+            val wait = WaitForRouteOrInFlight(randomBytes(8), finalAmount, cnc)
             (accumulator + wait.tuple, leftover - finalAmount)
-          } else collectedSoFar
+          } else (accumulator, leftover)
 
         case (collected, _) =>
           // No more amount to assign
@@ -659,8 +662,8 @@ abstract class ChannelMaster(payBag: PaymentBag, chanBag: ChannelBag, pf: PathFi
 
     // Turn "in-flight" into "waiting for route" and expect for subsequent `CMDAskForRoute`
     private def resolveRemoteFail(data1: PaymentSenderData, wait: WaitForRouteOrInFlight): Unit =
-      shuffle(PaymentMaster.currentSendable.toSeq) collectFirst { case (cnc, chanSendable) if chanSendable >= wait.amount => cnc.chan } match {
-        case Some(chan) if wait.remoteAttempts < pf.routerConf.maxRemoteAttempts => become(data1.copy(parts = data1.parts + wait.oneMoreRemoteAttempt(chan).tuple), PENDING)
+      shuffle(PaymentMaster.currentSendable.toSeq) collectFirst { case (otherCnc, chanSendable) if chanSendable >= wait.amount => otherCnc } match {
+        case Some(cnc) if wait.remoteAttempts < pf.routerConf.maxRemoteAttempts => become(data1.copy(parts = data1.parts + wait.oneMoreRemoteAttempt(cnc).tuple), PENDING)
         case _ if canBeSplit(wait.amount) => become(data1.withoutPartId(wait.partId), PENDING) doProcess SplitIntoHalves(wait.amount)
         case _ => self abortAndNotify data1.withoutPartId(wait.partId).withLocalFailure(RUN_OUT_OF_RETRY_ATTEMPTS, wait.amount)
       }

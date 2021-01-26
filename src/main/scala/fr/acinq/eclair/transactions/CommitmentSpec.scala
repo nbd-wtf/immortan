@@ -61,10 +61,7 @@ case class IncomingHtlc(add: UpdateAddHtlc) extends DirectedHtlc
 
 case class OutgoingHtlc(add: UpdateAddHtlc) extends DirectedHtlc
 
-trait RemoteFailed {
-  val ourAdd: UpdateAddHtlc
-  val partId: ByteVector = ourAdd.internalId.get.data
-}
+trait RemoteFailed { val ourAdd: UpdateAddHtlc }
 
 case class FailAndAdd(theirFail: UpdateFailHtlc, ourAdd: UpdateAddHtlc) extends RemoteFailed
 

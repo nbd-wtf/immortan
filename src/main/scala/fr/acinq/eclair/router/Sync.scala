@@ -47,7 +47,7 @@ object Sync {
   }
 
   def crc32c(data: ByteVector): Long = {
-    Hashing.crc32c().hashBytes(data.toArray).asInt() & 0xFFFFFFFFL
+    Hashing.crc32c.hashBytes(data.toArray).asInt() & 0xFFFFFFFFL
   }
 
   def getChecksum(u: ChannelUpdate): Long = {

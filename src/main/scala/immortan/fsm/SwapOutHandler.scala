@@ -4,14 +4,14 @@ import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
 import scala.concurrent.duration._
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
-import immortan.{CommsTower, ConnectionListener, HostedChannel}
+import immortan.{ChanAndCommits, CommsTower, ConnectionListener}
 import rx.lang.scala.Subscription
 import immortan.utils.Rx
 
 
-abstract class SwapOutHandler(channel: HostedChannel, ourInit: Init, amount: Satoshi, btcAddress: String, blockTarget: Int, feerateKey: ByteVector32) { me =>
-  def finish: Unit = runAnd(shutdownTimer.unsubscribe)(CommsTower.listeners(channel.data.announce.nodeSpecificPkap) -= swapOutListener)
-  CommsTower.listen(Set(swapOutListener), channel.data.announce.nodeSpecificPkap, channel.data.announce.na, ourInit)
+abstract class SwapOutHandler(cnc: ChanAndCommits, ourInit: Init, amount: Satoshi, btcAddress: String, blockTarget: Int, feerateKey: ByteVector32) { me =>
+  def finish: Unit = runAnd(shutdownTimer.unsubscribe)(CommsTower.listeners(cnc.commits.announce.nodeSpecificPkap) -= swapOutListener)
+  CommsTower.listen(listeners1 = Set(swapOutListener), cnc.commits.announce.nodeSpecificPkap, cnc.commits.announce.na, ourInit)
   val shutdownTimer: Subscription = Rx.ioQueue.delay(30.seconds).doOnCompleted(finish).subscribe(_ => onTimeout)
 
   lazy private val swapOutListener = new ConnectionListener {

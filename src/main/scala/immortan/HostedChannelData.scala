@@ -24,14 +24,15 @@ case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: La
   lazy val unansweredIncoming: Set[UpdateAddHtlc] = localSpec.incomingAdds intersect nextLocalSpec.incomingAdds // Cross-signed MINUS already resolved by us
   lazy val allOutgoing: Set[UpdateAddHtlc] = localSpec.outgoingAdds union nextLocalSpec.outgoingAdds // Cross-signed PLUS new payments offered by us
   lazy val capacity: MilliSatoshi = lastCrossSignedState.initHostedChannel.channelCapacityMsat
+  lazy val minSendable: MilliSatoshi = lastCrossSignedState.initHostedChannel.htlcMinimumMsat
   lazy val availableBalanceForReceive: MilliSatoshi = nextLocalSpec.toRemote
   lazy val availableBalanceForSend: MilliSatoshi = nextLocalSpec.toLocal
   lazy val channelId: ByteVector32 = announce.nodeSpecificHostedChanId
 
-  lazy val revealedHashes: Seq[ByteVector32] = for {
-    UpdateFulfillHtlc(_, htlcId, _) <- nextLocalUpdates
-    htlc <- localSpec.findIncomingHtlcById(htlcId)
-  } yield htlc.add.paymentHash
+  lazy val revealedHashes: Seq[ByteVector32] = {
+    val ourFulfills = nextLocalUpdates.collect { case fulfill: UpdateFulfillHtlc => fulfill.id }
+    ourFulfills.flatMap(localSpec.findIncomingHtlcById).map(_.add.paymentHash)
+  }
 
   def nextLocalUnsignedLCSS(blockDay: Long): LastCrossSignedState =
     LastCrossSignedState(lastCrossSignedState.isHost, lastCrossSignedState.refundScriptPubKey,
@@ -44,16 +45,15 @@ case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: La
   def isResizingSupported: Boolean = lastCrossSignedState.initHostedChannel.version.isSet(HostedChannelVersion.USE_RESIZE)
 
   def sendAdd(cmd: CMD_ADD_HTLC): (ChannelData, UpdateAddHtlc) = {
-    val internalId: TlvStream[Tlv] = TlvStream(UpdateAddTlv.InternalId(cmd.internalId) :: Nil)
     // Let's add this change and see if the new state violates any of constraints including those imposed by them on us, proceed only if it does not
-    val add = UpdateAddHtlc(channelId, nextTotalLocal + 1, cmd.firstAmount, cmd.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet, internalId)
+    val add = UpdateAddHtlc(channelId, nextTotalLocal + 1, cmd.firstAmount, cmd.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet, cmd.partId)
     val commits1: HostedCommits = addLocalProposal(add)
 
-    if (commits1.nextLocalSpec.toLocal < 0L.msat) throw HtlcAddImpossible(InsufficientFunds(channelId), cmd)
-    if (cmd.payload.amount < lastCrossSignedState.initHostedChannel.htlcMinimumMsat) throw HtlcAddImpossible(HtlcValueTooSmall(channelId), cmd)
     val htlcValueInFlight = commits1.nextLocalSpec.outgoingAdds.foldLeft(0L.msat) { case (accumulator, outAdd) => accumulator + outAdd.amountMsat }
     if (UInt64(htlcValueInFlight.toLong) > lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat) throw HtlcAddImpossible(HtlcValueTooHighInFlight(channelId), cmd)
     if (commits1.nextLocalSpec.outgoingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) throw HtlcAddImpossible(TooManyAcceptedHtlcs(channelId), cmd)
+    if (commits1.nextLocalSpec.toLocal < 0L.msat) throw HtlcAddImpossible(InsufficientFunds(channelId), cmd)
+    if (cmd.payload.amount < minSendable) throw HtlcAddImpossible(HtlcValueTooSmall(channelId), cmd)
     (commits1, add)
   }
 
