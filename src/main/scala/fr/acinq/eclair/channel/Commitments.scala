@@ -18,6 +18,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.eclair._
 import fr.acinq.eclair.wire._
+import com.softwaremill.quicklens._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Transactions._
@@ -28,7 +29,7 @@ import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, DeterministicWallet
 import fr.acinq.eclair.payment.OutgoingPacket
 import immortan.NodeAnnouncementExt
 
-// @formatter:off
+
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage] = Nil) {
   lazy val adds: List[UpdateAddHtlc] = all.collect { case add: UpdateAddHtlc => add }
   lazy val all: List[UpdateMessage] = proposed ++ signed ++ acked
@@ -43,7 +44,6 @@ case class PublishableTxs(commitTx: CommitTx, htlcTxsAndSigs: List[HtlcTxAndSigs
 case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: PublishableTxs)
 case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: ByteVector32, remotePerCommitmentPoint: PublicKey)
 case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long, reSignAsap: Boolean = false)
-// @formatter:on
 
 
 trait Commitments {
@@ -61,7 +61,7 @@ trait Commitments {
   val allOutgoing: Set[UpdateAddHtlc] // Cross-signed PLUS new payments offered by us
 }
 
-case class NormalCommits(announce: NodeAnnouncementExt, channelVersion: ChannelVersion, localParams: LocalParams, remoteParams: RemoteParams,
+case class NormalCommits(channelVersion: ChannelVersion, announce: NodeAnnouncementExt, localParams: LocalParams, remoteParams: RemoteParams,
                          channelFlags: Byte, localCommit: LocalCommit, remoteCommit: RemoteCommit, localChanges: LocalChanges, remoteChanges: RemoteChanges,
                          localNextHtlcId: Long, remoteNextHtlcId: Long, remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey], commitInput: InputInfo,
                          remotePerCommitmentSecrets: ShaChain, updateOpt: Option[ChannelUpdate], channelId: ByteVector32,
@@ -169,28 +169,21 @@ case class NormalCommits(announce: NodeAnnouncementExt, channelVersion: ChannelV
 }
 
 object NormalCommits {
+  private def addLocalProposal(commitments: NormalCommits, proposal: UpdateMessage): NormalCommits = commitments.modify(_.localChanges.proposed).using(_ :+ proposal)
 
-  /**
-   * Add a change to our proposed change list.
-   *
-   * @param commitments current commitments.
-   * @param proposal    proposed change to add.
-   * @return an updated commitment instance.
-   */
-  private def addLocalProposal(commitments: NormalCommits, proposal: UpdateMessage): NormalCommits =
-    commitments.copy(localChanges = commitments.localChanges.copy(proposed = commitments.localChanges.proposed :+ proposal))
-
-  private def addRemoteProposal(commitments: NormalCommits, proposal: UpdateMessage): NormalCommits =
-    commitments.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed :+ proposal))
+  private def addRemoteProposal(commitments: NormalCommits, proposal: UpdateMessage): NormalCommits = commitments.modify(_.remoteChanges.proposed).using(_ :+ proposal)
 
   def hasNoPendingHtlcs(commitments: NormalCommits): Boolean = commitments.localCommit.spec.htlcs.isEmpty && commitments.remoteCommit.spec.htlcs.isEmpty && commitments.remoteNextCommitInfo.isRight
 
   def hasPendingOrProposedHtlcs(commitments: NormalCommits): Boolean = !hasNoPendingHtlcs(commitments) || commitments.localChanges.adds.nonEmpty || commitments.remoteChanges.adds.nonEmpty
 
-  def timedOutOutgoingHtlcs(commitments: NormalCommits, blockheight: Long): Set[UpdateAddHtlc] =
-    commitments.localCommit.spec.htlcs.collect(outgoing).filter(blockheight >= _.cltvExpiry.toLong) ++
-      commitments.remoteCommit.spec.htlcs.collect(incoming).filter(blockheight >= _.cltvExpiry.toLong) ++
-      commitments.remoteNextCommitInfo.left.toSeq.flatMap(_.nextRemoteCommit.spec.htlcs.collect(incoming).filter(blockheight >= _.cltvExpiry.toLong).toSet)
+  def timedOutOutgoingHtlcs(commitments: NormalCommits, blockheight: Long): Set[UpdateAddHtlc] = {
+    def expired(add: UpdateAddHtlc) = blockheight >= add.cltvExpiry.toLong
+
+    commitments.localCommit.spec.outgoingAdds.filter(expired) ++
+      commitments.remoteCommit.spec.incomingAdds.filter(expired) ++
+      commitments.remoteNextCommitInfo.left.toSeq.flatMap(_.nextRemoteCommit.spec.incomingAdds.filter(expired).toSet)
+  }
 
   /**
    * HTLCs that are close to timing out upstream are potentially dangerous. If we received the preimage for those HTLCs,
@@ -199,7 +192,7 @@ object NormalCommits {
    * and our HTLC success in case of a force-close.
    */
   def almostTimedOutIncomingHtlcs(commitments: NormalCommits, blockheight: Long, fulfillSafety: CltvExpiryDelta): Set[UpdateAddHtlc] =
-    commitments.localCommit.spec.htlcs.collect(incoming).filter(add => blockheight >= (add.cltvExpiry - fulfillSafety).toLong)
+    commitments.localCommit.spec.incomingAdds.filter(add => blockheight >= (add.cltvExpiry - fulfillSafety).toLong)
 
   /**
    * Return the outgoing HTLC with the given id if it is:
@@ -232,9 +225,9 @@ object NormalCommits {
   }
 
   def alreadyProposed(changes: List[UpdateMessage], id: Long): Boolean = changes.exists {
+    case u: UpdateFailMalformedHtlc => id == u.id
     case u: UpdateFulfillHtlc => id == u.id
     case u: UpdateFailHtlc => id == u.id
-    case u: UpdateFailMalformedHtlc => id == u.id
     case _ => false
   }
 

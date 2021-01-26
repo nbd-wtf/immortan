@@ -5,11 +5,9 @@ import spray.json._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
-import fr.acinq.eclair.transactions.{CommitmentSpec, MalformAndAdd, FailAndAdd}
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
-import fr.acinq.eclair.{MilliSatoshi, wire}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.Codec
 
@@ -19,7 +17,6 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
   val json2String: JsValue => String = (_: JsValue).convertTo[String]
   val TAG = "tag"
 
-  def json2BitVec(json: JsValue): Option[BitVector] = BitVector fromHex json2String(json)
   def writeExt[T](ext: (String, JsValue), base: JsValue): JsObject = JsObject(base.asJsObject.fields + ext)
 
   def taggedJsonFmt[T](base: JsonFormat[T], tag: String): JsonFormat[T] = new JsonFormat[T] {
@@ -27,45 +24,19 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
     def read(serialized: JsValue): T = base read serialized
   }
 
-  def sCodecJsonFmt[T](codec: Codec[T] /* Json <-> sCodec bridge */): JsonFormat[T] = new JsonFormat[T] {
+  def json2BitVec(json: JsValue): Option[BitVector] = BitVector fromHex json2String(json)
+
+  def sCodecJsonFmt[T](codec: Codec[T] = null): JsonFormat[T] = new JsonFormat[T] {
     def read(serialized: JsValue): T = codec.decode(json2BitVec(serialized).get).require.value
     def write(unserialized: T): JsValue = codec.encode(unserialized).require.toHex.toJson
   }
 
-  // Channel
-
-  implicit val errorFmt: JsonFormat[wire.Error] = sCodecJsonFmt(errorCodec)
-  implicit val channelUpdateFmt: JsonFormat[ChannelUpdate] = sCodecJsonFmt(channelUpdateCodec)
-  implicit val updateAddHtlcFmt: JsonFormat[UpdateAddHtlc] = sCodecJsonFmt(updateAddHtlcCodec)
-  implicit val updateFailHtlcFmt: JsonFormat[UpdateFailHtlc] = sCodecJsonFmt(updateFailHtlcCodec)
   implicit val nodeAnnouncementFmt: JsonFormat[NodeAnnouncement] = sCodecJsonFmt(nodeAnnouncementCodec)
-  implicit val lightningMessageFmt: JsonFormat[LightningMessage] = sCodecJsonFmt(lightningMessageCodec)
-  implicit val updateFailMalformedHtlcFmt: JsonFormat[UpdateFailMalformedHtlc] = sCodecJsonFmt(updateFailMalformedHtlcCodec)
-
-  implicit val resizeChannelFmt: JsonFormat[ResizeChannel] = sCodecJsonFmt(wire.HostedMessagesCodecs.resizeChannelCodec)
-  implicit val lastCrossSignedStateFmt: JsonFormat[LastCrossSignedState] = sCodecJsonFmt(wire.HostedMessagesCodecs.lastCrossSignedStateCodec)
-  implicit val hostedChannelBrandingFmt: JsonFormat[HostedChannelBranding] = sCodecJsonFmt(wire.HostedMessagesCodecs.hostedChannelBrandingCodec)
-
-  implicit val swapInStateFmt: JsonFormat[SwapInState] = sCodecJsonFmt(wire.SwapCodecs.swapInStateCodec)
-
-  implicit val satoshiFmt: JsonFormat[Satoshi] = sCodecJsonFmt(satoshi)
-  implicit val milliSatoshiFmt: JsonFormat[MilliSatoshi] = sCodecJsonFmt(millisatoshi)
   implicit val bytesFmt: JsonFormat[ByteVector] = sCodecJsonFmt(varsizebinarydata)
   implicit val privateKeyFmt: JsonFormat[PrivateKey] = sCodecJsonFmt(privateKey)
   implicit val publicKeyFmt: JsonFormat[PublicKey] = sCodecJsonFmt(publicKey)
   implicit val bytes32Fmt: JsonFormat[ByteVector32] = sCodecJsonFmt(bytes32)
-
-  implicit val failAndAddFmt: JsonFormat[FailAndAdd] = sCodecJsonFmt(wire.ChannelCodecs.failAndAddCodec)
-  implicit val malformAndAddFmt: JsonFormat[MalformAndAdd] = sCodecJsonFmt(wire.ChannelCodecs.malformAndAddCodec)
-  implicit val commitmentSpecFmt: JsonFormat[CommitmentSpec] = sCodecJsonFmt(wire.ChannelCodecs.commitmentSpecCodec)
-
-  implicit val nodeAnnouncementExtFmt: JsonFormat[NodeAnnouncementExt] = jsonFormat[NodeAnnouncement, NodeAnnouncementExt](NodeAnnouncementExt.apply, "na")
-
-  implicit val hostedCommitsFmt: JsonFormat[HostedCommits] =
-    jsonFormat[NodeAnnouncementExt, LastCrossSignedState, List[LightningMessage], List[LightningMessage],
-      CommitmentSpec, Option[ChannelUpdate], Option[wire.Error], Option[wire.Error], Option[ResizeChannel], Long,
-      HostedCommits](HostedCommits.apply, "announce", "lastCrossSignedState", "nextLocalUpdates", "nextRemoteUpdates",
-      "localSpec", "updateOpt", "localError", "remoteError", "resizeProposal", "startedAt")
+  implicit val satoshiFmt: JsonFormat[Satoshi] = sCodecJsonFmt(satoshi)
 
   // Wallet keys
 
@@ -87,11 +58,15 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
     }
   }
 
-  implicit val mnemonicExtStorageFormatFmt: JsonFormat[MnemonicExtStorageFormat] = taggedJsonFmt(jsonFormat[Set[NodeAnnouncement], LightningNodeKeys, Option[ByteVector],
-    MnemonicExtStorageFormat](MnemonicExtStorageFormat.apply, "outstandingProviders", "keys", "seed"), tag = "MnemonicExtStorageFormat")
+  implicit val mnemonicExtStorageFormatFmt: JsonFormat[MnemonicExtStorageFormat] =
+    taggedJsonFmt(jsonFormat[Set[NodeAnnouncement], LightningNodeKeys, Option[ByteVector],
+    MnemonicExtStorageFormat](MnemonicExtStorageFormat.apply, "outstandingProviders", "keys",
+      "seed"), tag = "MnemonicExtStorageFormat")
 
-  implicit val passwordStorageFormatFmt: JsonFormat[PasswordStorageFormat] = taggedJsonFmt(jsonFormat[Set[NodeAnnouncement], LightningNodeKeys, String, Option[String],
-    PasswordStorageFormat](PasswordStorageFormat.apply, "outstandingProviders", "keys", "user", "password"), tag = "PasswordStorageFormat")
+  implicit val passwordStorageFormatFmt: JsonFormat[PasswordStorageFormat] =
+    taggedJsonFmt(jsonFormat[Set[NodeAnnouncement], LightningNodeKeys, String, Option[String],
+    PasswordStorageFormat](PasswordStorageFormat.apply, "outstandingProviders", "keys", "user",
+      "password"), tag = "PasswordStorageFormat")
 
   // Payment description
 

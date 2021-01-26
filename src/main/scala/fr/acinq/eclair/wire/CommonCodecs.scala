@@ -120,6 +120,7 @@ object CommonCodecs {
       .typecase(2, (ipv6address :: uint16).as[IPv6])
       .typecase(3, (base32(10) :: uint16).as[Tor2])
       .typecase(4, (base32(35) :: uint16).as[Tor3])
+      .typecase(5, (zeropaddedstring(64) :: uint16).as[Domain])
 
   // this one is a bit different from most other codecs: the first 'len' element is *not* the number of items
   // in the list but rather the  number of bytes of the encoded list. The rationale is once we've read this
@@ -140,7 +141,7 @@ object CommonCodecs {
 
   val rgb: Codec[Color] = bytes(3).xmap(buf => Color(buf(0), buf(1), buf(2)), t => ByteVector(t.r, t.g, t.b))
 
-  def zeropaddedstring(size: Int): Codec[String] = fixedSizeBytes(32, utf8).xmap(s => s.takeWhile(_ != '\u0000'), s => s)
+  def zeropaddedstring(size: Int): Codec[String] = fixedSizeBytes(size, utf8).xmap(s => s.takeWhile(_ != '\u0000'), s => s)
 
   /**
    * When encoding, prepend a valid mac to the output of the given codec.
