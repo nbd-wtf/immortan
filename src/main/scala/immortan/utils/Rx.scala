@@ -28,5 +28,7 @@ object Rx {
 
   def ioQueue: Observable[Null] = Observable.just(null).subscribeOn(IOScheduler.apply)
 
-  def pickInc(errorOrUnit: Any, next: Int): Duration = next.seconds
+  def incSec(errorOrUnit: Any, next: Int): Duration = next.seconds
+
+  def incHour(errorOrUnit: Any, next: Int): Duration = next.hours
 }

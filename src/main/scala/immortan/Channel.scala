@@ -47,7 +47,7 @@ object Channel {
 }
 
 trait Channel extends StateMachine[ChannelData] { me =>
-  def process(change: Any): Unit = Future(me doProcess change) onComplete {
+  def process(change: Any): Unit = Future(me doProcess change).onComplete {
     case Failure(failureReason) => events.onException(me -> failureReason)
     case _ => // Do nothing
   }

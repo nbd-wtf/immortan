@@ -56,11 +56,12 @@ object LNParams {
       ActivatedFeature(ChannelRangeQueries, FeatureSupport.Mandatory),
       ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Mandatory),
       ActivatedFeature(OptionDataLossProtect, FeatureSupport.Mandatory),
-      ActivatedFeature(BasicMultiPartPayment, FeatureSupport.Optional),
-      ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional),
-      ActivatedFeature(AnchorOutputs, FeatureSupport.Optional),
-      ActivatedFeature(PaymentSecret, FeatureSupport.Optional),
-      ActivatedFeature(Wumbo, FeatureSupport.Optional)
+      ActivatedFeature(BasicMultiPartPayment, FeatureSupport.Mandatory),
+      ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory),
+      ActivatedFeature(AnchorOutputs, FeatureSupport.Mandatory),
+      ActivatedFeature(PaymentSecret, FeatureSupport.Mandatory),
+      ActivatedFeature(ChainSwap, FeatureSupport.Mandatory),
+      ActivatedFeature(Wumbo, FeatureSupport.Mandatory)
     )
 
     val phcSyncFeatures: Set[ActivatedFeature] = Set(
@@ -74,7 +75,7 @@ object LNParams {
       ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory),
       ActivatedFeature(HostedChannels, FeatureSupport.Mandatory),
       ActivatedFeature(PaymentSecret, FeatureSupport.Mandatory),
-      ActivatedFeature(ChainSwap, FeatureSupport.Optional)
+      ActivatedFeature(ChainSwap, FeatureSupport.Mandatory)
     )
 
     val norm = Init(Features(normFeatures), tlvStream)

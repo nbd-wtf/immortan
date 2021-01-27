@@ -22,7 +22,7 @@ object PathFinder {
   val CMDLoadGraph = "cmd-load-graph"
   val CMDResync = "cmd-resync"
 
-  val RESYNC_PERIOD: Long = 1000L * 3600 * 24 * 3
+  val RESYNC_PERIOD: Long = 1000L * 3600 * 24 * 3 // 3 days in msecs
 }
 
 abstract class PathFinder(normalStore: NetworkDataStore, hostedStore: NetworkDataStore, val routerConf: RouterConf) extends StateMachine[Data] { me =>
@@ -31,8 +31,9 @@ abstract class PathFinder(normalStore: NetworkDataStore, hostedStore: NetworkDat
   var listeners: Set[CanBeRepliedTo] = Set.empty
 
   // We don't load routing data on every startup but when user (or system) actually needs it
-  become(Data(channels = Map.empty, hostedChannels = Map.empty, extraEdges = Map.empty, DirectedGraph.apply), WAITING)
-  Rx.initDelay(Rx.ioQueue, getLastTotalResyncStamp, RESYNC_PERIOD).foreach(_ => me process CMDResync)
+  become(Data(channels = Map.empty, hostedChannels = Map.empty, extraEdges = Map.empty, graph = DirectedGraph.apply), WAITING)
+  // Init resync with persistent delay on startup, then periodically resync every RESYNC_PERIOD days + 1 hour to trigger a full, not just PHC sync
+  Rx.initDelay(Rx.repeat(Rx.ioQueue, Rx.incHour, 73 to Int.MaxValue by 73), getLastTotalResyncStamp, RESYNC_PERIOD).foreach(_ => me process CMDResync)
 
   def getLastTotalResyncStamp: Long
   def getLastNormalResyncStamp: Long
