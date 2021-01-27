@@ -17,10 +17,10 @@
 package fr.acinq.eclair.wire
 
 import scodec.codecs._
+import fr.acinq.eclair._
 import fr.acinq.eclair.wire.CommonCodecs._
-import fr.acinq.eclair.{Features, wire}
 import fr.acinq.eclair.wire.ChannelCodecs.channelVersionCodec
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.ByteVector
 import scodec.Codec
 
 /**
@@ -542,7 +542,7 @@ object ExtMessageMapping {
     case otherwise => throw new RuntimeException(s"Can not decode tag=$otherwise")
   }
 
-  def encode(msg: LightningMessage): UnknownMessage = msg match {
+  def preEncode(msg: LightningMessage): LightningMessage = msg match {
     case msg: InvokeHostedChannel => UnknownMessage(HC_INVOKE_HOSTED_CHANNEL_TAG, invokeHostedChannelCodec.encode(msg).require)
     case msg: InitHostedChannel => UnknownMessage(HC_INIT_HOSTED_CHANNEL_TAG, initHostedChannelCodec.encode(msg).require)
     case msg: LastCrossSignedState => UnknownMessage(HC_LAST_CROSS_SIGNED_STATE_TAG, lastCrossSignedStateCodec.encode(msg).require)
@@ -569,6 +569,6 @@ object ExtMessageMapping {
     case msg: SwapOutTransactionRequest => UnknownMessage(SWAP_OUT_TRANSACTION_REQUEST_MESSAGE_TAG, swapOutTransactionRequestCodec.encode(msg).require)
     case msg: SwapOutTransactionResponse => UnknownMessage(SWAP_OUT_TRANSACTION_RESPONSE_MESSAGE_TAG, swapOutTransactionResponseCodec.encode(msg).require)
     case msg: SwapOutTransactionDenied => UnknownMessage(SWAP_OUT_TRANSACTION_DENIED_MESSAGE_TAG, swapOutTransactionDeniedCodec.encode(msg).require)
-    case otherwise => throw new RuntimeException(s"Can not encode msg=$otherwise")
+    case _ => msg
   }
 }
