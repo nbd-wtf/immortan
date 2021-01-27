@@ -4,24 +4,34 @@ import fr.acinq.eclair._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
+import com.softwaremill.sttp._
 import fr.acinq.eclair.Features._
+
+import scala.concurrent.duration._
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.bitcoin.DeterministicWallet._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+
+import scala.concurrent.{ExecutionContextExecutor, Future}
 import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt}
 import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
+
 import fr.acinq.eclair.channel.{LocalParams, PersistentChannelData}
 import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, FeatureSupport, Features}
+import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.payment.PaymentRequest
 import immortan.SyncMaster.ShortChanIdSet
 import fr.acinq.eclair.crypto.Generators
 import immortan.crypto.Noise.KeyPair
 import java.io.ByteArrayInputStream
+
 import scala.collection.mutable
 import scodec.bits.ByteVector
 import java.nio.ByteOrder
+
+import immortan.utils.RatesInfo
 
 
 object LNParams {
@@ -35,8 +45,8 @@ object LNParams {
   val minHostedLiabilityBlockdays = 365
 
   val maxToLocalDelay: CltvExpiryDelta = CltvExpiryDelta(2016)
-  val maxFundingSatoshis: Satoshi = 1000000000.sat
-  val minFundingSatoshis: Satoshi = 100000L.sat
+  val maxFundingSatoshis: Satoshi = 10000000000L.sat // 100 BTC
+  val minFundingSatoshis: Satoshi = 100000L.sat // 100k sat
   val maxReserveToFundingRatio = 0.05 // %
   val reserveToFundingRatio = 0.0025 // %
   val minDepthBlocks: Int = 1
@@ -47,7 +57,7 @@ object LNParams {
       firstPassMaxRouteLength = 6, mppMinPartAmount = MilliSatoshi(30000000L),
       maxRemoteAttempts = 12, maxChannelFailures = 12, maxStrangeNodeFailures = 12)
 
-  lazy val (normInit, phcSyncInit, hcInit) = {
+  val (normInit, phcSyncInit, hcInit) = {
     val networks: InitTlv = InitTlv.Networks(chainHash :: Nil)
     val tlvStream: TlvStream[InitTlv] = TlvStream(networks)
 
@@ -84,13 +94,13 @@ object LNParams {
     (norm, phcSync, hc)
   }
 
-  var fiatRates: Fiat2Btc = _
   var format: StorageFormat = _
   var channelMaster: ChannelMaster = _
 
   val blockCount = new AtomicLong(0L)
   val feeratesPerKB = new AtomicReference[FeeratesPerKB](null)
   val feeratesPerKw = new AtomicReference[FeeratesPerKw](null)
+  var fiatRatesInfo: RatesInfo = _
 
   val feeEstimator: FeeEstimator = new FeeEstimator {
     override def getFeeratePerKb(target: Int): FeeratePerKB = feeratesPerKB.get.feePerBlock(target)
@@ -100,6 +110,16 @@ object LNParams {
   val onChainFeeConf: OnChainFeeConf =
     OnChainFeeConf(FeeTargets(fundingBlockTarget = 6, commitmentBlockTarget = 6, mutualCloseBlockTarget = 36, claimMainBlockTarget = 36),
       feeEstimator, closeOnOfflineMismatch = false, updateFeeMinDiffRatio = 0.1, FeerateTolerance(0.5, 10), perNodeFeerateTolerance = Map.empty)
+
+  implicit val ec: ExecutionContextExecutor = scala.concurrent.ExecutionContext.Implicits.global
+  implicit val sttpBackend: SttpBackend[Future, Nothing] = OkHttpFutureBackend(SttpBackendOptions.Default)
+
+  val feerateProviders: List[FeeProvider] =
+    new EsploraFeeProvider(uri"https://mempool.space/api/fee-estimates", 15.seconds) ::
+      new EsploraFeeProvider(uri"https://blockstream.info/api/fee-estimates", 15.seconds) ::
+      new BitgoFeeProvider(chainHash, 15.seconds) ::
+      new EarnDotComFeeProvider(15.seconds) ::
+      Nil
 
   def currentBlockDay: Long = blockCount.get / blocksPerDay
 }

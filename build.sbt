@@ -8,8 +8,6 @@ scalaVersion := "2.11.12"
 
 libraryDependencies += "org.scalatest" % "scalatest_2.11" % "3.2.3"
 
-libraryDependencies += "com.softwaremill.quicklens" % "quicklens_2.11" % "1.6.1"
-
 libraryDependencies += "org.scodec" % "scodec-core_2.11" % "1.11.3"
 
 libraryDependencies += "commons-codec" % "commons-codec" % "1.10"
@@ -25,6 +23,10 @@ libraryDependencies += "com.typesafe.akka" % "akka-actor_2.11" % "2.3.14"
 libraryDependencies += "io.netty" % "netty-all" % "4.1.42.Final"
 
 libraryDependencies += "com.softwaremill.sttp" % "json4s_2.11" % "1.3.9"
+
+libraryDependencies += "com.softwaremill.sttp" % "okhttp-backend_2.11" % "1.3.9"
+
+libraryDependencies += "com.softwaremill.quicklens" % "quicklens_2.11" % "1.6.1"
 
 // Bitcoinj
 
