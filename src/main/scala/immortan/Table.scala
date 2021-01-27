@@ -18,7 +18,7 @@ object ChannelTable extends Table {
       $id INTEGER PRIMARY KEY AUTOINCREMENT,
       $identifier TEXT NOT NULL UNIQUE,
       $isRemoved INTEGER NOT NULL,
-      $data TEXT NOT NULL
+      $data BLOB NOT NULL
     )""" :: Nil
 }
 

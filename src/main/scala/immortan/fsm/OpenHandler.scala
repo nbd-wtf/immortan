@@ -1,7 +1,7 @@
 package immortan.fsm
 
 import immortan._
-import fr.acinq.eclair.channel.{CMD_CHAIN_TIP_KNOWN, CMD_SOCKET_ONLINE, ChannelData}
+import fr.acinq.eclair.channel.{CMD_CHAIN_TIP_KNOWN, CMD_SOCKET_ONLINE, PersistentChannelData}
 import fr.acinq.eclair.wire.{HostedChannelMessage, Init, LightningMessage}
 import immortan.Channel.{OPEN, SUSPENDED, WAIT_FOR_ACCEPT}
 import immortan.ChannelListener.{Malfunction, Transition}
@@ -14,9 +14,8 @@ abstract class OpenHandler(ext: NodeAnnouncementExt, ourInit: Init, format: Stor
   val peerSpecificRefundPubKey: ByteVector = format.keys.refundPubKey(theirNodeId = ext.na.nodeId)
 
   val freshChannel: HostedChannel = new HostedChannel {
-    def SEND(msg: LightningMessage *): Unit = for (work <- CommsTower.workers get ext.nodeSpecificPkap) msg foreach work.handler.process
-    def STORE(newData: ChannelData): ChannelData = cm.chanBag.put(ext.nodeSpecificHostedChanId, newData)
-    this doProcess WaitRemoteHostedReply(ext, peerSpecificRefundPubKey, peerSpecificSecret)
+    def SEND(msg: LightningMessage *): Unit = CommsTower.workers.get(ext.nodeSpecificPkap).foreach(msg foreach _.handler.process)
+    def STORE(hostedData: PersistentChannelData): PersistentChannelData = cm.chanBag.put(hostedData)
   }
 
   def onFailure(channel: HostedChannel, err: Throwable): Unit
@@ -35,7 +34,7 @@ abstract class OpenHandler(ext: NodeAnnouncementExt, ourInit: Init, format: Stor
 
     override def onBecome: PartialFunction[Transition, Unit] = {
       case (_, _, _: HostedCommits, WAIT_FOR_ACCEPT, OPEN | SUSPENDED) =>
-        freshChannel.listeners = cm.operationalListeners // Add standard channel listeners to new established channel
+        freshChannel.listeners = cm.channelListeners // Add standard channel listeners to new established channel
         CommsTower.listeners(ext.nodeSpecificPkap) -= this // Stop sending messages from this connection listener
         cm.all :+= freshChannel // Put this channel to vector of established channels
         cm.initConnect // Add standard connection listeners for this peer
@@ -51,6 +50,6 @@ abstract class OpenHandler(ext: NodeAnnouncementExt, ourInit: Init, format: Stor
   }
 
   freshChannel.listeners += makeChanListener
-  val connectionListeners = Set(makeChanListener, cm.sockBrandingBridge)
-  CommsTower.listen(connectionListeners, ext.nodeSpecificPkap, ext.na, ourInit)
+  CommsTower.listen(Set(makeChanListener, cm.sockBrandingBridge), ext.nodeSpecificPkap, ext.na, ourInit)
+  freshChannel doProcess WaitRemoteHostedReply(ext, peerSpecificRefundPubKey, peerSpecificSecret)
 }

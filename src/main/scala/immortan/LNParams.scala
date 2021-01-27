@@ -1,17 +1,18 @@
 package immortan
 
 import fr.acinq.eclair._
+import fr.acinq.bitcoin._
 import fr.acinq.eclair.wire._
+import immortan.crypto.Tools._
 import fr.acinq.eclair.Features._
+import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.bitcoin.DeterministicWallet._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.channel.{ChannelData, LocalParams}
 import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt}
 import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
+import fr.acinq.eclair.channel.{LocalParams, PersistentChannelData}
 import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, FeatureSupport, Features}
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, Protocol, Satoshi, SatoshiLong}
-import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKB, FeeratePerKw, FeerateTolerance, FeeratesPerKB, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.payment.PaymentRequest
 import immortan.SyncMaster.ShortChanIdSet
@@ -20,7 +21,6 @@ import immortan.crypto.Noise.KeyPair
 import java.io.ByteArrayInputStream
 import scala.collection.mutable
 import scodec.bits.ByteVector
-import immortan.crypto.Tools
 import java.nio.ByteOrder
 
 
@@ -53,9 +53,12 @@ object LNParams {
 
     // Mimic phoenix
     val normFeatures: Set[ActivatedFeature] = Set(
+      ActivatedFeature(ChannelRangeQueries, FeatureSupport.Mandatory),
+      ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Mandatory),
       ActivatedFeature(OptionDataLossProtect, FeatureSupport.Mandatory),
       ActivatedFeature(BasicMultiPartPayment, FeatureSupport.Optional),
       ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional),
+      ActivatedFeature(AnchorOutputs, FeatureSupport.Optional),
       ActivatedFeature(PaymentSecret, FeatureSupport.Optional),
       ActivatedFeature(Wumbo, FeatureSupport.Optional)
     )
@@ -65,11 +68,12 @@ object LNParams {
     )
 
     val hcFeatures: Set[ActivatedFeature] = Set(
+      ActivatedFeature(ChannelRangeQueries, FeatureSupport.Mandatory),
       ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Mandatory),
       ActivatedFeature(BasicMultiPartPayment, FeatureSupport.Mandatory),
-      ActivatedFeature(ChannelRangeQueries, FeatureSupport.Mandatory),
       ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory),
       ActivatedFeature(HostedChannels, FeatureSupport.Mandatory),
+      ActivatedFeature(PaymentSecret, FeatureSupport.Mandatory),
       ActivatedFeature(ChainSwap, FeatureSupport.Optional)
     )
 
@@ -79,6 +83,7 @@ object LNParams {
     (norm, phcSync, hc)
   }
 
+  var fiatRates: Fiat2Btc = _
   var format: StorageFormat = _
   var channelMaster: ChannelMaster = _
 
@@ -114,11 +119,11 @@ case class NodeAnnouncementExt(na: NodeAnnouncement) {
   lazy val nodeSpecificPubKey: PublicKey = nodeSpecificPrivKey.publicKey
 
   lazy val nodeSpecificPkap: KeyPairAndPubKey = KeyPairAndPubKey(KeyPair(nodeSpecificPubKey.value, nodeSpecificPrivKey.value), na.nodeId)
-  lazy val nodeSpecificHostedChanId: ByteVector32 = Tools.hostedChanId(nodeSpecificPubKey.value, na.nodeId.value)
+  lazy val nodeSpecificHostedChanId: ByteVector32 = hostedChanId(nodeSpecificPubKey.value, na.nodeId.value)
 
   private def derivePrivKey(path: KeyPath) = derivePrivateKey(nodeSpecificExtendedKey, path)
-  private val channelPrivateKeys: mutable.Map[KeyPath, ExtendedPrivateKey] = Tools.memoize(derivePrivKey)
-  private val channelPublicKeys: mutable.Map[KeyPath, ExtendedPublicKey] = Tools.memoize(channelPrivateKeys andThen publicKey)
+  private val channelPrivateKeys: mutable.Map[KeyPath, ExtendedPrivateKey] = memoize(derivePrivKey)
+  private val channelPublicKeys: mutable.Map[KeyPath, ExtendedPublicKey] = memoize(channelPrivateKeys andThen publicKey)
 
   private def internalKeyPath(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Seq[Long] = channelKeyPath.path :+ hardened(index)
 
@@ -137,15 +142,6 @@ case class NodeAnnouncementExt(na: NodeAnnouncement) {
     Crypto.sha256(key.privateKey.value :+ 1.toByte)
   }
 
-  /**
-   * Create a BIP32 path from a public key. This path will be used to derive channel keys.
-   * Having channel keys derived from the funding public keys makes it very easy to retrieve your funds when've you've lost your data:
-   * - connect to your peer and use DLP to get them to publish their remote commit tx
-   * - retrieve the commit tx from the bitcoin network, extract your funding pubkey from its witness data
-   * - recompute your channel keys and spend your output
-   *
-   * @return a BIP32 path
-   */
   def keyPath(localParams: LocalParams): DeterministicWallet.KeyPath = {
     val fundPubKey = fundingPublicKey(localParams.fundingKeyPath).publicKey
     val bis = new ByteArrayInputStream(Crypto.sha256(fundPubKey.value).toArray)
@@ -175,42 +171,12 @@ case class NodeAnnouncementExt(na: NodeAnnouncement) {
 
   def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): PublicKey = Generators.perCommitPoint(shaSeed(channelKeyPath), index)
 
-  /**
-   * @param tx               input transaction
-   * @param publicKey        extended public key
-   * @param txOwner          owner of the transaction (local/remote)
-   * @param commitmentFormat format of the commitment tx
-   * @return a signature generated with the private key that matches the input
-   *         extended public key
-   */
   def sign(tx: Transactions.TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: Transactions.TxOwner, commitmentFormat: Transactions.CommitmentFormat): ByteVector64 =
     Transactions.sign(tx, channelPrivateKeys(publicKey.path).privateKey, txOwner, commitmentFormat)
 
-  /**
-   * This method is used to spend funds sent to htlc keys/delayed keys
-   *
-   * @param tx               input transaction
-   * @param publicKey        extended public key
-   * @param remotePoint      remote point
-   * @param txOwner          owner of the transaction (local/remote)
-   * @param commitmentFormat format of the commitment tx
-   * @return a signature generated with a private key generated from the input keys's matching
-   *         private key and the remote point.
-   */
   def sign(tx: Transactions.TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: Transactions.TxOwner, commitmentFormat: Transactions.CommitmentFormat): ByteVector64 =
     Transactions.sign(tx, Generators.derivePrivKey(channelPrivateKeys(publicKey.path).privateKey, remotePoint), txOwner, commitmentFormat)
 
-  /**
-   * Ths method is used to spend revoked transactions, with the corresponding revocation key
-   *
-   * @param tx               input transaction
-   * @param publicKey        extended public key
-   * @param remoteSecret     remote secret
-   * @param txOwner          owner of the transaction (local/remote)
-   * @param commitmentFormat format of the commitment tx
-   * @return a signature generated with a private key generated from the input keys's matching
-   *         private key and the remote secret.
-   */
   def sign(tx: Transactions.TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey, txOwner: Transactions.TxOwner, commitmentFormat: Transactions.CommitmentFormat): ByteVector64 =
     Transactions.sign(tx, Generators.revocationPrivKey(channelPrivateKeys(publicKey.path).privateKey, remoteSecret), txOwner, commitmentFormat)
 
@@ -248,8 +214,8 @@ trait NetworkDataStore {
 }
 
 trait PaymentDBUpdater {
-  def replaceOutgoingPayment(nodeId: PublicKey, prex: PaymentRequestExt, desc: PaymentDescription, action: Option[PaymentAction], finalAmount: MilliSatoshi, balanceSnap: MilliSatoshi, fiatRateSnap: Tools.Fiat2Btc): Unit
-  def replaceIncomingPayment(prex: PaymentRequestExt, preimage: ByteVector32, description: PaymentDescription, balanceSnap: MilliSatoshi, fiatRateSnap: Tools.Fiat2Btc): Unit
+  def replaceOutgoingPayment(nodeId: PublicKey, prex: PaymentRequestExt, desc: PaymentDescription, action: Option[PaymentAction], finalAmount: MilliSatoshi, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc): Unit
+  def replaceIncomingPayment(prex: PaymentRequestExt, preimage: ByteVector32, description: PaymentDescription, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc): Unit
   // These MUST be the only two methods capable of updating payment state to SUCCEEDED
   def updOkOutgoing(upd: UpdateFulfillHtlc, fee: MilliSatoshi): Unit
   def updStatusIncoming(add: UpdateAddHtlc, status: String): Unit
@@ -269,12 +235,12 @@ trait ChainLink {
 }
 
 trait ChainLinkListener {
-  def onTrustedChainTipKnown: Unit = Tools.none
-  def onCompleteChainDisconnect: Unit = Tools.none
+  def onTrustedChainTipKnown: Unit = none
+  def onCompleteChainDisconnect: Unit = none
 }
 
 trait ChannelBag {
-  def all: List[ChannelData]
-  def delete(chanId: ByteVector32): Unit
-  def put(chanId: ByteVector32, data: ChannelData): ChannelData
+  def all: List[PersistentChannelData]
+  def delete(channelId: ByteVector32): Unit
+  def put(data: PersistentChannelData): PersistentChannelData
 }

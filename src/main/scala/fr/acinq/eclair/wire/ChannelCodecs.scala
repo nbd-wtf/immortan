@@ -24,7 +24,6 @@ import fr.acinq.eclair.wire.HostedMessagesCodecs._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.MilliSatoshi
 
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction, TxOut}
@@ -194,7 +193,7 @@ object ChannelCodecs {
       ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec)) ::
       ("updateOpt" | optional(bool8, lengthDelimited(channelUpdateCodec))) ::
       ("channelId" | bytes32) ::
-      ("startedAt" | uint32)
+      ("startedAt" | int64)
   }).as[NormalCommits]
 
   val closingTxProposedCodec: Codec[ClosingTxProposed] = (
@@ -224,19 +223,21 @@ object ChannelCodecs {
       ("claimHtlcDelayedPenaltyTxs" | listOfN(uint16, txCodec)) ::
       ("spent" | spentMapCodec)).as[RevokedCommitPublished]
 
-  val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
+  val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = {
     ("commitments" | commitmentsCodec) ::
       ("fundingTx" | optional(bool8, txCodec)) ::
-      ("initialRelayFees" | provide(Option.empty[(MilliSatoshi, Int)])) ::
+      ("initialRelayFees" | (millisatoshi ~ uint16)) ::
       ("waitingSince" | int64) ::
-      ("deferred" | optional(bool8, lengthDelimited(fundingLockedCodec))) ::
-      ("lastSent" | either(bool8, lengthDelimited(fundingCreatedCodec), lengthDelimited(fundingSignedCodec)))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED]
+      ("lastSent" | either(bool8, lengthDelimited(fundingCreatedCodec), lengthDelimited(fundingSignedCodec))) ::
+      ("deferred" | optional(bool8, lengthDelimited(fundingLockedCodec)))
+  }.as[DATA_WAIT_FOR_FUNDING_CONFIRMED]
 
-  val DATA_WAIT_FOR_FUNDING_LOCKED_Codec: Codec[DATA_WAIT_FOR_FUNDING_LOCKED] = (
+  val DATA_WAIT_FOR_FUNDING_LOCKED_Codec: Codec[DATA_WAIT_FOR_FUNDING_LOCKED] = {
     ("commitments" | commitmentsCodec) ::
       ("shortChannelId" | shortchannelid) ::
-      ("lastSent" | lengthDelimited(fundingLockedCodec)) ::
-      ("initialRelayFees" | provide(Option.empty[(MilliSatoshi, Int)]))).as[DATA_WAIT_FOR_FUNDING_LOCKED]
+      ("initialRelayFees" | (millisatoshi ~ uint16)) ::
+      ("lastSent" | lengthDelimited(fundingLockedCodec))
+  }.as[DATA_WAIT_FOR_FUNDING_LOCKED]
 
   val DATA_NORMAL_Codec: Codec[DATA_NORMAL] = (
     ("commitments" | commitmentsCodec) ::
@@ -276,16 +277,6 @@ object ChannelCodecs {
       ("remoteChannelReestablish" | channelReestablishCodec)
   }.as[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
 
-  val stateDataCodec: Codec[HasNormalCommitments] = discriminated[HasNormalCommitments].by(byte)
-    .typecase(1, discriminated[HasNormalCommitments].by(uint16)
-      .typecase(0x20, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
-      .typecase(0x21, DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
-      .typecase(0x22, DATA_NORMAL_Codec)
-      .typecase(0x23, DATA_SHUTDOWN_Codec)
-      .typecase(0x24, DATA_NEGOTIATING_Codec)
-      .typecase(0x25, DATA_CLOSING_Codec)
-      .typecase(0x26, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec))
-
   val hostedCommitsCodec: Codec[HostedCommits] = {
     (nodeAnnouncementExtCodec withContext "announce") ::
       (lengthDelimited(lastCrossSignedStateCodec) withContext "lastCrossSignedState") ::
@@ -296,6 +287,19 @@ object ChannelCodecs {
       (optional(bool8, lengthDelimited(errorCodec)) withContext "localError") ::
       (optional(bool8, lengthDelimited(errorCodec)) withContext "remoteError") ::
       (optional(bool8, lengthDelimited(resizeChannelCodec)) withContext "resizeProposal") ::
-      (uint32 withContext "startedAt")
+      (int64 withContext "startedAt")
   }.as[HostedCommits]
+
+  val stateDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(byte)
+    .typecase(1, discriminated[PersistentChannelData].by(uint16)
+      .typecase(0x20, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
+      .typecase(0x21, DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
+      .typecase(0x22, DATA_NORMAL_Codec)
+      .typecase(0x23, DATA_SHUTDOWN_Codec)
+      .typecase(0x24, DATA_NEGOTIATING_Codec)
+      .typecase(0x25, DATA_CLOSING_Codec)
+      .typecase(0x26, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec)
+      .typecase(0x27, hostedCommitsCodec))
+
+
 }

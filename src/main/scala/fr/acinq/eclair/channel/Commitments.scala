@@ -34,23 +34,29 @@ case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessag
   lazy val adds: List[UpdateAddHtlc] = all.collect { case add: UpdateAddHtlc => add }
   lazy val all: List[UpdateMessage] = proposed ++ signed ++ acked
 }
+
 case class RemoteChanges(proposed: List[UpdateMessage], acked: List[UpdateMessage], signed: List[UpdateMessage] = Nil) {
   lazy val adds: List[UpdateAddHtlc] = all.collect { case add: UpdateAddHtlc => add }
   lazy val all: List[UpdateMessage] = proposed ++ signed ++ acked
 }
+
 case class Changes(ourChanges: LocalChanges, theirChanges: RemoteChanges)
+
 case class HtlcTxAndSigs(txinfo: TransactionWithInputInfo, localSig: ByteVector64, remoteSig: ByteVector64)
-case class PublishableTxs(commitTx: CommitTx, htlcTxsAndSigs: List[HtlcTxAndSigs])
+
+case class PublishableTxs(commitTx: CommitTx, htlcTxsAndSigs: List[HtlcTxAndSigs] = Nil)
+
 case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: PublishableTxs)
+
 case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: ByteVector32, remotePerCommitmentPoint: PublicKey)
 case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long, reSignAsap: Boolean = false)
 
 
 trait Commitments {
+  val channelId: ByteVector32
   val announce: NodeAnnouncementExt
   val updateOpt: Option[ChannelUpdate]
   val localSpec: CommitmentSpec
-  val channelId: ByteVector32
 
   val minSendable: MilliSatoshi
   val availableBalanceForSend: MilliSatoshi

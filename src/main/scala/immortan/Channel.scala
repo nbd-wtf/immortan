@@ -24,12 +24,6 @@ object Channel {
   // Single stacking thread for all channels, must be used when asking channels for pending payments to avoid race conditions
   implicit val channelContext: ExecutionContextExecutor = scala.concurrent.ExecutionContext fromExecutor Executors.newSingleThreadExecutor
 
-  def make(initListeners: Set[ChannelListener], chanData: ChannelData, bag: ChannelBag): Channel = chanData match {
-    case hasNormalCommits: HasNormalCommitments => NormalChannel.make(initListeners, hasNormalCommits, bag)
-    case hostedCommits: HostedCommits => HostedChannel.make(initListeners, hostedCommits, bag)
-    case otherwise => throw new RuntimeException(s"Could not process $otherwise")
-  }
-
   def chanAndCommitsOpt(chan: Channel): Option[ChanAndCommits] = chan.data match {
     case hasNormalCommits: HasNormalCommitments => ChanAndCommits(chan, hasNormalCommits.commitments).toSome
     case hostedCommits: HostedCommits => ChanAndCommits(chan, hostedCommits).toSome
@@ -59,7 +53,7 @@ trait Channel extends StateMachine[ChannelData] { me =>
   }
 
   def SEND(msg: LightningMessage *): Unit
-  def STORE(data: ChannelData): ChannelData
+  def STORE(data: PersistentChannelData): PersistentChannelData
 
   def BECOME(data1: ChannelData, state1: String): Unit = {
     // Transition must be defined before vars are updated
@@ -68,7 +62,7 @@ trait Channel extends StateMachine[ChannelData] { me =>
     events.onBecome(trans)
   }
 
-  def STORE_BECOME_SEND(data1: ChannelData, state1: String, lnMessage: LightningMessage *): Unit = {
+  def STORE_BECOME_SEND(data1: PersistentChannelData, state1: String, lnMessage: LightningMessage *): Unit = {
     // Storing goes first to ensure we retain an updated data before revealing it if anything goes wrong
 
     STORE(data1)
@@ -78,11 +72,11 @@ trait Channel extends StateMachine[ChannelData] { me =>
 
   var listeners = Set.empty[ChannelListener]
   val events: ChannelListener = new ChannelListener {
-    override def onProcessSuccess: PartialFunction[ChannelListener.Incoming, Unit] = { case ps => for (lst <- listeners if lst.onProcessSuccess isDefinedAt ps) lst onProcessSuccess ps }
+    override def onProcessSuccess: PartialFunction[ChannelListener.Incoming, Unit] = { case success => for (lst <- listeners if lst.onProcessSuccess isDefinedAt success) lst onProcessSuccess success }
     override def onException: PartialFunction[ChannelListener.Malfunction, Unit] = { case failure => for (lst <- listeners if lst.onException isDefinedAt failure) lst onException failure }
     override def onBecome: PartialFunction[ChannelListener.Transition, Unit] = { case transition => for (lst <- listeners if lst.onBecome isDefinedAt transition) lst onBecome transition }
     override def fulfillReceived(fulfill: UpdateFulfillHtlc): Unit = for (lst <- listeners) lst fulfillReceived fulfill
-    override def stateUpdated(hc: HostedCommits): Unit = for (lst <- listeners) lst stateUpdated hc
+    override def stateUpdated(cs: Commitments): Unit = for (lst <- listeners) lst stateUpdated cs
   }
 }
 
@@ -97,7 +91,7 @@ trait ChannelListener {
   def onException: PartialFunction[ChannelListener.Malfunction, Unit] = none
   def onBecome: PartialFunction[ChannelListener.Transition, Unit] = none
   def fulfillReceived(fulfill: UpdateFulfillHtlc): Unit = none
-  def stateUpdated(hc: HostedCommits): Unit = none
+  def stateUpdated(cs: Commitments): Unit = none
 }
 
 case class ChanAndCommits(chan: Channel, commits: Commitments)

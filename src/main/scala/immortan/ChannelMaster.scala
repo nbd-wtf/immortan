@@ -94,8 +94,8 @@ case class SplitIntoHalves(amount: MilliSatoshi)
 case class NodeFailed(failedNodeId: PublicKey, increment: Int)
 case class ChannelFailed(failedDescAndCap: DescAndCapacity, increment: Int)
 
-case class CMD_SEND_MPP(paymentHash: ByteVector32, totalAmount: MilliSatoshi,
-                        targetNodeId: PublicKey, paymentSecret: ByteVector32 = ByteVector32.Zeroes,
+case class CMD_SEND_MPP(paymentHash: ByteVector32, targetNodeId: PublicKey,
+                        totalAmount: MilliSatoshi = 0L.msat, paymentSecret: ByteVector32 = ByteVector32.Zeroes,
                         targetExpiry: CltvExpiry = CltvExpiry(0), assistedEdges: Set[GraphEdge] = Set.empty)
 
 object ChannelMaster {
@@ -110,7 +110,6 @@ object ChannelMaster {
 }
 
 abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: PathFinder, var cl: ChainLink) extends ChannelListener {
-  private[this] val dummyPaymentSenderData = PaymentSenderData(CMD_SEND_MPP(ByteVector32.Zeroes, totalAmount = 0L.msat, invalidPubKey), Map.empty)
   private[this] val getPaymentInfoMemo = memoize(payBag.getPaymentInfo)
   private[this] val initialResolveMemo = memoize(initialResolve)
   pf.listeners += PaymentMaster
@@ -118,9 +117,15 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
   val sockBrandingBridge: ConnectionListener
   val sockChannelBridge: ConnectionListener
 
-  val operationalListeners: Set[ChannelListener] = Set(this, PaymentMaster) // All established channels must have these listeners
-  var all: List[Channel] = for (data <- chanBag.all) yield Channel.make(operationalListeners, data, chanBag) // All channels we have
-  var listeners: Set[ChannelMasterListener] = Set.empty // Listeners interested in LN payment lifecycle events
+  val connectionListeners: Set[ConnectionListener] = Set(sockBrandingBridge, sockChannelBridge)
+  val channelListeners: Set[ChannelListener] = Set(this, PaymentMaster)
+  var listeners: Set[ChannelMasterListener] = Set.empty
+
+  var all: List[Channel] = chanBag.all.map {
+    case hasNormalCommits: HasNormalCommitments => NormalChannel.make(channelListeners, hasNormalCommits, chanBag)
+    case hostedCommits: HostedCommits => HostedChannel.make(channelListeners, hostedCommits, chanBag)
+    case otherwise => throw new RuntimeException(s"Could not process $otherwise")
+  }
 
   val events: ChannelMasterListener = new ChannelMasterListener {
     override def outgoingFailed(paymentSenderData: PaymentSenderData): Unit = for (lst <- listeners) lst.outgoingFailed(paymentSenderData)
@@ -155,12 +160,10 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
   def fromNode(nodeId: PublicKey): List[ChanAndCommits] = all.flatMap(Channel.chanAndCommitsOpt).filter(_.commits.announce.na.nodeId == nodeId)
   def findById(chanId: ByteVector32): Option[ChanAndCommits] = all.flatMap(Channel.chanAndCommitsOpt).find(_.commits.channelId == chanId)
 
-  def initConnect: Unit = {
-    val listeners = Set(sockBrandingBridge, sockChannelBridge)
-    all.flatMap(Channel.chanAndCommitsOpt).map(_.commits).foreach {
-      case cs: HostedCommits => CommsTower.listen(listeners, cs.announce.nodeSpecificPkap, cs.announce.na, LNParams.hcInit)
-      case cs: NormalCommits => CommsTower.listen(listeners, cs.announce.nodeSpecificPkap, cs.announce.na, LNParams.normInit)
-    }
+  def initConnect: Unit = all.flatMap(Channel.chanAndCommitsOpt).map(_.commits).foreach {
+    case cs: HostedCommits => CommsTower.listen(connectionListeners, cs.announce.nodeSpecificPkap, cs.announce.na, LNParams.hcInit)
+    case cs: NormalCommits => CommsTower.listen(connectionListeners, cs.announce.nodeSpecificPkap, cs.announce.na, LNParams.normInit)
+    case otherwise => throw new RuntimeException(s"Could not process $otherwise")
   }
 
   // RECEIVE/SEND UTILITIES
@@ -250,7 +253,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
     * 4. channel #1 stores, sends out a preimage and updates a state, `stateUpdated` is called, since shard #1 was the last one a payment as a whole is fulfilled in listener
     */
 
-  override def stateUpdated(hc: HostedCommits): Unit = {
+  override def stateUpdated(cs: Commitments): Unit = {
     val allChansAndCommits: List[ChanAndCommits] = all.flatMap(Channel.chanAndCommitsOpt)
     val allRevealedHashes: Set[ByteVector32] = allChansAndCommits.flatMap(_.commits.revealedHashes).toSet // Payment hashes where preimage is revealed, but state is not updated yet
     val allFulfilledAdds = toMapBy[ByteVector32, AddResolution](allChansAndCommits.flatMap(_.commits.localSpec.localFulfilled).map(initialResolveMemo), _.add.paymentHash) // Settled shards
@@ -293,12 +296,12 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
     // An incoming payment arrives so we prolong waiting for the rest of shards
     case (_, _, add: UpdateAddHtlc) => incomingTimeoutWorker replaceWork add.paymentHash
     // `incomingTimeoutWorker.hasFinishedOrNeverStarted` becomes true, fail pending incoming
-    case (_, hc: HostedCommits, CMD_INCOMING_TIMEOUT) => stateUpdated(hc)
+    case (_, cs: Commitments, CMD_INCOMING_TIMEOUT) => stateUpdated(cs)
   }
 
   override def onBecome: PartialFunction[Transition, Unit] = {
     // SLEEPING channel does not react to CMD_SIGN so resend on reconnect
-    case (_, _, hc: HostedCommits, SLEEPING, OPEN | SUSPENDED) => stateUpdated(hc)
+    case (_, _, cs: Commitments, SLEEPING, OPEN | SUSPENDED) => stateUpdated(cs)
   }
 
   // SENDING OUTGOING PAYMENTS
@@ -402,9 +405,9 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
       */
 
     // Executed in channelContext
-    override def stateUpdated(hc: HostedCommits): Unit = {
-      hc.localSpec.remoteMalformed.foreach(process)
-      hc.localSpec.remoteFailed.foreach(process)
+    override def stateUpdated(cs: Commitments): Unit = {
+      cs.localSpec.remoteMalformed.foreach(process)
+      cs.localSpec.remoteFailed.foreach(process)
     }
 
     override def fulfillReceived(fulfill: UpdateFulfillHtlc): Unit = self process fulfill
@@ -462,7 +465,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
   }
 
   class PaymentSender extends StateMachine[PaymentSenderData] { self =>
-    become(dummyPaymentSenderData, INIT)
+    become(PaymentSenderData(CMD_SEND_MPP(ByteVector32.Zeroes, invalidPubKey), Map.empty), INIT)
 
     def doProcess(msg: Any): Unit = (msg, state) match {
       case (cmd: CMD_SEND_MPP, INIT | ABORTED) => assignToChans(PaymentMaster.currentSendable, PaymentSenderData(cmd, Map.empty), cmd.totalAmount)

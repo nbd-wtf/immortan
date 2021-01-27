@@ -1,14 +1,15 @@
 package immortan
 
-import fr.acinq.eclair.channel.{ChannelData, HasNormalCommitments}
+import fr.acinq.eclair.channel.{HasNormalCommitments, PersistentChannelData}
 import fr.acinq.eclair.wire.LightningMessage
 
+
 object NormalChannel {
-  def make(initListeners: Set[ChannelListener], d: HasNormalCommitments, bag: ChannelBag): NormalChannel = new NormalChannel {
-    def SEND(msg: LightningMessage *): Unit = for (work <- CommsTower.workers get d.commitments.announce.nodeSpecificPkap) msg foreach work.handler.process
-    def STORE(d1: ChannelData): ChannelData = bag.put(d.commitments.channelId, d1)
+  def make(initListeners: Set[ChannelListener], normalData: HasNormalCommitments, bag: ChannelBag): NormalChannel = new NormalChannel {
+    def SEND(msg: LightningMessage *): Unit = CommsTower.workers.get(normalData.commitments.announce.nodeSpecificPkap).foreach(msg foreach _.handler.process)
+    def STORE(normalData1: PersistentChannelData): PersistentChannelData = bag.put(normalData1)
     listeners = initListeners
-    doProcess(d)
+    doProcess(normalData)
   }
 }
 

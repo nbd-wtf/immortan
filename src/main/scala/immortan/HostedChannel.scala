@@ -15,11 +15,11 @@ import scodec.bits.ByteVector
 
 
 object HostedChannel {
-  def make(initListeners: Set[ChannelListener], cs: HostedCommits, bag: ChannelBag): HostedChannel = new HostedChannel {
-    def SEND(msg: LightningMessage *): Unit = for (work <- CommsTower.workers get cs.announce.nodeSpecificPkap) msg foreach work.handler.process
-    def STORE(d1: ChannelData): ChannelData = bag.put(cs.channelId, d1)
+  def make(initListeners: Set[ChannelListener], hostedData: HostedCommits, bag: ChannelBag): HostedChannel = new HostedChannel {
+    def SEND(msg: LightningMessage *): Unit = CommsTower.workers.get(hostedData.announce.nodeSpecificPkap).foreach(msg foreach _.handler.process)
+    def STORE(hostedData: PersistentChannelData): PersistentChannelData = bag.put(hostedData)
     listeners = initListeners
-    doProcess(cs)
+    doProcess(hostedData)
   }
 }
 

@@ -15,7 +15,7 @@ case class WaitRemoteHostedReply(announce: NodeAnnouncementExt, refundScriptPubK
 
 case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: LastCrossSignedState, nextLocalUpdates: List[UpdateMessage], nextRemoteUpdates: List[UpdateMessage],
                          localSpec: CommitmentSpec, updateOpt: Option[ChannelUpdate], localError: Option[Error], remoteError: Option[Error], resizeProposal: Option[ResizeChannel] = None,
-                         startedAt: Long = System.currentTimeMillis) extends ChannelData with Commitments { me =>
+                         startedAt: Long = System.currentTimeMillis) extends PersistentChannelData with Commitments { me =>
 
   val nextTotalLocal: Long = lastCrossSignedState.localUpdates + nextLocalUpdates.size
   val nextTotalRemote: Long = lastCrossSignedState.remoteUpdates + nextRemoteUpdates.size
@@ -41,7 +41,7 @@ case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: La
   def getError: Option[Error] = localError.orElse(remoteError)
   def addLocalProposal(update: UpdateMessage): HostedCommits = copy(nextLocalUpdates = nextLocalUpdates :+ update)
   def addRemoteProposal(update: UpdateMessage): HostedCommits = copy(nextRemoteUpdates = nextRemoteUpdates :+ update)
-  def isResizingSupported: Boolean = lastCrossSignedState.initHostedChannel.version.isSet(HostedChannelVersion.USE_RESIZE)
+  def isResizingSupported: Boolean = lastCrossSignedState.initHostedChannel.version == HostedChannelVersion.RESIZABLE
 
   def sendAdd(cmd: CMD_ADD_HTLC): (ChannelData, UpdateAddHtlc) = {
     // Let's add this change and see if the new state violates any of constraints including those imposed by them on us, proceed only if it does not
