@@ -19,9 +19,8 @@ package fr.acinq.eclair.wire
 import scodec.codecs._
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.{Features, wire}
-
 import fr.acinq.eclair.wire.ChannelCodecs.channelVersionCodec
-import scodec.bits.ByteVector
+import scodec.bits.{BitVector, ByteVector}
 import scodec.Codec
 
 /**
@@ -283,7 +282,7 @@ object LightningMessageCodecs {
 
   val unknownMessageCodec: Codec[UnknownMessage] = (
     ("tag" | uint16) ::
-      ("message" | varsizebinarydata)
+      ("message" | bits)
     ).as[UnknownMessage]
 
   //
@@ -379,8 +378,7 @@ object HostedMessagesCodecs {
       (bytes64 withContext "localSigOfRemoteLCSS")
   }.as[StateOverride]
 
-  val refundPendingCodec =
-    (uint32 withContext "startedAt").as[RefundPending]
+  val refundPendingCodec = (uint32 withContext "startedAt").as[RefundPending]
 
   val announcementSignatureCodec = {
     (bytes64 withContext "nodeSignature") ::
@@ -392,11 +390,32 @@ object HostedMessagesCodecs {
       (bytes64 withContext "clientSig")
   }.as[ResizeChannel]
 
-  val queryPublicHostedChannelsCodec =
-    (bytes32 withContext "chainHash").as[QueryPublicHostedChannels]
+  val queryPublicHostedChannelsCodec = (bytes32 withContext "chainHash").as[QueryPublicHostedChannels]
 
-  val replyPublicHostedChannelsEndCodec =
-    (bytes32 withContext "chainHash").as[ReplyPublicHostedChannelsEnd]
+  val replyPublicHostedChannelsEndCodec = (bytes32 withContext "chainHash").as[ReplyPublicHostedChannelsEnd]
+
+  final val HC_INVOKE_HOSTED_CHANNEL_TAG = 65535
+  final val HC_INIT_HOSTED_CHANNEL_TAG = 65533
+  final val HC_LAST_CROSS_SIGNED_STATE_TAG = 65531
+  final val HC_STATE_UPDATE_TAG = 65529
+  final val HC_STATE_OVERRIDE_TAG = 65527
+  final val HC_HOSTED_CHANNEL_BRANDING_TAG = 65525
+  final val HC_REFUND_PENDING_TAG = 65523
+  final val HC_ANNOUNCEMENT_SIGNATURE_TAG = 65521
+  final val HC_RESIZE_CHANNEL_TAG = 65519
+  final val HC_QUERY_PUBLIC_HOSTED_CHANNELS_TAG = 65517
+  final val HC_REPLY_PUBLIC_HOSTED_CHANNELS_END_TAG = 65515
+
+  final val PHC_ANNOUNCE_GOSSIP_TAG = 65513
+  final val PHC_ANNOUNCE_SYNC_TAG = 65511
+  final val PHC_UPDATE_GOSSIP_TAG = 65509
+  final val PHC_UPDATE_SYNC_TAG = 65507
+
+  final val HC_UPDATE_ADD_HTLC_TAG = 65505
+  final val HC_UPDATE_FULFILL_HTLC_TAG = 65503
+  final val HC_UPDATE_FAIL_HTLC_TAG = 65501
+  final val HC_UPDATE_FAIL_MALFORMED_HTLC_TAG = 65499
+  final val HC_ERROR_TAG = 65497
 }
 
 object SwapCodecs {
@@ -472,4 +491,82 @@ object SwapCodecs {
     ("btcAddress" | text) ::
       ("reason" | uint32)
   }.as[SwapOutTransactionDenied]
+
+  final val SWAP_IN_REQUEST_MESSAGE_TAG = 55037
+  final val SWAP_IN_RESPONSE_MESSAGE_TAG = 55035
+  final val SWAP_IN_PAYMENT_REQUEST_MESSAGE_TAG = 55033
+  final val SWAP_IN_PAYMENT_DENIED_MESSAGE_TAG = 55031
+  final val SWAP_IN_STATE_MESSAGE_TAG = 55029
+
+  final val SWAP_OUT_REQUEST_MESSAGE_TAG = 55027
+  final val SWAP_OUT_FEERATES_MESSAGE_TAG = 55025
+  final val SWAP_OUT_TRANSACTION_REQUEST_MESSAGE_TAG = 55023
+  final val SWAP_OUT_TRANSACTION_RESPONSE_MESSAGE_TAG = 55021
+  final val SWAP_OUT_TRANSACTION_DENIED_MESSAGE_TAG = 55019
+}
+
+object ExtMessageMapping {
+  import HostedMessagesCodecs._
+  import SwapCodecs._
+
+  def decode(msg: UnknownMessage): LightningMessage = msg.tag match {
+    case HC_INVOKE_HOSTED_CHANNEL_TAG => invokeHostedChannelCodec.decode(msg.data).require.value
+    case HC_INIT_HOSTED_CHANNEL_TAG => initHostedChannelCodec.decode(msg.data).require.value
+    case HC_LAST_CROSS_SIGNED_STATE_TAG => lastCrossSignedStateCodec.decode(msg.data).require.value
+    case HC_STATE_UPDATE_TAG => stateUpdateCodec.decode(msg.data).require.value
+    case HC_STATE_OVERRIDE_TAG => stateOverrideCodec.decode(msg.data).require.value
+    case HC_HOSTED_CHANNEL_BRANDING_TAG => hostedChannelBrandingCodec.decode(msg.data).require.value
+    case HC_REFUND_PENDING_TAG => refundPendingCodec.decode(msg.data).require.value
+    case HC_RESIZE_CHANNEL_TAG => resizeChannelCodec.decode(msg.data).require.value
+    case HC_QUERY_PUBLIC_HOSTED_CHANNELS_TAG => queryPublicHostedChannelsCodec.decode(msg.data).require.value
+    case HC_REPLY_PUBLIC_HOSTED_CHANNELS_END_TAG => replyPublicHostedChannelsEndCodec.decode(msg.data).require.value
+    case PHC_ANNOUNCE_GOSSIP_TAG => LightningMessageCodecs.channelAnnouncementCodec.decode(msg.data).require.value
+    case PHC_ANNOUNCE_SYNC_TAG => LightningMessageCodecs.channelAnnouncementCodec.decode(msg.data).require.value
+    case PHC_UPDATE_GOSSIP_TAG => LightningMessageCodecs.channelUpdateCodec.decode(msg.data).require.value
+    case PHC_UPDATE_SYNC_TAG => LightningMessageCodecs.channelUpdateCodec.decode(msg.data).require.value
+    case HC_UPDATE_ADD_HTLC_TAG => LightningMessageCodecs.updateAddHtlcCodec.decode(msg.data).require.value
+    case HC_UPDATE_FULFILL_HTLC_TAG => LightningMessageCodecs.updateFulfillHtlcCodec.decode(msg.data).require.value
+    case HC_UPDATE_FAIL_HTLC_TAG => LightningMessageCodecs.updateFailHtlcCodec.decode(msg.data).require.value
+    case HC_UPDATE_FAIL_MALFORMED_HTLC_TAG => LightningMessageCodecs.updateFailMalformedHtlcCodec.decode(msg.data).require.value
+    case HC_ERROR_TAG => LightningMessageCodecs.errorCodec.decode(msg.data).require.value
+    case SWAP_IN_REQUEST_MESSAGE_TAG => provide(SwapInRequest).decode(msg.data).require.value
+    case SWAP_IN_RESPONSE_MESSAGE_TAG => swapInResponseCodec.decode(msg.data).require.value
+    case SWAP_IN_PAYMENT_REQUEST_MESSAGE_TAG => swapInPaymentRequestCodec.decode(msg.data).require.value
+    case SWAP_IN_PAYMENT_DENIED_MESSAGE_TAG => swapInPaymentDeniedCodec.decode(msg.data).require.value
+    case SWAP_IN_STATE_MESSAGE_TAG => swapInStateCodec.decode(msg.data).require.value
+    case SWAP_OUT_REQUEST_MESSAGE_TAG => provide(SwapOutRequest).decode(msg.data).require.value
+    case SWAP_OUT_FEERATES_MESSAGE_TAG => swapOutFeeratesCodec.decode(msg.data).require.value
+    case SWAP_OUT_TRANSACTION_REQUEST_MESSAGE_TAG => swapOutTransactionRequestCodec.decode(msg.data).require.value
+    case SWAP_OUT_TRANSACTION_RESPONSE_MESSAGE_TAG => swapOutTransactionResponseCodec.decode(msg.data).require.value
+    case SWAP_OUT_TRANSACTION_DENIED_MESSAGE_TAG => swapOutTransactionDeniedCodec.decode(msg.data).require.value
+  }
+
+  def encode(msg: LightningMessage): UnknownMessage = msg match {
+    case msg: InvokeHostedChannel => UnknownMessage(HC_INVOKE_HOSTED_CHANNEL_TAG, invokeHostedChannelCodec.encode(msg).require)
+    case msg: InitHostedChannel => UnknownMessage(HC_INIT_HOSTED_CHANNEL_TAG, initHostedChannelCodec.encode(msg).require)
+    case msg: LastCrossSignedState => UnknownMessage(HC_LAST_CROSS_SIGNED_STATE_TAG, lastCrossSignedStateCodec.encode(msg).require)
+    case msg: StateUpdate => UnknownMessage(HC_STATE_UPDATE_TAG, stateUpdateCodec.encode(msg).require)
+    case msg: StateOverride => UnknownMessage(HC_STATE_OVERRIDE_TAG, stateOverrideCodec.encode(msg).require)
+    case msg: HostedChannelBranding => UnknownMessage(HC_HOSTED_CHANNEL_BRANDING_TAG, hostedChannelBrandingCodec.encode(msg).require)
+    case msg: RefundPending => UnknownMessage(HC_REFUND_PENDING_TAG, refundPendingCodec.encode(msg).require)
+    case msg: ResizeChannel => UnknownMessage(HC_RESIZE_CHANNEL_TAG, resizeChannelCodec.encode(msg).require)
+    case msg: QueryPublicHostedChannels => UnknownMessage(HC_QUERY_PUBLIC_HOSTED_CHANNELS_TAG, queryPublicHostedChannelsCodec.encode(msg).require)
+    case msg: ReplyPublicHostedChannelsEnd => UnknownMessage(HC_REPLY_PUBLIC_HOSTED_CHANNELS_END_TAG, replyPublicHostedChannelsEndCodec.encode(msg).require)
+    case msg: ChannelUpdate => UnknownMessage(PHC_UPDATE_SYNC_TAG, LightningMessageCodecs.channelUpdateCodec.encode(msg).require)
+    case msg: UpdateAddHtlc => UnknownMessage(HC_UPDATE_ADD_HTLC_TAG, LightningMessageCodecs.updateAddHtlcCodec.encode(msg).require)
+    case msg: UpdateFulfillHtlc => UnknownMessage(HC_UPDATE_FULFILL_HTLC_TAG, LightningMessageCodecs.updateFulfillHtlcCodec.encode(msg).require)
+    case msg: UpdateFailHtlc => UnknownMessage(HC_UPDATE_FAIL_HTLC_TAG, LightningMessageCodecs.updateFailHtlcCodec.encode(msg).require)
+    case msg: UpdateFailMalformedHtlc => UnknownMessage(HC_UPDATE_FAIL_MALFORMED_HTLC_TAG, LightningMessageCodecs.updateFailMalformedHtlcCodec.encode(msg).require)
+    case msg: Error => UnknownMessage(HC_ERROR_TAG, LightningMessageCodecs.errorCodec.encode(msg).require)
+    case SwapInRequest => UnknownMessage(SWAP_IN_REQUEST_MESSAGE_TAG, provide(SwapInRequest).encode(SwapInRequest).require)
+    case msg: SwapInResponse => UnknownMessage(SWAP_IN_RESPONSE_MESSAGE_TAG, swapInResponseCodec.encode(msg).require)
+    case msg: SwapInPaymentRequest => UnknownMessage(SWAP_IN_PAYMENT_REQUEST_MESSAGE_TAG, swapInPaymentRequestCodec.encode(msg).require)
+    case msg: SwapInPaymentDenied => UnknownMessage(SWAP_IN_PAYMENT_DENIED_MESSAGE_TAG, swapInPaymentDeniedCodec.encode(msg).require)
+    case msg: SwapInState => UnknownMessage(SWAP_IN_STATE_MESSAGE_TAG, swapInStateCodec.encode(msg).require)
+    case SwapOutRequest => UnknownMessage(SWAP_OUT_REQUEST_MESSAGE_TAG, provide(SwapOutRequest).encode(SwapOutRequest).require)
+    case msg: SwapOutFeerates => UnknownMessage(SWAP_OUT_FEERATES_MESSAGE_TAG, swapOutFeeratesCodec.encode(msg).require)
+    case msg: SwapOutTransactionRequest => UnknownMessage(SWAP_OUT_TRANSACTION_REQUEST_MESSAGE_TAG, swapOutTransactionRequestCodec.encode(msg).require)
+    case msg: SwapOutTransactionResponse => UnknownMessage(SWAP_OUT_TRANSACTION_RESPONSE_MESSAGE_TAG, swapOutTransactionResponseCodec.encode(msg).require)
+    case msg: SwapOutTransactionDenied => UnknownMessage(SWAP_OUT_TRANSACTION_DENIED_MESSAGE_TAG, swapOutTransactionDeniedCodec.encode(msg).require)
+  }
 }

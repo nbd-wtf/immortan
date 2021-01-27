@@ -17,6 +17,7 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.eclair._
+import scodec.bits.{BitVector, ByteVector}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering, Protocol, Satoshi}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
@@ -24,7 +25,6 @@ import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.router.Announcements
-import scodec.bits.ByteVector
 import java.nio.ByteOrder
 import immortan.LNParams
 
@@ -229,7 +229,7 @@ case class ReplyChannelRange(chainHash: ByteVector32, firstBlockNum: Long,
 
 case class GossipTimestampFilter(chainHash: ByteVector32, firstTimestamp: Long, timestampRange: Long) extends RoutingMessage with HasChainHash
 
-case class UnknownMessage(tag: Int, data: ByteVector) extends LightningMessage
+case class UnknownMessage(tag: Int, data: BitVector) extends LightningMessage
 
 // HOSTED CHANNELS
 
