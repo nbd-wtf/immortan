@@ -64,12 +64,12 @@ abstract class SwapInAddressHandler(ourInit: Init) extends StateMachine[AddressD
 
     case (CMDCancel, WAITING_FIRST_RESPONSE | WAITING_REST_OF_RESPONSES) =>
       // Do not disconnect from remote peer because we have a channel with them, but remove this exact SwapIn listener
-      for (cnc <- data.cmdStart.capableCncs) CommsTower.listeners(cnc.commits.announce.nodeSpecificPkap) -= swapInListener
+      for (cnc <- data.cmdStart.capableCncs) CommsTower.listeners(cnc.commits.announce.nodeSpecificPair) -= swapInListener
       become(data, FINALIZED)
 
     case (cmd: CMDStart, null) =>
       become(freshData = AddressData(results = cmd.capableCncs.map(_.commits.announce.na -> None).toMap, cmd), WAITING_FIRST_RESPONSE)
-      for (cnc <- cmd.capableCncs) CommsTower.listen(Set(swapInListener), cnc.commits.announce.nodeSpecificPkap, cnc.commits.announce.na, ourInit)
+      for (cnc <- cmd.capableCncs) CommsTower.listen(Set(swapInListener), cnc.commits.announce.nodeSpecificPair, cnc.commits.announce.na, ourInit)
       Rx.ioQueue.delay(30.seconds).foreach(_ => me doSearch true)
 
     case _ =>

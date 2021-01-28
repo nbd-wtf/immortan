@@ -2,14 +2,11 @@ package immortan
 
 import TransportHandler._
 import immortan.crypto.Noise._
-
 import scala.concurrent.{ExecutionContext, Future}
-import fr.acinq.eclair.wire.LightningMessageCodecs.lightningMessageCodecWithFallback
-
-import scala.concurrent.ExecutionContextExecutor
 import fr.acinq.eclair.wire.{ExtMessageMapping, LightningMessage}
+import fr.acinq.eclair.wire.LightningMessageCodecs.lightningMessageCodecWithFallback
+import scala.concurrent.ExecutionContextExecutor
 import java.util.concurrent.Executors
-
 import immortan.crypto.StateMachine
 import fr.acinq.bitcoin.Protocol
 import scodec.bits.ByteVector

@@ -14,7 +14,7 @@ abstract class OpenHandler(ext: NodeAnnouncementExt, ourInit: Init, format: Stor
   val peerSpecificRefundPubKey: ByteVector = format.keys.refundPubKey(theirNodeId = ext.na.nodeId)
 
   val freshChannel: HostedChannel = new HostedChannel {
-    def SEND(messages: LightningMessage *): Unit = CommsTower.sendMany(messages, ext.nodeSpecificPkap)
+    def SEND(messages: LightningMessage *): Unit = CommsTower.sendMany(messages, ext.nodeSpecificPair)
     def STORE(hostedData: PersistentChannelData): PersistentChannelData = cm.chanBag.put(hostedData)
   }
 
@@ -35,7 +35,7 @@ abstract class OpenHandler(ext: NodeAnnouncementExt, ourInit: Init, format: Stor
     override def onBecome: PartialFunction[Transition, Unit] = {
       case (_, _, _: HostedCommits, WAIT_FOR_ACCEPT, OPEN | SUSPENDED) =>
         freshChannel.listeners = cm.channelListeners // Add standard channel listeners to new established channel
-        CommsTower.listeners(ext.nodeSpecificPkap) -= this // Stop sending messages from this connection listener
+        CommsTower.listeners(ext.nodeSpecificPair) -= this // Stop sending messages from this connection listener
         cm.all :+= freshChannel // Put this channel to vector of established channels
         cm.initConnect // Add standard connection listeners for this peer
 
@@ -50,6 +50,6 @@ abstract class OpenHandler(ext: NodeAnnouncementExt, ourInit: Init, format: Stor
   }
 
   freshChannel.listeners += makeChanListener
-  CommsTower.listen(Set(makeChanListener, cm.sockBrandingBridge), ext.nodeSpecificPkap, ext.na, ourInit)
+  CommsTower.listen(Set(makeChanListener, cm.sockBrandingBridge), ext.nodeSpecificPair, ext.na, ourInit)
   freshChannel doProcess WaitRemoteHostedReply(ext, peerSpecificRefundPubKey, peerSpecificSecret)
 }

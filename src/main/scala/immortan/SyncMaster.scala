@@ -108,7 +108,7 @@ case class SyncWorkerPHCData(phcMaster: PHCSyncMaster,
 case class SyncWorker(master: CanBeRepliedTo, keyPair: KeyPair, ann: NodeAnnouncement, ourInit: Init) extends StateMachine[SyncWorkerData] { me =>
   implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
   def process(changeMessage: Any): Unit = scala.concurrent.Future(me doProcess changeMessage)
-  val pkap: KeyPairAndPubKey = KeyPairAndPubKey(keyPair, ann.nodeId)
+  val pair: KeyPairAndPubKey = KeyPairAndPubKey(keyPair, ann.nodeId)
 
   val listener: ConnectionListener = new ConnectionListener {
     override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = me process worker
@@ -117,14 +117,14 @@ case class SyncWorker(master: CanBeRepliedTo, keyPair: KeyPair, ann: NodeAnnounc
     override def onDisconnect(worker: CommsTower.Worker): Unit = {
       // Remove this listener and remove an object itself from master
       // This disconnect is unexpected, normal shoutdown removes listener
-      CommsTower.listeners(worker.pkap) -= listener
+      CommsTower.listeners(worker.pair) -= listener
       master process me
     }
   }
 
   become(null, WAITING)
   // Connect and start listening immediately
-  CommsTower.listen(Set(listener), pkap, ann, ourInit)
+  CommsTower.listen(Set(listener), pair, ann, ourInit)
 
   def doProcess(change: Any): Unit = (change, data, state) match {
     case (data1: SyncWorkerPHCData, null, WAITING) => become(data1, PHC_SYNC)
@@ -154,7 +154,7 @@ case class SyncWorker(master: CanBeRepliedTo, keyPair: KeyPair, ann: NodeAnnounc
         me process CMDShutdown
       } else {
         // We still have queries left, send another one to peer
-        CommsTower.sendMany(data1.queries.headOption, pkap)
+        CommsTower.sendMany(data1.queries.headOption, pair)
       }
 
     case (update: ChannelUpdate, d1: SyncWorkerGossipData, GOSSIP_SYNC) if d1.syncMaster.provenAndTooSmallOrNoInfo(update) => become(d1.copy(excluded = d1.excluded + update.core), GOSSIP_SYNC)
@@ -180,7 +180,7 @@ case class SyncWorker(master: CanBeRepliedTo, keyPair: KeyPair, ann: NodeAnnounc
 
     case (CMDShutdown, _, _) =>
       become(freshData = null, SHUT_DOWN)
-      CommsTower forget pkap
+      CommsTower forget pair
 
     case _ =>
   }
@@ -233,12 +233,12 @@ abstract class SyncMaster(extraNodes: Set[NodeAnnouncement], excluded: Set[Long]
 
     case (sync: SyncWorker, SyncMasterShortIdData(activeSyncs, ranges), SHORT_ID_SYNC) =>
       // Sync has disconnected, stop tracking it and try to connect to another one with delay
-      val data1 = SyncMasterShortIdData(activeSyncs - sync, ranges - sync.pkap.them)
+      val data1 = SyncMasterShortIdData(activeSyncs - sync, ranges - sync.pair.them)
       Rx.ioQueue.delay(3.seconds).foreach(_ => me process CMDAddSync)
       become(data1, SHORT_ID_SYNC)
 
     case (CMDShortIdsComplete(sync, ranges1), SyncMasterShortIdData(currentSyncs, ranges), SHORT_ID_SYNC) =>
-      val data1 = SyncMasterShortIdData(collectedRanges = ranges + (sync.pkap.them -> ranges1), activeSyncs = currentSyncs)
+      val data1 = SyncMasterShortIdData(collectedRanges = ranges + (sync.pair.them -> ranges1), activeSyncs = currentSyncs)
       become(data1, SHORT_ID_SYNC)
 
       if (data1.collectedRanges.size == maxNodesToSyncFrom) {
@@ -271,8 +271,8 @@ abstract class SyncMaster(extraNodes: Set[NodeAnnouncement], excluded: Set[Long]
       Rx.ioQueue.delay(3.seconds).foreach(_ => me process sync.data)
 
     case (CMDChunkComplete(sync, workerData), data1: SyncMasterGossipData, GOSSIP_SYNC) =>
-      for (liteAnnounce <- workerData.announces) confirmedChanAnnounces(liteAnnounce) = confirmedChanAnnounces(liteAnnounce) + sync.pkap.them
-      for (liteUpdate <- workerData.updates) confirmedChanUpdates(liteUpdate.core) = confirmedChanUpdates(liteUpdate.core).add(liteUpdate, sync.pkap.them)
+      for (liteAnnounce <- workerData.announces) confirmedChanAnnounces(liteAnnounce) = confirmedChanAnnounces(liteAnnounce) + sync.pair.them
+      for (liteUpdate <- workerData.updates) confirmedChanUpdates(liteUpdate.core) = confirmedChanUpdates(liteUpdate.core).add(liteUpdate, sync.pair.them)
       newExcludedChanUpdates ++= workerData.excluded
 
       if (data1.chunksLeft > 0) {

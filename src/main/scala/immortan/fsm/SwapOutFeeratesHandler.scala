@@ -72,12 +72,12 @@ abstract class SwapOutFeeratesHandler(ourInit: Init) extends StateMachine[Feerat
 
     case (CMDCancel, WAITING_FIRST_RESPONSE | WAITING_REST_OF_RESPONSES) =>
       // Do not disconnect from remote peer because we have a channel with them, but remove this exact SwapIn listener
-      for (cnc <- data.cmdStart.capableCncs) CommsTower.listeners(cnc.commits.announce.nodeSpecificPkap) -= swapOutListener
+      for (cnc <- data.cmdStart.capableCncs) CommsTower.listeners(cnc.commits.announce.nodeSpecificPair) -= swapOutListener
       become(data, FINALIZED)
 
     case (cmd: CMDStart, null) =>
       become(freshData = FeeratesData(results = cmd.capableCncs.map(_.commits.announce.na -> None).toMap, cmd), WAITING_FIRST_RESPONSE)
-      for (cnc <- cmd.capableCncs) CommsTower.listen(Set(swapOutListener), cnc.commits.announce.nodeSpecificPkap, cnc.commits.announce.na, ourInit)
+      for (cnc <- cmd.capableCncs) CommsTower.listen(Set(swapOutListener), cnc.commits.announce.nodeSpecificPair, cnc.commits.announce.na, ourInit)
       Rx.ioQueue.delay(30.seconds).foreach(_ => me doSearch true)
 
     case _ =>

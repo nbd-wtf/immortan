@@ -161,8 +161,8 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
   def findById(chanId: ByteVector32): Option[ChanAndCommits] = all.flatMap(Channel.chanAndCommitsOpt).find(_.commits.channelId == chanId)
 
   def initConnect: Unit = all.flatMap(Channel.chanAndCommitsOpt).map(_.commits).foreach {
-    case cs: HostedCommits => CommsTower.listen(connectionListeners, cs.announce.nodeSpecificPkap, cs.announce.na, LNParams.hcInit)
-    case cs: NormalCommits => CommsTower.listen(connectionListeners, cs.announce.nodeSpecificPkap, cs.announce.na, LNParams.normInit)
+    case cs: HostedCommits => CommsTower.listen(connectionListeners, cs.announce.nodeSpecificPair, cs.announce.na, LNParams.hcInit)
+    case cs: NormalCommits => CommsTower.listen(connectionListeners, cs.announce.nodeSpecificPair, cs.announce.na, LNParams.normInit)
     case otherwise => throw new RuntimeException(s"Could not process $otherwise")
   }
 

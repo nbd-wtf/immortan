@@ -28,32 +28,32 @@ object CommsTower {
   final val AWAITING_MESSAGES = 2
   final val AWAITING_PONG = 3
 
-  def listen(listeners1: Set[ConnectionListener], pkap: KeyPairAndPubKey, ann: NodeAnnouncement, ourInit: Init): Unit = synchronized {
+  def listen(listeners1: Set[ConnectionListener], pair: KeyPairAndPubKey, ann: NodeAnnouncement, ourInit: Init): Unit = synchronized {
     // Update and either insert a new worker or fire onOperational on new listeners iff worker currently exists and is online
     // First add listeners, then try to add worker because we may already have a connected worker, but no listeners
-    listeners(pkap) ++= listeners1
+    listeners(pair) ++= listeners1
 
-    workers.get(pkap) map { presentWorker =>
+    workers.get(pair) map { presentWorker =>
       // A connected worker is already present, inform listener if it's established
       presentWorker.theirInit.foreach(presentWorker handleTheirRemoteInitMessage listeners1)
     } getOrElse {
       // No worker is present, add a new one and try to connect right away
-      workers(pkap) = new Worker(pkap, ann, ourInit, new Bytes(1024), new Socket)
+      workers(pair) = new Worker(pair, ann, ourInit, new Bytes(1024), new Socket)
     }
   }
 
-  def forget(pkap: KeyPairAndPubKey): Unit = {
+  def forget(pair: KeyPairAndPubKey): Unit = {
     // First remove all listeners, then disconnect
     // this ensures listeners won't try to reconnect
 
-    listeners.remove(pkap)
-    workers.get(pkap).foreach(_.disconnect)
+    listeners.remove(pair)
+    workers.get(pair).foreach(_.disconnect)
   }
 
-  def sendMany(messages: Traversable[LightningMessage], pkap: KeyPairAndPubKey): Unit =
-    CommsTower.workers.get(pkap).foreach(messages foreach _.handler.process)
+  def sendMany(messages: Traversable[LightningMessage], pair: KeyPairAndPubKey): Unit =
+    CommsTower.workers.get(pair).foreach(messages foreach _.handler.process)
 
-  class Worker(val pkap: KeyPairAndPubKey, val ann: NodeAnnouncement, ourInit: Init, buffer: Bytes, sock: Socket) { me =>
+  class Worker(val pair: KeyPairAndPubKey, val ann: NodeAnnouncement, ourInit: Init, buffer: Bytes, sock: Socket) { me =>
     implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
 
     var pingState: Int = AWAITING_MESSAGES
@@ -82,7 +82,7 @@ object CommsTower {
     }
 
     val handler: TransportHandler =
-      new TransportHandler(pkap.keyPair, ann.nodeId.value) {
+      new TransportHandler(pair.keyPair, ann.nodeId.value) {
         def handleEncryptedOutgoingData(data: ByteVector): Unit =
           try sock.getOutputStream.write(data.toArray) catch {
             case _: Throwable => disconnect
@@ -90,7 +90,7 @@ object CommsTower {
 
         def handleDecryptedIncomingData(data: ByteVector): Unit = {
           // Prevent pinger from disconnecting or sending pings
-          val ourListenerSet = listeners(pkap)
+          val ourListenerSet = listeners(pair)
           pingState = PROCESSING_DATA
 
           lightningMessageCodecWithFallback.decode(data.bits).require.value match {
@@ -136,8 +136,8 @@ object CommsTower {
 
     thread onComplete { _ =>
       try pinging.unsubscribe catch none
-      listeners(pkap).foreach(_ onDisconnect me)
-      workers -= pkap
+      listeners(pair).foreach(_ onDisconnect me)
+      workers -= pair
     }
   }
 }

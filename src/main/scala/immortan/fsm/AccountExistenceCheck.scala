@@ -56,7 +56,7 @@ abstract class AccountExistenceCheck(format: StorageFormat, chainHash: ByteVecto
 
     case (worker: CommsTower.Worker, OPERATIONAL) =>
       // We get previously scheduled worker and use its peer data to reconnect again
-      CommsTower.listen(Set(accountCheckListener), worker.pkap, worker.ann, init)
+      CommsTower.listen(Set(accountCheckListener), worker.pair, worker.ann, init)
 
     case (PeerResponse(_: InitHostedChannel, worker), OPERATIONAL) =>
       // Remote node offers to create a new channel, no "account" there
@@ -72,13 +72,13 @@ abstract class AccountExistenceCheck(format: StorageFormat, chainHash: ByteVecto
 
     case (CMDCancel, OPERATIONAL) =>
       // User has manually cancelled a check, disconnect all peers
-      data.hosts.values.foreach(CommsTower forget _.nodeSpecificPkap)
+      data.hosts.values.foreach(CommsTower forget _.nodeSpecificPair)
       become(data, FINALIZED)
 
     case (CMDStart(outstandingProviderExts), null) =>
       val remainingHosts = toMapBy[NodeAnnouncement, NodeAnnouncementExt](outstandingProviderExts, _.na)
       become(CheckData(remainingHosts, remainingHosts.mapValues(_ => false), remainingHosts.size * 4), OPERATIONAL)
-      for (ext <- outstandingProviderExts) CommsTower.listen(Set(accountCheckListener), ext.nodeSpecificPkap, ext.na, init)
+      for (ext <- outstandingProviderExts) CommsTower.listen(Set(accountCheckListener), ext.nodeSpecificPair, ext.na, init)
       Rx.ioQueue.delay(30.seconds).foreach(_ => me doSearch true)
   }
 

@@ -139,7 +139,7 @@ case class NodeAnnouncementExt(na: NodeAnnouncement) {
   lazy val nodeSpecificPrivKey: PrivateKey = nodeSpecificExtendedKey.privateKey
   lazy val nodeSpecificPubKey: PublicKey = nodeSpecificPrivKey.publicKey
 
-  lazy val nodeSpecificPkap: KeyPairAndPubKey = KeyPairAndPubKey(KeyPair(nodeSpecificPubKey.value, nodeSpecificPrivKey.value), na.nodeId)
+  lazy val nodeSpecificPair: KeyPairAndPubKey = KeyPairAndPubKey(KeyPair(nodeSpecificPubKey.value, nodeSpecificPrivKey.value), na.nodeId)
   lazy val nodeSpecificHostedChanId: ByteVector32 = hostedChanId(nodeSpecificPubKey.value, na.nodeId.value)
 
   private def derivePrivKey(path: KeyPath) = derivePrivateKey(nodeSpecificExtendedKey, path)
