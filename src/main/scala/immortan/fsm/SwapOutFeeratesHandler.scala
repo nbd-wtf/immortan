@@ -36,8 +36,8 @@ abstract class SwapOutFeeratesHandler(ourInit: Init) extends StateMachine[Feerat
   lazy private val swapOutListener = new ConnectionListener {
     // Disconnect logic is already handled in ChannelMaster base listener
     override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = {
-      val swapInSupported = Features.canUseFeature(ourInit.features, theirInit.features, Features.ChainSwap)
-      if (swapInSupported) worker.handler process SwapOutRequest else me process NoSwapOutSupport(worker)
+      val swapSupported = Features.canUseFeature(ourInit.features, theirInit.features, Features.ChainSwap)
+      if (swapSupported) worker.handler process SwapOutRequest else me process NoSwapOutSupport(worker)
     }
 
     override def onSwapOutMessage(worker: CommsTower.Worker, msg: SwapOut): Unit =

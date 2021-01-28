@@ -50,6 +50,9 @@ object CommsTower {
     workers.get(pkap).foreach(_.disconnect)
   }
 
+  def sendMany(messages: Traversable[LightningMessage], pkap: KeyPairAndPubKey): Unit =
+    CommsTower.workers.get(pkap).foreach(messages foreach _.handler.process)
+
   class Worker(val pkap: KeyPairAndPubKey, val ann: NodeAnnouncement, ourInit: Init, buffer: Bytes, sock: Socket) { me =>
     implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
 
@@ -91,11 +94,15 @@ object CommsTower {
           pingState = PROCESSING_DATA
 
           lightningMessageCodecWithFallback.decode(data.bits).require.value match {
-            case message: Init => handleTheirRemoteInitMessage(ourListenerSet)(message)
-            case message: Ping => if (message.pongLength > 0) handler process Pong(ByteVector fromValidHex "00" * message.pongLength)
-            case message: HostedChannelMessage => for (lst <- ourListenerSet) lst.onHostedMessage(me, message)
-            case message: SwapOut => for (lst <- ourListenerSet) lst.onSwapOutMessage(me, message)
-            case message: SwapIn => for (lst <- ourListenerSet) lst.onSwapInMessage(me, message)
+            case message: UnknownMessage => ExtMessageMapping.decode(message) match {
+              case message: HostedChannelMessage => for (lst <- ourListenerSet) lst.onHostedMessage(me, message)
+              case message: SwapOut => for (lst <- ourListenerSet) lst.onSwapOutMessage(me, message)
+              case message: SwapIn => for (lst <- ourListenerSet) lst.onSwapInMessage(me, message)
+              case message => throw new RuntimeException(s"Can not handle $message")
+            }
+
+            case message: Init => handleTheirRemoteInitMessage(ourListenerSet)(remoteInit = message)
+            case message: Ping => handler process Pong(ByteVector fromValidHex "00" * message.pongLength)
             case message => for (lst <- ourListenerSet) lst.onMessage(me, message)
           }
 

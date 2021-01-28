@@ -542,7 +542,7 @@ object ExtMessageMapping {
     case otherwise => throw new RuntimeException(s"Can not decode tag=$otherwise")
   }
 
-  def preEncode(msg: LightningMessage): LightningMessage = msg match {
+  def prepare(msg: LightningMessage): LightningMessage = msg match {
     case msg: InvokeHostedChannel => UnknownMessage(HC_INVOKE_HOSTED_CHANNEL_TAG, invokeHostedChannelCodec.encode(msg).require)
     case msg: InitHostedChannel => UnknownMessage(HC_INIT_HOSTED_CHANNEL_TAG, initHostedChannelCodec.encode(msg).require)
     case msg: LastCrossSignedState => UnknownMessage(HC_LAST_CROSS_SIGNED_STATE_TAG, lastCrossSignedStateCodec.encode(msg).require)

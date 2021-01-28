@@ -34,8 +34,8 @@ abstract class SwapInAddressHandler(ourInit: Init) extends StateMachine[AddressD
   lazy private val swapInListener = new ConnectionListener {
     // Disconnect logic is already handled in ChannelMaster base listener
     override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = {
-      val swapInSupported = Features.canUseFeature(ourInit.features, theirInit.features, Features.ChainSwap)
-      if (swapInSupported) worker.handler process SwapInRequest else me process NoSwapInSupport(worker)
+      val swapSupported = Features.canUseFeature(ourInit.features, theirInit.features, Features.ChainSwap)
+      if (swapSupported) worker.handler process SwapInRequest else me process NoSwapInSupport(worker)
     }
 
     override def onSwapInMessage(worker: CommsTower.Worker, msg: SwapIn): Unit =

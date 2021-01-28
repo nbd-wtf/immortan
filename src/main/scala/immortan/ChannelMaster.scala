@@ -274,10 +274,10 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
       // This is a multipart payment where some shards have different total amount values, this is a spec violation so we proceed with failing right away
       case (payments, _) if payments.map(_.payload.totalAmount).toSet.size > 1 => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
       // This is a payment where total amount is set to a value which is less than what we have originally requested, this is a spec violation so we proceed with failing right away
-      case (payments, Some(info)) if info.pr.amount.exists(_ > payments.map(_.payload.totalAmount).min) => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
+      case (payments, Some(info)) if info.pr.amount.exists(_ > payments.head.payload.totalAmount) => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
       // This is a payment where one of shards has a paymentSecret which is different from the one we have provided in invoice, this is a spec violation so we proceed with failing right away
       case (payments, Some(info)) if !payments.flatMap(_.payload.paymentSecret).forall(info.pr.paymentSecret.contains) => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
-      // This is a payment which arrives too late, we would have too few blocks to prove that we have fulfilled it with an uncooperative host, not a spec violation but we still fail it to be on safe side
+      // This is a payment which arrives too late, we would have too few blocks to prove that we have fulfilled it with an uncooperative peer, not a spec violation but we still fail it to be on safe side
       case (payments, _) if payments.exists(_.add.cltvExpiry.toLong < cl.currentChainTip + LNParams.cltvRejectThreshold) => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
       case (payments, Some(info)) if payments.map(_.add.amountMsat).sum >= payments.head.payload.totalAmount => for (pay <- payments) yield CMD_FULFILL_HTLC(info.preimage, pay.add)
       // This can happen either when incoming payments time out or when we restart and have partial unanswered incoming leftovers, fail all of them

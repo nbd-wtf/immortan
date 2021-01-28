@@ -14,7 +14,7 @@ abstract class OpenHandler(ext: NodeAnnouncementExt, ourInit: Init, format: Stor
   val peerSpecificRefundPubKey: ByteVector = format.keys.refundPubKey(theirNodeId = ext.na.nodeId)
 
   val freshChannel: HostedChannel = new HostedChannel {
-    def SEND(msg: LightningMessage *): Unit = CommsTower.workers.get(ext.nodeSpecificPkap).foreach(msg foreach _.handler.process)
+    def SEND(messages: LightningMessage *): Unit = CommsTower.sendMany(messages, ext.nodeSpecificPkap)
     def STORE(hostedData: PersistentChannelData): PersistentChannelData = cm.chanBag.put(hostedData)
   }
 
