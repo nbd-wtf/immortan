@@ -98,7 +98,7 @@ object CommsTower {
               case message: HostedChannelMessage => for (lst <- ourListenerSet) lst.onHostedMessage(me, message)
               case message: SwapOut => for (lst <- ourListenerSet) lst.onSwapOutMessage(me, message)
               case message: SwapIn => for (lst <- ourListenerSet) lst.onSwapInMessage(me, message)
-              case message => throw new RuntimeException(s"Can not handle $message")
+              case message => for (lst <- ourListenerSet) lst.onMessage(me, message)
             }
 
             case message: Init => handleTheirRemoteInitMessage(ourListenerSet)(remoteInit = message)
