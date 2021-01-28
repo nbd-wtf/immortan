@@ -5,7 +5,7 @@ import immortan.crypto.Tools.{Bytes, Fiat2Btc}
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.MilliSatoshi
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 import scodec.bits.ByteVector
 import immortan.utils.uri.Uri
 import immortan.utils.LNUrl
@@ -100,6 +100,15 @@ sealed trait TxDescription { val txid: String }
 
 case class PlainTxDescription(txid: String) extends TxDescription
 
-case class ChanFundingTxDescription(txid: String, nodeId: String, shortChanId: Long) extends TxDescription
+sealed trait ChanTxDescription extends TxDescription {
+  val remoteNodeId: PublicKey = PublicKey(ByteVector32 fromValidHex nodeId)
+  val shortChanId: ShortChannelId = ShortChannelId(sid)
+  def nodeId: String
+  def sid: Long
+}
 
-case class ChanRefundingTxDescription(txid: String, nodeId: String, shortChanId: Long) extends TxDescription
+case class ChanFundingTxDescription(txid: String, nodeId: String, sid: Long) extends TxDescription
+
+case class CommitClaimTxDescription(txid: String, nodeId: String, sid: Long) extends TxDescription
+
+case class HtlcClaimTxDescription(txid: String, nodeId: String, sid: Long) extends TxDescription
