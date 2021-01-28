@@ -75,18 +75,16 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
 
   implicit object TxDescriptionFmt extends JsonFormat[TxDescription] {
     def write(internal: TxDescription): JsValue = internal match {
-      case paymentDescription: PlainTxDescription => paymentDescription.toJson
-      case paymentDescription: ChanFundingTxDescription => paymentDescription.toJson
-      case paymentDescription: CommitClaimTxDescription => paymentDescription.toJson
-      case paymentDescription: HtlcClaimTxDescription => paymentDescription.toJson
+      case txDescription: PlainTxDescription => txDescription.toJson
+      case txDescription: ChanFundingTxDescription => txDescription.toJson
+      case txDescription: ChanRefundingTxDescription => txDescription.toJson
       case _ => throw new Exception
     }
 
     def read(raw: JsValue): TxDescription = raw.asJsObject.fields(TAG) match {
       case JsString("PlainTxDescription") => raw.convertTo[PlainTxDescription]
       case JsString("ChanFundingTxDescription") => raw.convertTo[ChanFundingTxDescription]
-      case JsString("CommitClaimTxDescription") => raw.convertTo[CommitClaimTxDescription]
-      case JsString("HtlcClaimTxDescription") => raw.convertTo[HtlcClaimTxDescription]
+      case JsString("ChanRefundingTxDescription") => raw.convertTo[ChanRefundingTxDescription]
       case tag => throw new Exception(s"Unknown action=$tag")
     }
   }
@@ -97,11 +95,8 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
   implicit val chanFundingTxDescriptionFmt: JsonFormat[ChanFundingTxDescription] = taggedJsonFmt(jsonFormat[String, String, Long,
     ChanFundingTxDescription](ChanFundingTxDescription.apply, "txid", "nodeId", "shortChanId"), tag = "ChanFundingTxDescription")
 
-  implicit val commitClaimTxDescriptionFmt: JsonFormat[CommitClaimTxDescription] = taggedJsonFmt(jsonFormat[String, String, Long,
-    CommitClaimTxDescription](CommitClaimTxDescription.apply, "txid", "nodeId", "shortChanId"), tag = "CommitClaimTxDescription")
-
-  implicit val ctlcClaimTxDescriptionFmt: JsonFormat[HtlcClaimTxDescription] = taggedJsonFmt(jsonFormat[String, String, Long,
-    HtlcClaimTxDescription](HtlcClaimTxDescription.apply, "txid", "nodeId", "shortChanId"), tag = "HtlcClaimTxDescription")
+  implicit val chanRefundingTxDescription: JsonFormat[ChanRefundingTxDescription] = taggedJsonFmt(jsonFormat[String, String, Long,
+    ChanRefundingTxDescription](ChanRefundingTxDescription.apply, "txid", "nodeId", "shortChanId"), tag = "ChanRefundingTxDescription")
 
   // Last seen ready event
 

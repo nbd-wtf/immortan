@@ -102,6 +102,4 @@ case class PlainTxDescription(txid: String) extends TxDescription
 
 case class ChanFundingTxDescription(txid: String, nodeId: String, shortChanId: Long) extends TxDescription
 
-case class CommitClaimTxDescription(txid: String, nodeId: String, shortChanId: Long) extends TxDescription
-
-case class HtlcClaimTxDescription(txid: String, nodeId: String, shortChanId: Long) extends TxDescription
+case class ChanRefundingTxDescription(txid: String, nodeId: String, shortChanId: Long) extends TxDescription
