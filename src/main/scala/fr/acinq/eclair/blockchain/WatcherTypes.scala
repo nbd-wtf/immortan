@@ -98,9 +98,6 @@ object WatchSpentBasic {
   def apply(replyTo: ActorRef, tx: Transaction, outputIndex: Int, event: BitcoinEvent): WatchSpentBasic = WatchSpentBasic(replyTo, tx.txid, outputIndex, tx.txOut(outputIndex).publicKeyScript, event)
 }
 
-// TODO: not implemented yet: notify me if confirmation number gets below minDepth?
-final case class WatchLost(replyTo: ActorRef, txId: ByteVector32, minDepth: Long, event: BitcoinEvent) extends Watch
-
 /** Even triggered when a watch condition is met. */
 trait WatchEvent {
   def event: BitcoinEvent
@@ -131,13 +128,11 @@ final case class WatchEventSpent(event: BitcoinEvent, tx: Transaction) extends W
  */
 final case class WatchEventSpentBasic(event: BitcoinEvent) extends WatchEvent
 
-// TODO: not implemented yet.
-final case class WatchEventLost(event: BitcoinEvent) extends WatchEvent
-
 /** Publish the provided tx as soon as possible depending on locktime and csv */
 final case class PublishAsap(tx: Transaction)
 
 sealed trait UtxoStatus
+
 object UtxoStatus {
   case object Unspent extends UtxoStatus
   case class Spent(spendingTxConfirmed: Boolean) extends UtxoStatus

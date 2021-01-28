@@ -9,6 +9,7 @@ import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import immortan.utils.FiatRates.{BitpayItemList, CoinGeckoItemMap}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.WalletReady
 import scodec.bits.{BitVector, ByteVector}
 import immortan.crypto.Tools.Fiat2Btc
 import scodec.Codec
@@ -69,6 +70,43 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
     taggedJsonFmt(jsonFormat[Set[NodeAnnouncement], LightningNodeKeys, String, Option[String],
     PasswordStorageFormat](PasswordStorageFormat.apply, "outstandingProviders", "keys", "user",
       "password"), tag = "PasswordStorageFormat")
+
+  // Tx description
+
+  implicit object TxDescriptionFmt extends JsonFormat[TxDescription] {
+    def write(internal: TxDescription): JsValue = internal match {
+      case paymentDescription: PlainTxDescription => paymentDescription.toJson
+      case paymentDescription: ChanFundingTxDescription => paymentDescription.toJson
+      case paymentDescription: CommitClaimTxDescription => paymentDescription.toJson
+      case paymentDescription: HtlcClaimTxDescription => paymentDescription.toJson
+      case _ => throw new Exception
+    }
+
+    def read(raw: JsValue): TxDescription = raw.asJsObject.fields(TAG) match {
+      case JsString("PlainTxDescription") => raw.convertTo[PlainTxDescription]
+      case JsString("ChanFundingTxDescription") => raw.convertTo[ChanFundingTxDescription]
+      case JsString("CommitClaimTxDescription") => raw.convertTo[CommitClaimTxDescription]
+      case JsString("HtlcClaimTxDescription") => raw.convertTo[HtlcClaimTxDescription]
+      case tag => throw new Exception(s"Unknown action=$tag")
+    }
+  }
+
+  implicit val plainTxDescriptionFmt: JsonFormat[PlainTxDescription] = taggedJsonFmt(jsonFormat[String,
+    PlainTxDescription](PlainTxDescription.apply, "txid"), tag = "PlainTxDescription")
+
+  implicit val chanFundingTxDescriptionFmt: JsonFormat[ChanFundingTxDescription] = taggedJsonFmt(jsonFormat[String, String, Long,
+    ChanFundingTxDescription](ChanFundingTxDescription.apply, "txid", "nodeId", "shortChanId"), tag = "ChanFundingTxDescription")
+
+  implicit val commitClaimTxDescriptionFmt: JsonFormat[CommitClaimTxDescription] = taggedJsonFmt(jsonFormat[String, String, Long,
+    CommitClaimTxDescription](CommitClaimTxDescription.apply, "txid", "nodeId", "shortChanId"), tag = "CommitClaimTxDescription")
+
+  implicit val ctlcClaimTxDescriptionFmt: JsonFormat[HtlcClaimTxDescription] = taggedJsonFmt(jsonFormat[String, String, Long,
+    HtlcClaimTxDescription](HtlcClaimTxDescription.apply, "txid", "nodeId", "shortChanId"), tag = "HtlcClaimTxDescription")
+
+  // Last seen ready event
+
+  implicit val walletReadyFmt: JsonFormat[WalletReady] = jsonFormat[Satoshi, Satoshi, Long, Long,
+    WalletReady](WalletReady.apply, "confirmedBalance", "unconfirmedBalance", "height", "timestamp")
 
   // Payment description
 

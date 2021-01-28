@@ -122,7 +122,7 @@ object HostedExcludedChannelTable extends ExcludedChannelTable("hosted_excluded_
 
 object PaymentTable extends Table {
   import immortan.PaymentStatus.{HIDDEN, SUCCEEDED}
-  private val paymentTableFields = ("search", "payment", "nodeid", "pr", "preimage", "status", "stamp", "description", "action", "hash", "received", "sent", "fee", "balance", "fiatrates", "feerate", "incoming", "ext")
+  private val paymentTableFields = ("search", "payment", "nodeid", "pr", "preimage", "status", "stamp", "desc", "action", "hash", "received", "sent", "fee", "balance", "fiatrates", "feerate", "incoming", "ext")
   val (search, table, nodeId, pr, preimage, status, stamp, description, action, hash, receivedMsat, sentMsat, feeMsat, balanceMsat, fiatRates, feeRateMsat, incoming, ext) = paymentTableFields
   val inserts = s"$nodeId, $pr, $preimage, $status, $stamp, $description, $action, $hash, $receivedMsat, $sentMsat, $feeMsat, $balanceMsat, $fiatRates, $feeRateMsat, $incoming, $ext"
   val newSql = s"INSERT OR IGNORE INTO $table ($inserts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
@@ -155,6 +155,24 @@ object PaymentTable extends Table {
     val addIndex3 = s"CREATE INDEX IF NOT EXISTS idx2$table ON $table ($stamp, $status)"
     createTable :: addIndex1 :: addIndex2 :: addIndex3 :: Nil
   }
+}
+
+object TxTable extends Table {
+  private val paymentTableFields = ("txs", "txid", "depth", "received", "sent", "fee", "seen", "completed", "desc", "balance", "fiatrates", "incoming")
+  val (table, txid, depth, receivedMsat, sentMsat, feeMsat, firstSeen, completedAt, description, balanceMsat, fiatRates, incoming) = paymentTableFields
+  val inserts = s"$txid, $depth, $receivedMsat, $sentMsat, $feeMsat, $firstSeen, $completedAt, $description, $balanceMsat, $fiatRates, $incoming"
+  val newSql = s"INSERT OR IGNORE INTO $table ($inserts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 10"
+
+  val updcompletedAtSql = s"UPDATE $table SET $completedAt = ? WHERE $txid = ?"
+  val updDepthSql = s"UPDATE $table SET $depth = ? WHERE $txid = ?"
+
+  def createStatements: Seq[String] =
+    s"""CREATE TABLE IF NOT EXISTS $table(
+      $id INTEGER PRIMARY KEY AUTOINCREMENT, $txid TEXT NOT NULL UNIQUE, $depth INTEGER NOT NULL, $receivedMsat INTEGER NOT NULL,
+      $sentMsat INTEGER NOT NULL, $feeMsat INTEGER NOT NULL, $firstSeen INTEGER NOT NULL, $completedAt INTEGER NOT NULL,
+      $description TEXT NOT NULL, $balanceMsat INTEGER NOT NULL, $fiatRates TEXT NOT NULL, $incoming INTEGER NOT NULL
+    )""" :: Nil
 }
 
 object ElectrumHeadersTable extends Table {

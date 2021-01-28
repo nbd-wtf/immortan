@@ -83,3 +83,25 @@ case class PlainMetaDescription(invoiceText: String, meta: String) extends Payme
 case class SwapInDescription(invoiceText: String, txid: String, internalId: Long, nodeId: PublicKey) extends PaymentDescription
 
 case class SwapOutDescription(invoiceText: String, btcAddress: String, chainFee: Satoshi, nodeId: PublicKey) extends PaymentDescription
+
+// Tx descriptions
+
+case class TxInfo(txidString: String, depth: Long, receivedMsat: MilliSatoshi, sentMsat: MilliSatoshi,
+                  feeMsat: MilliSatoshi, seenAt: Long, completedAt: Long, descriptionString: String,
+                  balanceSnapshot: MilliSatoshi, fiatRatesString: String, incoming: Long) {
+
+  def isIncoming: Boolean = 1 == incoming
+  lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
+  lazy val description: TxDescription = to[TxDescription](descriptionString)
+  lazy val txid: ByteVector32 = ByteVector32(ByteVector fromValidHex txidString)
+}
+
+sealed trait TxDescription { val txid: String }
+
+case class PlainTxDescription(txid: String) extends TxDescription
+
+case class ChanFundingTxDescription(txid: String, nodeId: String, shortChanId: Long) extends TxDescription
+
+case class CommitClaimTxDescription(txid: String, nodeId: String, shortChanId: Long) extends TxDescription
+
+case class HtlcClaimTxDescription(txid: String, nodeId: String, shortChanId: Long) extends TxDescription
