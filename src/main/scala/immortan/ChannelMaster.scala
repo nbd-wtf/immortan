@@ -444,7 +444,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
       getSendable(all filter isOperationalAndOpen diff wait.localFailedChans)
 
     // What can be sent through given channels with waiting parts taken into account
-    def getSendable(chans: List[Channel] = Nil): mutable.Map[ChanAndCommits, MilliSatoshi] = {
+    private def getSendable(chans: List[Channel] = Nil): mutable.Map[ChanAndCommits, MilliSatoshi] = {
       val finals: mutable.Map[ChanAndCommits, MilliSatoshi] = mutable.Map.empty[ChanAndCommits, MilliSatoshi] withDefaultValue 0L.msat
       val waits: mutable.Map[ByteVector32, PartIdToAmount] = mutable.Map.empty[ByteVector32, PartIdToAmount] withDefaultValue Map.empty
       // Wait part may have no route yet (but we expect a route to arrive shortly) or it may be sent to channel but not processed by channel yet
@@ -457,10 +457,11 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
     }
 
     def feeFreeBalance(cnc: ChanAndCommits): MilliSatoshi = {
-      // This adds a maximum off-chain fee on top of next on-chain fee when another HTLC is added
-      // For larger payments proportional fee will offset a base one, for smaller base one is more important
+      // This adds maximum off-chain fee on top of next on-chain fee when another HTLC is added
+      val spaceLeft = cnc.commits.maxInFlight - cnc.commits.allOutgoing.foldLeft(0L.msat)(_ + _.amountMsat)
       val withoutBaseFee = cnc.commits.availableBalanceForSend - LNParams.routerConf.searchMaxFeeBase
-      withoutBaseFee - withoutBaseFee * LNParams.routerConf.searchMaxFeePct
+      val withoutAllFees = withoutBaseFee - withoutBaseFee * LNParams.routerConf.searchMaxFeePct
+      spaceLeft.min(withoutAllFees)
     }
   }
 

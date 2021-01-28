@@ -49,22 +49,24 @@ case class PublishableTxs(commitTx: CommitTx, htlcTxsAndSigs: List[HtlcTxAndSigs
 case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: PublishableTxs)
 
 case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: ByteVector32, remotePerCommitmentPoint: PublicKey)
+
 case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long, reSignAsap: Boolean = false)
 
 
 trait Commitments {
-  val channelId: ByteVector32
-  val announce: NodeAnnouncementExt
-  val updateOpt: Option[ChannelUpdate]
-  val localSpec: CommitmentSpec
+  def channelId: ByteVector32
+  def announce: NodeAnnouncementExt
+  def updateOpt: Option[ChannelUpdate]
+  def localSpec: CommitmentSpec
 
-  val minSendable: MilliSatoshi
-  val availableBalanceForSend: MilliSatoshi
-  val availableBalanceForReceive: MilliSatoshi
+  def maxInFlight: MilliSatoshi
+  def minSendable: MilliSatoshi
+  def availableBalanceForSend: MilliSatoshi
+  def availableBalanceForReceive: MilliSatoshi
 
-  val revealedHashes: Seq[ByteVector32] // Payment hashes of revealed but unresolved preimages
-  val unansweredIncoming: Set[UpdateAddHtlc] // Cross-signed MINUS already resolved by us
-  val allOutgoing: Set[UpdateAddHtlc] // Cross-signed PLUS new payments offered by us
+  def revealedHashes: Seq[ByteVector32] // Payment hashes of revealed but unresolved preimages
+  def unansweredIncoming: Set[UpdateAddHtlc] // Cross-signed MINUS already resolved by us
+  def allOutgoing: Set[UpdateAddHtlc] // Cross-signed PLUS new payments offered by us
 }
 
 case class NormalCommits(channelVersion: ChannelVersion, announce: NodeAnnouncementExt, localParams: LocalParams, remoteParams: RemoteParams,
@@ -74,7 +76,7 @@ case class NormalCommits(channelVersion: ChannelVersion, announce: NodeAnnouncem
                          startedAt: Long = System.currentTimeMillis) extends Commitments {
 
   val localSpec: CommitmentSpec = localCommit.spec
-
+  val maxInFlight: MilliSatoshi = remoteParams.maxHtlcValueInFlightMsat.toMilliSatoshi
   val minSendable: MilliSatoshi = remoteParams.htlcMinimum.max(localParams.htlcMinimum)
 
   lazy val revealedHashes: Seq[ByteVector32] = {
@@ -184,21 +186,12 @@ object NormalCommits {
   def hasPendingOrProposedHtlcs(commitments: NormalCommits): Boolean = !hasNoPendingHtlcs(commitments) || commitments.localChanges.adds.nonEmpty || commitments.remoteChanges.adds.nonEmpty
 
   def timedOutOutgoingHtlcs(commitments: NormalCommits, blockheight: Long): Set[UpdateAddHtlc] = {
-    def expired(add: UpdateAddHtlc) = blockheight >= add.cltvExpiry.toLong
-
-    commitments.localCommit.spec.outgoingAdds.filter(expired) ++
-      commitments.remoteCommit.spec.incomingAdds.filter(expired) ++
-      commitments.remoteNextCommitInfo.left.toSeq.flatMap(_.nextRemoteCommit.spec.incomingAdds.filter(expired).toSet)
+    val remoteNext = commitments.remoteNextCommitInfo.left.toSeq.flatMap(_.nextRemoteCommit.spec.incomingAdds.filter(blockheight >= _.cltvExpiry.toLong).toSet)
+    commitments.localCommit.spec.outgoingAdds.filter(blockheight >= _.cltvExpiry.toLong) ++ commitments.remoteCommit.spec.incomingAdds.filter(blockheight >= _.cltvExpiry.toLong) ++ remoteNext
   }
 
-  /**
-   * HTLCs that are close to timing out upstream are potentially dangerous. If we received the preimage for those HTLCs,
-   * we need to get a remote signed updated commitment that removes those HTLCs.
-   * Otherwise when we get close to the upstream timeout, we risk an on-chain race condition between their HTLC timeout
-   * and our HTLC success in case of a force-close.
-   */
   def almostTimedOutIncomingHtlcs(commitments: NormalCommits, blockheight: Long, fulfillSafety: CltvExpiryDelta): Set[UpdateAddHtlc] =
-    commitments.localCommit.spec.incomingAdds.filter(add => blockheight >= (add.cltvExpiry - fulfillSafety).toLong)
+    commitments.localCommit.spec.incomingAdds.filter(CltvExpiry(blockheight) >= _.cltvExpiry - fulfillSafety)
 
   /**
    * Return the outgoing HTLC with the given id if it is:
@@ -293,14 +286,8 @@ object NormalCommits {
 
     // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since outgoingHtlcs is a Set).
     val htlcValueInFlight = outgoingHtlcs.foldLeft(0L.msat) { case (accumulator, outAdd) => accumulator + outAdd.amountMsat }
-    if (commitments1.remoteParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
-      throw HtlcAddImpossible(HtlcValueTooHighInFlight(commitments.channelId), cmd)
-    }
-
-    if (outgoingHtlcs.size > commitments1.remoteParams.maxAcceptedHtlcs) {
-      throw HtlcAddImpossible(TooManyAcceptedHtlcs(commitments.channelId), cmd)
-    }
-
+    if (commitments1.maxInFlight < htlcValueInFlight) throw HtlcAddImpossible(HtlcValueTooHighInFlight(commitments.channelId), cmd)
+    if (outgoingHtlcs.size > commitments1.remoteParams.maxAcceptedHtlcs) throw HtlcAddImpossible(TooManyAcceptedHtlcs(commitments.channelId), cmd)
     (commitments1, add)
   }
 
@@ -345,14 +332,8 @@ object NormalCommits {
 
     // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since incomingHtlcs is a Set).
     val htlcValueInFlight = incomingHtlcs.foldLeft(0L.msat) { case (accumulator, inAdd) => accumulator + inAdd.amountMsat }
-    if (commitments1.localParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
-      throw HtlcValueTooHighInFlight(commitments.channelId)
-    }
-
-    if (incomingHtlcs.size > commitments1.localParams.maxAcceptedHtlcs) {
-      throw TooManyAcceptedHtlcs(commitments.channelId)
-    }
-
+    if (commitments1.localParams.maxHtlcValueInFlightMsat < htlcValueInFlight) throw HtlcValueTooHighInFlight(commitments.channelId)
+    if (incomingHtlcs.size > commitments1.localParams.maxAcceptedHtlcs) throw TooManyAcceptedHtlcs(commitments.channelId)
     commitments1
   }
 

@@ -19,9 +19,11 @@ package fr.acinq.eclair
 import com.google.common.primitives.UnsignedLongs
 import scodec.bits.ByteVector
 
+
 case class UInt64(private val underlying: Long) extends Ordered[UInt64] {
 
   override def compare(o: UInt64): Int = UnsignedLongs.compare(underlying, o.underlying)
+
   private def compare(other: MilliSatoshi): Int = other.toLong match {
     case l if l < 0 => 1                    // if @param 'other' is negative then is always smaller than 'this'
     case _ => compare(UInt64(other.toLong)) // we must do an unsigned comparison here because the uint64 can exceed the capacity of MilliSatoshi class
@@ -36,12 +38,14 @@ case class UInt64(private val underlying: Long) extends Ordered[UInt64] {
 
   def toBigInt: BigInt = (BigInt(underlying >>> 1) << 1) + (underlying & 1)
 
+  def toMilliSatoshi: MilliSatoshi = if (toBigInt.isValidLong) MilliSatoshi(underlying) else MilliSatoshi(Long.MaxValue)
+
   override def toString: String = UnsignedLongs.toString(underlying, 10)
 }
 
 object UInt64 {
 
-  val MaxValue = UInt64(ByteVector.fromValidHex("0xffffffffffffffff"))
+  val MaxValue: UInt64 = UInt64(ByteVector.fromValidHex("0xffffffffffffffff"))
 
   def apply(bin: ByteVector): UInt64 = UInt64(bin.toLong(signed = false))
 
