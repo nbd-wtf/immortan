@@ -43,16 +43,14 @@ import scala.util.{Failure, Success, Try}
  * client <--- ask tx        ----- wallet
  * client ---- tx            ----> wallet
  */
-class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.WalletParameters) extends FSM[ElectrumWallet.State, ElectrumWallet.Data] {
+class ElectrumWallet(master: ExtendedPrivateKey, client: ActorRef, params: ElectrumWallet.WalletParameters) extends FSM[ElectrumWallet.State, ElectrumWallet.Data] {
 
   import Blockchain.RETARGETING_PERIOD
   import ElectrumWallet._
   import params._
 
-  val master = DeterministicWallet.generate(seed)
-
-  val accountMaster = accountKey(master, chainHash)
-  val changeMaster = changeKey(master, chainHash)
+  val accountMaster: ExtendedPrivateKey = accountKey(master, chainHash)
+  val changeMaster: ExtendedPrivateKey = changeKey(master, chainHash)
 
   client ! ElectrumClient.AddStatusListener(self)
 
@@ -490,9 +488,9 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
 }
 
 object ElectrumWallet {
-  def props(seed: ByteVector, client: ActorRef, params: WalletParameters): Props = Props(new ElectrumWallet(seed, client, params))
+  def props(master: ExtendedPrivateKey, params: WalletParameters, client: ActorRef): Props = Props(new ElectrumWallet(master, client, params))
 
-  case class WalletParameters(chainHash: ByteVector32, walletDb: WalletDb, minimumFee: Satoshi = 2000 sat, dustLimit: Satoshi = 546 sat, swipeRange: Int = 10, allowSpendUnconfirmed: Boolean = true)
+  case class WalletParameters(chainHash: ByteVector32, walletDb: WalletDb, minimumFee: Satoshi = 2000.sat, dustLimit: Satoshi = 546.sat, swipeRange: Int = 10, allowSpendUnconfirmed: Boolean = true)
 
   // @formatter:off
   sealed trait State

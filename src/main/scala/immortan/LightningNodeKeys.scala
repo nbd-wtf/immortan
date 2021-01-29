@@ -12,7 +12,7 @@ import java.nio.ByteOrder
 
 object LightningNodeKeys {
   def makeFromSeed(seed: Bytes): LightningNodeKeys = {
-    val master: ExtendedPrivateKey = generate(ByteVector view seed)
+    val master: ExtendedPrivateKey = generate(ByteVector view seed) // TODO master -> nodeExt
     val extendedNodeKey: ExtendedPrivateKey = derivePrivateKey(master, hardened(46L) :: hardened(0L) :: Nil)
     val hashingKey: PrivateKey = derivePrivateKey(master, hardened(138L) :: 0L :: Nil).privateKey
     LightningNodeKeys(extendedNodeKey, xPub(master), hashingKey)

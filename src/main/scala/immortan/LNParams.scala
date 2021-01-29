@@ -6,34 +6,32 @@ import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
 import com.softwaremill.sttp._
 import fr.acinq.eclair.Features._
-
 import scala.concurrent.duration._
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.bitcoin.DeterministicWallet._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-
 import scala.concurrent.{ExecutionContextExecutor, Future}
 import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt}
 import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
-
+import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import fr.acinq.eclair.channel.{LocalParams, NormalCommits, PersistentChannelData}
-import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, FeatureSupport, Features}
+import fr.acinq.eclair.blockchain.electrum.{ElectrumClientPool, ElectrumEclairWallet, ElectrumWallet, ElectrumWatcher}
+import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
+import fr.acinq.eclair.blockchain.electrum.db.WalletDb
+import fr.acinq.eclair.blockchain.WalletEventsCatcher
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.payment.PaymentRequest
 import immortan.SyncMaster.ShortChanIdSet
 import fr.acinq.eclair.crypto.Generators
 import immortan.crypto.Noise.KeyPair
 import java.io.ByteArrayInputStream
-
 import immortan.utils.RatesInfo
-
 import scala.collection.mutable
 import scodec.bits.ByteVector
 import java.nio.ByteOrder
-
-import akka.actor.ActorSystem
+import akka.util.Timeout
 
 
 object LNParams {
@@ -97,6 +95,7 @@ object LNParams {
   }
 
   var format: StorageFormat = _
+  var chainWallet: ChainWallet = _
   var channelMaster: ChannelMaster = _
   var feeratesPerKB: AtomicReference[FeeratesPerKB] = _
   var feeratesPerKw: AtomicReference[FeeratesPerKw] = _
@@ -112,21 +111,35 @@ object LNParams {
     OnChainFeeConf(FeeTargets(fundingBlockTarget = 6, commitmentBlockTarget = 6, mutualCloseBlockTarget = 36, claimMainBlockTarget = 36),
       feeEstimator, closeOnOfflineMismatch = false, updateFeeMinDiffRatio = 0.1, FeerateTolerance(0.5, 10), perNodeFeerateTolerance = Map.empty)
 
+  implicit val timeout: Timeout = Timeout(30.seconds)
   implicit val system: ActorSystem = ActorSystem("immortan-actor-system")
   implicit val ec: ExecutionContextExecutor = scala.concurrent.ExecutionContext.Implicits.global
   implicit val sttpBackend: SttpBackend[Future, Nothing] = OkHttpFutureBackend(SttpBackendOptions.Default)
 
-  val feerateProviders: List[FeeProvider] =
-    new EsploraFeeProvider(uri"https://mempool.space/api/fee-estimates", 15.seconds) ::
-      new EsploraFeeProvider(uri"https://blockstream.info/api/fee-estimates", 15.seconds) ::
-      new BitgoFeeProvider(chainHash, 15.seconds) ::
-      new EarnDotComFeeProvider(15.seconds) ::
-      Nil
+  val feerateProviders: List[FeeProvider] = List(
+    new EsploraFeeProvider(uri"https://mempool.space/api/fee-estimates", 15.seconds),
+    new EsploraFeeProvider(uri"https://blockstream.info/api/fee-estimates", 15.seconds),
+    new BitgoFeeProvider(chainHash, 15.seconds),
+    new EarnDotComFeeProvider(15.seconds)
+  )
+
+  def createWallet(addresses: Set[ElectrumServerAddress], walletDb: WalletDb, master: ExtendedPrivateKey): ChainWallet = {
+    val clientPool = system actorOf SimpleSupervisor.props(Props apply new ElectrumClientPool(blockCount, addresses), "client-pool", SupervisorStrategy.Resume)
+    val watcher = system actorOf SimpleSupervisor.props(Props apply new ElectrumWatcher(blockCount, clientPool), "watcher", SupervisorStrategy.Resume)
+    val wallet = system.actorOf(ElectrumWallet.props(master, ElectrumWallet.WalletParameters(chainHash, walletDb), clientPool), "electrum-wallet")
+    ChainWallet(new ElectrumEclairWallet(wallet, chainHash), system.actorOf(Props(new WalletEventsCatcher), "catcher"), clientPool, watcher)
+  }
 
   def currentBlockDay: Long = blockCount.get / blocksPerDay
 }
 
 // Extension wrappers
+
+case class ChainWallet(wallet: ElectrumEclairWallet, eventsCatcher: ActorRef, clientPool: ActorRef, watcher: ActorRef)
+
+case class PaymentRequestExt(pr: PaymentRequest, raw: String) { def paymentHashStr: String = pr.paymentHash.toHex }
+
+case class SwapInStateExt(state: SwapInState, nodeId: PublicKey)
 
 case class NodeAnnouncementExt(na: NodeAnnouncement) {
   lazy val prettyNodeName: String = na.addresses collectFirst {
@@ -206,12 +219,6 @@ case class NodeAnnouncementExt(na: NodeAnnouncement) {
   def signChannelAnnouncement(witness: ByteVector, fundingKeyPath: KeyPath): ByteVector64 =
     Announcements.signChannelAnnouncement(witness, channelPrivateKeys(fundingKeyPath).privateKey)
 }
-
-case class PaymentRequestExt(pr: PaymentRequest, raw: String) {
-  def paymentHashStr: String = pr.paymentHash.toHex
-}
-
-case class SwapInStateExt(state: SwapInState, nodeId: PublicKey)
 
 // Interfaces
 
