@@ -70,7 +70,8 @@ object LNParams {
       ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory),
       ActivatedFeature(AnchorOutputs, FeatureSupport.Mandatory),
       ActivatedFeature(PaymentSecret, FeatureSupport.Mandatory),
-      ActivatedFeature(ChainSwap, FeatureSupport.Mandatory),
+      ActivatedFeature(PrivateRouting, FeatureSupport.Optional),
+      ActivatedFeature(ChainSwap, FeatureSupport.Optional),
       ActivatedFeature(Wumbo, FeatureSupport.Mandatory)
     )
 
@@ -85,7 +86,8 @@ object LNParams {
       ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory),
       ActivatedFeature(HostedChannels, FeatureSupport.Mandatory),
       ActivatedFeature(PaymentSecret, FeatureSupport.Mandatory),
-      ActivatedFeature(ChainSwap, FeatureSupport.Mandatory)
+      ActivatedFeature(PrivateRouting, FeatureSupport.Optional),
+      ActivatedFeature(ChainSwap, FeatureSupport.Optional)
     )
 
     val norm = Init(Features(normFeatures), tlvStream)

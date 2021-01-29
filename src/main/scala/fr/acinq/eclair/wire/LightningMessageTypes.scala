@@ -309,6 +309,12 @@ case class QueryPublicHostedChannels(chainHash: ByteVector32) extends RoutingMes
 
 case class ReplyPublicHostedChannelsEnd(chainHash: ByteVector32) extends RoutingMessage with HasChainHash
 
+// Private routing
+
+case class RoutableChannel(remoteNodeId: PublicKey, remoteUpdate: ChannelUpdate, localUpdate: ChannelUpdate, remoteBitcoinKey: PublicKey, localBitcoinKey: PublicKey, localBitcoinSignature: ByteVector64) extends RoutingMessage
+
+case class RoutableChannelRefresh(shortChannelId: ShortChannelId, availableBalanceForSend: MilliSatoshi, availableBalanceForReceive: MilliSatoshi) extends RoutingMessage
+
 // Swap In/Out
 
 sealed trait ChainSwapMessage extends LightningMessage

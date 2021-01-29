@@ -183,21 +183,27 @@ object Features {
     val mandatory = 32772
   }
 
+  case object PrivateRouting extends Feature {
+    val rfcName = "parivate_routing"
+    val mandatory = 32774
+  }
+
   val knownFeatures: Set[Feature] = Set(
+    ChannelRangeQueriesExtended,
+    BasicMultiPartPayment,
     OptionDataLossProtect,
-    InitialRoutingSync,
     ChannelRangeQueries,
     VariableLengthOnion,
-    ChannelRangeQueriesExtended,
-    PaymentSecret,
-    BasicMultiPartPayment,
-    Wumbo,
+    InitialRoutingSync,
     TrampolinePayment,
     StaticRemoteKey,
-    AnchorOutputs,
-    KeySend,
+    PrivateRouting,
     HostedChannels,
-    ChainSwap
+    PaymentSecret,
+    AnchorOutputs,
+    ChainSwap,
+    KeySend,
+    Wumbo
   )
 
   // Features may depend on other features, as specified in Bolt 9.

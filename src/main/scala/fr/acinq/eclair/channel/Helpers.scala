@@ -69,7 +69,7 @@ object Helpers {
     if (open.fundingSatoshis < LNParams.minFundingSatoshis || open.fundingSatoshis > LNParams.maxFundingSatoshis) return Some(InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, LNParams.minFundingSatoshis, LNParams.maxFundingSatoshis))
 
     // BOLT #2: Channel funding limits
-    if (open.fundingSatoshis >= LNParams.maxFundingSatoshis && !features.hasFeature(Features.Wumbo)) return Some(InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, LNParams.minFundingSatoshis, Channel.MAX_FUNDING))
+    if (open.fundingSatoshis >= LNParams.maxFundingSatoshis && !features.hasFeature(Features.Wumbo)) return Some(InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, LNParams.minFundingSatoshis, LNParams.maxFundingSatoshis))
 
     // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
     if (open.pushMsat > open.fundingSatoshis) return Some(InvalidPushAmount(open.temporaryChannelId, open.pushMsat, open.fundingSatoshis.toMilliSatoshi))

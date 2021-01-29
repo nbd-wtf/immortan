@@ -300,6 +300,4 @@ object ChannelCodecs {
       .typecase(0x25, DATA_CLOSING_Codec)
       .typecase(0x26, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec)
       .typecase(0x27, hostedCommitsCodec))
-
-
 }
