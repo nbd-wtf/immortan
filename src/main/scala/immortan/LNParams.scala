@@ -6,18 +6,15 @@ import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
 import com.softwaremill.sttp._
 import fr.acinq.eclair.Features._
-
 import scala.concurrent.duration._
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.bitcoin.DeterministicWallet._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-
 import scala.concurrent.{ExecutionContextExecutor, Future}
 import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt}
 import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
-
-import fr.acinq.eclair.channel.{LocalParams, PersistentChannelData}
+import fr.acinq.eclair.channel.{LocalParams, NormalCommits, PersistentChannelData}
 import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, FeatureSupport, Features}
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.eclair.transactions.Transactions
@@ -26,12 +23,10 @@ import immortan.SyncMaster.ShortChanIdSet
 import fr.acinq.eclair.crypto.Generators
 import immortan.crypto.Noise.KeyPair
 import java.io.ByteArrayInputStream
-
+import immortan.utils.RatesInfo
 import scala.collection.mutable
 import scodec.bits.ByteVector
 import java.nio.ByteOrder
-
-import immortan.utils.RatesInfo
 
 
 object LNParams {
@@ -96,11 +91,10 @@ object LNParams {
 
   var format: StorageFormat = _
   var channelMaster: ChannelMaster = _
-
-  val blockCount = new AtomicLong(0L)
-  val feeratesPerKB = new AtomicReference[FeeratesPerKB](null)
-  val feeratesPerKw = new AtomicReference[FeeratesPerKw](null)
+  var feeratesPerKB: AtomicReference[FeeratesPerKB] = _
+  var feeratesPerKw: AtomicReference[FeeratesPerKw] = _
   var fiatRatesInfo: RatesInfo = _
+  var blockCount: AtomicLong = _
 
   val feeEstimator: FeeEstimator = new FeeEstimator {
     override def getFeeratePerKb(target: Int): FeeratePerKB = feeratesPerKB.get.feePerBlock(target)
@@ -262,6 +256,7 @@ trait ChainLinkListener {
 
 trait ChannelBag {
   def all: List[PersistentChannelData]
-  def delete(channelId: ByteVector32): Unit
+  def hide(commitments: NormalCommits): Unit
+  def delete(commitments: HostedCommits): Unit
   def put(data: PersistentChannelData): PersistentChannelData
 }

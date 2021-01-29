@@ -20,7 +20,7 @@ import java.io.InputStream
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicLong
 
-import akka.actor.{Actor, ActorRef, FSM, OneForOneStrategy, Props, SupervisorStrategy, Terminated}
+import akka.actor.{Actor, ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, SupervisorStrategy, Terminated}
 import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
@@ -37,7 +37,6 @@ class ElectrumClientPool(blockCount: AtomicLong, serverAddresses: Set[ElectrumSe
 
   val statusListeners = collection.mutable.HashSet.empty[ActorRef]
   val addresses = collection.mutable.Map.empty[ActorRef, InetSocketAddress]
-
 
   // on startup, we attempt to connect to a number of electrum clients
   // they will send us an `ElectrumReady` message when they're connected, or
@@ -64,9 +63,8 @@ class ElectrumClientPool(blockCount: AtomicLong, serverAddresses: Set[ElectrumSe
       stay
 
     case Event(Terminated(actor), _) =>
-      log.debug("lost connection to {}", addresses(actor))
+      context.system.scheduler.scheduleOnce(5.seconds, self, Connect)
       addresses -= actor
-      context.system.scheduler.scheduleOnce(5 seconds, self, Connect)
       stay
   }
 
@@ -89,9 +87,11 @@ class ElectrumClientPool(blockCount: AtomicLong, serverAddresses: Set[ElectrumSe
 
     case Event(Terminated(actor), d: ConnectedData) =>
       val address = addresses(actor)
-      addresses -= actor
-      context.system.scheduler.scheduleOnce(5 seconds, self, Connect)
       val tips1 = d.tips - actor
+
+      context.system.scheduler.scheduleOnce(5.seconds, self, Connect)
+      addresses -= actor
+
       if (tips1.isEmpty) {
         log.info("lost connection to {}, no active connections left", address)
         goto(Disconnected) using DisconnectedData // no more connections
@@ -108,6 +108,12 @@ class ElectrumClientPool(blockCount: AtomicLong, serverAddresses: Set[ElectrumSe
   }
 
   whenUnhandled {
+    case Event(Reconnect, _) =>
+      // Force disconnect from all remote servers
+      // new ones will be picked at random automatically
+      addresses.keys.foreach(_ ! PoisonPill)
+      goto(Disconnected)
+
     case Event(Connect, _) =>
       pickAddress(serverAddresses, addresses.values.toSet) match {
         case Some(ElectrumServerAddress(address, ssl)) =>
@@ -180,13 +186,6 @@ object ElectrumClientPool {
 
   case class ElectrumServerAddress(adress: InetSocketAddress, ssl: SSL)
 
-  /**
-    * Parses default electrum server list and extract addresses
-    *
-    * @param stream
-    * @param sslEnabled select plaintext/ssl ports
-    * @return
-    */
   def readServerAddresses(stream: InputStream, sslEnabled: Boolean): Set[ElectrumServerAddress] = try {
     val JObject(values) = JsonMethods.parse(stream)
     val addresses = values
@@ -224,7 +223,6 @@ object ElectrumClientPool {
     Random.shuffle(serverAddresses.filterNot(a => usedAddresses.contains(a.adress)).toSeq).headOption
   }
 
-  // @formatter:off
   sealed trait State
   case object Disconnected extends State
   case object Connected extends State
@@ -232,9 +230,9 @@ object ElectrumClientPool {
   sealed trait Data
   case object DisconnectedData extends Data
   case class ConnectedData(master: ActorRef, tips: Map[ActorRef, (Int, BlockHeader)]) extends Data {
-    def blockHeight = tips.get(master).map(_._1).getOrElse(0)
+    def blockHeight: Int = tips.get(master).map(_._1).getOrElse(0)
   }
 
   case object Connect
-  // @formatter:on
+  case object Reconnect
 }

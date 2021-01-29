@@ -12,6 +12,7 @@ object ChannelTable extends Table {
   val newSql = s"INSERT OR IGNORE INTO $table ($identifier, $data) VALUES (?, ?)"
   val hideSql = s"UPDATE $table SET $isRemoved = 1 WHERE $identifier = ?"
   val updSql = s"UPDATE $table SET $data = ? WHERE $identifier = ?"
+  val killSql = s"DELETE FROM $table WHERE WHERE $identifier = ?"
 
   def createStatements: Seq[String] =
     s"""CREATE TABLE IF NOT EXISTS $table(
@@ -158,7 +159,7 @@ object PaymentTable extends Table {
 }
 
 object TxTable extends Table {
-  private val paymentTableFields = ("txs", "txid", "depth", "received", "sent", "fee", "seen", "completed", "desc", "balance", "fiatrates", "incoming", "ds")
+  private val paymentTableFields = ("txs", "txid", "depth", "received", "sent", "fee", "seen", "completed", "desc", "balance", "fiatrates", "incoming", "doublespent")
   val (table, txid, depth, receivedMsat, sentMsat, feeMsat, firstSeen, completedAt, description, balanceMsat, fiatRates, incoming, doubleSpent) = paymentTableFields
   val inserts = s"$txid, $depth, $receivedMsat, $sentMsat, $feeMsat, $firstSeen, $completedAt, $description, $balanceMsat, $fiatRates, $incoming, $doubleSpent"
   val newSql = s"INSERT OR IGNORE INTO $table ($inserts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
