@@ -123,11 +123,13 @@ object LNParams {
     new EarnDotComFeeProvider(15.seconds)
   )
 
-  def createWallet(addresses: Set[ElectrumServerAddress], walletDb: WalletDb, master: ExtendedPrivateKey): ChainWallet = {
-    val clientPool = system actorOf SimpleSupervisor.props(Props apply new ElectrumClientPool(blockCount, addresses), "client-pool", SupervisorStrategy.Resume)
-    val watcher = system actorOf SimpleSupervisor.props(Props apply new ElectrumWatcher(blockCount, clientPool), "watcher", SupervisorStrategy.Resume)
-    val wallet = system.actorOf(ElectrumWallet.props(master, ElectrumWallet.WalletParameters(chainHash, walletDb), clientPool), "electrum-wallet")
-    ChainWallet(new ElectrumEclairWallet(wallet, chainHash), system.actorOf(Props(new WalletEventsCatcher), "catcher"), clientPool, watcher)
+  def createWallet(addresses: Set[ElectrumServerAddress], walletDb: WalletDb, seed: ByteVector): ChainWallet = {
+    val clientPool = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(blockCount, addresses)), "client-pool", SupervisorStrategy.Resume))
+    val watcher = system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(blockCount, clientPool)), "watcher", SupervisorStrategy.Resume))
+    val wallet = system.actorOf(ElectrumWallet.props(seed, clientPool, ElectrumWallet.WalletParameters(chainHash, walletDb)), "wallet")
+    val catcher = system.actorOf(Props(new WalletEventsCatcher), "catcher")
+    val eclairWallet = new ElectrumEclairWallet(wallet, chainHash)
+    ChainWallet(eclairWallet, catcher, clientPool, watcher)
   }
 
   def currentBlockDay: Long = blockCount.get / blocksPerDay
@@ -137,9 +139,9 @@ object LNParams {
 
 case class ChainWallet(wallet: ElectrumEclairWallet, eventsCatcher: ActorRef, clientPool: ActorRef, watcher: ActorRef)
 
-case class PaymentRequestExt(pr: PaymentRequest, raw: String) { def paymentHashStr: String = pr.paymentHash.toHex }
-
 case class SwapInStateExt(state: SwapInState, nodeId: PublicKey)
+
+case class PaymentRequestExt(pr: PaymentRequest, raw: String)
 
 case class NodeAnnouncementExt(na: NodeAnnouncement) {
   lazy val prettyNodeName: String = na.addresses collectFirst {
