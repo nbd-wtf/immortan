@@ -6,14 +6,17 @@ import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
 import com.softwaremill.sttp._
 import fr.acinq.eclair.Features._
+
 import scala.concurrent.duration._
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.bitcoin.DeterministicWallet._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+
 import scala.concurrent.{ExecutionContextExecutor, Future}
 import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt}
 import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
+
 import fr.acinq.eclair.channel.{LocalParams, NormalCommits, PersistentChannelData}
 import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, FeatureSupport, Features}
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
@@ -23,10 +26,14 @@ import immortan.SyncMaster.ShortChanIdSet
 import fr.acinq.eclair.crypto.Generators
 import immortan.crypto.Noise.KeyPair
 import java.io.ByteArrayInputStream
+
 import immortan.utils.RatesInfo
+
 import scala.collection.mutable
 import scodec.bits.ByteVector
 import java.nio.ByteOrder
+
+import akka.actor.ActorSystem
 
 
 object LNParams {
@@ -105,6 +112,7 @@ object LNParams {
     OnChainFeeConf(FeeTargets(fundingBlockTarget = 6, commitmentBlockTarget = 6, mutualCloseBlockTarget = 36, claimMainBlockTarget = 36),
       feeEstimator, closeOnOfflineMismatch = false, updateFeeMinDiffRatio = 0.1, FeerateTolerance(0.5, 10), perNodeFeerateTolerance = Map.empty)
 
+  implicit val system: ActorSystem = ActorSystem("immortan-actor-system")
   implicit val ec: ExecutionContextExecutor = scala.concurrent.ExecutionContext.Implicits.global
   implicit val sttpBackend: SttpBackend[Future, Nothing] = OkHttpFutureBackend(SttpBackendOptions.Default)
 
