@@ -40,13 +40,13 @@ object LNParams {
   val incomingPaymentCltvExpiry: Int = 144 + 72 // Ask payer to set final CLTV expiry to payer's current chain tip + this many blocks
 
   val chainHash: ByteVector32 = Block.LivenetGenesisBlock.hash
-  val minHostedOnChainRefund: Satoshi = 1000000L.sat
-  val minPayment: MilliSatoshi = 5000L.msat
+  val minHostedOnChainRefund: Satoshi = Satoshi(1000000L)
+  val minPayment: MilliSatoshi = MilliSatoshi(5000L)
   val minHostedLiabilityBlockdays = 365
 
   val maxToLocalDelay: CltvExpiryDelta = CltvExpiryDelta(2016)
-  val maxFundingSatoshis: Satoshi = 10000000000L.sat // 100 BTC
-  val minFundingSatoshis: Satoshi = 100000L.sat // 100k sat
+  val maxFundingSatoshis: Satoshi = Satoshi(10000000000L) // 100 BTC
+  val minFundingSatoshis: Satoshi = Satoshi(100000L) // 100k sat
   val maxReserveToFundingRatio = 0.05 // %
   val reserveToFundingRatio = 0.0025 // %
   val minDepthBlocks: Int = 1
@@ -97,6 +97,7 @@ object LNParams {
   }
 
   var format: StorageFormat = _
+  var syncParams: SyncParams = _
   var chainWallet: ChainWallet = _
   var channelMaster: ChannelMaster = _
   var feeratesPerKB: AtomicReference[FeeratesPerKB] = _
@@ -135,6 +136,29 @@ object LNParams {
   }
 
   def currentBlockDay: Long = blockCount.get / blocksPerDay
+}
+
+class SyncParams {
+  val blw: NodeAnnouncement = mkNodeAnnouncement(PublicKey(ByteVector fromValidHex "03144fcc73cea41a002b2865f98190ab90e4ff58a2ce24d3870f5079081e42922d"), NodeAddress.unresolved(9735, host = 5, 9, 83, 143), "BLW Den")
+  val lightning: NodeAnnouncement = mkNodeAnnouncement(PublicKey(ByteVector fromValidHex "03baa70886d9200af0ffbd3f9e18d96008331c858456b16e3a9b41e735c6208fef"), NodeAddress.unresolved(9735, host = 45, 20, 67, 1), "LIGHTNING")
+  val conductor: NodeAnnouncement = mkNodeAnnouncement(PublicKey(ByteVector fromValidHex "03c436af41160a355fc1ed230a64f6a64bcbd2ae50f12171d1318f9782602be601"), NodeAddress.unresolved(9735, host = 18, 191, 89, 219), "Conductor")
+  val cheese: NodeAnnouncement = mkNodeAnnouncement(PublicKey(ByteVector fromValidHex "0276e09a267592e7451a939c932cf685f0754de382a3ca85d2fb3a864d4c365ad5"), NodeAddress.unresolved(9735, host = 94, 177, 171, 73), "Cheese")
+  val acinq: NodeAnnouncement = mkNodeAnnouncement(PublicKey(ByteVector fromValidHex "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), NodeAddress.unresolved(9735, host = 34, 239, 230, 56), "ACINQ")
+
+  val hostedChanNodes: Set[NodeAnnouncement] = Set(blw, lightning, acinq) // Trusted nodes which are shown as default ones when user chooses providers
+  val hostedSyncNodes: Set[NodeAnnouncement] = Set(blw, lightning, acinq) // Semi-trusted PHC-enabled nodes which can be used as seeds for PHC sync
+  val syncNodes: Set[NodeAnnouncement] = Set(lightning, acinq, conductor) // Nodes with extended queries support used as seeds for normal sync
+
+  val maxPHCCapacity: MilliSatoshi = MilliSatoshi(1000000000000000L) // 10 000 BTC
+  val minPHCCapacity: MilliSatoshi = MilliSatoshi(50000000000L) // 0.5 BTC
+  val minNormalChansForPHC = 5
+  val maxPHCPerNode = 2
+
+  val minCapacity: MilliSatoshi = MilliSatoshi(500000000L) // 500k sat
+  val maxNodesToSyncFrom = 3 // How many disjoint peers to use for majority sync
+  val acceptThreshold = 1 // ShortIds and updates are accepted if confirmed by more than this peers
+  val messagesToAsk = 1000 // Ask for this many messages from peer before they say this chunk is done
+  val chunksToWait = 4 // Wait for at least this much chunk iterations from any peer before recording results
 }
 
 // Extension wrappers
