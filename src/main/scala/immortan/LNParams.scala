@@ -51,12 +51,6 @@ object LNParams {
   val reserveToFundingRatio = 0.0025 // %
   val minDepthBlocks: Int = 1
 
-  var routerConf: RouterConf =
-    RouterConf(searchMaxFeeBase = MilliSatoshi(25000L),
-      searchMaxFeePct = 0.01, firstPassMaxCltv = CltvExpiryDelta(1008),
-      firstPassMaxRouteLength = 6, mppMinPartAmount = MilliSatoshi(30000000L),
-      maxRemoteAttempts = 12, maxChannelFailures = 12, maxStrangeNodeFailures = 12)
-
   val (normInit, phcSyncInit, hcInit) = {
     val networks: InitTlv = InitTlv.Networks(chainHash :: Nil)
     val tlvStream: TlvStream[InitTlv] = TlvStream(networks)
@@ -95,6 +89,12 @@ object LNParams {
     val hc = Init(Features(hcFeatures), tlvStream)
     (norm, phcSync, hc)
   }
+
+  var routerConf: RouterConf =
+    RouterConf(searchMaxFeeBase = MilliSatoshi(25000L),
+      searchMaxFeePct = 0.01, firstPassMaxCltv = CltvExpiryDelta(1008),
+      firstPassMaxRouteLength = 6, mppMinPartAmount = MilliSatoshi(30000000L),
+      maxRemoteAttempts = 12, maxChannelFailures = 12, maxStrangeNodeFailures = 12)
 
   var format: StorageFormat = _
   var syncParams: SyncParams = _
@@ -149,10 +149,10 @@ class SyncParams {
   val hostedSyncNodes: Set[NodeAnnouncement] = Set(blw, lightning, acinq) // Semi-trusted PHC-enabled nodes which can be used as seeds for PHC sync
   val syncNodes: Set[NodeAnnouncement] = Set(lightning, acinq, conductor) // Nodes with extended queries support used as seeds for normal sync
 
-  val maxPHCCapacity: MilliSatoshi = MilliSatoshi(1000000000000000L) // 10 000 BTC
-  val minPHCCapacity: MilliSatoshi = MilliSatoshi(50000000000L) // 0.5 BTC
-  val minNormalChansForPHC = 5
-  val maxPHCPerNode = 2
+  val maxPHCCapacity: MilliSatoshi = MilliSatoshi(1000000000000000L) // PHC can not be larger than 10 000 BTC
+  val minPHCCapacity: MilliSatoshi = MilliSatoshi(50000000000L) // PHC can not be smaller than 0.5 BTC
+  val minNormalChansForPHC = 5 // How many normal chans a node must have to be eligible for PHCs
+  val maxPHCPerNode = 2 // How many PHCs a node can have in total
 
   val minCapacity: MilliSatoshi = MilliSatoshi(500000000L) // 500k sat
   val maxNodesToSyncFrom = 3 // How many disjoint peers to use for majority sync
@@ -271,9 +271,19 @@ trait NetworkDataStore {
   def processPureData(data: PureRoutingData): Unit
 }
 
+// Bag of stored payments
+
+trait PaymentBag {
+  def getPaymentInfo(paymentHash: ByteVector32): Option[PaymentInfo]
+}
+
 trait PaymentDBUpdater {
-  def replaceOutgoingPayment(nodeId: PublicKey, prex: PaymentRequestExt, desc: PaymentDescription, action: Option[PaymentAction], finalAmount: MilliSatoshi, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc): Unit
-  def replaceIncomingPayment(prex: PaymentRequestExt, preimage: ByteVector32, description: PaymentDescription, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc): Unit
+  def replaceOutgoingPayment(nodeId: PublicKey, prex: PaymentRequestExt, desc: PaymentDescription, action: Option[PaymentAction],
+                             finalAmount: MilliSatoshi, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc, chainFee: MilliSatoshi): Unit
+
+  def replaceIncomingPayment(prex: PaymentRequestExt, preimage: ByteVector32, description: PaymentDescription,
+                             balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc, chainFee: MilliSatoshi): Unit
+
   // These MUST be the only two methods capable of updating payment state to SUCCEEDED
   def updOkOutgoing(upd: UpdateFulfillHtlc, fee: MilliSatoshi): Unit
   def updStatusIncoming(add: UpdateAddHtlc, status: String): Unit

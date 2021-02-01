@@ -3,9 +3,9 @@ package immortan
 import immortan.utils.ImplicitJsonFormats._
 import immortan.crypto.Tools.{Bytes, Fiat2Btc}
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 import scodec.bits.ByteVector
 import immortan.utils.uri.Uri
 import immortan.utils.LNUrl
@@ -30,7 +30,7 @@ object PaymentStatus {
 
 case class PaymentInfo(payeeNodeIdString: String, prString: String, preimageString: String, status: String, stamp: Long, descriptionString: String,
                        actionString: String, paymentHashString: String, received: MilliSatoshi, sent: MilliSatoshi, fee: MilliSatoshi,
-                       balanceSnapshot: MilliSatoshi, fiatRatesString: String, chainFeerate: MilliSatoshi, incoming: Long) {
+                       balanceSnapshot: MilliSatoshi, fiatRatesString: String, chainFee: MilliSatoshi, incoming: Long) {
 
   def isIncoming: Boolean = 1 == incoming
   lazy val pr: PaymentRequest = PaymentRequest.read(prString)
@@ -41,12 +41,6 @@ case class PaymentInfo(payeeNodeIdString: String, prString: String, preimageStri
   lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
   lazy val description: PaymentDescription = to[PaymentDescription](descriptionString)
   lazy val action: PaymentAction = to[PaymentAction](actionString)
-}
-
-// Bag of stored payments
-
-trait PaymentBag {
-  def getPaymentInfo(paymentHash: ByteVector32): Option[PaymentInfo]
 }
 
 // Payment actions
@@ -86,13 +80,14 @@ case class SwapOutDescription(invoiceText: String, btcAddress: String, chainFee:
 
 // Tx descriptions
 
-case class TxInfo(txidString: String, depth: Long, receivedMsat: MilliSatoshi, sentMsat: MilliSatoshi,
-                  feeMsat: MilliSatoshi, seenAt: Long, completedAt: Long, descriptionString: String,
-                  balanceSnapshot: MilliSatoshi, fiatRatesString: String,
+case class TxInfo(txidString: String, depth: Long, receivedMsat: MilliSatoshi, sentMsat: MilliSatoshi, feeMsat: MilliSatoshi,
+                  seenAt: Long, completedAt: Long, descriptionString: String, balanceSnapshot: MilliSatoshi, fiatRatesString: String,
                   incoming: Long, doubleSpent: Long) {
 
-  def isIncoming: Boolean = 1 == incoming
-  def isDoubleSpent: Boolean = 1 == doubleSpent
+  def isIncoming: Boolean = 1L == incoming
+  def isDoubleSpent: Boolean = 1L == doubleSpent
+  def isConfirmed: Boolean = depth >= LNParams.minDepthBlocks
+
   lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
   lazy val description: TxDescription = to[TxDescription](descriptionString)
   lazy val txid: ByteVector32 = ByteVector32(ByteVector fromValidHex txidString)

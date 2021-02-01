@@ -5,14 +5,13 @@ import spray.json._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.WalletReady
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import immortan.utils.FiatRates.{BitpayItemList, CoinGeckoItemMap}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
-import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.WalletReady
 import scodec.bits.{BitVector, ByteVector}
 import immortan.crypto.Tools.Fiat2Btc
-import scodec.Codec
 
 
 object ImplicitJsonFormats extends DefaultJsonProtocol {
@@ -29,7 +28,7 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
 
   def json2BitVec(json: JsValue): Option[BitVector] = BitVector fromHex json2String(json)
 
-  def sCodecJsonFmt[T](codec: Codec[T] = null): JsonFormat[T] = new JsonFormat[T] {
+  def sCodecJsonFmt[T](codec: scodec.Codec[T] = null): JsonFormat[T] = new JsonFormat[T] {
     def read(serialized: JsValue): T = codec.decode(json2BitVec(serialized).get).require.value
     def write(unserialized: T): JsValue = codec.encode(unserialized).require.toHex.toJson
   }

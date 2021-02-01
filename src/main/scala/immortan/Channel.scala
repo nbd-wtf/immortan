@@ -43,6 +43,7 @@ object Channel {
   }
 
   def isOperationalAndOpen(chan: Channel): Boolean = isOperational(chan) && OPEN == chan.state
+
   def isOpeningOrOperational(chan: Channel): Boolean = isOpening(chan) || isOperational(chan)
 }
 
@@ -53,6 +54,7 @@ trait Channel extends StateMachine[ChannelData] { me =>
   }
 
   def SEND(msg: LightningMessage *): Unit
+
   def STORE(data: PersistentChannelData): PersistentChannelData
 
   def BECOME(data1: ChannelData, state1: String): Unit = {
@@ -71,6 +73,7 @@ trait Channel extends StateMachine[ChannelData] { me =>
   }
 
   var listeners = Set.empty[ChannelListener]
+
   val events: ChannelListener = new ChannelListener {
     override def onProcessSuccess: PartialFunction[ChannelListener.Incoming, Unit] = { case success => for (lst <- listeners if lst.onProcessSuccess isDefinedAt success) lst onProcessSuccess success }
     override def onException: PartialFunction[ChannelListener.Malfunction, Unit] = { case failure => for (lst <- listeners if lst.onException isDefinedAt failure) lst onException failure }

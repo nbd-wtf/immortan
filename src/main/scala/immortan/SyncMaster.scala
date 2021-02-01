@@ -55,8 +55,10 @@ case class CMDGossipComplete(sync: SyncWorker)
 // This entirely relies on fact that peer sends ChannelAnnouncement messages first, then ChannelUpdate messages
 
 case class SyncWorkerPHCData(phcMaster: PHCSyncMaster,
-                             expectedPositions: Map[ShortChannelId, PositionSet] = Map.empty, nodeIdToShortIds: Map[PublicKey, ShortChanIdSet] = Map.empty,
-                             updates: Set[ChannelUpdate] = Set.empty, announces: Map[ShortChannelId, ChannelAnnouncement] = Map.empty) extends SyncWorkerData {
+                             updates: Set[ChannelUpdate] = Set.empty,
+                             nodeIdToShortIds: Map[PublicKey, ShortChanIdSet] = Map.empty,
+                             expectedPositions: Map[ShortChannelId, PositionSet] = Map.empty,
+                             announces: Map[ShortChannelId, ChannelAnnouncement] = Map.empty) extends SyncWorkerData {
 
   def withNewAnnounce(ann: ChannelAnnouncement): SyncWorkerPHCData = {
     val nodeId1ToShortIds = nodeIdToShortIds.getOrElse(ann.nodeId1, Set.empty) + ann.shortChannelId

@@ -21,12 +21,10 @@ case class KeyPairAndPubKey(keyPair: KeyPair, them: PublicKey)
 
 object CommsTower {
   type Listeners = Set[ConnectionListener]
-  val listeners: mutable.Map[KeyPairAndPubKey, Listeners] = new ConcurrentHashMap[KeyPairAndPubKey, Listeners].asScala withDefaultValue Set.empty
+
   val workers: mutable.Map[KeyPairAndPubKey, Worker] = new ConcurrentHashMap[KeyPairAndPubKey, Worker].asScala
 
-  final val PROCESSING_DATA = 1
-  final val AWAITING_MESSAGES = 2
-  final val AWAITING_PONG = 3
+  val listeners: mutable.Map[KeyPairAndPubKey, Listeners] = new ConcurrentHashMap[KeyPairAndPubKey, Listeners].asScala withDefaultValue Set.empty
 
   def listen(listeners1: Set[ConnectionListener], pair: KeyPairAndPubKey, ann: NodeAnnouncement, ourInit: Init): Unit = synchronized {
     // Update and either insert a new worker or fire onOperational on new listeners iff worker currently exists and is online
@@ -56,8 +54,8 @@ object CommsTower {
   class Worker(val pair: KeyPairAndPubKey, val ann: NodeAnnouncement, ourInit: Init, buffer: Bytes, sock: Socket) { me =>
     implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
 
-    var pingState: Int = AWAITING_MESSAGES
-    var theirInit: Option[Init] = None
+    var lastMessage: Long = System.currentTimeMillis
+    var theirInit: Option[Init] = Option.empty
     var pinging: Subscription = _
 
     def disconnect: Unit = try sock.close catch none
@@ -75,12 +73,6 @@ object CommsTower {
       }
     }
 
-    def sendPingAwaitPong(length: Int): Unit = {
-      val pingPayload: ByteVector = randomBytes(length)
-      handler process Ping(length, pingPayload)
-      pingState = AWAITING_PONG
-    }
-
     val handler: TransportHandler =
       new TransportHandler(pair.keyPair, ann.nodeId.value) {
         def handleEncryptedOutgoingData(data: ByteVector): Unit =
@@ -90,31 +82,31 @@ object CommsTower {
 
         def handleDecryptedIncomingData(data: ByteVector): Unit = {
           // Prevent pinger from disconnecting or sending pings
-          val ourListenerSet = listeners(pair)
-          pingState = PROCESSING_DATA
+          val ourListeners: Listeners = listeners(pair)
+          lastMessage = System.currentTimeMillis
 
           lightningMessageCodecWithFallback.decode(data.bits).require.value match {
             case message: UnknownMessage => ExtMessageMapping.decode(message) match {
-              case message: HostedChannelMessage => for (lst <- ourListenerSet) lst.onHostedMessage(me, message)
-              case message: SwapOut => for (lst <- ourListenerSet) lst.onSwapOutMessage(me, message)
-              case message: SwapIn => for (lst <- ourListenerSet) lst.onSwapInMessage(me, message)
-              case message => for (lst <- ourListenerSet) lst.onMessage(me, message)
+              case message: HostedChannelMessage => for (lst <- ourListeners) lst.onHostedMessage(me, message)
+              case message: SwapOut => for (lst <- ourListeners) lst.onSwapOutMessage(me, message)
+              case message: SwapIn => for (lst <- ourListeners) lst.onSwapInMessage(me, message)
+              case message => for (lst <- ourListeners) lst.onMessage(me, message)
             }
 
-            case message: Init => handleTheirRemoteInitMessage(ourListenerSet)(remoteInit = message)
+            case message: Init => handleTheirRemoteInitMessage(ourListeners)(remoteInit = message)
             case message: Ping => handler process Pong(ByteVector fromValidHex "00" * message.pongLength)
-            case message => for (lst <- ourListenerSet) lst.onMessage(me, message)
+            case message => for (lst <- ourListeners) lst.onMessage(me, message)
           }
-
-          // Allow pinger operations again
-          pingState = AWAITING_MESSAGES
         }
 
         def handleEnterOperationalState: Unit = {
-          pinging = Observable.interval(15.seconds).map(_ => secureRandom nextInt 10) subscribe { length =>
-            // We disconnect if we are still awaiting Pong since our last sent Ping, meaning peer sent nothing back
-            // otherise we send a Ping and enter awaiting Pong unless we are currently processing some incoming message
-            if (AWAITING_PONG == pingState) disconnect else if (AWAITING_MESSAGES == pingState) sendPingAwaitPong(length + 1)
+          pinging = Observable.interval(20.seconds) subscribe { _ =>
+            if (lastMessage < System.currentTimeMillis - 45 * 1000L) disconnect
+            else if (lastMessage < System.currentTimeMillis - 20 * 1000L) {
+              val payloadLength = secureRandom.nextInt(5) + 1
+              val data = randomBytes(length = payloadLength)
+              handler process Ping(payloadLength, data)
+            }
           }
 
           // Send our node parameters
@@ -123,7 +115,7 @@ object CommsTower {
       }
 
     private[this] val thread = Future {
-      // Always use the first address, it's safe it throw here
+      // Always use the first address, it's safe to throw here
       sock.connect(ann.addresses.head.socketAddress, 7500)
       handler.init
 
@@ -135,6 +127,7 @@ object CommsTower {
     }
 
     thread onComplete { _ =>
+      // Will also run after `forget`
       try pinging.unsubscribe catch none
       listeners(pair).foreach(_ onDisconnect me)
       workers -= pair

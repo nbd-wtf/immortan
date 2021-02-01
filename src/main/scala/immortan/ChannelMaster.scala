@@ -157,8 +157,8 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
   }
 
   def inChannelOutgoingHtlcs: List[UpdateAddHtlc] = all.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing)
+
   def fromNode(nodeId: PublicKey): List[ChanAndCommits] = all.flatMap(Channel.chanAndCommitsOpt).filter(_.commits.announce.na.nodeId == nodeId)
-  def findById(chanId: ByteVector32): Option[ChanAndCommits] = all.flatMap(Channel.chanAndCommitsOpt).find(_.commits.channelId == chanId)
 
   def initConnect: Unit = all.flatMap(Channel.chanAndCommitsOpt).map(_.commits).foreach {
     case cs: HostedCommits => CommsTower.listen(connectionListeners, cs.announce.nodeSpecificPair, cs.announce.na, LNParams.hcInit)
@@ -194,6 +194,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
   // RESOLVING INCOMING MESSAGES
 
   def incorrectDetails(add: UpdateAddHtlc): IncorrectOrUnknownPaymentDetails = IncorrectOrUnknownPaymentDetails(add.amountMsat, cl.currentChainTip)
+
   def failFinalPayloadSpec(fail: FailureMessage, finalPayloadSpec: FinalPayloadSpec): CMD_FAIL_HTLC = failHtlc(finalPayloadSpec.packet, fail, finalPayloadSpec.add)
 
   def failHtlc(packet: DecryptedPacket, fail: FailureMessage, add: UpdateAddHtlc): CMD_FAIL_HTLC = {
@@ -287,9 +288,10 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
 
     // This method should always be executed in channel context
     // Using doProcess makes sure no external message gets intertwined in resolution
-    for (cmd <- badRightAway) findById(cmd.add.channelId).foreach(_.chan doProcess cmd)
-    for (cmd <- results.flatten) findById(cmd.add.channelId).foreach(_.chan doProcess cmd)
-    for (chan <- all) chan doProcess CMD_SIGN
+    // For simplicity all resolutions are sent to all channels, filtering is up to channel
+    for (resolution <- badRightAway ++ results.flatten) all.foreach(_ doProcess resolution)
+    // Again, channel must only react to this if it has relevant changes
+    all.foreach(_ doProcess CMD_SIGN)
   }
 
   override def onProcessSuccess: PartialFunction[Incoming, Unit] = {
@@ -404,15 +406,17 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
       * Can a payment with a trapped shard ever be failed? No, until SUSPENDED channel is overridden a shard will stay in it so payment will be either fulfilled or stay pending indefinitely.
       */
 
-    // Executed in channelContext
-    override def stateUpdated(cs: Commitments): Unit = {
-      cs.localSpec.remoteMalformed.foreach(process)
-      cs.localSpec.remoteFailed.foreach(process)
-    }
+    // ChannelListener implementation, call `process` to get out of channel context
 
     override def fulfillReceived(fulfill: UpdateFulfillHtlc): Unit = self process fulfill
+
     override def onException: PartialFunction[Malfunction, Unit] = { case (_, error: HtlcAddImpossible) => self process error }
+
     override def onBecome: PartialFunction[Transition, Unit] = { case (_, _, _, SLEEPING | SUSPENDED, OPEN) => self process CMDChanGotOnline }
+
+    override def stateUpdated(cs: Commitments): Unit = (cs.localSpec.remoteMalformed ++ cs.localSpec.remoteFailed) foreach process
+
+    // Utils
 
     private def relayOrCreateSender(paymentHash: ByteVector32, msg: Any): Unit = data.payments.get(paymentHash) match {
       case None => withSender(new PaymentSender, paymentHash, msg) // Can happen after restart with leftoverts in channels
@@ -470,7 +474,9 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
 
     def doProcess(msg: Any): Unit = (msg, state) match {
       case (cmd: CMD_SEND_MPP, INIT | ABORTED) => assignToChans(PaymentMaster.currentSendable, PaymentSenderData(cmd, Map.empty), cmd.totalAmount)
+
       case (localError: HtlcAddImpossible, ABORTED) => self abortAndNotify data.withoutPartId(localError.cmd.partId)
+
       case (reject: RemoteFailed, ABORTED) => self abortAndNotify data.withoutPartId(reject.ourAdd.partId)
 
       case (reject: RemoteFailed, INIT) =>

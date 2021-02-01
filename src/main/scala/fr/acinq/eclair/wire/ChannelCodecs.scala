@@ -290,7 +290,7 @@ object ChannelCodecs {
       (int64 withContext "startedAt")
   }.as[HostedCommits]
 
-  val stateDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(byte)
+  val persistentDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(byte)
     .typecase(1, discriminated[PersistentChannelData].by(uint16)
       .typecase(0x20, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
       .typecase(0x21, DATA_WAIT_FOR_FUNDING_LOCKED_Codec)

@@ -7,17 +7,17 @@ trait Table {
 }
 
 object ChannelTable extends Table {
-  val (table, identifier, isRemoved, data) = ("channel", "identifier", "isremoved", "data")
+  val (table, channelId, isRemoved, data) = ("channel", "chanid", "isremoved", "data")
   val selectAllSql = s"SELECT * FROM $table WHERE $isRemoved = 0 ORDER BY $id DESC"
-  val newSql = s"INSERT OR IGNORE INTO $table ($identifier, $data) VALUES (?, ?)"
-  val hideSql = s"UPDATE $table SET $isRemoved = 1 WHERE $identifier = ?"
-  val updSql = s"UPDATE $table SET $data = ? WHERE $identifier = ?"
-  val killSql = s"DELETE FROM $table WHERE WHERE $identifier = ?"
+  val newSql = s"INSERT OR IGNORE INTO $table ($channelId, $data) VALUES (?, ?)"
+  val hideSql = s"UPDATE $table SET $isRemoved = 1 WHERE $channelId = ?"
+  val updSql = s"UPDATE $table SET $data = ? WHERE $channelId = ?"
+  val killSql = s"DELETE FROM $table WHERE WHERE $channelId = ?"
 
   def createStatements: Seq[String] =
     s"""CREATE TABLE IF NOT EXISTS $table(
       $id INTEGER PRIMARY KEY AUTOINCREMENT,
-      $identifier TEXT NOT NULL UNIQUE,
+      $channelId TEXT NOT NULL UNIQUE,
       $isRemoved INTEGER NOT NULL,
       $data BLOB NOT NULL
     )""" :: Nil
@@ -30,9 +30,9 @@ object HtlcInfoTable extends Table {
 
   def createStatements: Seq[String] = {
     val createTable = s"""CREATE TABLE IF NOT EXISTS $table(
-      $id INTEGER PRIMARY KEY AUTOINCREMENT, $channelId BLOB NOT NULL,
+      $id INTEGER PRIMARY KEY AUTOINCREMENT, $channelId TEXT NOT NULL,
       $commitNumber INTEGER NOT NULL, $paymentHash BLOB NOT NULL,
-      $cltvExpiry BLOB NOT NULL
+      $cltvExpiry INTEGER NOT NULL
     )"""
 
     // Index can not be unique because for each commit we may have same local or remote number
@@ -94,6 +94,7 @@ abstract class ChannelUpdateTable(val table: String, val useHeuristics: Boolean)
 }
 
 object NormalChannelUpdateTable extends ChannelUpdateTable("normal_updates", useHeuristics = true)
+
 object HostedChannelUpdateTable extends ChannelUpdateTable("hosted_updates", useHeuristics = false)
 
 abstract class ExcludedChannelTable(val table: String) extends Table {
@@ -123,9 +124,9 @@ object HostedExcludedChannelTable extends ExcludedChannelTable("hosted_excluded_
 
 object PaymentTable extends Table {
   import immortan.PaymentStatus.{HIDDEN, SUCCEEDED}
-  private val paymentTableFields = ("search", "payment", "nodeid", "pr", "preimage", "status", "stamp", "desc", "action", "hash", "received", "sent", "fee", "balance", "fiatrates", "feerate", "incoming", "ext")
-  val (search, table, nodeId, pr, preimage, status, stamp, description, action, hash, receivedMsat, sentMsat, feeMsat, balanceMsat, fiatRates, feeRateMsat, incoming, ext) = paymentTableFields
-  val inserts = s"$nodeId, $pr, $preimage, $status, $stamp, $description, $action, $hash, $receivedMsat, $sentMsat, $feeMsat, $balanceMsat, $fiatRates, $feeRateMsat, $incoming, $ext"
+  private val paymentTableFields = ("search", "payment", "nodeid", "pr", "preimage", "status", "stamp", "desc", "action", "hash", "received", "sent", "fee", "balance", "fiatrates", "chainfee", "incoming", "ext")
+  val (search, table, nodeId, pr, preimage, status, stamp, description, action, hash, receivedMsat, sentMsat, feeMsat, balanceMsat, fiatRates, chainFee, incoming, ext) = paymentTableFields
+  val inserts = s"$nodeId, $pr, $preimage, $status, $stamp, $description, $action, $hash, $receivedMsat, $sentMsat, $feeMsat, $balanceMsat, $fiatRates, $chainFee, $incoming, $ext"
   val newSql = s"INSERT OR IGNORE INTO $table ($inserts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   val newVirtualSql = s"INSERT INTO $fts$table ($search, $hash) VALUES (?, ?)"
   val deleteSql = s"DELETE FROM $table WHERE $hash = ?"
@@ -147,7 +148,7 @@ object PaymentTable extends Table {
       $id INTEGER PRIMARY KEY AUTOINCREMENT, $nodeId TEXT NOT NULL, $pr TEXT NOT NULL, $preimage TEXT NOT NULL,
       $status TEXT NOT NULL, $stamp INTEGER NOT NULL, $description TEXT NOT NULL, $action TEXT NOT NULL, $hash TEXT NOT NULL UNIQUE,
       $receivedMsat INTEGER NOT NULL, $sentMsat INTEGER NOT NULL, $feeMsat INTEGER NOT NULL, $balanceMsat INTEGER NOT NULL,
-      $fiatRates TEXT NOT NULL, $feeRateMsat INTEGER NOT NULL, $incoming INTEGER NOT NULL, $ext TEXT NOT NULL
+      $fiatRates TEXT NOT NULL, $chainFee INTEGER NOT NULL, $incoming INTEGER NOT NULL, $ext TEXT NOT NULL
     )"""
 
     // Once incoming or outgoing payment is settled we can search it by various metadata
@@ -178,20 +179,59 @@ object TxTable extends Table {
     )""" :: Nil
 }
 
+object DataTable extends Table {
+  val (table, label, content) = ("data", "label", "content")
+  val newSql = s"INSERT OR IGNORE INTO $table ($label, $content) VALUES (?, ?)"
+  val updSql = s"UPDATE $table SET $content = ? WHERE $label = ?"
+  val selectSql = s"SELECT * FROM $table WHERE $label = ?"
+  val killSql = s"DELETE FROM $table WHERE $label = ?"
+
+  def createStatements: Seq[String] =
+    s"""CREATE TABLE IF NOT EXISTS $table(
+      $id INTEGER PRIMARY KEY AUTOINCREMENT,
+      $label TEXT NOT NULL UNIQUE,
+      $content BLOB NOT NULL
+    )""" :: Nil
+}
+
 object ElectrumHeadersTable extends Table {
   val (table, height, blockHash, header) = ("headers", "height", "blockhash", "header")
   val addHeaderSql = s"INSERT OR IGNORE INTO $table VALUES (?, ?, ?)"
 
-  val selectHeaderByHeightSql = s"SELECT $header FROM $table WHERE $height = ?"
-  val selectByBlockHashSql = s"SELECT $height, $header FROM $table WHERE $blockHash = ?"
-  val selectHeadersSql = s"SELECT $height, $header FROM $table WHERE $height >= ? ORDER BY $height LIMIT ?"
-  val selectTipSql = s"SELECT $height, $header FROM $table INNER JOIN (SELECT MAX($height) AS maxHeight FROM $table) t1 ON $height = t1.maxHeight"
+  val selectHeaderByHeightSql = s"SELECT * FROM $table WHERE $height = ?"
+  val selectByBlockHashSql = s"SELECT * FROM $table WHERE $blockHash = ?"
+  val selectHeadersSql = s"SELECT * FROM $table WHERE $height >= ? ORDER BY $height LIMIT ?"
+  val selectTipSql = s"SELECT * FROM $table INNER JOIN (SELECT MAX($height) AS maxHeight FROM $table) t1 ON $height = t1.maxHeight"
 
   def createStatements: Seq[String] =
     s"""CREATE TABLE IF NOT EXISTS $table(
       $id INTEGER PRIMARY KEY AUTOINCREMENT,
       $height INTEGER NOT NULL UNIQUE,
-      $blockHash BLOB NOT NULL,
+      $blockHash TEXT NOT NULL,
       $header BLOB NOT NULL
     )""" :: Nil
+}
+
+object PayMarketTable extends Table {
+  val (table, search, lnurl, text, lastMsat, lastDate, hash, image) = ("paymarket", "search", "lnurl", "text", "lastmsat", "lastdate", "hash", "image")
+  val newSql = s"INSERT OR IGNORE INTO $table ($lnurl, $text, $lastMsat, $lastDate, $hash, $image) VALUES (?, ?, ?, ?, ?, ?)"
+  val newVirtualSql = s"INSERT INTO $fts$table ($search, $lnurl) VALUES (?, ?)"
+
+  val selectRecentSql = s"SELECT * FROM $table ORDER BY $lastDate DESC LIMIT 50"
+  val searchSql = s"SELECT * FROM $table WHERE $lnurl IN (SELECT $lnurl FROM $fts$table WHERE $search MATCH ?) LIMIT 100"
+  val updInfoSql = s"UPDATE $table SET $text = ?, $lastMsat = ?, $lastDate = ?, $hash = ?, $image = ? WHERE $lnurl = ?"
+  val killSql = s"DELETE FROM $table WHERE $lnurl = ?"
+
+  def createStatements: Seq[String] = {
+    val createTable = s"""CREATE TABLE IF NOT EXISTS $table(
+      $id INTEGER PRIMARY KEY AUTOINCREMENT, $lnurl STRING NOT NULL UNIQUE,
+      $text STRING NOT NULL, $lastMsat INTEGER NOT NULL, $lastDate INTEGER NOT NULL,
+      $hash STRING NOT NULL, $image STRING NOT NULL
+    )"""
+
+    // Payment links are searchable by their text descriptions (text metadata + domain name)
+    val addIndex1 = s"CREATE VIRTUAL TABLE IF NOT EXISTS $fts$table USING $fts($search, $lnurl)"
+    val addIndex2 = s"CREATE INDEX IF NOT EXISTS idx1$table ON $table ($lastDate)"
+    createTable :: addIndex1 :: addIndex2 :: Nil
+  }
 }

@@ -16,7 +16,7 @@ import scodec.bits.ByteVector
 
 object HostedChannel {
   def make(initListeners: Set[ChannelListener], hostedData: HostedCommits, bag: ChannelBag): HostedChannel = new HostedChannel {
-    def SEND(messages: LightningMessage *): Unit = CommsTower.sendMany(messages, hostedData.announce.nodeSpecificPair)
+    def SEND(messages: LightningMessage *): Unit = CommsTower.sendMany(messages.map(ExtMessageMapping.prepareNormal), hostedData.announce.nodeSpecificPair)
     def STORE(hostedData: PersistentChannelData): PersistentChannelData = bag.put(hostedData)
     listeners = initListeners
     doProcess(hostedData)
@@ -142,14 +142,14 @@ abstract class HostedChannel extends Channel { me =>
         attemptStateUpdate(remoteSU, hc)
 
 
-      // In SLEEPING | SUSPENDED state we still send a preimage to get it resolved, then notify user on UI because normal resolution is impossible
-      case (hc: HostedCommits, cmd: CMD_FULFILL_HTLC, SLEEPING | OPEN | SUSPENDED) if hc.unansweredIncoming.contains(cmd.add) =>
+      // In SLEEPING | SUSPENDED state we still send a preimage to get it resolved, then notify user on UI because normal resolution is not possible
+      case (hc: HostedCommits, cmd: CMD_FULFILL_HTLC, SLEEPING | OPEN | SUSPENDED) if cmd.add.channelId == hc.channelId && hc.unansweredIncoming.contains(cmd.add) =>
         val updateFulfill = UpdateFulfillHtlc(hc.channelId, cmd.add.id, cmd.preimage)
         STORE_BECOME_SEND(hc.addLocalProposal(updateFulfill), state, updateFulfill)
 
 
-      // In SLEEPING | SUSPENDED state this will not be accepted by peer, but will make pending shard invisible to `unansweredIncoming` method
-      case (hc: HostedCommits, cmd: CMD_FAIL_MALFORMED_HTLC, SLEEPING | OPEN | SUSPENDED) if hc.unansweredIncoming.contains(cmd.add) =>
+      // In SLEEPING | SUSPENDED state this will not be accepted by peer, but will make pending shard invisible to `unansweredIncoming` method, which is desired
+      case (hc: HostedCommits, cmd: CMD_FAIL_MALFORMED_HTLC, SLEEPING | OPEN | SUSPENDED) if cmd.add.channelId == hc.channelId && hc.unansweredIncoming.contains(cmd.add) =>
         val updateFailMalformed = UpdateFailMalformedHtlc(hc.channelId, cmd.add.id, cmd.onionHash, cmd.failureCode)
         STORE_BECOME_SEND(hc.addLocalProposal(updateFailMalformed), state, updateFailMalformed)
 

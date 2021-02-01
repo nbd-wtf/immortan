@@ -541,19 +541,14 @@ object ElectrumWallet {
   case class IsDoubleSpentResponse(tx: Transaction, isDoubleSpent: Boolean) extends Response
 
   sealed trait WalletEvent
-  /**
-   *
-   * @param tx
-   * @param depth
-   * @param received
-   * @param sent
-   * @param feeOpt is set only when we know it (i.e. for outgoing transactions)
-   */
-  case class TransactionReceived(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi, feeOpt: Option[Satoshi], timestamp: Option[Long]) extends WalletEvent
-  case class TransactionConfidenceChanged(txid: ByteVector32, depth: Long, timestamp: Option[Long]) extends WalletEvent
+  case class TransactionReceived(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi, feeOpt: Option[Satoshi], timestamp: Option[Long] = None) extends WalletEvent {
+    val msecs: Long = timestamp.map(_ * 1000L).getOrElse(System.currentTimeMillis)
+  }
+  case class TransactionConfidenceChanged(txid: ByteVector32, depth: Long, timestamp: Option[Long] = None) extends WalletEvent {
+    val msecs: Long = timestamp.map(_ * 1000L).getOrElse(System.currentTimeMillis)
+  }
   case class NewWalletReceiveAddress(address: String) extends WalletEvent
   case class WalletReady(confirmedBalance: Satoshi, unconfirmedBalance: Satoshi, height: Long, timestamp: Long) extends WalletEvent
-  // @formatter:on
 
   /**
    *
