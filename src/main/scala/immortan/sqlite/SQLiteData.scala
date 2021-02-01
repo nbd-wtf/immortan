@@ -3,8 +3,8 @@ package immortan.sqlite
 import spray.json._
 import immortan.sqlite.SQLiteData._
 import immortan.utils.ImplicitJsonFormats._
-
 import java.lang.{Integer => JInt}
+
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32}
 import fr.acinq.eclair.wire.{HostedChannelBranding, SwapInState}
 import immortan.{DataTable, ElectrumHeadersTable, StorageFormat, SwapInStateExt}
@@ -15,7 +15,8 @@ import fr.acinq.eclair.wire.SwapCodecs.swapInStateCodec
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
 import fr.acinq.bitcoin.Crypto.PublicKey
 import immortan.crypto.Tools.Bytes
-import scodec.bits.BitVector
+import scodec.bits.{BitVector, ByteVector}
+
 import scala.util.Try
 
 
@@ -29,7 +30,7 @@ object SQLiteData {
 class SQLiteData(db: DBInterface) extends WalletDb {
   def delete(label: String): Unit = db.change(DataTable.killSql, label)
 
-  def tryGet(label: String): Try[BitVector] = db.select(DataTable.selectSql, label).headTry(_ bitVec DataTable.content)
+  def tryGet(label: String): Try[ByteVector] = db.select(DataTable.selectSql, label).headTry(_ byteVec DataTable.content)
 
   def put(label: String, content: Bytes): Unit = {
     // Insert and then update because of INSERT IGNORE
@@ -39,7 +40,7 @@ class SQLiteData(db: DBInterface) extends WalletDb {
 
   // StorageFormat
 
-  def putFormat(format: StorageFormat): Unit = put(LABEL_FORMAT, format.toJson.compactPrint getBytes "UTF-8")
+  def putFormat(format: StorageFormat): Unit = put(LABEL_FORMAT, format.toJson.compactPrint.getBytes)
 
   def tryGetFormat: Try[StorageFormat] = tryGet(LABEL_FORMAT).map(_.toHex) map to[StorageFormat]
 
@@ -52,7 +53,7 @@ class SQLiteData(db: DBInterface) extends WalletDb {
 
   def tryGetBranding(nodeId: PublicKey): Try[HostedChannelBranding] =
     tryGet(LABEL_BRANDING_PREFIX + nodeId.toString) map { rawHostedChannelBranding =>
-      hostedChannelBrandingCodec.decode(rawHostedChannelBranding).require.value
+      hostedChannelBrandingCodec.decode(rawHostedChannelBranding.toBitVector).require.value
     }
 
   // SwapInState
@@ -64,14 +65,14 @@ class SQLiteData(db: DBInterface) extends WalletDb {
 
   def tryGetSwapInState(nodeId: PublicKey): Try[SwapInStateExt] =
     tryGet(LABEL_SWAP_IN_STATE_PREFIX + nodeId.toString) map { rawSwapInState =>
-      SwapInStateExt(swapInStateCodec.decode(rawSwapInState).require.value, nodeId)
+      SwapInStateExt(swapInStateCodec.decode(rawSwapInState.toBitVector).require.value, nodeId)
     }
 
   // WalletDb
 
   override def persist(data: PersistentData): Unit = put(LABEL_ELECTRUM_DATA, persistentDataCodec.encode(data).require.toByteArray)
 
-  override def readPersistentData: Option[PersistentData] = tryGet(LABEL_ELECTRUM_DATA).map(persistentDataCodec.decode).map(_.require.value).toOption
+  override def readPersistentData: Option[PersistentData] = tryGet(LABEL_ELECTRUM_DATA).map(raw => persistentDataCodec.decode(raw.toBitVector).require.value).toOption
 
   // HeadersDb
 

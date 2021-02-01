@@ -12,17 +12,15 @@ trait RichCursor extends Iterable[RichCursor] {
 
   def headTry[T](fun: RichCursor => T): Try[T]
 
-  def byteVec(byteKey: String): ByteVector
+  def byteVec(key: String): ByteVector = ByteVector view bytes(key)
 
-  def bitVec(bitKey: String): BitVector
+  def bytes(key: String): Bytes
 
-  def bytes(byteKey: String): Bytes
+  def string(key: String): String
 
-  def string(stringKey: String): String
-
-  def long(longKey: String): Long
+  def long(key: String): Long
 
   def long(pos: Int): Long
 
-  def int(intKey: String): Int
+  def int(key: String): Int
 }

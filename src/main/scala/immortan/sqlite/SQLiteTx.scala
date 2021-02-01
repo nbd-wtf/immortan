@@ -2,10 +2,10 @@ package immortan.sqlite
 
 import spray.json._
 import immortan.utils.ImplicitJsonFormats._
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
+import immortan.{TxDescription, TxInfo, TxTable}
 import java.lang.{Long => JLong}
 
-import immortan.{TxDescription, TxInfo, TxTable}
-import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{TransactionConfidenceChanged, TransactionReceived}
 import immortan.crypto.Tools.Fiat2Btc
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.MilliSatoshi
