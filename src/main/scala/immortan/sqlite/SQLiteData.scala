@@ -3,8 +3,8 @@ package immortan.sqlite
 import spray.json._
 import immortan.sqlite.SQLiteData._
 import immortan.utils.ImplicitJsonFormats._
-import java.lang.{Integer => JInt}
 
+import java.lang.{Integer => JInt}
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32}
 import fr.acinq.eclair.wire.{HostedChannelBranding, SwapInState}
 import immortan.{DataTable, ElectrumHeadersTable, StorageFormat, SwapInStateExt}
@@ -15,8 +15,7 @@ import fr.acinq.eclair.wire.SwapCodecs.swapInStateCodec
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
 import fr.acinq.bitcoin.Crypto.PublicKey
 import immortan.crypto.Tools.Bytes
-import scodec.bits.{BitVector, ByteVector}
-
+import scodec.bits.ByteVector
 import scala.util.Try
 
 

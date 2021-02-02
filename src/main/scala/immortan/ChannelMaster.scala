@@ -109,7 +109,7 @@ object ChannelMaster {
   val CMDAskForRoute = "cmd-ask-for-route"
 }
 
-abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: PathFinder, var cl: ChainLink) extends ChannelListener {
+abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: PathFinder) extends ChannelListener {
   private[this] val getPaymentInfoMemo = memoize(payBag.getPaymentInfo)
   private[this] val initialResolveMemo = memoize(initialResolve)
   pf.listeners += PaymentMaster
@@ -193,7 +193,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
 
   // RESOLVING INCOMING MESSAGES
 
-  def incorrectDetails(add: UpdateAddHtlc): IncorrectOrUnknownPaymentDetails = IncorrectOrUnknownPaymentDetails(add.amountMsat, cl.currentChainTip)
+  def incorrectDetails(add: UpdateAddHtlc): IncorrectOrUnknownPaymentDetails = IncorrectOrUnknownPaymentDetails(add.amountMsat, LNParams.blockCount.get)
 
   def failFinalPayloadSpec(fail: FailureMessage, finalPayloadSpec: FinalPayloadSpec): CMD_FAIL_HTLC = failHtlc(finalPayloadSpec.packet, fail, finalPayloadSpec.add)
 
@@ -279,7 +279,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
       // This is a payment where one of shards has a paymentSecret which is different from the one we have provided in invoice, this is a spec violation so we proceed with failing right away
       case (payments, Some(info)) if !payments.flatMap(_.payload.paymentSecret).forall(info.pr.paymentSecret.contains) => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
       // This is a payment which arrives too late, we would have too few blocks to prove that we have fulfilled it with an uncooperative peer, not a spec violation but we still fail it to be on safe side
-      case (payments, _) if payments.exists(_.add.cltvExpiry.toLong < cl.currentChainTip + LNParams.cltvRejectThreshold) => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
+      case (payments, _) if payments.exists(_.add.cltvExpiry.toLong < LNParams.blockCount.get + LNParams.cltvRejectThreshold) => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
       case (payments, Some(info)) if payments.map(_.add.amountMsat).sum >= payments.head.payload.totalAmount => for (pay <- payments) yield CMD_FULFILL_HTLC(info.preimage, pay.add)
       // This can happen either when incoming payments time out or when we restart and have partial unanswered incoming leftovers, fail all of them
       case (payments, _) if incomingTimeoutWorker.finishedOrNeverStarted => for (pay <- payments) yield failFinalPayloadSpec(PaymentTimeout, pay)

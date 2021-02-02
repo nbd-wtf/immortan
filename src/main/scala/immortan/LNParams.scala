@@ -289,24 +289,6 @@ trait PaymentDBUpdater {
   def updStatusIncoming(add: UpdateAddHtlc, status: String): Unit
 }
 
-trait ChainLink {
-  var listeners: Set[ChainLinkListener] = Set.empty
-  def addAndMaybeInform(listener: ChainLinkListener): Unit = {
-    if (chainTipCanBeTrusted) listener.onTrustedChainTipKnown
-    listeners += listener
-  }
-
-  def chainTipCanBeTrusted: Boolean
-  def currentChainTip: Int
-  def start: Unit
-  def stop: Unit
-}
-
-trait ChainLinkListener {
-  def onTrustedChainTipKnown: Unit = none
-  def onCompleteChainDisconnect: Unit = none
-}
-
 trait ChannelBag {
   def all: List[PersistentChannelData]
   def hide(commitments: NormalCommits): Unit

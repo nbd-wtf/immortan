@@ -9,7 +9,7 @@ trait DBInterface {
   def select(sql: String, params: String*): RichCursor
 
   def search(sqlSelectQuery: String, rawQuery: String): RichCursor = {
-    val purified = rawQuery.replaceAll("[^ a-zA-Z0-9]", "")
+    val purified = rawQuery.replaceAll("[^ a-zA-Z0-9]", "").trim
     select(sqlSelectQuery, s"$purified*")
   }
 }

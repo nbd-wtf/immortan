@@ -548,7 +548,9 @@ object ElectrumWallet {
     val msecs: Long = timestamp.map(_ * 1000L).getOrElse(System.currentTimeMillis)
   }
   case class NewWalletReceiveAddress(address: String) extends WalletEvent
-  case class WalletReady(confirmedBalance: Satoshi, unconfirmedBalance: Satoshi, height: Long, timestamp: Long) extends WalletEvent
+  case class WalletReady(confirmedBalance: Satoshi, unconfirmedBalance: Satoshi, height: Long, timestamp: Long) extends WalletEvent {
+    val msecs: Long = timestamp * 1000L
+  }
 
   /**
    *
