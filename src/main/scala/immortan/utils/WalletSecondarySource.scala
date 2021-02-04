@@ -3,7 +3,7 @@ package immortan.utils
 import immortan.crypto.Tools._
 import scala.concurrent.duration._
 import immortan.utils.ImplicitJsonFormats._
-import immortan.utils.SecondaryChainSource._
+import immortan.utils.WalletSecondarySource._
 import com.github.kevinsawicki.http.HttpRequest._
 
 import akka.actor.{Actor, FSM}
@@ -19,15 +19,11 @@ import org.bitcoinj.params.AbstractBitcoinNetParams
 import immortan.crypto.Tools
 import immortan.ChainWallet
 
-sealed trait SecondaryChainEvent
-case object PossibleDangerousBlockSkew extends SecondaryChainEvent
-case object DefiniteDangerousBlockSkew extends SecondaryChainEvent
-case object BlockCountIsTrusted extends SecondaryChainEvent
 
-object SecondaryChainSource {
-  final val firstCheckTimerKey = "timeout-key"
+object WalletSecondarySource {
+  final val firstCheckTimerKey = "first-check-timeout-key"
 
-  case class FirstCheckTimeout(sub: Subscription)
+  case class FirstCheckTimeout(sub: Option[Subscription] = None)
 
   case class TipObtained(height: Int)
 
@@ -68,10 +64,10 @@ object SecondaryChainSource {
   }
 
   def api: Observable[TipObtained] = {
-    val blockChain = Rx.ioQueue.map(_ => to[BlockChainHeight](get("https://blockchain.info/latestblock").connectTimeout(10000).body).height)
-    val blockCypher = Rx.ioQueue.map(_ => to[BlockCypherHeight](get("https://api.blockcypher.com/v1/btc/main").connectTimeout(10000).body).height)
-    val blockStream = Rx.ioQueue.map(_ => get("https://blockstream.info/api/blocks/tip/height").connectTimeout(10000).body.toInt)
-    val mempoolSpace = Rx.ioQueue.map(_ => get("https://mempool.space/api/blocks/tip/height").connectTimeout(10000).body.toInt)
+    val blockChain = Rx.ioQueue.map(_ => to[BlockChainHeight](get("https://blockchain.info/latestblock").connectTimeout(15000).body).height)
+    val blockCypher = Rx.ioQueue.map(_ => to[BlockCypherHeight](get("https://api.blockcypher.com/v1/btc/main").connectTimeout(15000).body).height)
+    val blockStream = Rx.ioQueue.map(_ => get("https://blockstream.info/api/blocks/tip/height").connectTimeout(15000).body.toInt)
+    val mempoolSpace = Rx.ioQueue.map(_ => get("https://mempool.space/api/blocks/tip/height").connectTimeout(15000).body.toInt)
     val calls = List(blockChain, blockCypher, blockStream, mempoolSpace).map(_ onExceptionResumeNext Observable.empty)
     Observable.from(calls).flatten.toList.map(Tools.mostFrequentItem).map(TipObtained.apply)
   }
@@ -79,6 +75,11 @@ object SecondaryChainSource {
 
 case class BlockCypherHeight(height: Int)
 case class BlockChainHeight(height: Int)
+
+sealed trait SecondaryChainEvent
+case object PossibleDangerousBlockSkew extends SecondaryChainEvent
+case object DefiniteDangerousBlockSkew extends SecondaryChainEvent
+case object BlockCountIsTrusted extends SecondaryChainEvent
 
 sealed trait SecondaryChainState
 case object FIRST extends SecondaryChainState
@@ -90,9 +91,9 @@ case object AwaitingAction extends SecondaryChainData
 case class InitialCheck(baseHeight: Option[Long], checkHeight: Option[Long] = None, skipToSecondaryCheck: Boolean = false) extends SecondaryChainData
 case class SecondaryAPICheck(baseHeight: Long) extends SecondaryChainData
 
-class SecondaryChainSource(chainHash: ByteVector32,
-                           blockCount: AtomicLong, blockCountIsTrusted: AtomicReference[Boolean],
-                           wallet: ChainWallet) extends FSM[SecondaryChainState, SecondaryChainData] {
+class WalletSecondarySource(chainHash: ByteVector32,
+                            blockCount: AtomicLong, blockCountIsTrusted: AtomicReference[Boolean],
+                            wallet: ChainWallet) extends FSM[SecondaryChainState, SecondaryChainData] {
 
   private[this] val dangerousSkewBlocks = 6
 
@@ -105,13 +106,13 @@ class SecondaryChainSource(chainHash: ByteVector32,
   when(FIRST) {
     case Event(TickPerformSecondarySourceCheck, AwaitingAction) =>
       val sub = bitcoinj(chainHash).subscribe(tipObtained => self ! tipObtained)
-      setTimer(firstCheckTimerKey, FirstCheckTimeout(sub), 15.seconds)
+      setTimer(firstCheckTimerKey, FirstCheckTimeout(sub.toSome), 15.seconds)
       stay using InitialCheck(baseHeight = None)
 
 
     case Event(FirstCheckTimeout(sub), data1: InitialCheck) =>
       // Prevent bitcoinj from firing anyway at later time
-      sub.unsubscribe
+      sub.foreach(_.unsubscribe)
 
       if (data1.baseHeight.isDefined) startAPICheck(data1.baseHeight.get)
       else stay using data1.copy(skipToSecondaryCheck = true)
@@ -147,14 +148,14 @@ class SecondaryChainSource(chainHash: ByteVector32,
   when(WAITING) {
     case Event(TickPerformSecondarySourceCheck, AwaitingAction) =>
       val sub = bitcoinj(chainHash).subscribe(tipObtained => self ! tipObtained)
-      setTimer(firstCheckTimerKey, FirstCheckTimeout(sub), 15.seconds)
+      setTimer(firstCheckTimerKey, FirstCheckTimeout(sub.toSome), 15.seconds)
       stay
 
 
     case Event(FirstCheckTimeout(sub), AwaitingAction) =>
       api.foreach(tip => self ! tip, _ => self ! SecondCheckFailure)
       // Prevent bitcoinj from firing anyway at later time
-      sub.unsubscribe
+      sub.foreach(_.unsubscribe)
       stay
 
 
@@ -193,10 +194,10 @@ class BlockSkewCatcher extends Actor {
 
   private[this] val maxAttempts = 3
 
-  override def receive: Receive = catchEvent(0)
+  override def receive: Receive = catchEvent(1)
 
   def catchEvent(timesFailed: Int): Receive = {
-    case BlockCountIsTrusted => context become catchEvent(0)
+    case BlockCountIsTrusted => context become catchEvent(1)
 
     case PossibleDangerousBlockSkew if timesFailed < maxAttempts => context become catchEvent(timesFailed + 1)
 

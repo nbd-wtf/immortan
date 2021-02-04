@@ -6,7 +6,10 @@ scalaVersion := "2.11.12"
 
 // Core lib
 
-libraryDependencies += "org.scalatest" % "scalatest_2.11" % "3.2.3"
+libraryDependencies += "org.scalatest" % "scalatest_2.11" % "3.1.1"
+
+libraryDependencies += "com.typesafe.akka" % "akka-testkit_2.11" % "2.5.32"
+
 
 libraryDependencies += "org.scodec" % "scodec-core_2.11" % "1.11.3"
 
