@@ -6,31 +6,36 @@ import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
 import com.softwaremill.sttp._
 import fr.acinq.eclair.Features._
+
 import scala.concurrent.duration._
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.bitcoin.DeterministicWallet._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+
 import scala.concurrent.{ExecutionContextExecutor, Future}
 import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt}
 import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
+
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import fr.acinq.eclair.channel.{LocalParams, NormalCommits, PersistentChannelData}
 import fr.acinq.eclair.blockchain.electrum.{ElectrumClientPool, ElectrumEclairWallet, ElectrumWallet, ElectrumWatcher}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
-import fr.acinq.eclair.blockchain.WalletEventsCatcher
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.payment.PaymentRequest
 import immortan.SyncMaster.ShortChanIdSet
 import fr.acinq.eclair.crypto.Generators
 import immortan.crypto.Noise.KeyPair
 import java.io.ByteArrayInputStream
-import immortan.utils.RatesInfo
+
+import immortan.utils.{RatesInfo, WalletEventsCatcher}
+
 import scala.collection.mutable
 import scodec.bits.ByteVector
 import java.nio.ByteOrder
+
 import akka.util.Timeout
 
 
@@ -98,12 +103,27 @@ object LNParams {
 
   var format: StorageFormat = _
   var syncParams: SyncParams = _
+  var fiatRatesInfo: RatesInfo = _
   var chainWallet: ChainWallet = _
   var channelMaster: ChannelMaster = _
-  var feeratesPerKB: AtomicReference[FeeratesPerKB] = _
-  var feeratesPerKw: AtomicReference[FeeratesPerKw] = _
-  var fiatRatesInfo: RatesInfo = _
-  var blockCount: AtomicLong = _
+
+  val defaultFeerates: FeeratesPerKB =
+    FeeratesPerKB(
+      block_1 = FeeratePerKB(210000.sat),
+      blocks_2 = FeeratePerKB(180000.sat),
+      blocks_6 = FeeratePerKB(150000.sat),
+      blocks_12 = FeeratePerKB(110000.sat),
+      blocks_36 = FeeratePerKB(50000.sat),
+      blocks_72 = FeeratePerKB(20000.sat),
+      blocks_144 = FeeratePerKB(15000.sat),
+      blocks_1008 = FeeratePerKB(5000.sat),
+      mempoolMinFee = FeeratePerKB(5000.sat)
+    )
+
+  val feeratesPerKB: AtomicReference[FeeratesPerKB] = new AtomicReference(defaultFeerates)
+  val feeratesPerKw: AtomicReference[FeeratesPerKw] = new AtomicReference(FeeratesPerKw apply defaultFeerates)
+  val blockCountIsTrusted: AtomicReference[Boolean] = new AtomicReference(false)
+  val blockCount: AtomicLong = new AtomicLong(0L)
 
   val feeEstimator: FeeEstimator = new FeeEstimator {
     override def getFeeratePerKb(target: Int): FeeratePerKB = feeratesPerKB.get.feePerBlock(target)

@@ -10,7 +10,6 @@ import fr.acinq.eclair.channel._
 import scala.concurrent.duration._
 import com.softwaremill.quicklens._
 import immortan.utils.{Rx, ThrottledWork}
-import rx.lang.scala.{Observable, Subscription}
 import immortan.crypto.{CanBeRepliedTo, StateMachine, Tools}
 import immortan.ChannelListener.{Incoming, Malfunction, Transition}
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
@@ -27,6 +26,7 @@ import java.util.concurrent.Executors
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.crypto.Sphinx
 import scala.util.Random.shuffle
+import rx.lang.scala.Observable
 import scala.collection.mutable
 import scodec.bits.ByteVector
 import scodec.Attempt
@@ -144,17 +144,6 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
   }
 
   // CHANNEL MANAGEMENT
-
-  private[this] var delayedOfflineTask: Option[Subscription] = None
-  def cancelDelayedOffline: Unit = delayedOfflineTask.foreach(_.unsubscribe)
-
-  // One we lose current chain tip source we EVENTUALLY need to put channels into SLEEPING state
-  // but we do not need to do this immediately since a small block lag is allowed by protocol
-
-  def scheduleDelayedOffline: Unit = runAnd(cancelDelayedOffline) {
-    def disconnectAll: Unit = for (chan <- all) chan process CMD_CHAIN_TIP_LOST
-    delayedOfflineTask = Rx.ioQueue.delay(3.hours).subscribe(_ => disconnectAll, none).toSome
-  }
 
   def inChannelOutgoingHtlcs: List[UpdateAddHtlc] = all.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing)
 

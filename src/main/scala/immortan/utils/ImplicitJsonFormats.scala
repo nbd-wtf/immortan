@@ -191,4 +191,9 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
   implicit val coinGeckoItemFmt: JsonFormat[CoinGeckoItem] = jsonFormat[Double, CoinGeckoItem](CoinGeckoItem.apply, "value")
   implicit val coinGeckoFmt: JsonFormat[CoinGecko] = jsonFormat[CoinGeckoItemMap, CoinGecko](CoinGecko.apply, "rates")
   implicit val bitpayFmt: JsonFormat[Bitpay] = jsonFormat[BitpayItemList, Bitpay](Bitpay.apply, "data")
+
+  // API chain height
+
+  implicit val blockCypherHeightFmt: JsonFormat[BlockCypherHeight] = jsonFormat[Int, BlockCypherHeight](BlockCypherHeight.apply, "height")
+  implicit val blockChainHeightFmt: JsonFormat[BlockChainHeight] = jsonFormat[Int, BlockChainHeight](BlockChainHeight.apply, "height")
 }
