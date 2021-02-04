@@ -33,7 +33,7 @@ object SecondaryChainSource {
 
   case object TickPerformSecondarySourceCheck
 
-  case object APICheckFailure
+  case object SecondCheckFailure
 
   def bitcoinj(chainHash: ByteVector32): Observable[TipObtained] = {
     val asyncSubject = rx.lang.scala.subjects.AsyncSubject[TipObtained]
@@ -139,9 +139,9 @@ class SecondaryChainSource(chainHash: ByteVector32,
       if (isDangerousBlockSkewDetected) reconnectBase else informTrusted
 
 
-    case Event(APICheckFailure, _: SecondaryAPICheck) =>
-      // API failed, nothing left to do but try again later
-      goto(WAITING) using AwaitingAction
+    case Event(SecondCheckFailure, _: SecondaryAPICheck) =>
+      // API check failed, consider block count safe for now
+      informTrusted
   }
 
   when(WAITING) {
@@ -152,7 +152,7 @@ class SecondaryChainSource(chainHash: ByteVector32,
 
 
     case Event(FirstCheckTimeout(sub), AwaitingAction) =>
-      api.foreach(tip => self ! tip, _ => self ! APICheckFailure)
+      api.foreach(tip => self ! tip, _ => self ! SecondCheckFailure)
       // Prevent bitcoinj from firing anyway at later time
       sub.unsubscribe
       stay
@@ -167,7 +167,7 @@ class SecondaryChainSource(chainHash: ByteVector32,
   }
 
   private def startAPICheck(baseHeight: Long) = {
-    api.foreach(tip => self ! tip, _ => self ! APICheckFailure)
+    api.foreach(tip => self ! tip, _ => self ! SecondCheckFailure)
     goto(SECOND) using SecondaryAPICheck(baseHeight)
   }
 

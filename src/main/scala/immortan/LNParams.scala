@@ -6,17 +6,15 @@ import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
 import com.softwaremill.sttp._
 import fr.acinq.eclair.Features._
-
 import scala.concurrent.duration._
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.bitcoin.DeterministicWallet._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-
+import immortan.utils.{RatesInfo, WalletEventsCatcher}
 import scala.concurrent.{ExecutionContextExecutor, Future}
 import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt}
 import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
-
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import fr.acinq.eclair.channel.{LocalParams, NormalCommits, PersistentChannelData}
 import fr.acinq.eclair.blockchain.electrum.{ElectrumClientPool, ElectrumEclairWallet, ElectrumWallet, ElectrumWatcher}
@@ -29,13 +27,9 @@ import immortan.SyncMaster.ShortChanIdSet
 import fr.acinq.eclair.crypto.Generators
 import immortan.crypto.Noise.KeyPair
 import java.io.ByteArrayInputStream
-
-import immortan.utils.{RatesInfo, WalletEventsCatcher}
-
 import scala.collection.mutable
 import scodec.bits.ByteVector
 import java.nio.ByteOrder
-
 import akka.util.Timeout
 
 
