@@ -137,7 +137,7 @@ class WalletSecondarySource(chainHash: ByteVector32,
   when(SECOND) {
     case Event(check: TipObtained, data1: SecondaryAPICheck) =>
       val isDangerousBlockSkewDetected = check.height - data1.baseHeight > dangerousSkewBlocks
-      if (isDangerousBlockSkewDetected) reconnectBase else informTrusted
+      if (isDangerousBlockSkewDetected) restartBase else informTrusted
 
 
     case Event(SecondCheckFailure, _: SecondaryAPICheck) =>
@@ -164,7 +164,7 @@ class WalletSecondarySource(chainHash: ByteVector32,
       cancelTimer(firstCheckTimerKey)
 
       val isDangerousBlockSkewDetected = check.height - blockCount.get > dangerousSkewBlocks
-      if (isDangerousBlockSkewDetected) reconnectBase else informTrusted
+      if (isDangerousBlockSkewDetected) restartBase else informTrusted
   }
 
   private def startAPICheck(baseHeight: Long) = {
@@ -178,7 +178,7 @@ class WalletSecondarySource(chainHash: ByteVector32,
     goto(WAITING) using AwaitingAction
   }
 
-  private def reconnectBase = {
+  private def restartBase = {
     blockCountIsTrusted.set(false)
     context.system.eventStream.publish(PossibleDangerousBlockSkew)
     wallet.clientPool ! ElectrumClientPool.Reconnect

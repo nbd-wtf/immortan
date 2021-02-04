@@ -30,31 +30,31 @@ class WalletSecondarySourceSpec extends TestKit(ActorSystem("test")) with Fixtur
     val blockCountIsTrusted = new AtomicReference[Boolean](false)
     val blockCount = new AtomicLong(WalletSecondarySource.bitcoinj(f.chainHash).toBlocking.single.height)
     val wallet = ChainWallet(wallet = null, eventsCatcher = TestProbe.apply.ref, clientPool = TestProbe.apply.ref, watcher = TestProbe.apply.ref)
-    val actor: TestFSMRef[SecondaryChainState, SecondaryChainData, WalletSecondarySource] = TestFSMRef(new WalletSecondarySource(f.chainHash, blockCount, blockCountIsTrusted, wallet))
+    val actor = TestFSMRef(new WalletSecondarySource(f.chainHash, blockCount, blockCountIsTrusted, wallet))
     system.eventStream.subscribe(channel = classOf[SecondaryChainEvent], subscriber = probe.ref)
 
     // Initial check passes
     actor ! TickPerformSecondarySourceCheck
     actor ! ElectrumClient.ElectrumReady(blockCount.get.toInt, tip = null, serverAddress = null)
-    awaitCond(actor.stateName === WAITING, 15.seconds)
+    awaitCond(actor.stateName === WAITING, 25.seconds)
     probe.expectMsgType[BlockCountIsTrusted.type]
     assert(blockCountIsTrusted.get)
 
     // Next check passes eventually
     actor ! TickPerformSecondarySourceCheck
-    // Simulate bitcoinj timeout to switch actor to API check
+    // Simulate bitcoinj timeout in WAITING to switch actor to API check
     actor.cancelTimer(WalletSecondarySource.firstCheckTimerKey)
     actor ! WalletSecondarySource.FirstCheckTimeout(None)
     probe.expectMsgType[BlockCountIsTrusted.type](15.seconds)
     assert(blockCountIsTrusted.get)
   }
 
-  test("Tip confimed, bitcoinj finishes first") { f =>
+  test("Suspicious skew resolved in second phase") { f =>
     val probe = TestProbe.apply
     val blockCountIsTrusted = new AtomicReference[Boolean](false)
     val blockCount = new AtomicLong(WalletSecondarySource.bitcoinj(f.chainHash).toBlocking.single.height)
     val wallet = ChainWallet(wallet = null, eventsCatcher = TestProbe.apply.ref, clientPool = TestProbe.apply.ref, watcher = TestProbe.apply.ref)
-    val actor: TestFSMRef[SecondaryChainState, SecondaryChainData, WalletSecondarySource] = TestFSMRef(new WalletSecondarySource(f.chainHash, blockCount, blockCountIsTrusted, wallet))
+    val actor = TestFSMRef(new WalletSecondarySource(f.chainHash, blockCount, blockCountIsTrusted, wallet))
     system.eventStream.subscribe(channel = classOf[SecondaryChainEvent], subscriber = probe.ref)
 
     actor ! TickPerformSecondarySourceCheck
@@ -68,15 +68,19 @@ class WalletSecondarySourceSpec extends TestKit(ActorSystem("test")) with Fixtur
     awaitCond(actor.stateName === WAITING, 15.seconds)
     probe.expectMsgType[BlockCountIsTrusted.type]
     assert(blockCountIsTrusted.get)
+  }
 
-    // Next check does not pass
-    blockCount.set(blockCount.get - 7)
+  test("Tip confimed, bitcoinj finishes first") { f =>
+    val probe = TestProbe.apply
+    val blockCountIsTrusted = new AtomicReference[Boolean](false)
+    val blockCount = new AtomicLong(WalletSecondarySource.bitcoinj(f.chainHash).toBlocking.single.height)
+    val wallet = ChainWallet(wallet = null, eventsCatcher = TestProbe.apply.ref, clientPool = TestProbe.apply.ref, watcher = TestProbe.apply.ref)
+    val actor = TestFSMRef(new WalletSecondarySource(f.chainHash, blockCount, blockCountIsTrusted, wallet))
+    system.eventStream.subscribe(channel = classOf[SecondaryChainEvent], subscriber = probe.ref)
+
     actor ! TickPerformSecondarySourceCheck
-    probe.expectMsgType[PossibleDangerousBlockSkew.type](15.seconds)
-    awaitCond(actor.stateName === FIRST)
-    assert(!blockCountIsTrusted.get)
-    // Connected to different nodes
-    actor ! ElectrumClient.ElectrumReady(blockCount.get.toInt + 7, tip = null, serverAddress = null)
+    actor ! ElectrumClient.ElectrumReady(blockCount.get.toInt, tip = null, serverAddress = null)
+    // API returns good chain height which matches Electrum
     awaitCond(actor.stateName === WAITING, 15.seconds)
     probe.expectMsgType[BlockCountIsTrusted.type]
     assert(blockCountIsTrusted.get)
@@ -87,7 +91,7 @@ class WalletSecondarySourceSpec extends TestKit(ActorSystem("test")) with Fixtur
     val blockCountIsTrusted = new AtomicReference[Boolean](false)
     val blockCount = new AtomicLong(WalletSecondarySource.bitcoinj(f.chainHash).toBlocking.single.height)
     val wallet = ChainWallet(wallet = null, eventsCatcher = TestProbe.apply.ref, clientPool = TestProbe.apply.ref, watcher = TestProbe.apply.ref)
-    val actor: TestFSMRef[SecondaryChainState, SecondaryChainData, WalletSecondarySource] = TestFSMRef(new WalletSecondarySource(f.chainHash, blockCount, blockCountIsTrusted, wallet))
+    val actor = TestFSMRef(new WalletSecondarySource(f.chainHash, blockCount, blockCountIsTrusted, wallet))
     system.eventStream.subscribe(channel = classOf[SecondaryChainEvent], subscriber = probe.ref)
     system.actorOf(Props[BlockSkewCatcher]) // Catcher is on
 
@@ -95,23 +99,21 @@ class WalletSecondarySourceSpec extends TestKit(ActorSystem("test")) with Fixtur
     actor ! TickPerformSecondarySourceCheck
     actor ! skewed
     awaitCond(actor.stateName === SECOND, 25.seconds)
-    probe.expectMsgType[PossibleDangerousBlockSkew.type]
+    probe.expectMsgType[PossibleDangerousBlockSkew.type](15.seconds)
     awaitCond(actor.stateName === FIRST)
     actor ! skewed
     awaitCond(actor.stateName === SECOND, 25.seconds)
-    probe.expectMsgType[PossibleDangerousBlockSkew.type]
+    probe.expectMsgType[PossibleDangerousBlockSkew.type](15.seconds)
     awaitCond(actor.stateName === FIRST)
     actor ! skewed
     awaitCond(actor.stateName === SECOND, 25.seconds)
-    probe.expectMsgType[PossibleDangerousBlockSkew.type]
-
+    probe.expectMsgType[PossibleDangerousBlockSkew.type](15.seconds)
     probe.expectMsgType[DefiniteDangerousBlockSkew.type]
     assert(!blockCountIsTrusted.get)
 
     awaitCond(actor.stateName === FIRST)
     actor ! ElectrumClient.ElectrumReady(blockCount.get.toInt, tip = null, serverAddress = null)
-    awaitCond(actor.stateName === WAITING, 15.seconds)
-    probe.expectMsgType[BlockCountIsTrusted.type]
+    awaitCond(actor.stateName === WAITING, 25.seconds)
     assert(blockCountIsTrusted.get)
   }
 }
