@@ -72,10 +72,10 @@ object WalletSecondarySource {
     asyncSubject
   }
 
-  def jBroadcast(chainHash: ByteVector32, libTx: Transaction): Unit = new Bitcoinj(chainHash) {
-    override def onConnected(peerCount: Int): Unit = if (peerCount >= maxPeers) {
-      val txj = new org.bitcoinj.core.Transaction(params, libTx.bin.toArray)
-      peerGroup.broadcastTransaction(txj, 1, true).broadcast.get
+  def jBroadcast(chainHash: ByteVector32, bitcoinLibTx: Transaction): Unit = new Bitcoinj(chainHash) {
+    override def onConnected(currentPeerCount: Int): Unit = if (currentPeerCount >= maxPeers) {
+      val bitcoinjTx = new org.bitcoinj.core.Transaction(params, bitcoinLibTx.bin.toArray)
+      try peerGroup.broadcastTransaction(bitcoinjTx, 1, true).broadcast.get catch none
       peerGroup.stopAsync
     }
   }
