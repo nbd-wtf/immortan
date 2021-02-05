@@ -191,34 +191,25 @@ case class NodeAnnouncementExt(na: NodeAnnouncement) {
   } getOrElse "No IP address"
 
   // Important: this relies on format being defined at runtime
-  // we do not provide format as class field here to avoid storing of duplicated data
   lazy val nodeSpecificExtendedKey: DeterministicWallet.ExtendedPrivateKey = LNParams.format.keys.ourFakeNodeIdKey(na.nodeId)
+
   lazy val nodeSpecificPrivKey: PrivateKey = nodeSpecificExtendedKey.privateKey
+
   lazy val nodeSpecificPubKey: PublicKey = nodeSpecificPrivKey.publicKey
 
   lazy val nodeSpecificPair: KeyPairAndPubKey = KeyPairAndPubKey(KeyPair(nodeSpecificPubKey.value, nodeSpecificPrivKey.value), na.nodeId)
+
   lazy val nodeSpecificHostedChanId: ByteVector32 = hostedChanId(nodeSpecificPubKey.value, na.nodeId.value)
 
   private def derivePrivKey(path: KeyPath) = derivePrivateKey(nodeSpecificExtendedKey, path)
+
   private val channelPrivateKeys: mutable.Map[KeyPath, ExtendedPrivateKey] = memoize(derivePrivKey)
+
   private val channelPublicKeys: mutable.Map[KeyPath, ExtendedPublicKey] = memoize(channelPrivateKeys andThen publicKey)
 
   private def internalKeyPath(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Seq[Long] = channelKeyPath.path :+ hardened(index)
 
-  private def fundingPrivateKey(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPrivateKey = channelPrivateKeys(internalKeyPath(channelKeyPath, 0L))
-
-  private def revocationSecret(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPrivateKey = channelPrivateKeys(internalKeyPath(channelKeyPath, 1L))
-
-  private def paymentSecret(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPrivateKey = channelPrivateKeys(internalKeyPath(channelKeyPath, 2L))
-
-  private def delayedPaymentSecret(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPrivateKey = channelPrivateKeys(internalKeyPath(channelKeyPath, 3L))
-
-  private def htlcSecret(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPrivateKey = channelPrivateKeys(internalKeyPath(channelKeyPath, 4L))
-
-  private def shaSeed(channelKeyPath: DeterministicWallet.KeyPath): ByteVector32 = {
-    val key = channelPrivateKeys(internalKeyPath(channelKeyPath, 5L))
-    Crypto.sha256(key.privateKey.value :+ 1.toByte)
-  }
+  private def shaSeed(channelKeyPath: DeterministicWallet.KeyPath): ByteVector32 = Crypto.sha256(channelPrivateKeys(internalKeyPath(channelKeyPath, 5L)).privateKey.value :+ 1.toByte)
 
   def keyPath(localParams: LocalParams): DeterministicWallet.KeyPath = {
     val fundPubKey = fundingPublicKey(localParams.fundingKeyPath).publicKey

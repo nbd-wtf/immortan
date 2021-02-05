@@ -146,8 +146,7 @@ object ChannelCodecs {
   val spentMapCodec: Codec[Map[OutPoint, ByteVector32]] = mapCodec(outPointCodec, bytes32)
 
   def localParamsCodec(channelVersion: ChannelVersion): Codec[LocalParams] = (
-    ("nodeId" | publicKey) ::
-      ("channelPath" | keyPathCodec) ::
+    ("channelPath" | keyPathCodec) ::
       ("dustLimit" | satoshi) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
       ("channelReserve" | satoshi) ::
@@ -160,8 +159,7 @@ object ChannelCodecs {
       ("features" | combinedFeaturesCodec)).as[LocalParams]
 
   val remoteParamsCodec: Codec[RemoteParams] = (
-    ("nodeId" | publicKey) ::
-      ("dustLimit" | satoshi) ::
+    ("dustLimit" | satoshi) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
       ("channelReserve" | satoshi) ::
       ("htlcMinimum" | millisatoshi) ::

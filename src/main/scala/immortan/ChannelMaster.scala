@@ -122,9 +122,9 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
   var listeners: Set[ChannelMasterListener] = Set.empty
 
   var all: List[Channel] = chanBag.all.map {
-    case hasNormalCommits: HasNormalCommitments => NormalChannel.make(channelListeners, hasNormalCommits, chanBag)
+    case hasNormalCommits: HasNormalCommitments => NormalChannel.make(channelListeners, hasNormalCommits, LNParams.chainWallet, chanBag)
     case hostedCommits: HostedCommits => HostedChannel.make(channelListeners, hostedCommits, chanBag)
-    case otherwise => throw new RuntimeException(s"Could not process $otherwise")
+    case otherwise => throw new RuntimeException
   }
 
   val events: ChannelMasterListener = new ChannelMasterListener {

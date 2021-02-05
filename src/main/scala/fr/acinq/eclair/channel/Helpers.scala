@@ -20,6 +20,7 @@ import fr.acinq.eclair._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.wire._
 import fr.acinq.bitcoin.Script._
+
 import scala.concurrent.duration._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.transactions.Scripts._
@@ -32,8 +33,9 @@ import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw, F
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.crypto.Generators
 import scodec.bits.ByteVector
+
 import scala.concurrent.Await
-import immortan.LNParams
+import immortan.{LNParams, NodeAnnouncementExt}
 
 /**
  * Created by PM on 20/05/2016.
@@ -206,7 +208,10 @@ object Helpers {
      *
      * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
      */
-    def makeFirstCommitTxs(cs: NormalCommits, channelVersion: ChannelVersion, temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingAmount: Satoshi, pushMsat: MilliSatoshi, initialFeeratePerKw: FeeratePerKw, fundingTxHash: ByteVector32, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: PublicKey): Either[ChannelException, (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx)] = {
+    def makeFirstCommitTxs(announce: NodeAnnouncementExt, channelVersion: ChannelVersion, temporaryChannelId: ByteVector32, localParams: LocalParams,
+                           remoteParams: RemoteParams, fundingAmount: Satoshi, pushMsat: MilliSatoshi, initialFeeratePerKw: FeeratePerKw, fundingTxHash: ByteVector32,
+                           fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: PublicKey): Either[ChannelException, (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx)] = {
+
       val toLocalMsat = if (localParams.isFunder) fundingAmount.toMilliSatoshi - pushMsat else pushMsat
       val toRemoteMsat = if (localParams.isFunder) pushMsat else fundingAmount.toMilliSatoshi - pushMsat
 
@@ -223,12 +228,12 @@ object Helpers {
         }
       }
 
-      val fundingPubKey = cs.announce.fundingPublicKey(localParams.fundingKeyPath)
+      val fundingPubKey = announce.fundingPublicKey(localParams.fundingKeyPath)
+      val channelKeyPath = announce.keyPath(localParams)
       val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, fundingAmount, fundingPubKey.publicKey, remoteParams.fundingPubKey)
-      val localPerCommitmentPoint = cs.announce.commitmentPoint(cs.channelKeyPath, 0)
-      val (localCommitTx, _, _) = NormalCommits.makeLocalTxs(cs, channelVersion, 0, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
-      val (remoteCommitTx, _, _) = NormalCommits.makeRemoteTxs(cs, channelVersion, 0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
-
+      val localPerCommitmentPoint = announce.commitmentPoint(channelKeyPath, 0)
+      val (localCommitTx, _, _) = NormalCommits.makeLocalTxs(announce, channelVersion, 0, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
+      val (remoteCommitTx, _, _) = NormalCommits.makeRemoteTxs(announce, channelVersion, 0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
       Right(localSpec, localCommitTx, remoteSpec, remoteCommitTx)
     }
 
@@ -506,7 +511,7 @@ object Helpers {
     def claimRemoteCommitTxOutputs(commitments: NormalCommits, remoteCommit: RemoteCommit, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets): RemoteCommitPublished = {
       import commitments.{channelVersion, commitInput, localParams, remoteParams, channelKeyPath}
       require(remoteCommit.txid == tx.txid, "txid mismatch, provided tx is not the current remote commit tx")
-      val (remoteCommitTx, _, _) = NormalCommits.makeRemoteTxs(commitments, channelVersion, remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
+      val (remoteCommitTx, _, _) = NormalCommits.makeRemoteTxs(commitments.announce, channelVersion, remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
       require(remoteCommitTx.tx.txid == tx.txid, "txid mismatch, cannot recompute the current remote commit tx")
       val localFundingPubkey = commitments.announce.fundingPublicKey(localParams.fundingKeyPath).publicKey
       val localHtlcPubkey = Generators.derivePubKey(commitments.announce.htlcPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)

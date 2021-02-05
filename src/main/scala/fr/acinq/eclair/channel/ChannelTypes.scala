@@ -27,6 +27,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.wire.Onion.FinalPayload
 import fr.acinq.bitcoin.Crypto.PublicKey
+import immortan.NodeAnnouncementExt
 
 /*
       8888888888 888     888 8888888888 888b    888 88888888888 .d8888b.
@@ -39,10 +40,12 @@ import fr.acinq.bitcoin.Crypto.PublicKey
       8888888888     Y8P     8888888888 888    Y888     888     "Y8888P"
  */
 
-case class INPUT_INIT_FUNDER(temporaryChannelId: ByteVector32, fundingAmount: Satoshi, pushAmount: MilliSatoshi, initialFeeratePerKw: FeeratePerKw, fundingTxFeeratePerKw: FeeratePerKw,
-                             initialRelayFees: (MilliSatoshi, Int), localParams: LocalParams, remoteInit: Init, channelFlags: Byte, channelVersion: ChannelVersion)
+case class INPUT_INIT_FUNDER(announce: NodeAnnouncementExt, temporaryChannelId: ByteVector32, fundingAmount: Satoshi, pushAmount: MilliSatoshi,
+                             initialFeeratePerKw: FeeratePerKw, fundingTxFeeratePerKw: FeeratePerKw, initialRelayFees: (MilliSatoshi, Int),
+                             localParams: LocalParams, remoteInit: Init, channelFlags: Byte, channelVersion: ChannelVersion)
 
-case class INPUT_INIT_FUNDEE(temporaryChannelId: ByteVector32, localParams: LocalParams, remoteInit: Init, channelVersion: ChannelVersion)
+case class INPUT_INIT_FUNDEE(announce: NodeAnnouncementExt, temporaryChannelId: ByteVector32,
+                             localParams: LocalParams, remoteInit: Init, channelVersion: ChannelVersion)
 
 sealed trait BitcoinEvent
 case object BITCOIN_FUNDING_PUBLISH_FAILED extends BitcoinEvent
@@ -119,31 +122,34 @@ case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Optio
   lazy val isConfirmed: Boolean = (commitTx :: claimMainOutputTx.toList ::: claimHtlcSuccessTxs ::: claimHtlcTimeoutTxs).exists(tx => irrevocablySpent.values.toSet contains tx.txid)
 }
 
-case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], mainPenaltyTx: Option[Transaction], htlcPenaltyTxs: List[Transaction], claimHtlcDelayedPenaltyTxs: List[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32] = Map.empty)
+case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], mainPenaltyTx: Option[Transaction], htlcPenaltyTxs: List[Transaction],
+                                  claimHtlcDelayedPenaltyTxs: List[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32] = Map.empty)
 
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_FUNDEE) extends ChannelData
 
 final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_FUNDER, lastSent: OpenChannel) extends ChannelData
 
-final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingAmount: Satoshi, pushAmount: MilliSatoshi,
-                                                initialFeeratePerKw: FeeratePerKw, initialRelayFees: (MilliSatoshi, Int), remoteFirstPerCommitmentPoint: PublicKey,
-                                                channelVersion: ChannelVersion, lastSent: OpenChannel) extends ChannelData
+final case class DATA_WAIT_FOR_FUNDING_INTERNAL(initFunder: INPUT_INIT_FUNDER, remoteParams: RemoteParams, remoteFirstPerCommitmentPoint: PublicKey, lastSent: OpenChannel) extends ChannelData
 
-final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingAmount: Satoshi, pushAmount: MilliSatoshi,
-                                               initialFeeratePerKw: FeeratePerKw, initialRelayFees: (MilliSatoshi, Int), remoteFirstPerCommitmentPoint: PublicKey, channelFlags: Byte,
-                                               channelVersion: ChannelVersion, lastSent: AcceptChannel) extends ChannelData
+final case class DATA_WAIT_FOR_FUNDING_CREATED(announce: NodeAnnouncementExt, temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams,
+                                               fundingAmount: Satoshi, pushAmount: MilliSatoshi, initialFeeratePerKw: FeeratePerKw, initialRelayFees: (MilliSatoshi, Int),
+                                               remoteFirstPerCommitmentPoint: PublicKey, channelFlags: Byte, channelVersion: ChannelVersion,
+                                               lastSent: AcceptChannel) extends ChannelData
 
-final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingTx: Transaction, fundingTxFee: Satoshi,
-                                              initialRelayFees: (MilliSatoshi, Int), localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit,
-                                              channelFlags: Byte, channelVersion: ChannelVersion, lastSent: FundingCreated) extends ChannelData
+final case class DATA_WAIT_FOR_FUNDING_SIGNED(announce: NodeAnnouncementExt, channelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams,
+                                              fundingTx: Transaction, fundingTxFee: Satoshi, initialRelayFees: (MilliSatoshi, Int), localSpec: CommitmentSpec,
+                                              localCommitTx: CommitTx, remoteCommit: RemoteCommit, channelFlags: Byte, channelVersion: ChannelVersion,
+                                              lastSent: FundingCreated) extends ChannelData
 
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: NormalCommits, fundingTx: Option[Transaction], initialRelayFees: (MilliSatoshi, Int), waitingSince: Long,
                                                  lastSent: Either[FundingCreated, FundingSigned], deferred: Option[FundingLocked] = None) extends ChannelData with HasNormalCommitments
 
-final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: NormalCommits, shortChannelId: ShortChannelId, initialRelayFees: (MilliSatoshi, Int), lastSent: FundingLocked) extends ChannelData with HasNormalCommitments
+final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: NormalCommits, shortChannelId: ShortChannelId, initialRelayFees: (MilliSatoshi, Int),
+                                              lastSent: FundingLocked) extends ChannelData with HasNormalCommitments
 
-final case class DATA_NORMAL(commitments: NormalCommits, shortChannelId: ShortChannelId, buried: Boolean, channelAnnouncement: Option[ChannelAnnouncement],
-                             channelUpdate: ChannelUpdate, localShutdown: Option[Shutdown] = None, remoteShutdown: Option[Shutdown] = None) extends ChannelData with HasNormalCommitments
+final case class DATA_NORMAL(commitments: NormalCommits, shortChannelId: ShortChannelId,
+                             buried: Boolean, channelAnnouncement: Option[ChannelAnnouncement], channelUpdate: ChannelUpdate,
+                             localShutdown: Option[Shutdown] = None, remoteShutdown: Option[Shutdown] = None) extends ChannelData with HasNormalCommitments
 
 final case class DATA_SHUTDOWN(commitments: NormalCommits, localShutdown: Shutdown, remoteShutdown: Shutdown) extends ChannelData with HasNormalCommitments
 
@@ -172,11 +178,11 @@ final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Nor
  *                 features are updated at each reconnection and may be different from the ones that were used when the
  *                 channel was created. See [[ChannelVersion]] for permanent features associated to a channel.
  */
-final case class LocalParams(nodeId: PublicKey, fundingKeyPath: DeterministicWallet.KeyPath, dustLimit: Satoshi, maxHtlcValueInFlightMsat: UInt64, channelReserve: Satoshi,
+final case class LocalParams(fundingKeyPath: DeterministicWallet.KeyPath, dustLimit: Satoshi, maxHtlcValueInFlightMsat: UInt64, channelReserve: Satoshi,
                              htlcMinimum: MilliSatoshi, toSelfDelay: CltvExpiryDelta, maxAcceptedHtlcs: Int, isFunder: Boolean, defaultFinalScriptPubKey: ByteVector,
                              walletStaticPaymentBasepoint: Option[PublicKey], features: Features)
 
-final case class RemoteParams(nodeId: PublicKey, dustLimit: Satoshi, maxHtlcValueInFlightMsat: UInt64, channelReserve: Satoshi, htlcMinimum: MilliSatoshi, toSelfDelay: CltvExpiryDelta,
+final case class RemoteParams(dustLimit: Satoshi, maxHtlcValueInFlightMsat: UInt64, channelReserve: Satoshi, htlcMinimum: MilliSatoshi, toSelfDelay: CltvExpiryDelta,
                               maxAcceptedHtlcs: Int, fundingPubKey: PublicKey, revocationBasepoint: PublicKey, paymentBasepoint: PublicKey, delayedPaymentBasepoint: PublicKey,
                               htlcBasepoint: PublicKey, features: Features)
 

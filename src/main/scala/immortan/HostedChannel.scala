@@ -29,8 +29,8 @@ abstract class HostedChannel extends Channel { me =>
 
   def doProcess(change: Any): Unit = {
     Tuple3(data, change, state) match {
-      case (wait @ WaitRemoteHostedReply(_, refundScriptPubKey, secret), CMD_SOCKET_ONLINE, WAIT_FOR_INIT) =>
-        me SEND InvokeHostedChannel(LNParams.chainHash, refundScriptPubKey, secret)
+      case (wait: WaitRemoteHostedReply, CMD_SOCKET_ONLINE, WAIT_FOR_INIT) =>
+        me SEND InvokeHostedChannel(LNParams.chainHash, wait.refundScriptPubKey, wait.secret)
         BECOME(wait, WAIT_FOR_ACCEPT)
 
 

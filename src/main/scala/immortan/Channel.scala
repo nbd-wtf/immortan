@@ -11,12 +11,15 @@ import fr.acinq.eclair.MilliSatoshi
 import immortan.crypto.Tools.none
 import scala.concurrent.Future
 import scala.util.Failure
+import akka.actor.Actor
 
 
 object Channel {
   val WAIT_FOR_INIT = "WAIT-FOR-INIT"
   val WAIT_FOR_ACCEPT = "WAIT-FOR-ACCEPT"
+
   // All states below are persisted
+  val WAIT_FUNDING_DONE = "WAIT-FUNDING-DONE"
   val SUSPENDED = "SUSPENDED"
   val SLEEPING = "SLEEPING"
   val OPEN = "OPEN"
@@ -80,6 +83,12 @@ trait Channel extends StateMachine[ChannelData] { me =>
     override def onBecome: PartialFunction[ChannelListener.Transition, Unit] = { case transition => for (lst <- listeners if lst.onBecome isDefinedAt transition) lst onBecome transition }
     override def fulfillReceived(fulfill: UpdateFulfillHtlc): Unit = for (lst <- listeners) lst fulfillReceived fulfill
     override def stateUpdated(cs: Commitments): Unit = for (lst <- listeners) lst stateUpdated cs
+  }
+
+  class Receiver extends Actor {
+    override def receive: Receive = {
+      case message => me process message
+    }
   }
 }
 
