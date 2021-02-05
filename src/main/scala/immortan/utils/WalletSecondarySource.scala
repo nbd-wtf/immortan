@@ -8,8 +8,8 @@ import com.github.kevinsawicki.http.HttpRequest._
 
 import akka.actor.{Actor, FSM}
 import org.bitcoinj.core.{Peer, PeerGroup}
-import fr.acinq.bitcoin.{Block, ByteVector32}
 import rx.lang.scala.{Observable, Subscription}
+import fr.acinq.bitcoin.{Block, ByteVector32, Transaction}
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.ElectrumReady
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool
@@ -31,8 +31,8 @@ object WalletSecondarySource {
 
   case object SecondCheckFailure
 
-  def bitcoinj(chainHash: ByteVector32): Observable[TipObtained] = {
-    val asyncSubject = rx.lang.scala.subjects.AsyncSubject[TipObtained]
+  abstract class Bitcoinj(chainHash: ByteVector32) {
+    def onConnected(count: Int): Unit
 
     val params: AbstractBitcoinNetParams = chainHash match {
       case Block.LivenetGenesisBlock.hash => org.bitcoinj.params.MainNetParams.get
@@ -42,28 +42,45 @@ object WalletSecondarySource {
     }
 
     val maxPeers = 3
-    val peerGroup = new PeerGroup(params)
-    val discovery = MultiplexingDiscovery.forServices(params, 0)
+    val peerGroup: PeerGroup = new PeerGroup(params)
+    val discovery: MultiplexingDiscovery = MultiplexingDiscovery.forServices(params, 0)
 
-    val peersListener = new PeerConnectedEventListener {
-      def onPeerConnected(peer: Peer, count: Int): Unit = if (count >= maxPeers) {
-        val tipObtained = TipObtained(peerGroup.getMostCommonChainHeight)
-        asyncSubject.onNext(tipObtained)
-        asyncSubject.onCompleted
-        peerGroup.stopAsync
-      }
+    private[this] val peersListener = new PeerConnectedEventListener {
+      def onPeerConnected(peer: Peer, count: Int): Unit = onConnected(count)
     }
 
-    asyncSubject.doOnUnsubscribe(peerGroup.stopAsync)
     peerGroup.addConnectedEventListener(peersListener)
     peerGroup.setDownloadTxDependencies(0)
     peerGroup.setMaxConnections(maxPeers)
     peerGroup.addPeerDiscovery(discovery)
     peerGroup.startAsync
+  }
+
+  def jTip(chainHash: ByteVector32): Observable[TipObtained] = {
+    val asyncSubject = rx.lang.scala.subjects.AsyncSubject[TipObtained]
+
+    new Bitcoinj(chainHash) {
+      asyncSubject.doOnUnsubscribe(peerGroup.stopAsync)
+      override def onConnected(count: Int): Unit = if (count >= maxPeers) {
+        val message = TipObtained(peerGroup.getMostCommonChainHeight)
+        asyncSubject.onNext(message)
+        asyncSubject.onCompleted
+        peerGroup.stopAsync
+      }
+    }
+
     asyncSubject
   }
 
-  def api: Observable[TipObtained] = {
+  def jBroadcast(chainHash: ByteVector32, libTx: Transaction): Unit = new Bitcoinj(chainHash) {
+    override def onConnected(peerCount: Int): Unit = if (peerCount >= maxPeers) {
+      val txj = new org.bitcoinj.core.Transaction(params, libTx.bin.toArray)
+      peerGroup.broadcastTransaction(txj, 1, true).broadcast.get
+      peerGroup.stopAsync
+    }
+  }
+
+  def apiTip: Observable[TipObtained] = {
     val blockChain = Rx.ioQueue.map(_ => to[BlockChainHeight](get("https://blockchain.info/latestblock").connectTimeout(15000).body).height)
     val blockCypher = Rx.ioQueue.map(_ => to[BlockCypherHeight](get("https://api.blockcypher.com/v1/btc/main").connectTimeout(15000).body).height)
     val blockStream = Rx.ioQueue.map(_ => get("https://blockstream.info/api/blocks/tip/height").connectTimeout(15000).body.toInt)
@@ -105,7 +122,7 @@ class WalletSecondarySource(chainHash: ByteVector32,
 
   when(FIRST) {
     case Event(TickPerformSecondarySourceCheck, AwaitingAction) =>
-      val sub = bitcoinj(chainHash).subscribe(tipObtained => self ! tipObtained)
+      val sub = jTip(chainHash).subscribe(tipObtained => self ! tipObtained)
       setTimer(firstCheckTimerKey, FirstCheckTimeout(sub.toSome), 15.seconds)
       stay using InitialCheck(baseHeight = None)
 
@@ -147,13 +164,13 @@ class WalletSecondarySource(chainHash: ByteVector32,
 
   when(WAITING) {
     case Event(TickPerformSecondarySourceCheck, AwaitingAction) =>
-      val sub = bitcoinj(chainHash).subscribe(tipObtained => self ! tipObtained)
+      val sub = jTip(chainHash).subscribe(tipObtained => self ! tipObtained)
       setTimer(firstCheckTimerKey, FirstCheckTimeout(sub.toSome), 15.seconds)
       stay
 
 
     case Event(FirstCheckTimeout(sub), AwaitingAction) =>
-      api.foreach(tip => self ! tip, _ => self ! SecondCheckFailure)
+      apiTip.foreach(self ! _, _ => self ! SecondCheckFailure)
       // Prevent bitcoinj from firing anyway at later time
       sub.foreach(_.unsubscribe)
       stay
@@ -168,7 +185,7 @@ class WalletSecondarySource(chainHash: ByteVector32,
   }
 
   private def startAPICheck(baseHeight: Long) = {
-    api.foreach(tip => self ! tip, _ => self ! SecondCheckFailure)
+    apiTip.foreach(self ! _, _ => self ! SecondCheckFailure)
     goto(SECOND) using SecondaryAPICheck(baseHeight)
   }
 

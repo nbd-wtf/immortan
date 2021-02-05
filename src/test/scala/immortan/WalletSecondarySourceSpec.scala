@@ -20,15 +20,15 @@ class WalletSecondarySourceSpec extends TestKit(ActorSystem("test")) with Fixtur
   override protected def withFixture(test: OneArgTest): Outcome = withFixture(test.toNoArgTest(FixtureParam(Block.LivenetGenesisBlock.hash)))
 
   test("Get chain tip from bitcoinj and api") { f =>
-    val bitcoinj = WalletSecondarySource.bitcoinj(f.chainHash).toBlocking.single
-    val api = WalletSecondarySource.api.toBlocking.single
+    val bitcoinj = WalletSecondarySource.jTip(f.chainHash).toBlocking.single
+    val api = WalletSecondarySource.apiTip.toBlocking.single
     assert(bitcoinj === api)
   }
 
   test("Tip confirmed, Electrum finishes first") { f =>
     val probe = TestProbe.apply
     val blockCountIsTrusted = new AtomicReference[Boolean](false)
-    val blockCount = new AtomicLong(WalletSecondarySource.bitcoinj(f.chainHash).toBlocking.single.height)
+    val blockCount = new AtomicLong(WalletSecondarySource.jTip(f.chainHash).toBlocking.single.height)
     val wallet = ChainWallet(wallet = null, eventsCatcher = TestProbe.apply.ref, clientPool = TestProbe.apply.ref, watcher = TestProbe.apply.ref)
     val actor = TestFSMRef(new WalletSecondarySource(f.chainHash, blockCount, blockCountIsTrusted, wallet))
     system.eventStream.subscribe(channel = classOf[SecondaryChainEvent], subscriber = probe.ref)
@@ -52,7 +52,7 @@ class WalletSecondarySourceSpec extends TestKit(ActorSystem("test")) with Fixtur
   test("Suspicious skew resolved in second phase") { f =>
     val probe = TestProbe.apply
     val blockCountIsTrusted = new AtomicReference[Boolean](false)
-    val blockCount = new AtomicLong(WalletSecondarySource.bitcoinj(f.chainHash).toBlocking.single.height)
+    val blockCount = new AtomicLong(WalletSecondarySource.jTip(f.chainHash).toBlocking.single.height)
     val wallet = ChainWallet(wallet = null, eventsCatcher = TestProbe.apply.ref, clientPool = TestProbe.apply.ref, watcher = TestProbe.apply.ref)
     val actor = TestFSMRef(new WalletSecondarySource(f.chainHash, blockCount, blockCountIsTrusted, wallet))
     system.eventStream.subscribe(channel = classOf[SecondaryChainEvent], subscriber = probe.ref)
@@ -73,7 +73,7 @@ class WalletSecondarySourceSpec extends TestKit(ActorSystem("test")) with Fixtur
   test("Tip confimed, bitcoinj finishes first") { f =>
     val probe = TestProbe.apply
     val blockCountIsTrusted = new AtomicReference[Boolean](false)
-    val blockCount = new AtomicLong(WalletSecondarySource.bitcoinj(f.chainHash).toBlocking.single.height)
+    val blockCount = new AtomicLong(WalletSecondarySource.jTip(f.chainHash).toBlocking.single.height)
     val wallet = ChainWallet(wallet = null, eventsCatcher = TestProbe.apply.ref, clientPool = TestProbe.apply.ref, watcher = TestProbe.apply.ref)
     val actor = TestFSMRef(new WalletSecondarySource(f.chainHash, blockCount, blockCountIsTrusted, wallet))
     system.eventStream.subscribe(channel = classOf[SecondaryChainEvent], subscriber = probe.ref)
@@ -89,7 +89,7 @@ class WalletSecondarySourceSpec extends TestKit(ActorSystem("test")) with Fixtur
   test("Terminal event on many subsequent reconnect fails") { f =>
     val probe = TestProbe.apply
     val blockCountIsTrusted = new AtomicReference[Boolean](false)
-    val blockCount = new AtomicLong(WalletSecondarySource.bitcoinj(f.chainHash).toBlocking.single.height)
+    val blockCount = new AtomicLong(WalletSecondarySource.jTip(f.chainHash).toBlocking.single.height)
     val wallet = ChainWallet(wallet = null, eventsCatcher = TestProbe.apply.ref, clientPool = TestProbe.apply.ref, watcher = TestProbe.apply.ref)
     val actor = TestFSMRef(new WalletSecondarySource(f.chainHash, blockCount, blockCountIsTrusted, wallet))
     system.eventStream.subscribe(channel = classOf[SecondaryChainEvent], subscriber = probe.ref)
