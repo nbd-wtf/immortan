@@ -33,14 +33,13 @@ abstract class NormalChannel(chainWallet: ChainWallet) extends Channel { me =>
         val localFundingPubKey = initFunder.announce.fundingPublicKey(initFunder.localParams.fundingKeyPath).publicKey
         val emptyUpfrontShutdown: TlvStream[OpenChannelTlv] = TlvStream(ChannelTlv UpfrontShutdownScript ByteVector.empty)
 
-        val open = OpenChannel(LNParams.chainHash, temporaryChannelId = initFunder.temporaryChannelId, fundingSatoshis = initFunder.fundingAmount, pushMsat = initFunder.pushAmount,
-          dustLimitSatoshis = initFunder.localParams.dustLimit, maxHtlcValueInFlightMsat = initFunder.localParams.maxHtlcValueInFlightMsat, channelReserveSatoshis = initFunder.localParams.channelReserve,
-          htlcMinimumMsat = initFunder.localParams.htlcMinimum, feeratePerKw = initFunder.initialFeeratePerKw, toSelfDelay = initFunder.localParams.toSelfDelay, maxAcceptedHtlcs = initFunder.localParams.maxAcceptedHtlcs,
-          fundingPubkey = localFundingPubKey, revocationBasepoint = initFunder.announce.revocationPoint(channelKeyPath).publicKey, paymentBasepoint = initFunder.announce.paymentPoint(channelKeyPath).publicKey,
-          delayedPaymentBasepoint = initFunder.announce.delayedPaymentPoint(channelKeyPath).publicKey, htlcBasepoint = initFunder.announce.htlcPoint(channelKeyPath).publicKey,
-          firstPerCommitmentPoint = initFunder.announce.commitmentPoint(channelKeyPath, index = 0L), channelFlags = initFunder.channelFlags, tlvStream = emptyUpfrontShutdown)
+        val open = OpenChannel(LNParams.chainHash, initFunder.temporaryChannelId, initFunder.fundingAmount, initFunder.pushAmount, initFunder.localParams.dustLimit, initFunder.localParams.maxHtlcValueInFlightMsat,
+          initFunder.localParams.channelReserve, initFunder.localParams.htlcMinimum, initFunder.initialFeeratePerKw, initFunder.localParams.toSelfDelay, initFunder.localParams.maxAcceptedHtlcs, localFundingPubKey,
+          initFunder.announce.revocationPoint(channelKeyPath).publicKey, initFunder.announce.paymentPoint(channelKeyPath).publicKey, initFunder.announce.delayedPaymentPoint(channelKeyPath).publicKey,
+          initFunder.announce.htlcPoint(channelKeyPath).publicKey, initFunder.announce.commitmentPoint(channelKeyPath, index = 0L), initFunder.channelFlags, emptyUpfrontShutdown)
 
-        BECOME(DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder, open), WAIT_FOR_ACCEPT)
+        val data1 = DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder, open)
+        BECOME(data1, WAIT_FOR_ACCEPT)
         SEND(open)
 
 
@@ -67,10 +66,12 @@ abstract class NormalChannel(chainWallet: ChainWallet) extends Channel { me =>
         val localSigOfRemoteTx = wait.initFunder.announce.sign(remoteCommitTx, extendedFundingPubKey, TxOwner.Remote, wait.initFunder.channelVersion.commitmentFormat)
         val fundingCreated = FundingCreated(wait.initFunder.temporaryChannelId, fundingTxid = fundingTx.hash, fundingTxOutputIndex, localSigOfRemoteTx)
 
-        SEND(fundingCreated)
-        BECOME(DATA_WAIT_FOR_FUNDING_SIGNED(wait.initFunder.announce, channelId = toLongId(fundingTx.hash, fundingTxOutputIndex), wait.initFunder.localParams, wait.remoteParams, fundingTx,
+        val data1 = DATA_WAIT_FOR_FUNDING_SIGNED(wait.initFunder.announce, channelId = toLongId(fundingTx.hash, fundingTxOutputIndex), wait.initFunder.localParams, wait.remoteParams, fundingTx,
           fundingTxFee, wait.initFunder.initialRelayFees, localSpec, localCommitTx, RemoteCommit(index = 0L, remoteSpec, remoteCommitTx.tx.txid, wait.remoteFirstPerCommitmentPoint),
-          wait.lastSent.channelFlags, wait.initFunder.channelVersion, fundingCreated), WAIT_FOR_ACCEPT)
+          wait.lastSent.channelFlags, wait.initFunder.channelVersion, fundingCreated)
+
+        BECOME(data1, WAIT_FOR_ACCEPT)
+        SEND(fundingCreated)
 
 
       case (wait: DATA_WAIT_FOR_FUNDING_SIGNED, signed: FundingSigned, WAIT_FOR_ACCEPT) =>
