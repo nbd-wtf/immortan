@@ -68,7 +68,6 @@ case class BITCOIN_PARENT_TX_CONFIRMED(childTx: Transaction) extends BitcoinEven
  */
 
 sealed trait Command
-
 sealed trait AddResolution { val add: UpdateAddHtlc }
 sealed trait BadAddResolution extends Command with AddResolution
 case class CMD_FAIL_HTLC(reason: Either[ByteVector, FailureMessage], add: UpdateAddHtlc) extends BadAddResolution
@@ -84,8 +83,6 @@ case class CMD_HOSTED_STATE_OVERRIDE(so: StateOverride) extends Command
 case class HC_CMD_RESIZE(delta: Satoshi) extends Command
 
 case object CMD_INCOMING_TIMEOUT extends Command
-case object CMD_CHAIN_TIP_KNOWN extends Command
-case object CMD_CHAIN_TIP_LOST extends Command
 case object CMD_SOCKET_OFFLINE extends Command
 case object CMD_SOCKET_ONLINE extends Command
 case object CMD_SIGN extends Command

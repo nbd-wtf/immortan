@@ -24,24 +24,14 @@ object HostedChannel {
 }
 
 abstract class HostedChannel extends Channel { me =>
-  private var isChainHeightKnown: Boolean = false
-  private var isSocketConnected: Boolean = false
-
-  def isBlockDayOutOfSync(blockDay: Long): Boolean =
-    math.abs(blockDay - LNParams.currentBlockDay) > 1
+  def isBlockDayOutOfSync(currentBlockDay: Long): Boolean =
+    math.abs(currentBlockDay - LNParams.currentBlockDay) > 1
 
   def doProcess(change: Any): Unit = {
     Tuple3(data, change, state) match {
       case (wait @ WaitRemoteHostedReply(_, refundScriptPubKey, secret), CMD_SOCKET_ONLINE, WAIT_FOR_INIT) =>
-        if (isChainHeightKnown) me SEND InvokeHostedChannel(LNParams.chainHash, refundScriptPubKey, secret)
-        if (isChainHeightKnown) BECOME(wait, WAIT_FOR_ACCEPT)
-        isSocketConnected = true
-
-
-      case (wait @ WaitRemoteHostedReply(_, refundScriptPubKey, secret), CMD_CHAIN_TIP_KNOWN, WAIT_FOR_INIT) =>
-        if (isSocketConnected) me SEND InvokeHostedChannel(LNParams.chainHash, refundScriptPubKey, secret)
-        if (isSocketConnected) BECOME(wait, WAIT_FOR_ACCEPT)
-        isChainHeightKnown = true
+        me SEND InvokeHostedChannel(LNParams.chainHash, refundScriptPubKey, secret)
+        BECOME(wait, WAIT_FOR_ACCEPT)
 
 
       case (WaitRemoteHostedReply(announceExt, refundScriptPubKey, _), init: InitHostedChannel, WAIT_FOR_ACCEPT) =>
@@ -155,24 +145,8 @@ abstract class HostedChannel extends Channel { me =>
 
       // TODO: CMD_FAIL_HTLC
 
-      case (hc: HostedCommits, CMD_SOCKET_ONLINE, SLEEPING | SUSPENDED) =>
-        if (isChainHeightKnown) SEND(hc.getError getOrElse hc.invokeMsg)
-        isSocketConnected = true
-
-
-      case (hc: HostedCommits, CMD_CHAIN_TIP_KNOWN, SLEEPING | SUSPENDED) =>
-        if (isSocketConnected) SEND(hc.getError getOrElse hc.invokeMsg)
-        isChainHeightKnown = true
-
-
-      case (hc: HostedCommits, CMD_SOCKET_OFFLINE, OPEN) =>
-        isSocketConnected = false
-        BECOME(hc, SLEEPING)
-
-
-      case (hc: HostedCommits, CMD_CHAIN_TIP_LOST, OPEN) =>
-        isChainHeightKnown = false
-        BECOME(hc, SLEEPING)
+      case (hc: HostedCommits, CMD_SOCKET_ONLINE, SLEEPING | SUSPENDED) => SEND(hc.getError getOrElse hc.invokeMsg)
+      case (hc: HostedCommits, CMD_SOCKET_OFFLINE, OPEN) => BECOME(hc, SLEEPING)
 
 
       case (hc: HostedCommits, _: InitHostedChannel, SLEEPING) =>
@@ -181,7 +155,7 @@ abstract class HostedChannel extends Channel { me =>
 
 
       // CMD_SIGN will be sent by ChannelMaster
-      case (hc: HostedCommits, remoteLCSS: LastCrossSignedState, SLEEPING) if isChainHeightKnown =>
+      case (hc: HostedCommits, remoteLCSS: LastCrossSignedState, SLEEPING) =>
         val localLCSS: LastCrossSignedState = hc.lastCrossSignedState // In any case our LCSS is the current one
         val hc1 = hc.resizeProposal.filter(_ isRemoteResized remoteLCSS).map(hc.withResize).getOrElse(hc) // But they may have a resized one
         val weAreEven = localLCSS.remoteUpdates == remoteLCSS.localUpdates && localLCSS.localUpdates == remoteLCSS.remoteUpdates
@@ -233,7 +207,7 @@ abstract class HostedChannel extends Channel { me =>
         BECOME(me STORE hc.copy(remoteError = remoteError.toSome), SUSPENDED)
 
 
-      case (hc: HostedCommits, CMD_HOSTED_STATE_OVERRIDE(remoteSO), SUSPENDED) if isSocketConnected =>
+      case (hc: HostedCommits, CMD_HOSTED_STATE_OVERRIDE(remoteSO), SUSPENDED) =>
         // User has manually accepted a proposed remote override, now make sure all remote-provided parameters check out
         val localBalance: MilliSatoshi = hc.lastCrossSignedState.initHostedChannel.channelCapacityMsat - remoteSO.localBalanceMsat
 

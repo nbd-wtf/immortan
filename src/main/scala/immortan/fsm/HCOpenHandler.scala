@@ -1,8 +1,8 @@
 package immortan.fsm
 
 import immortan._
-import fr.acinq.eclair.channel.{CMD_CHAIN_TIP_KNOWN, CMD_SOCKET_ONLINE, PersistentChannelData}
 import fr.acinq.eclair.wire.{ExtMessageMapping, HostedChannelMessage, Init, LightningMessage}
+import fr.acinq.eclair.channel.{CMD_SOCKET_ONLINE, PersistentChannelData}
 import immortan.Channel.{OPEN, SUSPENDED, WAIT_FOR_ACCEPT}
 import immortan.ChannelListener.{Malfunction, Transition}
 import fr.acinq.bitcoin.ByteVector32
@@ -24,7 +24,7 @@ abstract class HCOpenHandler(ext: NodeAnnouncementExt, ourInit: Init, format: St
   def onEstablished(channel: HostedChannel): Unit
 
   private val makeChanListener = new ConnectionListener with ChannelListener {
-    override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = List(CMD_CHAIN_TIP_KNOWN, CMD_SOCKET_ONLINE).foreach(freshChannel.process)
+    override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = freshChannel process CMD_SOCKET_ONLINE
     override def onHostedMessage(worker: CommsTower.Worker, message: HostedChannelMessage): Unit = freshChannel process message
     override def onMessage(worker: CommsTower.Worker, message: LightningMessage): Unit = freshChannel process message
     override def onDisconnect(worker: CommsTower.Worker): Unit = onPeerDisconnect(worker)
