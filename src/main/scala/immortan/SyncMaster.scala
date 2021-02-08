@@ -192,15 +192,20 @@ abstract class SyncMaster(extraNodes: Set[NodeAnnouncement], excluded: Set[Long]
   var provenShortIds: ShortChanIdSet = Set.empty
 
   def onChunkSyncComplete(pure: PureRoutingData): Unit
+
   def onTotalSyncComplete: Unit
 
   def provenAndTooSmallOrNoInfo(update: ChannelUpdate): Boolean = provenShortIds.contains(update.shortChannelId) && update.htlcMaximumMsat.forall(_ < LNParams.syncParams.minCapacity)
+
   def provenAndNotExcluded(shortId: ShortChannelId): Boolean = provenShortIds.contains(shortId) && !excluded.contains(shortId.id)
 
   implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
+
   def process(changeMessage: Any): Unit = scala.concurrent.Future(me doProcess changeMessage)
+
   become(SyncMasterShortIdData(Set.empty, Map.empty), SHORT_ID_SYNC)
-  for (_ <- 0 until LNParams.syncParams.maxNodesToSyncFrom) me process CMDAddSync
+
+  (0 until LNParams.syncParams.maxNodesToSyncFrom).foreach(_ => me process CMDAddSync)
 
   def doProcess(change: Any): Unit = (change, data, state) match {
     case (CMDAddSync, data1: SyncMasterShortIdData, SHORT_ID_SYNC) if data1.activeSyncs.size < LNParams.syncParams.maxNodesToSyncFrom =>

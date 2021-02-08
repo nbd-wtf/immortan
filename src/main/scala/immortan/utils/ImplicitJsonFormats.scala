@@ -78,6 +78,7 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
       case paymentDescription: ChanFundingTxDescription => paymentDescription.toJson
       case paymentDescription: CommitClaimTxDescription => paymentDescription.toJson
       case paymentDescription: HtlcClaimTxDescription => paymentDescription.toJson
+      case paymentDescription: PenaltyTxDescription => paymentDescription.toJson
       case _ => throw new Exception
     }
 
@@ -86,6 +87,7 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
       case JsString("ChanFundingTxDescription") => raw.convertTo[ChanFundingTxDescription]
       case JsString("CommitClaimTxDescription") => raw.convertTo[CommitClaimTxDescription]
       case JsString("HtlcClaimTxDescription") => raw.convertTo[HtlcClaimTxDescription]
+      case JsString("PenaltyTxDescription") => raw.convertTo[PenaltyTxDescription]
       case tag => throw new Exception(s"Unknown action=$tag")
     }
   }
@@ -99,8 +101,11 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
   implicit val commitClaimTxDescriptionFmt: JsonFormat[CommitClaimTxDescription] = taggedJsonFmt(jsonFormat[String, String, Long,
     CommitClaimTxDescription](CommitClaimTxDescription.apply, "txid", "nodeId", "sid"), tag = "CommitClaimTxDescription")
 
-  implicit val ctlcClaimTxDescriptionFmt: JsonFormat[HtlcClaimTxDescription] = taggedJsonFmt(jsonFormat[String, String, Long,
+  implicit val htlcClaimTxDescriptionFmt: JsonFormat[HtlcClaimTxDescription] = taggedJsonFmt(jsonFormat[String, String, Long,
     HtlcClaimTxDescription](HtlcClaimTxDescription.apply, "txid", "nodeId", "sid"), tag = "HtlcClaimTxDescription")
+
+  implicit val penaltyTxDescriptionFmt: JsonFormat[PenaltyTxDescription] = taggedJsonFmt(jsonFormat[String, String, Long,
+    PenaltyTxDescription](PenaltyTxDescription.apply, "txid", "nodeId", "sid"), tag = "PenaltyTxDescription")
 
   // Last seen ready event
 
@@ -191,9 +196,4 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
   implicit val coinGeckoItemFmt: JsonFormat[CoinGeckoItem] = jsonFormat[Double, CoinGeckoItem](CoinGeckoItem.apply, "value")
   implicit val coinGeckoFmt: JsonFormat[CoinGecko] = jsonFormat[CoinGeckoItemMap, CoinGecko](CoinGecko.apply, "rates")
   implicit val bitpayFmt: JsonFormat[Bitpay] = jsonFormat[BitpayItemList, Bitpay](Bitpay.apply, "data")
-
-  // API chain height
-
-  implicit val blockCypherHeightFmt: JsonFormat[BlockCypherHeight] = jsonFormat[Int, BlockCypherHeight](BlockCypherHeight.apply, "height")
-  implicit val blockChainHeightFmt: JsonFormat[BlockChainHeight] = jsonFormat[Int, BlockChainHeight](BlockChainHeight.apply, "height")
 }

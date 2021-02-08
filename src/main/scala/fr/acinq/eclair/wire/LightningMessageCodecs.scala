@@ -28,10 +28,7 @@ import scodec.Codec
  */
 object LightningMessageCodecs {
 
-  val featuresCodec: Codec[Features] = varsizebinarydata.xmap[Features](
-    { bytes => Features(bytes) },
-    { features => features.toByteVector }
-  )
+  val featuresCodec: Codec[Features] = varsizebinarydata.xmap[Features](Features.apply, _.toByteVector)
 
   /** For historical reasons, features are divided into two feature bitmasks. We only send from the second one, but we allow receiving in both. */
   val combinedFeaturesCodec: Codec[Features] = (
@@ -43,27 +40,23 @@ object LightningMessageCodecs {
     },
     { features => (ByteVector.empty, features.toByteVector) })
 
-  val initCodec: Codec[Init] = (("features" | combinedFeaturesCodec) :: ("tlvStream" | InitTlvCodecs.initTlvCodec)).as[Init]
+  val initCodec = (("features" | combinedFeaturesCodec) :: ("tlvStream" | InitTlvCodecs.initTlvCodec)).as[Init]
 
-  val errorCodec: Codec[Error] = (
-    ("channelId" | bytes32) ::
-      ("data" | varsizebinarydata)).as[Error]
+  val errorCodec = (("channelId" | bytes32) :: ("data" | varsizebinarydata)).as[Error]
 
-  val pingCodec: Codec[Ping] = (
-    ("pongLength" | uint16) ::
-      ("data" | varsizebinarydata)).as[Ping]
+  val pingCodec = (("pongLength" | uint16) :: ("data" | varsizebinarydata)).as[Ping]
 
-  val pongCodec: Codec[Pong] =
-    ("data" | varsizebinarydata).as[Pong]
+  val pongCodec = ("data" | varsizebinarydata).as[Pong]
 
-  val channelReestablishCodec: Codec[ChannelReestablish] = (
+  val channelReestablishCodec = {
     ("channelId" | bytes32) ::
       ("nextLocalCommitmentNumber" | uint64overflow) ::
       ("nextRemoteRevocationNumber" | uint64overflow) ::
       ("yourLastPerCommitmentSecret" | privateKey) ::
-      ("myCurrentPerCommitmentPoint" | publicKey)).as[ChannelReestablish]
+      ("myCurrentPerCommitmentPoint" | publicKey)
+  }.as[ChannelReestablish]
 
-  val openChannelCodec: Codec[OpenChannel] = (
+  val openChannelCodec = {
     ("chainHash" | bytes32) ::
       ("temporaryChannelId" | bytes32) ::
       ("fundingSatoshis" | satoshi) ::
@@ -82,9 +75,10 @@ object LightningMessageCodecs {
       ("htlcBasepoint" | publicKey) ::
       ("firstPerCommitmentPoint" | publicKey) ::
       ("channelFlags" | byte) ::
-      ("tlvStream" | OpenChannelTlv.openTlvCodec)).as[OpenChannel]
+      ("tlvStream" | OpenChannelTlv.openTlvCodec)
+  }.as[OpenChannel]
 
-  val acceptChannelCodec: Codec[AcceptChannel] = (
+  val acceptChannelCodec = {
     ("temporaryChannelId" | bytes32) ::
       ("dustLimitSatoshis" | satoshi) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
@@ -99,76 +93,86 @@ object LightningMessageCodecs {
       ("delayedPaymentBasepoint" | publicKey) ::
       ("htlcBasepoint" | publicKey) ::
       ("firstPerCommitmentPoint" | publicKey) ::
-      ("tlvStream" | AcceptChannelTlv.acceptTlvCodec)).as[AcceptChannel]
+      ("tlvStream" | AcceptChannelTlv.acceptTlvCodec)
+  }.as[AcceptChannel]
 
-  val fundingCreatedCodec: Codec[FundingCreated] = (
+  val fundingCreatedCodec = {
     ("temporaryChannelId" | bytes32) ::
       ("fundingTxid" | bytes32) ::
       ("fundingOutputIndex" | uint16) ::
-      ("signature" | bytes64)).as[FundingCreated]
+      ("signature" | bytes64)
+  }.as[FundingCreated]
 
-  val fundingSignedCodec: Codec[FundingSigned] = (
+  val fundingSignedCodec = {
     ("channelId" | bytes32) ::
-      ("signature" | bytes64)).as[FundingSigned]
+      ("signature" | bytes64)
+  }.as[FundingSigned]
 
-  val fundingLockedCodec: Codec[FundingLocked] = (
+  val fundingLockedCodec = {
     ("channelId" | bytes32) ::
-      ("nextPerCommitmentPoint" | publicKey)).as[FundingLocked]
+      ("nextPerCommitmentPoint" | publicKey)
+  }.as[FundingLocked]
 
-  val shutdownCodec: Codec[wire.Shutdown] = (
+  val shutdownCodec = {
     ("channelId" | bytes32) ::
-      ("scriptPubKey" | varsizebinarydata)).as[Shutdown]
+      ("scriptPubKey" | varsizebinarydata)
+  }.as[Shutdown]
 
-  val closingSignedCodec: Codec[ClosingSigned] = (
+  val closingSignedCodec = {
     ("channelId" | bytes32) ::
       ("feeSatoshis" | satoshi) ::
-      ("signature" | bytes64)).as[ClosingSigned]
+      ("signature" | bytes64)
+  }.as[ClosingSigned]
 
-  val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
+  val updateAddHtlcCodec = {
     ("channelId" | bytes32) ::
       ("id" | uint64overflow) ::
       ("amountMsat" | millisatoshi) ::
       ("paymentHash" | bytes32) ::
       ("expiry" | cltvExpiry) ::
       ("onionRoutingPacket" | OnionCodecs.paymentOnionPacketCodec) ::
-      ("partId" | varsizebinarydata)).as[UpdateAddHtlc]
+      ("partId" | varsizebinarydata)
+  }.as[UpdateAddHtlc]
 
-  val updateFulfillHtlcCodec: Codec[UpdateFulfillHtlc] = (
+  val updateFulfillHtlcCodec = {
     ("channelId" | bytes32) ::
       ("id" | uint64overflow) ::
-      ("paymentPreimage" | bytes32)).as[UpdateFulfillHtlc]
+      ("paymentPreimage" | bytes32)
+  }.as[UpdateFulfillHtlc]
 
-  val updateFailHtlcCodec: Codec[UpdateFailHtlc] = (
+  val updateFailHtlcCodec = {
     ("channelId" | bytes32) ::
       ("id" | uint64overflow) ::
-      ("reason" | varsizebinarydata)).as[UpdateFailHtlc]
+      ("reason" | varsizebinarydata)
+  }.as[UpdateFailHtlc]
 
-  val updateFailMalformedHtlcCodec: Codec[UpdateFailMalformedHtlc] = (
+  val updateFailMalformedHtlcCodec = {
     ("channelId" | bytes32) ::
       ("id" | uint64overflow) ::
       ("onionHash" | bytes32) ::
-      ("failureCode" | uint16)).as[UpdateFailMalformedHtlc]
+      ("failureCode" | uint16)
+  }.as[UpdateFailMalformedHtlc]
 
-  val commitSigCodec: Codec[CommitSig] = (
+  val commitSigCodec = {
     ("channelId" | bytes32) ::
       ("signature" | bytes64) ::
-      ("htlcSignatures" | listofsignatures)).as[CommitSig]
+      ("htlcSignatures" | listofsignatures)
+  }.as[CommitSig]
 
-  val revokeAndAckCodec: Codec[RevokeAndAck] = (
+  val revokeAndAckCodec = {
     ("channelId" | bytes32) ::
       ("perCommitmentSecret" | privateKey) ::
       ("nextPerCommitmentPoint" | publicKey)
-    ).as[RevokeAndAck]
+  }.as[RevokeAndAck]
 
-  val updateFeeCodec: Codec[UpdateFee] = (
-    ("channelId" | bytes32) ::
-      ("feeratePerKw" | feeratePerKw)).as[UpdateFee]
+  val updateFeeCodec = (("channelId" | bytes32) :: ("feeratePerKw" | feeratePerKw)).as[UpdateFee]
 
-  val announcementSignaturesCodec: Codec[AnnouncementSignatures] = (
+  val announcementSignaturesCodec = {
     ("channelId" | bytes32) ::
       ("shortChannelId" | shortchannelid) ::
       ("nodeSignature" | bytes64) ::
-      ("bitcoinSignature" | bytes64)).as[AnnouncementSignatures]
+      ("bitcoinSignature" | bytes64)
+  }.as[AnnouncementSignatures]
 
   val channelAnnouncementWitnessCodec =
     ("features" | featuresCodec) ::
@@ -180,12 +184,13 @@ object LightningMessageCodecs {
       ("bitcoinKey2" | publicKey) ::
       ("unknownFields" | bytes)
 
-  val channelAnnouncementCodec: Codec[ChannelAnnouncement] = (
+  val channelAnnouncementCodec = {
     ("nodeSignature1" | bytes64) ::
       ("nodeSignature2" | bytes64) ::
       ("bitcoinSignature1" | bytes64) ::
       ("bitcoinSignature2" | bytes64) ::
-      channelAnnouncementWitnessCodec).as[ChannelAnnouncement]
+      channelAnnouncementWitnessCodec
+  }.as[ChannelAnnouncement]
 
   val nodeAnnouncementWitnessCodec =
     ("features" | featuresCodec) ::
@@ -196,9 +201,7 @@ object LightningMessageCodecs {
       ("addresses" | listofnodeaddresses) ::
       ("unknownFields" | bytes)
 
-  val nodeAnnouncementCodec: Codec[NodeAnnouncement] = (
-    ("signature" | bytes64) ::
-      nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
+  val nodeAnnouncementCodec = (("signature" | bytes64) :: nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
 
   val channelUpdateChecksumCodec =
     ("chainHash" | bytes32) ::
@@ -226,9 +229,7 @@ object LightningMessageCodecs {
           ("unknownFields" | bytes)
       })
 
-  val channelUpdateCodec: Codec[ChannelUpdate] = (
-    ("signature" | bytes64) ::
-      channelUpdateWitnessCodec).as[ChannelUpdate]
+  val channelUpdateCodec = (("signature" | bytes64) :: channelUpdateWitnessCodec).as[ChannelUpdate]
 
   val encodedShortChannelIdsCodec: Codec[EncodedShortChannelIds] =
     discriminated[EncodedShortChannelIds].by(byte)
@@ -241,49 +242,43 @@ object LightningMessageCodecs {
       }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(shortchannelid))).as[EncodedShortChannelIds])
 
 
-  val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = {
-    Codec(
-      ("chainHash" | bytes32) ::
-        ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
-        ("tlvStream" | QueryShortChannelIdsTlv.codec)
-    ).as[QueryShortChannelIds]
-  }
+  val queryShortChannelIdsCodec = {
+    ("chainHash" | bytes32) ::
+      ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
+      ("tlvStream" | QueryShortChannelIdsTlv.codec)
+  }.as[QueryShortChannelIds]
 
-  val replyShortChanelIdsEndCodec: Codec[ReplyShortChannelIdsEnd] = (
+  val replyShortChanelIdsEndCodec = {
     ("chainHash" | bytes32) ::
       ("complete" | byte)
-    ).as[ReplyShortChannelIdsEnd]
+  }.as[ReplyShortChannelIdsEnd]
 
-  val queryChannelRangeCodec: Codec[QueryChannelRange] = {
-    Codec(
-      ("chainHash" | bytes32) ::
-        ("firstBlockNum" | uint32) ::
-        ("numberOfBlocks" | uint32) ::
-        ("tlvStream" | QueryChannelRangeTlv.codec)
-    ).as[QueryChannelRange]
-  }
+  val queryChannelRangeCodec = {
+    ("chainHash" | bytes32) ::
+      ("firstBlockNum" | uint32) ::
+      ("numberOfBlocks" | uint32) ::
+      ("tlvStream" | QueryChannelRangeTlv.codec)
+  }.as[QueryChannelRange]
 
-  val replyChannelRangeCodec: Codec[ReplyChannelRange] = {
-    Codec(
-      ("chainHash" | bytes32) ::
-        ("firstBlockNum" | uint32) ::
-        ("numberOfBlocks" | uint32) ::
-        ("syncComplete" | byte) ::
-        ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
-        ("tlvStream" | ReplyChannelRangeTlv.codec)
-    ).as[ReplyChannelRange]
-  }
+  val replyChannelRangeCodec = {
+    ("chainHash" | bytes32) ::
+      ("firstBlockNum" | uint32) ::
+      ("numberOfBlocks" | uint32) ::
+      ("syncComplete" | byte) ::
+      ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
+      ("tlvStream" | ReplyChannelRangeTlv.codec)
+  }.as[ReplyChannelRange]
 
-  val gossipTimestampFilterCodec: Codec[GossipTimestampFilter] = (
+  val gossipTimestampFilterCodec = {
     ("chainHash" | bytes32) ::
       ("firstTimestamp" | uint32) ::
       ("timestampRange" | uint32)
-    ).as[GossipTimestampFilter]
+  }.as[GossipTimestampFilter]
 
-  val unknownMessageCodec: Codec[UnknownMessage] = (
+  val unknownMessageCodec = {
     ("tag" | uint16) ::
       ("message" | bits)
-    ).as[UnknownMessage]
+  }.as[UnknownMessage]
 
   //
 
@@ -348,7 +343,7 @@ object HostedMessagesCodecs {
       (variableSizeBytes(uint16, utf8) withContext "contactInfo")
   }.as[HostedChannelBranding]
 
-  val lastCrossSignedStateCodec: Codec[LastCrossSignedState] = {
+  val lastCrossSignedStateCodec = {
     (bool withContext "isHost") ::
       (varsizebinarydata withContext "refundScriptPubKey") ::
       (initHostedChannelCodec withContext "initHostedChannel") ::
@@ -566,7 +561,7 @@ object ExtMessageMapping {
     case SWAP_OUT_TRANSACTION_DENIED_MESSAGE_TAG => swapOutTransactionDeniedCodec.decode(msg.data).require.value
     case ROUTABLE_CHANNEL_REFRESH_TAG => routableChannelRefreshCodec.decode(msg.data).require.value
     case ROUTABLE_CHANNEL_TAG => routableChannelCodec.decode(msg.data).require.value
-    case otherwise => throw new RuntimeException(s"Can not decode tag=$otherwise")
+    case _ => throw new RuntimeException
   }
 
   // Extended messages need to be wrapped in UnknownMessage

@@ -19,14 +19,21 @@ package fr.acinq.eclair.wire
 import fr.acinq.eclair._
 import scodec.bits.{BitVector, ByteVector}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import immortan.ChannelMaster.{failHtlc, incorrectDetails}
+import fr.acinq.eclair.channel.{AddResolution, CMD_FAIL_MALFORMED_HTLC, ChannelVersion, FinalPayloadSpec}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering, Protocol, Satoshi}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
 import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
+
+import fr.acinq.eclair.wire.OnionCodecs.MissingRequiredTlv
+import fr.acinq.eclair.crypto.Sphinx.PaymentPacket
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.router.Announcements
 import java.nio.ByteOrder
+
+import com.google.common.base.Charsets
 import immortan.LNParams
+import scodec.Attempt
 
 /**
  * Created by PM on 15/11/2016.
@@ -46,6 +53,13 @@ sealed trait UpdateMessage extends HtlcMessage // <- not in the spec
 
 case class Init(features: Features, tlvs: TlvStream[InitTlv] = TlvStream.empty) extends SetupMessage {
   val networks: Seq[ByteVector32] = tlvs.get[InitTlv.Networks].map(_.chainHashes).getOrElse(Nil)
+}
+
+object Error {
+  def apply(channelId: ByteVector32, msg: String): Error = {
+    val bytes = msg.getBytes(Charsets.US_ASCII)
+    Error(channelId, ByteVector view bytes)
+  }
 }
 
 case class Error(channelId: ByteVector32, data: ByteVector) extends SetupMessage with HasChannelId
@@ -77,8 +91,29 @@ case class Shutdown(channelId: ByteVector32, scriptPubKey: ByteVector) extends C
 
 case class ClosingSigned(channelId: ByteVector32, feeSatoshis: Satoshi, signature: ByteVector64) extends ChannelMessage with HasChannelId
 
-case class UpdateAddHtlc(channelId: ByteVector32, id: Long, amountMsat: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry,
-                         onionRoutingPacket: OnionRoutingPacket, partId: ByteVector) extends HtlcMessage with HasChannelId with UpdateMessage
+case class UpdateAddHtlc(channelId: ByteVector32, id: Long, amountMsat: MilliSatoshi,
+                         paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onionRoutingPacket: OnionRoutingPacket,
+                         partId: ByteVector) extends HtlcMessage with HasChannelId with UpdateMessage { me =>
+
+  lazy val resolution: AddResolution = {
+    // Important: this relies on format being defined at runtime
+    val invoiceKey = LNParams.format.keys.fakeInvoiceKey(paymentHash)
+    PaymentPacket.peel(invoiceKey, paymentHash, onionRoutingPacket) match {
+      case Left(parseError) => CMD_FAIL_MALFORMED_HTLC(parseError.onionHash, parseError.code, me)
+      case Right(packet) if !packet.isLastPacket => failHtlc(packet, incorrectDetails(me), me)
+
+      case Right(lastPacket) =>
+        OnionCodecs.finalPerHopPayloadCodec.decode(lastPacket.payload.bits) match {
+          case Attempt.Failure(error: MissingRequiredTlv) => failHtlc(lastPacket, InvalidOnionPayload(error.tag, offset = 0), me)
+          case _: Attempt.Failure => failHtlc(lastPacket, InvalidOnionPayload(tag = UInt64(0), offset = 0), me)
+
+          case Attempt.Successful(payload) if payload.value.expiry != cltvExpiry => failHtlc(lastPacket, FinalIncorrectCltvExpiry(cltvExpiry), me)
+          case Attempt.Successful(payload) if payload.value.amount != amountMsat => failHtlc(lastPacket, incorrectDetails(me), me)
+          case Attempt.Successful(payload) => FinalPayloadSpec(lastPacket, payload.value, me)
+        }
+    }
+  }
+}
 
 case class UpdateFulfillHtlc(channelId: ByteVector32, id: Long, paymentPreimage: ByteVector32) extends HtlcMessage with HasChannelId with UpdateMessage {
   lazy val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage)

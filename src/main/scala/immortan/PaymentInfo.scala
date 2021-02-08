@@ -80,8 +80,9 @@ case class SwapOutDescription(invoiceText: String, btcAddress: String, chainFee:
 
 // Tx descriptions
 
-case class TxInfo(txidString: String, depth: Long, receivedMsat: MilliSatoshi, sentMsat: MilliSatoshi, feeMsat: MilliSatoshi,
-                  seenAt: Long, completedAt: Long, descriptionString: String, balanceSnapshot: MilliSatoshi, fiatRatesString: String,
+case class TxInfo(txidString: String, depth: Long, receivedMsat: MilliSatoshi, sentMsat: MilliSatoshi,
+                  feeMsat: MilliSatoshi, seenAt: Long, completedAt: Long, descriptionString: String,
+                  balanceSnapshot: MilliSatoshi, fiatRatesString: String,
                   incoming: Long, doubleSpent: Long) {
 
   def isIncoming: Boolean = 1L == incoming
@@ -109,3 +110,5 @@ case class ChanFundingTxDescription(txid: String, nodeId: String, sid: Long) ext
 case class CommitClaimTxDescription(txid: String, nodeId: String, sid: Long) extends TxDescription
 
 case class HtlcClaimTxDescription(txid: String, nodeId: String, sid: Long) extends TxDescription
+
+case class PenaltyTxDescription(txid: String, nodeId: String, sid: Long) extends TxDescription

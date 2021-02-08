@@ -43,12 +43,14 @@ object LNParams {
   val minPayment: MilliSatoshi = MilliSatoshi(5000L)
   val minHostedLiabilityBlockdays = 365
 
+  val maxChainConnectionsCount: Int = 5
+
   val maxToLocalDelay: CltvExpiryDelta = CltvExpiryDelta(2016)
   val maxFundingSatoshis: Satoshi = Satoshi(10000000000L) // 100 BTC
   val minFundingSatoshis: Satoshi = Satoshi(100000L) // 100k sat
   val maxReserveToFundingRatio = 0.05 // %
   val reserveToFundingRatio = 0.0025 // %
-  val minDepthBlocks: Int = 1
+  val minDepthBlocks: Int = 3
 
   val (normInit, phcSyncInit, hcInit) = {
     val networks: InitTlv = InitTlv.Networks(chainHash :: Nil)
@@ -116,7 +118,6 @@ object LNParams {
 
   val feeratesPerKB: AtomicReference[FeeratesPerKB] = new AtomicReference(defaultFeerates)
   val feeratesPerKw: AtomicReference[FeeratesPerKw] = new AtomicReference(FeeratesPerKw apply defaultFeerates)
-  val blockCountIsTrusted: AtomicReference[Boolean] = new AtomicReference(false)
   val blockCount: AtomicLong = new AtomicLong(0L)
 
   val feeEstimator: FeeEstimator = new FeeEstimator {
@@ -141,7 +142,7 @@ object LNParams {
   )
 
   def createWallet(addresses: Set[ElectrumServerAddress], walletDb: WalletDb, seed: ByteVector): ChainWallet = {
-    val clientPool = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(blockCount, addresses)), "client-pool", SupervisorStrategy.Resume))
+    val clientPool = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(blockCount, addresses)), "pool", SupervisorStrategy.Resume))
     val watcher = system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(blockCount, clientPool)), "watcher", SupervisorStrategy.Resume))
     val wallet = system.actorOf(ElectrumWallet.props(seed, clientPool, ElectrumWallet.WalletParameters(chainHash, walletDb)), "wallet")
     val catcher = system.actorOf(Props(new WalletEventsCatcher), "catcher")
@@ -150,6 +151,8 @@ object LNParams {
   }
 
   def currentBlockDay: Long = blockCount.get / blocksPerDay
+
+  def isBlockCountTrusted: Boolean = blockCount.get > 650000L
 }
 
 class SyncParams {
@@ -168,7 +171,7 @@ class SyncParams {
   val minNormalChansForPHC = 5 // How many normal chans a node must have to be eligible for PHCs
   val maxPHCPerNode = 2 // How many PHCs a node can have in total
 
-  val minCapacity: MilliSatoshi = MilliSatoshi(500000000L) // 500k sat
+  val minCapacity: MilliSatoshi = MilliSatoshi(1000000000L) // 1M sat
   val maxNodesToSyncFrom = 3 // How many disjoint peers to use for majority sync
   val acceptThreshold = 1 // ShortIds and updates are accepted if confirmed by more than this peers
   val messagesToAsk = 1000 // Ask for this many messages from peer before they say this chunk is done

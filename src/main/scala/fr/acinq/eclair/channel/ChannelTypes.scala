@@ -41,11 +41,11 @@ import immortan.NodeAnnouncementExt
  */
 
 case class INPUT_INIT_FUNDER(announce: NodeAnnouncementExt, temporaryChannelId: ByteVector32, fundingAmount: Satoshi, pushAmount: MilliSatoshi,
-                             initialFeeratePerKw: FeeratePerKw, fundingTxFeeratePerKw: FeeratePerKw, initialRelayFees: (MilliSatoshi, Int),
-                             localParams: LocalParams, remoteInit: Init, channelFlags: Byte, channelVersion: ChannelVersion)
+                             initialFeeratePerKw: FeeratePerKw, fundingTxFeeratePerKw: FeeratePerKw, localParams: LocalParams, remoteInit: Init,
+                             channelFlags: Byte, channelVersion: ChannelVersion)
 
-case class INPUT_INIT_FUNDEE(announce: NodeAnnouncementExt, temporaryChannelId: ByteVector32,
-                             localParams: LocalParams, remoteInit: Init, channelVersion: ChannelVersion)
+case class INPUT_INIT_FUNDEE(announce: NodeAnnouncementExt, temporaryChannelId: ByteVector32, localParams: LocalParams,
+                             remoteInit: Init, channelVersion: ChannelVersion, theirOpen: OpenChannel)
 
 sealed trait BitcoinEvent
 case object BITCOIN_FUNDING_PUBLISH_FAILED extends BitcoinEvent
@@ -78,10 +78,7 @@ case class CMD_FAIL_MALFORMED_HTLC(onionHash: ByteVector32, failureCode: Int, ad
 case class FinalPayloadSpec(packet: DecryptedPacket, payload: FinalPayload, add: UpdateAddHtlc) extends AddResolution
 case class CMD_FULFILL_HTLC(preimage: ByteVector32, add: UpdateAddHtlc) extends Command with AddResolution
 
-case class CMD_ADD_HTLC(partId: ByteVector, firstAmount: MilliSatoshi, paymentHash: ByteVector32,
-                        cltvExpiry: CltvExpiry, packetAndSecrets: PacketAndSecrets,
-                        payload: FinalPayload) extends Command
-
+case class CMD_ADD_HTLC(partId: ByteVector, firstAmount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, packetAndSecrets: PacketAndSecrets, payload: FinalPayload) extends Command
 case class CMD_HOSTED_STATE_OVERRIDE(so: StateOverride) extends Command
 case class HC_CMD_RESIZE(delta: Satoshi) extends Command
 
@@ -89,6 +86,10 @@ case object CMD_INCOMING_TIMEOUT extends Command
 case object CMD_SOCKET_OFFLINE extends Command
 case object CMD_SOCKET_ONLINE extends Command
 case object CMD_SIGN extends Command
+
+sealed trait CloseCommand extends Command
+final case class CMD_CLOSE(scriptPubKey: Option[ByteVector] = None) extends CloseCommand
+case object CMD_FORCECLOSE extends CloseCommand
 
 /*
       8888888b.        d8888 88888888888     d8888
@@ -115,15 +116,20 @@ sealed trait HasNormalCommitments extends PersistentChannelData {
 case class ClosingTxProposed(unsignedTx: Transaction, localClosingSigned: ClosingSigned)
 
 case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], claimHtlcDelayedTxs: List[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32] = Map.empty) {
-  lazy val isConfirmed: Boolean = (commitTx :: claimMainDelayedOutputTx.toList ::: htlcSuccessTxs ::: htlcTimeoutTxs ::: claimHtlcDelayedTxs).exists(tx => irrevocablySpent.values.toSet contains tx.txid)
+  lazy val secondTierTxs: List[Transaction] = claimMainDelayedOutputTx.toList ::: htlcSuccessTxs ::: htlcTimeoutTxs ::: claimHtlcDelayedTxs
+  lazy val isConfirmed: Boolean = (commitTx :: secondTierTxs).exists(tx => irrevocablySpentSet contains tx.txid)
+  lazy val irrevocablySpentSet: Set[ByteVector32] = irrevocablySpent.values.toSet
 }
 
 case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], claimHtlcSuccessTxs: List[Transaction], claimHtlcTimeoutTxs: List[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32] = Map.empty) {
-  lazy val isConfirmed: Boolean = (commitTx :: claimMainOutputTx.toList ::: claimHtlcSuccessTxs ::: claimHtlcTimeoutTxs).exists(tx => irrevocablySpent.values.toSet contains tx.txid)
+  lazy val secondTierTxs: List[Transaction] = claimMainOutputTx.toList ::: claimHtlcSuccessTxs ::: claimHtlcTimeoutTxs
+  lazy val isConfirmed: Boolean = (commitTx :: secondTierTxs).exists(tx => irrevocablySpentSet contains tx.txid)
+  lazy val irrevocablySpentSet: Set[ByteVector32] = irrevocablySpent.values.toSet
 }
 
-case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], mainPenaltyTx: Option[Transaction], htlcPenaltyTxs: List[Transaction],
-                                  claimHtlcDelayedPenaltyTxs: List[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32] = Map.empty)
+case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], mainPenaltyTx: Option[Transaction], htlcPenaltyTxs: List[Transaction], claimHtlcDelayedPenaltyTxs: List[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32] = Map.empty) {
+  lazy val penaltyTxs: List[Transaction] = claimMainOutputTx.toList ::: mainPenaltyTx.toList ::: htlcPenaltyTxs ::: claimHtlcDelayedPenaltyTxs
+}
 
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_FUNDEE) extends ChannelData
 
@@ -131,60 +137,54 @@ final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_FUNDER, las
 
 final case class DATA_WAIT_FOR_FUNDING_INTERNAL(initFunder: INPUT_INIT_FUNDER, remoteParams: RemoteParams, remoteFirstPerCommitmentPoint: PublicKey, lastSent: OpenChannel) extends ChannelData
 
-final case class DATA_WAIT_FOR_FUNDING_CREATED(announce: NodeAnnouncementExt, temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams,
-                                               fundingAmount: Satoshi, pushAmount: MilliSatoshi, initialFeeratePerKw: FeeratePerKw, initialRelayFees: (MilliSatoshi, Int),
-                                               remoteFirstPerCommitmentPoint: PublicKey, channelFlags: Byte, channelVersion: ChannelVersion,
-                                               lastSent: AcceptChannel) extends ChannelData
+final case class DATA_WAIT_FOR_FUNDING_CREATED(initFundee: INPUT_INIT_FUNDEE, remoteParams: RemoteParams, lastSent: AcceptChannel) extends ChannelData
 
 final case class DATA_WAIT_FOR_FUNDING_SIGNED(announce: NodeAnnouncementExt, channelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams,
-                                              fundingTx: Transaction, fundingTxFee: Satoshi, initialRelayFees: (MilliSatoshi, Int), localSpec: CommitmentSpec,
-                                              localCommitTx: CommitTx, remoteCommit: RemoteCommit, channelFlags: Byte, channelVersion: ChannelVersion,
-                                              lastSent: FundingCreated) extends ChannelData
+                                              fundingTx: Transaction, fundingTxFee: Satoshi, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit,
+                                              channelFlags: Byte, channelVersion: ChannelVersion, lastSent: FundingCreated) extends ChannelData
 
-final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: NormalCommits, fundingTx: Option[Transaction], initialRelayFees: (MilliSatoshi, Int), waitingSince: Long,
-                                                 lastSent: Either[FundingCreated, FundingSigned], deferred: Option[FundingLocked] = None) extends ChannelData with HasNormalCommitments
+final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: NormalCommits, fundingTx: Option[Transaction],
+                                                 waitingSince: Long, lastSent: Either[FundingCreated, FundingSigned],
+                                                 deferred: Option[FundingLocked] = None) extends ChannelData with HasNormalCommitments
 
-final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: NormalCommits, shortChannelId: ShortChannelId, initialRelayFees: (MilliSatoshi, Int),
-                                              lastSent: FundingLocked) extends ChannelData with HasNormalCommitments
+final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: NormalCommits, shortChannelId: ShortChannelId, lastSent: FundingLocked) extends ChannelData with HasNormalCommitments
 
-final case class DATA_NORMAL(commitments: NormalCommits, shortChannelId: ShortChannelId,
-                             buried: Boolean, channelAnnouncement: Option[ChannelAnnouncement], channelUpdate: ChannelUpdate,
-                             localShutdown: Option[Shutdown] = None, remoteShutdown: Option[Shutdown] = None) extends ChannelData with HasNormalCommitments
+final case class DATA_NORMAL(commitments: NormalCommits, shortChannelId: ShortChannelId, localShutdown: Option[Shutdown] = None, remoteShutdown: Option[Shutdown] = None) extends ChannelData with HasNormalCommitments
 
 final case class DATA_SHUTDOWN(commitments: NormalCommits, localShutdown: Shutdown, remoteShutdown: Shutdown) extends ChannelData with HasNormalCommitments
 
 final case class DATA_NEGOTIATING(commitments: NormalCommits, localShutdown: Shutdown, remoteShutdown: Shutdown, closingTxProposed: List[List[ClosingTxProposed]],
                                   bestUnpublishedClosingTxOpt: Option[Transaction] = None) extends ChannelData with HasNormalCommitments {
 
-  require(closingTxProposed.nonEmpty, "there must always be a list for the current negotiation")
   require(!commitments.localParams.isFunder || closingTxProposed.forall(_.nonEmpty), "funder must have at least one closing signature for every negotation attempt because it initiates the closing")
+
+  require(closingTxProposed.nonEmpty, "there must always be a list for the current negotiation")
 }
 
 final case class DATA_CLOSING(commitments: NormalCommits, fundingTx: Option[Transaction], waitingSince: Long, mutualCloseProposed: List[Transaction], mutualClosePublished: List[Transaction] = Nil,
                               localCommitPublished: Option[LocalCommitPublished] = None, remoteCommitPublished: Option[RemoteCommitPublished] = None, nextRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               futureRemoteCommitPublished: Option[RemoteCommitPublished] = None, revokedCommitPublished: List[RevokedCommitPublished] = Nil) extends ChannelData with HasNormalCommitments {
 
-  val spendingTxes: Seq[Transaction] = mutualClosePublished ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList :::
+  val commitTxes: Seq[Transaction] = mutualClosePublished ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList :::
     nextRemoteCommitPublished.map(_.commitTx).toList ::: futureRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
 
-  require(spendingTxes.nonEmpty, "there must be at least one tx published in this state")
+  lazy val secondTierTxs: Seq[Transaction] = localCommitPublished.toList.flatMap(_.secondTierTxs) ::: remoteCommitPublished.toList.flatMap(_.secondTierTxs) :::
+    nextRemoteCommitPublished.toList.flatMap(_.secondTierTxs) ::: futureRemoteCommitPublished.toList.flatMap(_.secondTierTxs)
+
+  lazy val penaltyTxs: Seq[Transaction] = revokedCommitPublished.flatMap(_.penaltyTxs)
+
+  require(commitTxes.nonEmpty, "there must be at least one tx published in this state")
 }
 
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: NormalCommits, remoteChannelReestablish: ChannelReestablish) extends ChannelData with HasNormalCommitments
 
-
-/**
- * @param features current connection features, or last features used if the channel is disconnected. Note that these
- *                 features are updated at each reconnection and may be different from the ones that were used when the
- *                 channel was created. See [[ChannelVersion]] for permanent features associated to a channel.
- */
 final case class LocalParams(fundingKeyPath: DeterministicWallet.KeyPath, dustLimit: Satoshi, maxHtlcValueInFlightMsat: UInt64, channelReserve: Satoshi,
                              htlcMinimum: MilliSatoshi, toSelfDelay: CltvExpiryDelta, maxAcceptedHtlcs: Int, isFunder: Boolean, defaultFinalScriptPubKey: ByteVector,
-                             walletStaticPaymentBasepoint: Option[PublicKey], features: Features)
+                             walletStaticPaymentBasepoint: Option[PublicKey] = None)
 
 final case class RemoteParams(dustLimit: Satoshi, maxHtlcValueInFlightMsat: UInt64, channelReserve: Satoshi, htlcMinimum: MilliSatoshi, toSelfDelay: CltvExpiryDelta,
                               maxAcceptedHtlcs: Int, fundingPubKey: PublicKey, revocationBasepoint: PublicKey, paymentBasepoint: PublicKey, delayedPaymentBasepoint: PublicKey,
-                              htlcBasepoint: PublicKey, features: Features)
+                              htlcBasepoint: PublicKey)
 
 object ChannelFlags {
   val AnnounceChannel: Byte = 0x01.toByte
@@ -202,7 +202,7 @@ case class ChannelVersion(bits: BitVector) {
 
   def isSet(bit: Int): Boolean = bits.reverse.get(bit)
 
-  def hasPubkeyKeyPath: Boolean = isSet(ChannelVersion.USE_PUBKEY_KEYPATH_BIT)
+  def hasPubkeyKeyPath: Boolean = isSet(ChannelVersion.USE_PUBKEY_KEYPATH_BIT) // MUST BE SET!
   def hasStaticRemotekey: Boolean = isSet(ChannelVersion.USE_STATIC_REMOTEKEY_BIT)
   def hasAnchorOutputs: Boolean = isSet(ChannelVersion.USE_ANCHOR_OUTPUTS_BIT)
   def paysDirectlyToWallet: Boolean = hasStaticRemotekey && !hasAnchorOutputs

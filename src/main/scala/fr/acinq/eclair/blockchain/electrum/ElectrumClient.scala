@@ -99,7 +99,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
   // Start the client.
   log.debug("connecting to server={}", serverAddress)
 
-  val channelOpenFuture = b.connect(serverAddress.getHostName, serverAddress.getPort)
+  val channelOpenFuture: ChannelFuture = b.connect(serverAddress.getHostName, serverAddress.getPort)
 
   def errorHandler(t: Throwable): Unit = {
     // generic errors don't need to be logged in most cases, what we actually want are errors that happened once we were

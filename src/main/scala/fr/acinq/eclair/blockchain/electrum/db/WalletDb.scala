@@ -18,22 +18,28 @@ package fr.acinq.eclair.blockchain.electrum.db
 
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32}
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
+import fr.acinq.eclair.CltvExpiry
 
 trait HeaderDb {
   def addHeaders(startHeight: Int, headers: Seq[BlockHeader] = Nil): Unit
-
   def getHeader(height: Int): Option[BlockHeader]
 
   type HeightAndHeader = (Int, BlockHeader)
   def getHeader(blockHash: ByteVector32): Option[HeightAndHeader]
-
   def getHeaders(startHeight: Int, maxCount: Int): Seq[BlockHeader]
-
   def getTip: Option[HeightAndHeader]
 }
 
 trait WalletDb extends HeaderDb {
   def persist(data: PersistentData): Unit
-
   def readPersistentData: Option[PersistentData]
+}
+
+object HtlcInfoDb {
+  case class CltvAndPaymentHash(paymentHash: ByteVector32, cltvExpiry: CltvExpiry)
+}
+
+trait HtlcInfoDb {
+  def put(channelId: ByteVector32, commitNumber: Int, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit
+  def allForChan(channelId: ByteVector32, commitNumer: Long): Iterable[HtlcInfoDb.CltvAndPaymentHash]
 }

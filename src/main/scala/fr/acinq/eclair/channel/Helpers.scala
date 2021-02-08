@@ -31,6 +31,7 @@ import scala.util.{Success, Try}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw, FeerateTolerance}
 import fr.acinq.eclair.blockchain.EclairWallet
+import fr.acinq.eclair.blockchain.electrum.db.HtlcInfoDb
 import fr.acinq.eclair.crypto.Generators
 import scodec.bits.ByteVector
 
@@ -42,24 +43,6 @@ import immortan.{LNParams, NodeAnnouncementExt}
  */
 
 object Helpers {
-  /**
-   * We update local/global features at reconnection
-   */
-  def updateFeatures(data: HasNormalCommitments, localInit: Init, remoteInit: Init): HasNormalCommitments = {
-    val commitments1 = data.commitments.copy(
-      localParams = data.commitments.localParams.copy(features = localInit.features),
-      remoteParams = data.commitments.remoteParams.copy(features = remoteInit.features))
-    data match {
-      case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(commitments = commitments1)
-      case d: DATA_WAIT_FOR_FUNDING_LOCKED => d.copy(commitments = commitments1)
-      case d: DATA_NORMAL => d.copy(commitments = commitments1)
-      case d: DATA_SHUTDOWN => d.copy(commitments = commitments1)
-      case d: DATA_NEGOTIATING => d.copy(commitments = commitments1)
-      case d: DATA_CLOSING => d.copy(commitments = commitments1)
-      case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = commitments1)
-    }
-  }
-
   /**
    * Called by the fundee
    */
@@ -77,7 +60,7 @@ object Helpers {
     if (open.pushMsat > open.fundingSatoshis) return Some(InvalidPushAmount(open.temporaryChannelId, open.pushMsat, open.fundingSatoshis.toMilliSatoshi))
 
     // BOLT #2: The receiving node MUST fail the channel if: to_self_delay is unreasonably large.
-    if (open.toSelfDelay > Channel.MAX_TO_SELF_DELAY || open.toSelfDelay > LNParams.maxToLocalDelay) return Some(ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, LNParams.maxToLocalDelay))
+    if (open.toSelfDelay > LNParams.maxToLocalDelay) return Some(ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, LNParams.maxToLocalDelay))
 
     // BOLT #2: The receiving node MUST fail the channel if: max_accepted_htlcs is greater than 483.
     if (open.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) return Some(InvalidMaxAcceptedHtlcs(open.temporaryChannelId, open.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS))
@@ -127,7 +110,7 @@ object Helpers {
 
     // if minimum_depth is unreasonably large:
     // MAY reject the channel.
-    if (accept.toSelfDelay > Channel.MAX_TO_SELF_DELAY || accept.toSelfDelay > LNParams.maxToLocalDelay) return Some(ToSelfDelayTooHigh(accept.temporaryChannelId, accept.toSelfDelay, LNParams.maxToLocalDelay))
+    if (accept.toSelfDelay > LNParams.maxToLocalDelay) return Some(ToSelfDelayTooHigh(accept.temporaryChannelId, accept.toSelfDelay, LNParams.maxToLocalDelay))
 
     // if channel_reserve_satoshis is less than dust_limit_satoshis within the open_channel message:
     //  MUST reject the channel.
@@ -604,6 +587,95 @@ object Helpers {
         claimHtlcTimeoutTxs = Nil,
         irrevocablySpent = Map.empty
       )
+    }
+
+    /**
+     * When an unexpected transaction spending the funding tx is detected:
+     * 1) we find out if the published transaction is one of remote's revoked txs
+     * 2) and then:
+     * a) if it is a revoked tx we build a set of transactions that will punish them by stealing all their funds
+     * b) otherwise there is nothing we can do
+     *
+     * @return a [[RevokedCommitPublished]] object containing penalty transactions if the tx is a revoked commitment
+     */
+    def claimRevokedRemoteCommitTxOutputs(commitments: NormalCommits, tx: Transaction, db: HtlcInfoDb, feeEstimator: FeeEstimator, feeTargets: FeeTargets): Option[RevokedCommitPublished] = {
+      require(tx.txIn.size == 1, "commitment tx should have 1 input")
+      val channelKeyPath = commitments.announce.keyPath(commitments.localParams)
+      val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn.head.sequence, tx.lockTime)
+      val localPaymentPoint = commitments.localParams.walletStaticPaymentBasepoint.getOrElse(commitments.announce.paymentPoint(channelKeyPath).publicKey)
+      // this tx has been published by remote, so we need to invert local/remote params
+      val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !commitments.localParams.isFunder, commitments.remoteParams.paymentBasepoint, localPaymentPoint)
+      require(txnumber <= 0xffffffffffffL, "txnumber must be lesser than 48 bits long")
+      // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
+      commitments.remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFL - txnumber)
+        .map(d => PrivateKey(d))
+        .map { remotePerCommitmentSecret =>
+          val remotePerCommitmentPoint = remotePerCommitmentSecret.publicKey
+          val remoteDelayedPaymentPubkey = Generators.derivePubKey(commitments.remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
+          val remoteRevocationPubkey = Generators.revocationPubKey(commitments.announce.revocationPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+          val remoteHtlcPubkey = Generators.derivePubKey(commitments.remoteParams.htlcBasepoint, remotePerCommitmentPoint)
+          val localPaymentPubkey = Generators.derivePubKey(commitments.announce.paymentPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+          val localHtlcPubkey = Generators.derivePubKey(commitments.announce.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+
+          val feeratePerKwMain = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
+          // we need to use a high fee here for punishment txes because after a delay they can be spent by the counterparty
+          val feeratePerKwPenalty = feeEstimator.getFeeratePerKw(target = 2)
+
+          // first we will claim our main output right away
+          val mainTx = commitments.channelVersion match {
+            case v if v.paysDirectlyToWallet =>
+              None
+            case v if v.hasAnchorOutputs => generateTx("claim-remote-delayed-output") {
+              Transactions.makeClaimRemoteDelayedOutputTx(tx, commitments.localParams.dustLimit, localPaymentPoint, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain).right.map(claimMain => {
+                val sig = commitments.announce.sign(claimMain, commitments.announce.paymentPoint(channelKeyPath), TxOwner.Local, commitments.channelVersion.commitmentFormat)
+                Transactions.addSigs(claimMain, sig)
+              })
+            }
+            case _ => generateTx("claim-p2wpkh-output") {
+              Transactions.makeClaimP2WPKHOutputTx(tx, commitments.localParams.dustLimit, localPaymentPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain).right.map(claimMain => {
+                val sig = commitments.announce.sign(claimMain, commitments.announce.paymentPoint(channelKeyPath), remotePerCommitmentPoint, TxOwner.Local, commitments.channelVersion.commitmentFormat)
+                Transactions.addSigs(claimMain, localPaymentPubkey, sig)
+              })
+            }
+          }
+
+          // then we punish them by stealing their main output
+          val mainPenaltyTx = generateTx("main-penalty") {
+            Transactions.makeMainPenaltyTx(tx, commitments.localParams.dustLimit, remoteRevocationPubkey, commitments.localParams.defaultFinalScriptPubKey, commitments.localParams.toSelfDelay, remoteDelayedPaymentPubkey, feeratePerKwPenalty).right.map(txinfo => {
+              val sig = commitments.announce.sign(txinfo, commitments.announce.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitments.channelVersion.commitmentFormat)
+              Transactions.addSigs(txinfo, sig)
+            })
+          }
+
+          // we retrieve the informations needed to rebuild htlc scripts
+          val htlcInfos = db.allForChan(commitments.channelId, txnumber)
+          val htlcsRedeemScripts = (
+            htlcInfos.map(item => Scripts.htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(item.paymentHash), item.cltvExpiry, commitments.channelVersion.commitmentFormat)) ++
+              htlcInfos.map(item => Scripts.htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(item.paymentHash), commitments.channelVersion.commitmentFormat))
+            )
+            .map(redeemScript => Script.write(pay2wsh(redeemScript)) -> Script.write(redeemScript))
+            .toMap
+
+          // and finally we steal the htlc outputs
+          val htlcPenaltyTxs = tx.txOut.zipWithIndex.collect { case (txOut, outputIndex) if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
+            val htlcRedeemScript = htlcsRedeemScripts(txOut.publicKeyScript)
+            generateTx("htlc-penalty") {
+              Transactions.makeHtlcPenaltyTx(tx, outputIndex, htlcRedeemScript, commitments.localParams.dustLimit, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwPenalty).right.map(htlcPenalty => {
+                val sig = commitments.announce.sign(htlcPenalty, commitments.announce.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitments.channelVersion.commitmentFormat)
+                Transactions.addSigs(htlcPenalty, sig, remoteRevocationPubkey)
+              })
+            }
+          }.toList.flatten
+
+          RevokedCommitPublished(
+            commitTx = tx,
+            claimMainOutputTx = mainTx.map(_.tx),
+            mainPenaltyTx = mainPenaltyTx.map(_.tx),
+            htlcPenaltyTxs = htlcPenaltyTxs.map(_.tx),
+            claimHtlcDelayedPenaltyTxs = Nil, // we will generate and spend those if they publish their HtlcSuccessTx or HtlcTimeoutTx
+            irrevocablySpent = Map.empty
+          )
+        }
     }
 
     /**

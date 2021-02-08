@@ -22,8 +22,6 @@ class WalletEventsCatcher extends Actor {
 
   context.system.eventStream.subscribe(channel = classOf[CurrentBlockCount], subscriber = self)
 
-  context.system.eventStream.subscribe(channel = classOf[SecondaryChainEvent], subscriber = self)
-
   override def receive: Receive = {
     case AddEventListener(listener) => listeners += listener
 
@@ -42,12 +40,6 @@ class WalletEventsCatcher extends Actor {
     case event: ElectrumReady => for (lst <- listeners) lst.onElectrumReady(event)
 
     case ElectrumDisconnected => for (lst <- listeners) lst.onElectrumDisconnected
-
-    case PossibleDangerousBlockSkew => for (lst <- listeners) lst.onPossibleDangerousBlockSkew
-
-    case DefiniteDangerousBlockSkew => for (lst <- listeners) lst.onDefiniteDangerousBlockSkew
-
-    case BlockCountIsTrusted => for (lst <- listeners) lst.onBlockCountIsTrusted
   }
 }
 
@@ -57,11 +49,6 @@ class WalletEventsListener {
   def onTransactionReceived(event: TransactionReceived): Unit = none
   def onTransactionConfidenceChanged(event: TransactionConfidenceChanged): Unit = none
   def onNewWalletReceiveAddress(event: NewWalletReceiveAddress): Unit = none
-
   def onElectrumReady(event: ElectrumReady): Unit = none
   def onElectrumDisconnected: Unit = none
-
-  def onPossibleDangerousBlockSkew: Unit = none
-  def onDefiniteDangerousBlockSkew: Unit = none
-  def onBlockCountIsTrusted: Unit = none
 }

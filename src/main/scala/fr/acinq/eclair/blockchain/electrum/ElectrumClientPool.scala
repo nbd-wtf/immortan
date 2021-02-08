@@ -20,11 +20,12 @@ import java.io.InputStream
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicLong
 
-import akka.actor.{Actor, ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, SupervisorStrategy, Terminated}
+import akka.actor.{Actor, ActorRef, FSM, OneForOneStrategy, Props, SupervisorStrategy, Terminated}
 import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
+import immortan.LNParams
 import org.json4s.JsonAST.{JObject, JString}
 import org.json4s.jackson.JsonMethods
 
@@ -41,7 +42,7 @@ class ElectrumClientPool(blockCount: AtomicLong, serverAddresses: Set[ElectrumSe
   // on startup, we attempt to connect to a number of electrum clients
   // they will send us an `ElectrumReady` message when they're connected, or
   // terminate if they cannot connect
-  (0 until Math.min(MAX_CONNECTION_COUNT, serverAddresses.size)) foreach (_ => self ! Connect)
+  (0 until LNParams.maxChainConnectionsCount).foreach(_ => self ! Connect)
 
   log.debug("starting electrum pool with serverAddresses={}", serverAddresses)
 
@@ -108,12 +109,6 @@ class ElectrumClientPool(blockCount: AtomicLong, serverAddresses: Set[ElectrumSe
   }
 
   whenUnhandled {
-    case Event(Reconnect, _) =>
-      // Force disconnect from all remote servers
-      // new ones will be picked at random automatically
-      addresses.keys.foreach(_ ! PoisonPill)
-      goto(Disconnected)
-
     case Event(Connect, _) =>
       pickAddress(serverAddresses, addresses.values.toSet) match {
         case Some(ElectrumServerAddress(address, ssl)) =>
@@ -182,8 +177,6 @@ class ElectrumClientPool(blockCount: AtomicLong, serverAddresses: Set[ElectrumSe
 
 object ElectrumClientPool {
 
-  val MAX_CONNECTION_COUNT = 3
-
   case class ElectrumServerAddress(adress: InetSocketAddress, ssl: SSL)
 
   def readServerAddresses(stream: InputStream, sslEnabled: Boolean): Set[ElectrumServerAddress] = try {
@@ -234,5 +227,4 @@ object ElectrumClientPool {
   }
 
   case object Connect
-  case object Reconnect
 }

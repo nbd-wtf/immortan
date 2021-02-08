@@ -68,24 +68,32 @@ object ChannelCodecs {
     .typecase(true, lengthDelimited(updateAddHtlcCodec).as[IncomingHtlc])
     .typecase(false, lengthDelimited(updateAddHtlcCodec).as[OutgoingHtlc])
 
-  val failAndAddCodec: Codec[FailAndAdd] = {
-    ("theirFail" | lengthDelimited(updateFailHtlcCodec)) ::
-      ("ourAdd" | lengthDelimited(updateAddHtlcCodec))
-  }.as[FailAndAdd]
+  val theirFailedCodec = {
+    ("reason" | varsizebinarydata) ::
+      ("paymentHash" | bytes32) ::
+      ("amount" | millisatoshi) ::
+      ("partId" | varsizebinarydata)
+  }.as[TheirFailed]
 
-  val malformAndAddCodec: Codec[MalformAndAdd] = {
-    ("theirMalform" | lengthDelimited(updateFailMalformedHtlcCodec)) ::
-      ("ourAdd" | lengthDelimited(updateAddHtlcCodec))
-  }.as[MalformAndAdd]
+  val theirMalformedCodec = {
+    ("paymentHash" | bytes32) ::
+      ("amount" | millisatoshi) ::
+      ("partId" | varsizebinarydata)
+  }.as[TheirMalformed]
+
+  val ourFulfilledCodec = {
+    ("paymentHash" | bytes32) ::
+      ("amount" | millisatoshi)
+  }.as[OurFulfilled]
 
   val commitmentSpecCodec: Codec[CommitmentSpec] = {
     ("feeratePerKw" | feeratePerKw) ::
       ("toLocal" | millisatoshi) ::
       ("toRemote" | millisatoshi) ::
       ("htlcs" | setCodec(htlcCodec)) ::
-      ("remoteFailed" | setCodec(failAndAddCodec)) ::
-      ("remoteMalformed" | setCodec(malformAndAddCodec)) ::
-      ("localFulfilled" | setCodec(lengthDelimited(updateAddHtlcCodec)))
+      ("remoteFailed" | setCodec(theirFailedCodec)) ::
+      ("remoteMalformed" | setCodec(theirMalformedCodec)) ::
+      ("localFulfilled" | setCodec(ourFulfilledCodec))
   }.as[CommitmentSpec]
 
   val inputInfoCodec: Codec[InputInfo] = (
@@ -145,7 +153,7 @@ object ChannelCodecs {
 
   val spentMapCodec: Codec[Map[OutPoint, ByteVector32]] = mapCodec(outPointCodec, bytes32)
 
-  def localParamsCodec(channelVersion: ChannelVersion): Codec[LocalParams] = (
+  def localParamsCodec(channelVersion: ChannelVersion): Codec[LocalParams] = {
     ("channelPath" | keyPathCodec) ::
       ("dustLimit" | satoshi) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
@@ -155,10 +163,10 @@ object ChannelCodecs {
       ("maxAcceptedHtlcs" | uint16) ::
       ("isFunder" | bool8) ::
       ("defaultFinalScriptPubKey" | lengthDelimited(bytes)) ::
-      ("walletStaticPaymentBasepoint" | optional(provide(channelVersion.paysDirectlyToWallet), publicKey)) ::
-      ("features" | combinedFeaturesCodec)).as[LocalParams]
+      ("walletStaticPaymentBasepoint" | optional(provide(channelVersion.paysDirectlyToWallet), publicKey))
+  }.as[LocalParams]
 
-  val remoteParamsCodec: Codec[RemoteParams] = (
+  val remoteParamsCodec: Codec[RemoteParams] = {
     ("dustLimit" | satoshi) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
       ("channelReserve" | satoshi) ::
@@ -169,8 +177,8 @@ object ChannelCodecs {
       ("revocationBasepoint" | publicKey) ::
       ("paymentBasepoint" | publicKey) ::
       ("delayedPaymentBasepoint" | publicKey) ::
-      ("htlcBasepoint" | publicKey) ::
-      ("features" | combinedFeaturesCodec)).as[RemoteParams]
+      ("htlcBasepoint" | publicKey)
+  }.as[RemoteParams]
 
   val nodeAnnouncementExtCodec: Codec[NodeAnnouncementExt] = (lengthDelimited(nodeAnnouncementCodec) withContext "na").as[NodeAnnouncementExt]
 
@@ -224,7 +232,6 @@ object ChannelCodecs {
   val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = {
     ("commitments" | commitmentsCodec) ::
       ("fundingTx" | optional(bool8, txCodec)) ::
-      ("initialRelayFees" | (millisatoshi ~ uint16)) ::
       ("waitingSince" | int64) ::
       ("lastSent" | either(bool8, lengthDelimited(fundingCreatedCodec), lengthDelimited(fundingSignedCodec))) ::
       ("deferred" | optional(bool8, lengthDelimited(fundingLockedCodec)))
@@ -233,16 +240,12 @@ object ChannelCodecs {
   val DATA_WAIT_FOR_FUNDING_LOCKED_Codec: Codec[DATA_WAIT_FOR_FUNDING_LOCKED] = {
     ("commitments" | commitmentsCodec) ::
       ("shortChannelId" | shortchannelid) ::
-      ("initialRelayFees" | (millisatoshi ~ uint16)) ::
       ("lastSent" | lengthDelimited(fundingLockedCodec))
   }.as[DATA_WAIT_FOR_FUNDING_LOCKED]
 
   val DATA_NORMAL_Codec: Codec[DATA_NORMAL] = (
     ("commitments" | commitmentsCodec) ::
       ("shortChannelId" | shortchannelid) ::
-      ("buried" | bool8) ::
-      ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
-      ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
       ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
       ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec)))).as[DATA_NORMAL]
 
@@ -256,7 +259,7 @@ object ChannelCodecs {
       ("localShutdown" | lengthDelimited(shutdownCodec)) ::
       ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
       ("closingTxProposed" | listOfN(uint16, listOfN(uint16, lengthDelimited(closingTxProposedCodec)))) ::
-      ("bestUnpublishedClosingTx_opt" | optional(bool8, txCodec))).as[DATA_NEGOTIATING]
+      ("bestUnpublishedClosingTxOpt" | optional(bool8, txCodec))).as[DATA_NEGOTIATING]
 
   val DATA_CLOSING_Codec: Codec[DATA_CLOSING] = (
     ("commitments" | commitmentsCodec) ::

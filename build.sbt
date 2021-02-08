@@ -4,12 +4,9 @@ version := "0.1"
 
 scalaVersion := "2.11.12"
 
-// Core lib
-
 libraryDependencies += "org.scalatest" % "scalatest_2.11" % "3.1.1"
 
 libraryDependencies += "com.typesafe.akka" % "akka-testkit_2.11" % "2.5.32"
-
 
 libraryDependencies += "org.scodec" % "scodec-core_2.11" % "1.11.3"
 
@@ -31,19 +28,9 @@ libraryDependencies += "com.softwaremill.sttp" % "okhttp-backend_2.11" % "1.3.9"
 
 libraryDependencies += "com.softwaremill.quicklens" % "quicklens_2.11" % "1.6.1"
 
-// Bitcoinj
-
-libraryDependencies += "com.squareup.okhttp3" % "okhttp" % "3.12.11"
-
 libraryDependencies += "org.bouncycastle" % "bcprov-jdk15to18" % "1.68"
 
-libraryDependencies += "com.google.protobuf" % "protobuf-java" % "3.9.2"
-
 libraryDependencies += "com.google.guava" % "guava" % "29.0-android"
-
-libraryDependencies += "net.jcip" % "jcip-annotations" % "1.0"
-
-libraryDependencies += "com.squareup.okio" % "okio" % "1.15.0"
 
 libraryDependencies += "org.slf4j" % "slf4j-api" % "1.7.30"
 

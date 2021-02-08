@@ -13,12 +13,11 @@ import immortan.utils.{Rx, ThrottledWork}
 import immortan.crypto.{CanBeRepliedTo, StateMachine, Tools}
 import immortan.ChannelListener.{Incoming, Malfunction, Transition}
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
-import fr.acinq.eclair.transactions.{FailAndAdd, MalformAndAdd, RemoteFailed}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DescAndCapacity, GraphEdge}
+import fr.acinq.eclair.crypto.Sphinx.{DecryptedPacket, FailurePacket, PacketAndSecrets}
 import immortan.Channel.{OPEN, SLEEPING, SUSPENDED, isOperational, isOperationalAndOpen}
-import fr.acinq.eclair.crypto.Sphinx.{DecryptedPacket, FailurePacket, PacketAndSecrets, PaymentPacket}
+import fr.acinq.eclair.transactions.{OurFulfilled, RemoteFailed, TheirFailed, TheirMalformed}
 import fr.acinq.eclair.router.Router.{ChannelDesc, NoRouteAvailable, Route, RouteFound, RouteParams, RouteRequest, RouteResponse}
-import fr.acinq.eclair.wire.OnionCodecs.MissingRequiredTlv
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -29,7 +28,6 @@ import scala.util.Random.shuffle
 import rx.lang.scala.Observable
 import scala.collection.mutable
 import scodec.bits.ByteVector
-import scodec.Attempt
 
 
 object PaymentFailure {
@@ -100,18 +98,27 @@ case class CMD_SEND_MPP(paymentHash: ByteVector32, targetNodeId: PublicKey,
 
 object ChannelMaster {
   type PartIdToAmount = Map[ByteVector, MilliSatoshi]
-  type HashToResolution = Map[ByteVector32, AddResolution]
   val EXPECTING_PAYMENTS = "state-expecting-payments"
   val WAITING_FOR_ROUTE = "state-waiting-for-route"
 
   val CMDClearFailHistory = "cmd-clear-fail-history"
   val CMDChanGotOnline = "cmd-chan-got-online"
   val CMDAskForRoute = "cmd-ask-for-route"
+
+  def incorrectDetails(add: UpdateAddHtlc): IncorrectOrUnknownPaymentDetails =
+    IncorrectOrUnknownPaymentDetails(add.amountMsat, LNParams.blockCount.get)
+
+  def failFinalPayloadSpec(fail: FailureMessage, finalPayloadSpec: FinalPayloadSpec): CMD_FAIL_HTLC =
+    failHtlc(finalPayloadSpec.packet, fail, finalPayloadSpec.add)
+
+  def failHtlc(packet: DecryptedPacket, fail: FailureMessage, add: UpdateAddHtlc): CMD_FAIL_HTLC = {
+    val localFailurePacket = FailurePacket.create(packet.sharedSecret, fail)
+    CMD_FAIL_HTLC(Left(localFailurePacket), add)
+  }
 }
 
 abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: PathFinder) extends ChannelListener {
   private[this] val getPaymentInfoMemo = memoize(payBag.getPaymentInfo)
-  private[this] val initialResolveMemo = memoize(initialResolve)
   pf.listeners += PaymentMaster
 
   val sockBrandingBridge: ConnectionListener
@@ -124,17 +131,12 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
   var all: List[Channel] = chanBag.all.map {
     case hasNormalCommits: HasNormalCommitments => NormalChannel.make(channelListeners, hasNormalCommits, LNParams.chainWallet, chanBag)
     case hostedCommits: HostedCommits => HostedChannel.make(channelListeners, hostedCommits, chanBag)
-    case otherwise => throw new RuntimeException
+    case _ => throw new RuntimeException
   }
 
   val events: ChannelMasterListener = new ChannelMasterListener {
-    override def outgoingFailed(paymentSenderData: PaymentSenderData): Unit = for (lst <- listeners) lst.outgoingFailed(paymentSenderData)
-    override def outgoingSucceeded(paymentSenderData: PaymentSenderData): Unit = for (lst <- listeners) lst.outgoingSucceeded(paymentSenderData)
-
-    override def incomingUpdated(succeeded: HashToResolution, pending: HashToResolution): Unit = {
-      succeeded.values.collect { case resolution: FinalPayloadSpec => resolution } foreach clearCaches
-      for (lst <- listeners) lst.incomingUpdated(succeeded, pending)
-    }
+    override def outgoingFailed(data: PaymentSenderData): Unit = for (lst <- listeners) lst.outgoingFailed(data)
+    override def outgoingSucceeded(data: PaymentSenderData): Unit = for (lst <- listeners) lst.outgoingSucceeded(data)
   }
 
   val incomingTimeoutWorker: ThrottledWork[ByteVector, Any] = new ThrottledWork[ByteVector, Any] {
@@ -180,40 +182,6 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
     }
   }
 
-  // RESOLVING INCOMING MESSAGES
-
-  def incorrectDetails(add: UpdateAddHtlc): IncorrectOrUnknownPaymentDetails = IncorrectOrUnknownPaymentDetails(add.amountMsat, LNParams.blockCount.get)
-
-  def failFinalPayloadSpec(fail: FailureMessage, finalPayloadSpec: FinalPayloadSpec): CMD_FAIL_HTLC = failHtlc(finalPayloadSpec.packet, fail, finalPayloadSpec.add)
-
-  def failHtlc(packet: DecryptedPacket, fail: FailureMessage, add: UpdateAddHtlc): CMD_FAIL_HTLC = {
-    val localFailurePacket = FailurePacket.create(packet.sharedSecret, fail)
-    CMD_FAIL_HTLC(Left(localFailurePacket), add)
-  }
-
-  private def clearCaches(resolve: FinalPayloadSpec) = {
-    getPaymentInfoMemo.remove(resolve.add.paymentHash)
-    initialResolveMemo.remove(resolve.add)
-  }
-
-  private def initialResolve(add: UpdateAddHtlc): AddResolution = {
-    val invoiceKey = LNParams.format.keys.fakeInvoiceKey(add.paymentHash)
-    PaymentPacket.peel(invoiceKey, add.paymentHash, add.onionRoutingPacket) match {
-      case Left(parseError) => CMD_FAIL_MALFORMED_HTLC(parseError.onionHash, parseError.code, add)
-      case Right(packet) if !packet.isLastPacket => failHtlc(packet, incorrectDetails(add), add)
-
-      case Right(lastPacket) =>
-        OnionCodecs.finalPerHopPayloadCodec.decode(lastPacket.payload.bits) match {
-          case Attempt.Failure(error: MissingRequiredTlv) => failHtlc(lastPacket, InvalidOnionPayload(error.tag, offset = 0), add)
-          case _: Attempt.Failure => failHtlc(lastPacket, InvalidOnionPayload(tag = UInt64(0), offset = 0), add)
-
-          case Attempt.Successful(payload) if payload.value.expiry != add.cltvExpiry => failHtlc(lastPacket, FinalIncorrectCltvExpiry(add.cltvExpiry), add)
-          case Attempt.Successful(payload) if payload.value.amount != add.amountMsat => failHtlc(lastPacket, incorrectDetails(add), add)
-          case Attempt.Successful(payload) => FinalPayloadSpec(lastPacket, payload.value, add)
-        }
-    }
-  }
-
   /**
     * Example: we subsequently get 3 incoming shards into 3 different channels
     * 1. on shard #1 and #2 `stateUpdated` is called, both shards are fine, we wait for the rest
@@ -245,12 +213,11 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
 
   override def stateUpdated(cs: Commitments): Unit = {
     val allChansAndCommits: List[ChanAndCommits] = all.flatMap(Channel.chanAndCommitsOpt)
-    val allRevealedHashes: Set[ByteVector32] = allChansAndCommits.flatMap(_.commits.revealedHashes).toSet // Payment hashes where preimage is revealed, but state is not updated yet
-    val allFulfilledAdds = toMapBy[ByteVector32, AddResolution](allChansAndCommits.flatMap(_.commits.localSpec.localFulfilled).map(initialResolveMemo), _.add.paymentHash) // Settled shards
-    val allIncomingAdds = toMapBy[ByteVector32, AddResolution](allChansAndCommits.flatMap(_.commits.localSpec.incomingAdds).map(initialResolveMemo), _.add.paymentHash) // Unsettled shards
-    events.incomingUpdated(succeeded = allFulfilledAdds -- allIncomingAdds.keys, pending = allIncomingAdds)
+    val allRevealedHashes: Set[ByteVector32] = allChansAndCommits.flatMap(_.commits.revealedHashes).toSet // Payment hashes with preimage is revealed, but state not updated yet
+    val allFulfilledAdds = toMapBy[ByteVector32, OurFulfilled](allChansAndCommits.flatMap(_.commits.localSpec.localFulfilled), _.paymentHash) // Successfully settled incoming shards
+    val allIncomingAdds = toMapBy[ByteVector32, AddResolution](allChansAndCommits.flatMap(_.commits.localSpec.incomingAdds).map(_.resolution), _.add.paymentHash) // Pending incoming shards
 
-    val allIncomingResolves: List[AddResolution] = allChansAndCommits.flatMap(_.commits.unansweredIncoming).map(initialResolveMemo)
+    val allIncomingResolves: List[AddResolution] = allChansAndCommits.flatMap(_.commits.unansweredIncoming).map(_.resolution)
     val badRightAway: List[BadAddResolution] = allIncomingResolves collect { case badAddResolution: BadAddResolution => badAddResolution }
     val maybeGood: List[FinalPayloadSpec] = allIncomingResolves collect { case finalPayloadSpec: FinalPayloadSpec => finalPayloadSpec }
 
@@ -380,8 +347,8 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
         relayOrCreateSender(fulfill.paymentHash, fulfill)
         self process CMDAskForRoute
 
-      case (fail: RemoteFailed, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
-        relayOrCreateSender(fail.ourAdd.paymentHash, fail)
+      case (err: RemoteFailed, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
+        relayOrCreateSender(err.paymentHash, err)
         self process CMDAskForRoute
 
       case _ =>
@@ -466,11 +433,11 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
 
       case (localError: HtlcAddImpossible, ABORTED) => self abortAndNotify data.withoutPartId(localError.cmd.partId)
 
-      case (reject: RemoteFailed, ABORTED) => self abortAndNotify data.withoutPartId(reject.ourAdd.partId)
+      case (err: RemoteFailed, ABORTED) => self abortAndNotify data.withoutPartId(err.partId)
 
       case (reject: RemoteFailed, INIT) =>
-        val data1 = data.modify(_.cmd.paymentHash).setTo(reject.ourAdd.paymentHash)
-        self abortAndNotify data1.withLocalFailure(NOT_RETRYING_NO_DETAILS, reject.ourAdd.amountMsat)
+        val data1 = data.modify(_.cmd.paymentHash).setTo(reject.paymentHash)
+        self abortAndNotify data1.withLocalFailure(NOT_RETRYING_NO_DETAILS, reject.amount)
 
       case (fulfill: UpdateFulfillHtlc, INIT) =>
         // An idempotent transition, fires a success event with implanted hash
@@ -524,17 +491,17 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
           }
         }
 
-      case (malform: MalformAndAdd, PENDING) =>
-        data.parts.values collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isDefined && wait.partId == malform.ourAdd.partId =>
+      case (err: TheirMalformed, PENDING) =>
+        data.parts.values collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isDefined && wait.partId == err.partId =>
           PaymentMaster currentSendableExcept wait collectFirst { case (otherCnc, chanSendable) if chanSendable >= wait.amount => otherCnc } match {
             case Some(anotherCapableCnc) => become(data.copy(parts = data.parts + wait.oneMoreLocalAttempt(anotherCapableCnc).tuple), PENDING)
             case None => self abortAndNotify data.withoutPartId(wait.partId).withLocalFailure(PEER_COULD_NOT_PARSE_ONION, wait.amount)
           }
         }
 
-      case (FailAndAdd(theirFail, ourAdd), PENDING) =>
-        data.parts.values collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isDefined && wait.partId == ourAdd.partId =>
-          Sphinx.FailurePacket.decrypt(theirFail.reason, wait.flight.get.cmd.packetAndSecrets.sharedSecrets) map {
+      case (err: TheirFailed, PENDING) =>
+        data.parts.values collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isDefined && wait.partId == err.partId =>
+          Sphinx.FailurePacket.decrypt(err.reason, wait.flight.get.cmd.packetAndSecrets.sharedSecrets) map {
             case pkt if pkt.originNode == data.cmd.targetNodeId || PaymentTimeout == pkt.failureMessage =>
               val data1 = data.withoutPartId(wait.partId).withRemoteFailure(wait.flight.get.route, pkt)
               self abortAndNotify data1
@@ -676,5 +643,4 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
 trait ChannelMasterListener {
   def outgoingFailed(paymentSenderData: PaymentSenderData): Unit = none
   def outgoingSucceeded(paymentSenderData: PaymentSenderData): Unit = none
-  def incomingUpdated(succeeded: HashToResolution, pending: HashToResolution): Unit = none
 }

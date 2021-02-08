@@ -20,16 +20,19 @@ object Channel {
 
   // All states below are persisted
   val WAIT_FUNDING_DONE = "WAIT-FUNDING-DONE"
+  val NEGOTIATIONS = "NEGOTIATIONS"
+  val CLOSING = "CLOSING"
+  val OPEN = "OPEN"
+
   val SUSPENDED = "SUSPENDED"
   val SLEEPING = "SLEEPING"
-  val OPEN = "OPEN"
 
   // Single stacking thread for all channels, must be used when asking channels for pending payments to avoid race conditions
   implicit val channelContext: ExecutionContextExecutor = scala.concurrent.ExecutionContext fromExecutor Executors.newSingleThreadExecutor
 
   def chanAndCommitsOpt(chan: Channel): Option[ChanAndCommits] = chan.data match {
-    case hasNormalCommits: HasNormalCommitments => ChanAndCommits(chan, hasNormalCommits.commitments).toSome
-    case hostedCommits: HostedCommits => ChanAndCommits(chan, hostedCommits).toSome
+    case commits: HasNormalCommitments => ChanAndCommits(chan, commits.commitments).toSome
+    case commits: HostedCommits => ChanAndCommits(chan, commits).toSome
     case _ => None
   }
 
@@ -45,14 +48,13 @@ object Channel {
     case _ => false
   }
 
-  def isOperationalAndOpen(chan: Channel): Boolean = isOperational(chan) && OPEN == chan.state
-
-  def isOpeningOrOperational(chan: Channel): Boolean = isOpening(chan) || isOperational(chan)
+  def isOperationalAndOpen(chan: Channel): Boolean =
+    isOperational(chan) && OPEN == chan.state
 }
 
 trait Channel extends StateMachine[ChannelData] { me =>
-  def process(change: Any): Unit = Future(me doProcess change).onComplete {
-    case Failure(failureReason) => events.onException(me -> failureReason)
+  def process(change: Any): Unit = Future(me doProcess change) onComplete {
+    case Failure(reason) => events.onException(me -> reason)
     case _ => // Do nothing
   }
 
