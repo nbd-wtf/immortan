@@ -17,13 +17,13 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.eclair._
-import immortan.{ChainWallet, LNParams, NormalChannel}
+import immortan.Channel._
+import immortan.{LNParams, NormalChannel}
 import fr.acinq.eclair.blockchain.{PublishAsap, WatchConfirmed, WatchSpent}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.wire.{ChannelReestablish, Error, FundingLocked, LightningMessage, RevokeAndAck, UpdateAddHtlc}
 import fr.acinq.eclair.channel.Helpers.Closing
 import scala.collection.immutable.Queue
-import akka.actor.ActorRef
 
 /**
  * Created by PM on 20/08/2015.
@@ -39,91 +39,92 @@ object Channel {
   val MIN_CLTV_EXPIRY_DELTA: CltvExpiryDelta = CltvExpiryDelta(18)
 
   val MAX_CLTV_EXPIRY_DELTA: CltvExpiryDelta = CltvExpiryDelta(7 * 144)
+}
 
-  def doPublish(closingTx: Transaction, cw: ChainWallet, replyTo: ActorRef): Unit = {
-    cw.watcher ! WatchConfirmed(replyTo, closingTx, LNParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(closingTx))
-    cw.watcher ! PublishAsap(closingTx)
+trait NormalChannelHandler { me: NormalChannel =>
+
+  def doPublish(closingTx: Transaction): Unit = {
+    chainWallet.watcher ! WatchConfirmed(receiver, closingTx, LNParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(closingTx))
+    chainWallet.watcher ! PublishAsap(closingTx)
   }
 
   /**
    * This helper method will publish txes only if they haven't yet reached minDepth
    */
-  def publishIfNeeded(txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32], cw: ChainWallet): Unit = {
+  def publishIfNeeded(txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32]): Unit = {
     val (_, process) = txes.partition(Closing.inputsAlreadySpent(_, irrevocablySpent))
-    process.foreach(tx => cw.watcher ! PublishAsap(tx))
+    process.foreach(tx => chainWallet.watcher ! PublishAsap(tx))
   }
 
   /**
    * This helper method will watch txes only if they haven't yet reached minDepth
    */
-  def watchConfirmedIfNeeded(txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32], cw: ChainWallet, replyTo: ActorRef): Unit = {
+  def watchConfirmedIfNeeded(txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32]): Unit = {
     val (_, process) = txes.partition(Closing.inputsAlreadySpent(_, irrevocablySpent))
-    process.foreach(tx => cw.watcher ! WatchConfirmed(replyTo, tx, LNParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(tx)))
+    process.foreach(tx => chainWallet.watcher ! WatchConfirmed(receiver, tx, LNParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(tx)))
 
   }
 
   /**
    * This helper method will watch txes only if the utxo they spend hasn't already been irrevocably spent
    */
-  def watchSpentIfNeeded(parentTx: Transaction, txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32], cw: ChainWallet, replyTo: ActorRef): Unit = {
+  def watchSpentIfNeeded(parentTx: Transaction, txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32]): Unit = {
     val (_, process) = txes.partition(Closing.inputsAlreadySpent(_, irrevocablySpent))
-    process.foreach(tx => cw.watcher ! WatchSpent(replyTo, parentTx, tx.txIn.head.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT))
+    process.foreach(tx => chainWallet.watcher ! WatchSpent(receiver, parentTx, tx.txIn.head.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT))
 
   }
 
-  def doPublish(localCommitPublished: LocalCommitPublished, cw: ChainWallet, replyTo: ActorRef): Unit = {
+  def doPublish(localCommitPublished: LocalCommitPublished): Unit = {
     import localCommitPublished._
 
     val publishQueue = List(commitTx) ++ claimMainDelayedOutputTx ++ htlcSuccessTxs ++ htlcTimeoutTxs ++ claimHtlcDelayedTxs
-    publishIfNeeded(publishQueue, irrevocablySpent, cw)
+    publishIfNeeded(publishQueue, irrevocablySpent)
 
     // we watch:
     // - the commitment tx itself, so that we can handle the case where we don't have any outputs
     // - 'final txes' that send funds to our wallet and that spend outputs that only us control
     val watchConfirmedQueue = List(commitTx) ++ claimMainDelayedOutputTx ++ claimHtlcDelayedTxs
-    watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent, cw, replyTo)
+    watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent)
 
     // we watch outputs of the commitment tx that both parties may spend
     val watchSpentQueue = htlcSuccessTxs ++ htlcTimeoutTxs
-    watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent, cw, replyTo)
+    watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
-  def doPublish(remoteCommitPublished: RemoteCommitPublished, cw: ChainWallet, replyTo: ActorRef): Unit = {
+  def doPublish(remoteCommitPublished: RemoteCommitPublished): Unit = {
     import remoteCommitPublished._
 
     val publishQueue = claimMainOutputTx ++ claimHtlcSuccessTxs ++ claimHtlcTimeoutTxs
-    publishIfNeeded(publishQueue, irrevocablySpent, cw)
+    publishIfNeeded(publishQueue, irrevocablySpent)
 
     // we watch:
     // - the commitment tx itself, so that we can handle the case where we don't have any outputs
     // - 'final txes' that send funds to our wallet and that spend outputs that only us control
     val watchConfirmedQueue = List(commitTx) ++ claimMainOutputTx
-    watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent, cw, replyTo)
+    watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent)
 
     // we watch outputs of the commitment tx that both parties may spend
     val watchSpentQueue = claimHtlcTimeoutTxs ++ claimHtlcSuccessTxs
-    watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent, cw, replyTo)
+    watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
-  def doPublish(revokedCommitPublished: RevokedCommitPublished, cw: ChainWallet, replyTo: ActorRef): Unit = {
+  def doPublish(revokedCommitPublished: RevokedCommitPublished): Unit = {
     import revokedCommitPublished._
 
     val publishQueue = claimMainOutputTx ++ mainPenaltyTx ++ htlcPenaltyTxs ++ claimHtlcDelayedPenaltyTxs
-    publishIfNeeded(publishQueue, irrevocablySpent, cw)
+    publishIfNeeded(publishQueue, irrevocablySpent)
 
     // we watch:
     // - the commitment tx itself, so that we can handle the case where we don't have any outputs
     // - 'final txes' that send funds to our wallet and that spend outputs that only us control
     val watchConfirmedQueue = List(commitTx) ++ claimMainOutputTx
-    watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent, cw, replyTo)
+    watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent)
 
     // we watch outputs of the commitment tx that both parties may spend
     val watchSpentQueue = mainPenaltyTx ++ htlcPenaltyTxs
-    watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent, cw, replyTo)
+    watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
-}
 
-trait NormalChannelHandler { me: NormalChannel =>
   def handleNormalSync(d: DATA_NORMAL, channelReestablish: ChannelReestablish): Unit = {
     var sendQueue = Queue.empty[LightningMessage]
     channelReestablish match {
@@ -135,7 +136,7 @@ trait NormalChannelHandler { me: NormalChannel =>
           // would punish us by taking all the funds in the channel
           val exc = PleasePublishYourCommitment(d.channelId)
           val error = Error(d.channelId, exc.getMessage)
-          STORE_BECOME_SEND(DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish), immortan.Channel.CLOSING, error)
+          STORE_BECOME_SEND(DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish), CLOSING, error)
         } else {
           // they lied! the last per_commitment_secret they claimed to have received from us is invalid
           throw InvalidRevokedCommitProof(d.channelId, d.commitments.localCommit.index, nextRemoteRevocationNumber, yourLastPerCommitmentSecret)
@@ -147,7 +148,7 @@ trait NormalChannelHandler { me: NormalChannel =>
         // not that if they don't comply, we could publish our own commitment (it is not stale, otherwise we would be in the case above)
         val exc = PleasePublishYourCommitment(d.channelId)
         val error = Error(d.channelId, exc.getMessage)
-        STORE_BECOME_SEND(DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish), immortan.Channel.CLOSING, error)
+        STORE_BECOME_SEND(DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish), CLOSING, error)
       case _ =>
         // normal case, our data is up-to-date
         if (channelReestablish.nextLocalCommitmentNumber == 1 && d.commitments.localCommit.index == 0) {
@@ -162,7 +163,7 @@ trait NormalChannelHandler { me: NormalChannel =>
 
         // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
         d.localShutdown.foreach(localShutdown => sendQueue = sendQueue :+ localShutdown)
-        BECOME(d.copy(commitments = commitments1), immortan.Channel.OPEN)
+        BECOME(d.copy(commitments = commitments1), OPEN)
         SEND(sendQueue:_*)
     }
   }
@@ -170,11 +171,11 @@ trait NormalChannelHandler { me: NormalChannel =>
   def handleNegotiationsSync(d: DATA_NEGOTIATING): Unit = if (d.commitments.localParams.isFunder) {
     // we could use the last closing_signed we sent, but network fees may have changed while we were offline so it is better to restart from scratch
     val (closingTx, closingSigned) = Closing.makeFirstClosingTx(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, LNParams.onChainFeeConf.feeEstimator, LNParams.onChainFeeConf.feeTargets)
-    STORE_BECOME_SEND(d.copy(closingTxProposed = d.closingTxProposed :+ List(ClosingTxProposed(closingTx.tx, closingSigned))), immortan.Channel.NEGOTIATIONS, d.localShutdown, closingSigned)
+    STORE_BECOME_SEND(d.copy(closingTxProposed = d.closingTxProposed :+ List(ClosingTxProposed(closingTx.tx, closingSigned))), NEGOTIATIONS, d.localShutdown, closingSigned)
   } else {
     // we start a new round of negotiation
     val closingTxProposed1 = if (d.closingTxProposed.last.isEmpty) d.closingTxProposed else d.closingTxProposed :+ Nil
-    STORE_BECOME_SEND(d.copy(closingTxProposed = closingTxProposed1), immortan.Channel.NEGOTIATIONS, d.localShutdown)
+    STORE_BECOME_SEND(d.copy(closingTxProposed = closingTxProposed1), NEGOTIATIONS, d.localShutdown)
   }
 
   def handleSync(channelReestablish: ChannelReestablish, d: HasNormalCommitments): (NormalCommits, Queue[LightningMessage]) = {

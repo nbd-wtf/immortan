@@ -10,7 +10,8 @@ import com.softwaremill.quicklens._
 
 import scala.util.{Success, Try}
 import akka.actor.{ActorRef, Props}
-import fr.acinq.bitcoin.{Script, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.{ByteVector32, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.transactions.Transactions.TxOwner
 import fr.acinq.eclair.crypto.ShaChain
@@ -195,19 +196,20 @@ abstract class NormalChannel extends Channel with NormalChannelHandler { me =>
           case data1: DATA_CLOSING =>
             BECOME(data1, state1 = CLOSING)
             Helpers.Closing.isClosingTypeAlreadyKnown(data1) match {
-              case Some(close: Helpers.Closing.MutualClose) => channel.Channel.doPublish(close.tx, chainWallet, receiver)
-              case Some(close: Helpers.Closing.LocalClose) => channel.Channel.doPublish(close.localCommitPublished, chainWallet, receiver)
-              case Some(close: Helpers.Closing.RemoteClose) => channel.Channel.doPublish(close.remoteCommitPublished, chainWallet, receiver)
-              case Some(close: Helpers.Closing.RecoveryClose) => channel.Channel.doPublish(close.remoteCommitPublished, chainWallet, receiver)
-              case Some(close: Helpers.Closing.RevokedClose) => channel.Channel.doPublish(close.revokedCommitPublished, chainWallet, receiver)
+              case Some(close: Helpers.Closing.MutualClose) => doPublish(close.tx)
+              case Some(close: Helpers.Closing.LocalClose) => doPublish(close.localCommitPublished)
+              case Some(close: Helpers.Closing.RemoteClose) => doPublish(close.remoteCommitPublished)
+              case Some(close: Helpers.Closing.RecoveryClose) => doPublish(close.remoteCommitPublished)
+              case Some(close: Helpers.Closing.RevokedClose) => doPublish(close.revokedCommitPublished)
 
               case None =>
-                for (close <- data1.mutualClosePublished) channel.Channel.doPublish(close, chainWallet, receiver)
-                for (close <- data1.localCommitPublished) channel.Channel.doPublish(close, chainWallet, receiver)
-                for (close <- data1.remoteCommitPublished) channel.Channel.doPublish(close, chainWallet, receiver)
-                for (close <- data1.revokedCommitPublished) channel.Channel.doPublish(close, chainWallet, receiver)
-                for (close <- data1.nextRemoteCommitPublished) channel.Channel.doPublish(close, chainWallet, receiver)
-                for (close <- data1.futureRemoteCommitPublished) channel.Channel.doPublish(close, chainWallet, receiver)
+                for (close <- data1.mutualClosePublished) doPublish(close)
+                for (close <- data1.localCommitPublished) doPublish(close)
+                for (close <- data1.remoteCommitPublished) doPublish(close)
+                for (close <- data1.revokedCommitPublished) doPublish(close)
+                for (close <- data1.nextRemoteCommitPublished) doPublish(close)
+                for (close <- data1.futureRemoteCommitPublished) doPublish(close)
+
                 // if commitment number is zero, we also need to make sure that the funding tx has been published
                 if (data1.commitments.localCommit.index == 0 && data1.commitments.remoteCommit.index == 0)
                   chainWallet.watcher ! GetTxWithMeta(commitInput.outPoint.txid)
@@ -227,6 +229,20 @@ abstract class NormalChannel extends Channel with NormalChannelHandler { me =>
       case (_, CMD_SOCKET_OFFLINE, WAIT_FUNDING_DONE | NEGOTIATIONS | OPEN) => BECOME(data, SLEEPING)
 
       // REESTABLISHMENT IN PERSISTENT STATES
+
+      case (wait: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT, CMD_SOCKET_ONLINE, SLEEPING) =>
+        // There isn't much to do except asking them again to publish their current commitment by sending an error
+        val error = Error(wait.channelId, PleasePublishYourCommitment(wait.channelId).getMessage)
+        BECOME(wait, CLOSING)
+        SEND(error)
+
+
+      case (data1: HasNormalCommitments, CMD_SOCKET_ONLINE, SLEEPING) =>
+        val myCurrentPerCommitmentPoint = data1.commitments.announce.commitmentPoint(data1.commitments.channelKeyPath, data1.commitments.localCommit.index)
+        val yourLastPerCommitmentSecret = data1.commitments.remotePerCommitmentSecrets.lastIndex.flatMap(data1.commitments.remotePerCommitmentSecrets.getHash).getOrElse(ByteVector32.Zeroes)
+        val reestablish = ChannelReestablish(data1.channelId, data1.commitments.localCommit.index + 1, data1.commitments.remoteCommit.index, PrivateKey(yourLastPerCommitmentSecret), myCurrentPerCommitmentPoint)
+        SEND(reestablish)
+
 
       case (wait: DATA_WAIT_FOR_FUNDING_CONFIRMED, _: ChannelReestablish, SLEEPING) =>
         // We put back the watch (operation is idempotent) because corresponding event may have been already fired while we were in SLEEPING

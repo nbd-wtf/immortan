@@ -57,33 +57,30 @@ object LNParams {
     val tlvStream: TlvStream[InitTlv] = TlvStream(networks)
 
     // Mimic phoenix
-    val normFeatures: Set[ActivatedFeature] = Set(
-      ActivatedFeature(ChannelRangeQueries, FeatureSupport.Mandatory),
-      ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Mandatory),
-      ActivatedFeature(OptionDataLossProtect, FeatureSupport.Mandatory),
-      ActivatedFeature(BasicMultiPartPayment, FeatureSupport.Mandatory),
-      ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory),
-      ActivatedFeature(AnchorOutputs, FeatureSupport.Mandatory),
-      ActivatedFeature(PaymentSecret, FeatureSupport.Mandatory),
-      ActivatedFeature(PrivateRouting, FeatureSupport.Optional),
-      ActivatedFeature(ChainSwap, FeatureSupport.Optional),
+    val normFeatures: Set[ActivatedFeature] = Set.empty +
+      ActivatedFeature(ChannelRangeQueries, FeatureSupport.Mandatory) +
+      ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Mandatory) +
+      ActivatedFeature(OptionDataLossProtect, FeatureSupport.Mandatory) +
+      ActivatedFeature(BasicMultiPartPayment, FeatureSupport.Mandatory) +
+      ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory) +
+      ActivatedFeature(AnchorOutputs, FeatureSupport.Mandatory) +
+      ActivatedFeature(PaymentSecret, FeatureSupport.Mandatory) +
+      ActivatedFeature(PrivateRouting, FeatureSupport.Optional) +
+      ActivatedFeature(ChainSwap, FeatureSupport.Optional) +
       ActivatedFeature(Wumbo, FeatureSupport.Mandatory)
-    )
 
-    val phcSyncFeatures: Set[ActivatedFeature] = Set(
+    val phcSyncFeatures: Set[ActivatedFeature] = Set.empty +
       ActivatedFeature(HostedChannels, FeatureSupport.Mandatory)
-    )
 
-    val hcFeatures: Set[ActivatedFeature] = Set(
-      ActivatedFeature(ChannelRangeQueries, FeatureSupport.Mandatory),
-      ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Mandatory),
-      ActivatedFeature(BasicMultiPartPayment, FeatureSupport.Mandatory),
-      ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory),
-      ActivatedFeature(HostedChannels, FeatureSupport.Mandatory),
-      ActivatedFeature(PaymentSecret, FeatureSupport.Mandatory),
-      ActivatedFeature(PrivateRouting, FeatureSupport.Optional),
+    val hcFeatures: Set[ActivatedFeature] = Set.empty +
+      ActivatedFeature(ChannelRangeQueries, FeatureSupport.Mandatory) +
+      ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Mandatory) +
+      ActivatedFeature(BasicMultiPartPayment, FeatureSupport.Mandatory) +
+      ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory) +
+      ActivatedFeature(HostedChannels, FeatureSupport.Mandatory) +
+      ActivatedFeature(PaymentSecret, FeatureSupport.Mandatory) +
+      ActivatedFeature(PrivateRouting, FeatureSupport.Optional) +
       ActivatedFeature(ChainSwap, FeatureSupport.Optional)
-    )
 
     val norm = Init(Features(normFeatures), tlvStream)
     val phcSync = Init(Features(phcSyncFeatures), tlvStream)
