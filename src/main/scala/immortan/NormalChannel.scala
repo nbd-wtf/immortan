@@ -192,7 +192,7 @@ abstract class NormalChannel(bag: ChannelBag) extends Channel with NormalChannel
         val nextRemoteCommit = commits1.remoteNextCommitInfo.left.get.nextRemoteCommit
         val trimmedOutgoing = Transactions.trimOfferedHtlcs(norm.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, norm.commitments.channelVersion.commitmentFormat)
         val trimmedIncoming = Transactions.trimReceivedHtlcs(norm.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, norm.commitments.channelVersion.commitmentFormat)
-        for (htlc <- trimmedOutgoing ++ trimmedIncoming) bag.putHtlcInfo(norm.channelId, nextRemoteCommit.index, htlc.add.paymentHash, htlc.add.cltvExpiry)
+        bag.putHtlcInfos(trimmedOutgoing ++ trimmedIncoming, norm.channelId, nextRemoteCommit.index)
         StoreBecomeSend(norm.copy(commitments = commits1), OPEN, commitSig)
 
       // RESTORING FROM STORED DATA

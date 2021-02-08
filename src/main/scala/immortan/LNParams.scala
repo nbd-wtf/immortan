@@ -9,20 +9,20 @@ import fr.acinq.eclair.Features._
 import scala.concurrent.duration._
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.bitcoin.DeterministicWallet._
-import scodec.bits.{HexStringSyntax, ByteVector}
+import scodec.bits.{ByteVector, HexStringSyntax}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import immortan.utils.{RatesInfo, WalletEventsCatcher}
 import scala.concurrent.{ExecutionContextExecutor, Future}
 import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt}
 import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
+import fr.acinq.eclair.transactions.{DirectedHtlc, Transactions}
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import fr.acinq.eclair.channel.{LocalParams, NormalCommits, PersistentChannelData}
 import fr.acinq.eclair.blockchain.electrum.{ElectrumClientPool, ElectrumEclairWallet, ElectrumWallet, ElectrumWatcher}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
-import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.payment.PaymentRequest
 import immortan.SyncMaster.ShortChanIdSet
 import fr.acinq.eclair.crypto.Generators
@@ -304,6 +304,7 @@ trait ChannelBag {
   def delete(commitments: HostedCommits): Unit
   def put(data: PersistentChannelData): PersistentChannelData
 
-  def putHtlcInfo(channelId: ByteVector32, commitNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit
   def htlcInfosForChan(channelId: ByteVector32, commitNumer: Long): Iterable[ChannelBag.CltvAndPaymentHash]
+  def putHtlcInfo(channelId: ByteVector32, commitNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit
+  def putHtlcInfos(htlcs: Seq[DirectedHtlc], channelId: ByteVector32, commitNumber: Long): Unit
 }

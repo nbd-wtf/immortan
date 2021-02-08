@@ -2,6 +2,7 @@ package immortan.sqlite
 
 import immortan.{ChannelBag, ChannelTable, HostedCommits, HtlcInfoTable}
 import fr.acinq.eclair.channel.{NormalCommits, PersistentChannelData}
+import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.wire.ChannelCodecs
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.CltvExpiry
@@ -25,8 +26,7 @@ class SQLiteChannel(db: DBInterface) extends ChannelBag {
   override def hide(commitments: NormalCommits): Unit =
     db.change(ChannelTable.hideSql, commitments.channelId.toHex)
 
-  override def putHtlcInfo(channelId: ByteVector32, commitNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit =
-    db.change(HtlcInfoTable.newSql, channelId.toHex, commitNumber: java.lang.Long, paymentHash.toArray, cltvExpiry.toLong: java.lang.Long)
+  // HTLC infos
 
   override def htlcInfosForChan(channelId: ByteVector32, commitNumer: Long): Iterable[ChannelBag.CltvAndPaymentHash] =
     db.select(HtlcInfoTable.selectAllSql, channelId.toHex, commitNumer.toString) iterable { rc =>
@@ -34,4 +34,11 @@ class SQLiteChannel(db: DBInterface) extends ChannelBag {
       val cltvExpiry = CltvExpiry(rc int HtlcInfoTable.cltvExpiry)
       ChannelBag.CltvAndPaymentHash(paymentHash, cltvExpiry)
     }
+
+  override def putHtlcInfo(channelId: ByteVector32, commitNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit =
+    db.change(HtlcInfoTable.newSql, channelId.toHex, commitNumber: java.lang.Long, paymentHash.toArray, cltvExpiry.toLong: java.lang.Long)
+
+  override def putHtlcInfos(htlcs: Seq[DirectedHtlc], channelId: ByteVector32, commitNumber: Long): Unit = db txWrap {
+    for (htlc <- htlcs) putHtlcInfo(channelId, commitNumber, htlc.add.paymentHash, htlc.add.cltvExpiry)
+  }
 }
