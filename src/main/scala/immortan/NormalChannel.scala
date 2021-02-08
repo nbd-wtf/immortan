@@ -19,7 +19,7 @@ import scodec.bits.ByteVector
 
 
 object NormalChannel {
-  def make(initListeners: Set[ChannelListener], normalData: HasNormalCommitments, cw: ChainWallet, bag: ChannelBag): NormalChannel = new NormalChannel {
+  def make(initListeners: Set[ChannelListener], normalData: HasNormalCommitments, cw: ChainWallet, bag: ChannelBag): NormalChannel = new NormalChannel(bag) {
     def SEND(messages: LightningMessage *): Unit = CommsTower.sendMany(messages, normalData.commitments.announce.nodeSpecificPair)
     def STORE(normalData1: PersistentChannelData): PersistentChannelData = bag.put(normalData1)
     var chainWallet: ChainWallet = cw
@@ -28,7 +28,7 @@ object NormalChannel {
   }
 }
 
-abstract class NormalChannel extends Channel with NormalChannelHandler { me =>
+abstract class NormalChannel(bag: ChannelBag) extends Channel with NormalChannelHandler { me =>
   val receiver: ActorRef = LNParams.system actorOf Props(new Receiver)
   var chainWallet: ChainWallet
 
@@ -100,7 +100,7 @@ abstract class NormalChannel extends Channel with NormalChannelHandler { me =>
 
           chainWallet.watcher ! WatchSpent(receiver, commits.commitInput.outPoint.txid, commits.commitInput.outPoint.index.toInt, commits.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
           chainWallet.watcher ! WatchConfirmed(receiver, commits.commitInput.outPoint.txid, commits.commitInput.txOut.publicKeyScript, LNParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
-          STORE_BECOME_SEND(DATA_WAIT_FOR_FUNDING_CONFIRMED(commits, Some(wait.fundingTx), System.currentTimeMillis, Left(wait.lastSent), deferred = None), WAIT_FUNDING_DONE)
+          StoreBecomeSend(DATA_WAIT_FOR_FUNDING_CONFIRMED(commits, Some(wait.fundingTx), System.currentTimeMillis, Left(wait.lastSent), deferred = None), WAIT_FUNDING_DONE)
 
           chainWallet.wallet.commit(wait.fundingTx) onComplete {
             case Success(false) => process(BITCOIN_FUNDING_PUBLISH_FAILED)
@@ -154,7 +154,7 @@ abstract class NormalChannel extends Channel with NormalChannelHandler { me =>
 
         chainWallet.watcher ! WatchSpent(receiver, commits.commitInput.outPoint.txid, commits.commitInput.outPoint.index.toInt, commits.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
         chainWallet.watcher ! WatchConfirmed(receiver, commits.commitInput.outPoint.txid, commits.commitInput.txOut.publicKeyScript, LNParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
-        STORE_BECOME_SEND(DATA_WAIT_FOR_FUNDING_CONFIRMED(commits, None, System.currentTimeMillis, Right(fundingSigned), deferred = None), WAIT_FUNDING_DONE, fundingSigned)
+        StoreBecomeSend(DATA_WAIT_FOR_FUNDING_CONFIRMED(commits, None, System.currentTimeMillis, Right(fundingSigned), deferred = None), WAIT_FUNDING_DONE, fundingSigned)
 
       // AWAITING CONFIRMATION
 
@@ -168,7 +168,7 @@ abstract class NormalChannel extends Channel with NormalChannelHandler { me =>
           val fundingLocked = FundingLocked(wait.channelId, nextPerCommitmentPoint)
 
           val data1 = DATA_WAIT_FOR_FUNDING_LOCKED(wait.commitments, shortChannelId, fundingLocked)
-          STORE_BECOME_SEND(data1, WAIT_FUNDING_DONE, fundingLocked)
+          StoreBecomeSend(data1, WAIT_FUNDING_DONE, fundingLocked)
           wait.deferred.foreach(process)
         }
 
@@ -180,10 +180,20 @@ abstract class NormalChannel extends Channel with NormalChannelHandler { me =>
 
       case (wait: DATA_WAIT_FOR_FUNDING_LOCKED, locked: FundingLocked, WAIT_FUNDING_DONE) =>
         val commits1 = wait.commitments.modify(_.remoteNextCommitInfo) setTo Right(locked.nextPerCommitmentPoint)
-        STORE_BECOME_SEND(DATA_NORMAL(commits1, wait.shortChannelId), OPEN)
+        StoreBecomeSend(DATA_NORMAL(commits1, wait.shortChannelId), OPEN)
 
       // MAIN LOOP
 
+      case (norm: DATA_NORMAL, CMD_SIGN, OPEN)
+        if NormalCommits.localHasChanges(norm.commitments) &&
+          norm.commitments.remoteNextCommitInfo.isRight =>
+
+        val (commits1, commitSig) = NormalCommits.sendCommit(norm.commitments)
+        val nextRemoteCommit = commits1.remoteNextCommitInfo.left.get.nextRemoteCommit
+        val trimmedOutgoing = Transactions.trimOfferedHtlcs(norm.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, norm.commitments.channelVersion.commitmentFormat)
+        val trimmedIncoming = Transactions.trimReceivedHtlcs(norm.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, norm.commitments.channelVersion.commitmentFormat)
+        for (htlc <- trimmedOutgoing ++ trimmedIncoming) bag.putHtlcInfo(norm.channelId, nextRemoteCommit.index, htlc.add.paymentHash, htlc.add.cltvExpiry)
+        StoreBecomeSend(norm.copy(commitments = commits1), OPEN, commitSig)
 
       // RESTORING FROM STORED DATA
 
@@ -216,8 +226,7 @@ abstract class NormalChannel extends Channel with NormalChannelHandler { me =>
             }
 
           case data1: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
-            val ensureConfirmed = GetTxWithMeta(commitInput.outPoint.txid)
-            chainWallet.watcher ! ensureConfirmed
+            chainWallet.watcher ! GetTxWithMeta(commitInput.outPoint.txid)
             BECOME(data1, SLEEPING)
 
           case data1 =>

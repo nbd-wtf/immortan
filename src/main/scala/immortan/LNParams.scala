@@ -294,9 +294,16 @@ trait PaymentDBUpdater {
   def updStatusIncoming(add: UpdateAddHtlc, status: String): Unit
 }
 
+object ChannelBag {
+  case class CltvAndPaymentHash(paymentHash: ByteVector32, cltvExpiry: CltvExpiry)
+}
+
 trait ChannelBag {
   def all: List[PersistentChannelData]
   def hide(commitments: NormalCommits): Unit
   def delete(commitments: HostedCommits): Unit
   def put(data: PersistentChannelData): PersistentChannelData
+
+  def putHtlcInfo(channelId: ByteVector32, commitNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit
+  def htlcInfosForChan(channelId: ByteVector32, commitNumer: Long): Iterable[ChannelBag.CltvAndPaymentHash]
 }

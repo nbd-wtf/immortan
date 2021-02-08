@@ -20,7 +20,6 @@ import fr.acinq.eclair._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.wire._
 import fr.acinq.bitcoin.Script._
-
 import scala.concurrent.duration._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.transactions.Scripts._
@@ -28,15 +27,14 @@ import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Transactions._
 
 import scala.util.{Success, Try}
+import immortan.{ChannelBag, LNParams, NodeAnnouncementExt}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw, FeerateTolerance}
 import fr.acinq.eclair.blockchain.EclairWallet
-import fr.acinq.eclair.blockchain.electrum.db.HtlcInfoDb
 import fr.acinq.eclair.crypto.Generators
 import scodec.bits.ByteVector
-
 import scala.concurrent.Await
-import immortan.{LNParams, NodeAnnouncementExt}
+
 
 /**
  * Created by PM on 20/05/2016.
@@ -598,7 +596,7 @@ object Helpers {
      *
      * @return a [[RevokedCommitPublished]] object containing penalty transactions if the tx is a revoked commitment
      */
-    def claimRevokedRemoteCommitTxOutputs(commitments: NormalCommits, tx: Transaction, db: HtlcInfoDb, feeEstimator: FeeEstimator, feeTargets: FeeTargets): Option[RevokedCommitPublished] = {
+    def claimRevokedRemoteCommitTxOutputs(commitments: NormalCommits, tx: Transaction, db: ChannelBag, feeEstimator: FeeEstimator, feeTargets: FeeTargets): Option[RevokedCommitPublished] = {
       require(tx.txIn.size == 1, "commitment tx should have 1 input")
       val channelKeyPath = commitments.announce.keyPath(commitments.localParams)
       val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn.head.sequence, tx.lockTime)
@@ -648,7 +646,7 @@ object Helpers {
           }
 
           // we retrieve the informations needed to rebuild htlc scripts
-          val htlcInfos = db.allForChan(commitments.channelId, txnumber)
+          val htlcInfos = db.htlcInfosForChan(commitments.channelId, txnumber)
           val htlcsRedeemScripts = (
             htlcInfos.map(item => Scripts.htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(item.paymentHash), item.cltvExpiry, commitments.channelVersion.commitmentFormat)) ++
               htlcInfos.map(item => Scripts.htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(item.paymentHash), commitments.channelVersion.commitmentFormat))

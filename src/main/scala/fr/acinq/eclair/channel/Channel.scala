@@ -136,7 +136,7 @@ trait NormalChannelHandler { me: NormalChannel =>
           // would punish us by taking all the funds in the channel
           val exc = PleasePublishYourCommitment(d.channelId)
           val error = Error(d.channelId, exc.getMessage)
-          STORE_BECOME_SEND(DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish), CLOSING, error)
+          StoreBecomeSend(DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish), CLOSING, error)
         } else {
           // they lied! the last per_commitment_secret they claimed to have received from us is invalid
           throw InvalidRevokedCommitProof(d.channelId, d.commitments.localCommit.index, nextRemoteRevocationNumber, yourLastPerCommitmentSecret)
@@ -148,7 +148,7 @@ trait NormalChannelHandler { me: NormalChannel =>
         // not that if they don't comply, we could publish our own commitment (it is not stale, otherwise we would be in the case above)
         val exc = PleasePublishYourCommitment(d.channelId)
         val error = Error(d.channelId, exc.getMessage)
-        STORE_BECOME_SEND(DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish), CLOSING, error)
+        StoreBecomeSend(DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish), CLOSING, error)
       case _ =>
         // normal case, our data is up-to-date
         if (channelReestablish.nextLocalCommitmentNumber == 1 && d.commitments.localCommit.index == 0) {
@@ -171,11 +171,11 @@ trait NormalChannelHandler { me: NormalChannel =>
   def handleNegotiationsSync(d: DATA_NEGOTIATING): Unit = if (d.commitments.localParams.isFunder) {
     // we could use the last closing_signed we sent, but network fees may have changed while we were offline so it is better to restart from scratch
     val (closingTx, closingSigned) = Closing.makeFirstClosingTx(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, LNParams.onChainFeeConf.feeEstimator, LNParams.onChainFeeConf.feeTargets)
-    STORE_BECOME_SEND(d.copy(closingTxProposed = d.closingTxProposed :+ List(ClosingTxProposed(closingTx.tx, closingSigned))), NEGOTIATIONS, d.localShutdown, closingSigned)
+    StoreBecomeSend(d.copy(closingTxProposed = d.closingTxProposed :+ List(ClosingTxProposed(closingTx.tx, closingSigned))), NEGOTIATIONS, d.localShutdown, closingSigned)
   } else {
     // we start a new round of negotiation
     val closingTxProposed1 = if (d.closingTxProposed.last.isEmpty) d.closingTxProposed else d.closingTxProposed :+ Nil
-    STORE_BECOME_SEND(d.copy(closingTxProposed = closingTxProposed1), NEGOTIATIONS, d.localShutdown)
+    StoreBecomeSend(d.copy(closingTxProposed = closingTxProposed1), NEGOTIATIONS, d.localShutdown)
   }
 
   def handleSync(channelReestablish: ChannelReestablish, d: HasNormalCommitments): (NormalCommits, Queue[LightningMessage]) = {

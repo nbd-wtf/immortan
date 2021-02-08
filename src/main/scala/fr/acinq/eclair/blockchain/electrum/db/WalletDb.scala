@@ -34,12 +34,3 @@ trait WalletDb extends HeaderDb {
   def persist(data: PersistentData): Unit
   def readPersistentData: Option[PersistentData]
 }
-
-object HtlcInfoDb {
-  case class CltvAndPaymentHash(paymentHash: ByteVector32, cltvExpiry: CltvExpiry)
-}
-
-trait HtlcInfoDb {
-  def put(channelId: ByteVector32, commitNumber: Int, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit
-  def allForChan(channelId: ByteVector32, commitNumer: Long): Iterable[HtlcInfoDb.CltvAndPaymentHash]
-}
