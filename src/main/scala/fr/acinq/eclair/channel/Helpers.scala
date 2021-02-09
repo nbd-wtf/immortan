@@ -61,7 +61,7 @@ object Helpers {
     if (open.toSelfDelay > LNParams.maxToLocalDelay) return Some(ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, LNParams.maxToLocalDelay))
 
     // BOLT #2: The receiving node MUST fail the channel if: max_accepted_htlcs is greater than 483.
-    if (open.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) return Some(InvalidMaxAcceptedHtlcs(open.temporaryChannelId, open.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS))
+    if (open.maxAcceptedHtlcs > LNParams.maxAcceptedHtlcs) return Some(InvalidMaxAcceptedHtlcs(open.temporaryChannelId, open.maxAcceptedHtlcs, LNParams.maxAcceptedHtlcs))
 
     // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing.
     if (isFeeTooSmall(open.feeratePerKw)) return Some(FeerateTooSmall(open.temporaryChannelId, open.feeratePerKw))
@@ -81,7 +81,7 @@ object Helpers {
     if (isFeeDiffTooHigh(localFeeratePerKw, open.feeratePerKw, LNParams.onChainFeeConf.maxFeerateMismatchFor(remoteNodeId))) return Some(FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw))
     // only enforce dust limit check on mainnet
     if (LNParams.chainHash == Block.LivenetGenesisBlock.hash) {
-      if (open.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) return Some(DustLimitTooSmall(open.temporaryChannelId, open.dustLimitSatoshis, Channel.MIN_DUSTLIMIT))
+      if (open.dustLimitSatoshis < LNParams.minDustLimit) return Some(DustLimitTooSmall(open.temporaryChannelId, open.dustLimitSatoshis, LNParams.minDustLimit))
     }
 
     // we don't check that the funder's amount for the initial commitment transaction is sufficient for full fee payment
@@ -97,10 +97,10 @@ object Helpers {
    * Called by the funder
    */
   def validateParamsFunder(open: OpenChannel, accept: AcceptChannel): Option[ChannelException] = {
-    if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) return Some(InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS))
+    if (accept.maxAcceptedHtlcs > LNParams.maxAcceptedHtlcs) return Some(InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, LNParams.maxAcceptedHtlcs))
     // only enforce dust limit check on mainnet
     if (LNParams.chainHash == Block.LivenetGenesisBlock.hash) {
-      if (accept.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) return Some(DustLimitTooSmall(accept.temporaryChannelId, accept.dustLimitSatoshis, Channel.MIN_DUSTLIMIT))
+      if (accept.dustLimitSatoshis < LNParams.minDustLimit) return Some(DustLimitTooSmall(accept.temporaryChannelId, accept.dustLimitSatoshis, LNParams.minDustLimit))
     }
 
     // BOLT #2: The receiving node MUST fail the channel if: dust_limit_satoshis is greater than channel_reserve_satoshis.

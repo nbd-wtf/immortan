@@ -26,16 +26,11 @@ import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, UInt64}
  * Created by PM on 11/04/2017.
  */
 
-// @formatter:off
-sealed trait ChannelOpenError
-case class LocalError(t: Throwable) extends ChannelOpenError
-case class RemoteError(e: Error) extends ChannelOpenError
-// @formatter:on
+class ChannelException(val channelId: ByteVector32, val message: String) extends RuntimeException(message) // Fatal by deafult
 
-class ChannelException(val channelId: ByteVector32, message: String) extends RuntimeException(message)
+case class CMDException(reason: ChannelException, cmd: Command) extends ChannelException(reason.channelId, reason.message) // Non-fatal by default
 
 // @formatter:off
-case class DebugTriggeredException             (override val channelId: ByteVector32) extends ChannelException(channelId, "debug-mode triggered failure")
 case class InvalidChainHash                    (override val channelId: ByteVector32, local: ByteVector32, remote: ByteVector32) extends ChannelException(channelId, s"invalid chainHash (local=$local remote=$remote)")
 case class InvalidFundingAmount                (override val channelId: ByteVector32, fundingAmount: Satoshi, min: Satoshi, max: Satoshi) extends ChannelException(channelId, s"invalid funding_satoshis=$fundingAmount (min=$min max=$max)")
 case class InvalidPushAmount                   (override val channelId: ByteVector32, pushAmount: MilliSatoshi, max: MilliSatoshi) extends ChannelException(channelId, s"invalid pushAmount=$pushAmount (max=$max)")
@@ -90,4 +85,3 @@ case class RevocationSyncError                 (override val channelId: ByteVect
 case class InvalidFailureCode                  (override val channelId: ByteVector32) extends ChannelException(channelId, "UpdateFailMalformedHtlc message doesn't have BADONION bit set")
 case class PleasePublishYourCommitment         (override val channelId: ByteVector32) extends ChannelException(channelId, "please publish your local commitment")
 // @formatter:on
-case class HtlcAddImpossible(reason: ChannelException, cmd: CMD_ADD_HTLC) extends RuntimeException

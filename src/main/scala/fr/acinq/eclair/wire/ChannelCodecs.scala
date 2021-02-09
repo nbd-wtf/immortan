@@ -249,11 +249,6 @@ object ChannelCodecs {
       ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
       ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec)))).as[DATA_NORMAL]
 
-  val DATA_SHUTDOWN_Codec: Codec[DATA_SHUTDOWN] = (
-    ("commitments" | commitmentsCodec) ::
-      ("localShutdown" | lengthDelimited(shutdownCodec)) ::
-      ("remoteShutdown" | lengthDelimited(shutdownCodec))).as[DATA_SHUTDOWN]
-
   val DATA_NEGOTIATING_Codec: Codec[DATA_NEGOTIATING] = (
     ("commitments" | commitmentsCodec) ::
       ("localShutdown" | lengthDelimited(shutdownCodec)) ::
@@ -296,7 +291,6 @@ object ChannelCodecs {
       .typecase(0x20, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
       .typecase(0x21, DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
       .typecase(0x22, DATA_NORMAL_Codec)
-      .typecase(0x23, DATA_SHUTDOWN_Codec)
       .typecase(0x24, DATA_NEGOTIATING_Codec)
       .typecase(0x25, DATA_CLOSING_Codec)
       .typecase(0x26, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec)

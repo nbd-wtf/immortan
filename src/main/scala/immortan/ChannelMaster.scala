@@ -339,8 +339,8 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
         val atTimes1 = data.nodeFailedWithUnknownUpdateTimes.updated(nodeId, newNodeFailedTimes)
         become(data.copy(nodeFailedWithUnknownUpdateTimes = atTimes1), state)
 
-      case (error: HtlcAddImpossible, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
-        data.payments.get(error.cmd.paymentHash).foreach(_ doProcess error)
+      case (exception @ CMDException(_, cmd: CMD_ADD_HTLC), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
+        data.payments.get(cmd.paymentHash).foreach(_ doProcess exception)
         self process CMDAskForRoute
 
       case (fulfill: UpdateFulfillHtlc, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
@@ -366,7 +366,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
 
     override def fulfillReceived(fulfill: UpdateFulfillHtlc): Unit = self process fulfill
 
-    override def onException: PartialFunction[Malfunction, Unit] = { case (_, error: HtlcAddImpossible) => self process error }
+    override def onException: PartialFunction[Malfunction, Unit] = { case (_, commandException: CMDException) => self process commandException }
 
     override def onBecome: PartialFunction[Transition, Unit] = { case (_, _, _, SLEEPING | SUSPENDED, OPEN) => self process CMDChanGotOnline }
 
@@ -431,7 +431,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
     def doProcess(msg: Any): Unit = (msg, state) match {
       case (cmd: CMD_SEND_MPP, INIT | ABORTED) => assignToChans(PaymentMaster.currentSendable, PaymentSenderData(cmd, Map.empty), cmd.totalAmount)
 
-      case (localError: HtlcAddImpossible, ABORTED) => self abortAndNotify data.withoutPartId(localError.cmd.partId)
+      case (CMDException(_, cmd: CMD_ADD_HTLC), ABORTED) => self abortAndNotify data.withoutPartId(cmd.partId)
 
       case (err: RemoteFailed, ABORTED) => self abortAndNotify data.withoutPartId(err.partId)
 
@@ -480,7 +480,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
           wait.cnc.chan process cmdAdd
         }
 
-      case (HtlcAddImpossible(reason, cmd), PENDING) =>
+      case (CMDException(reason, cmd: CMD_ADD_HTLC), PENDING) =>
         data.parts.values collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isDefined && wait.partId == cmd.partId =>
           val anotherCncOpt = PaymentMaster currentSendableExcept wait collectFirst { case (cnc, chanSendable) if chanSendable >= wait.amount => cnc }
 

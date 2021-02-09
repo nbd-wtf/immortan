@@ -38,19 +38,24 @@ object LNParams {
   val cltvRejectThreshold: Int = 144 // Reject incoming payment if CLTV expiry is closer than this to current chain tip when HTLC arrives
   val incomingPaymentCltvExpiry: Int = 144 + 72 // Ask payer to set final CLTV expiry to payer's current chain tip + this many blocks
 
-  val chainHash: ByteVector32 = Block.LivenetGenesisBlock.hash
+  val maxCltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(1008)
+  val maxToLocalDelay: CltvExpiryDelta = CltvExpiryDelta(2016)
+  val maxFundingSatoshis: Satoshi = Satoshi(10000000000L)
+  val maxNegotiationIterations: Int = 50
+  val maxChainConnectionsCount: Int = 5
+  val maxReserveToFundingRatio = 0.05
+  val maxAcceptedHtlcs: Int = 483
+
+  val minCltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(18)
   val minHostedOnChainRefund: Satoshi = Satoshi(1000000L)
   val minPayment: MilliSatoshi = MilliSatoshi(5000L)
-  val minHostedLiabilityBlockdays = 365
-
-  val maxChainConnectionsCount: Int = 5
-
-  val maxToLocalDelay: CltvExpiryDelta = CltvExpiryDelta(2016)
-  val maxFundingSatoshis: Satoshi = Satoshi(10000000000L) // 100 BTC
-  val minFundingSatoshis: Satoshi = Satoshi(100000L) // 100k sat
-  val maxReserveToFundingRatio = 0.05 // %
-  val reserveToFundingRatio = 0.0025 // %
+  val minFundingSatoshis: Satoshi = Satoshi(100000L)
+  val minHostedLiabilityBlockdays: Int = 365
+  val minDustLimit: Satoshi = Satoshi(546L)
   val minDepthBlocks: Int = 3
+
+  val chainHash: ByteVector32 = Block.LivenetGenesisBlock.hash
+  val reserveToFundingRatio = 0.0025 // %
 
   val (normInit, phcSyncInit, hcInit) = {
     val networks: InitTlv = InitTlv.Networks(chainHash :: Nil)

@@ -109,12 +109,8 @@ abstract class HostedChannel extends Channel { me =>
         if (isNotResolvedYet) BECOME(hc.addRemoteProposal(fail), OPEN) else throw UnknownHtlcId(hc.channelId, fail.id)
 
 
-      case (hc: HostedCommits, cmd: CMD_ADD_HTLC, notOpenState) if OPEN != notOpenState =>
-        val unavailable = ChannelUnavailable(hc.channelId)
-        throw HtlcAddImpossible(unavailable, cmd)
-
-
-      case (hc: HostedCommits, cmd: CMD_ADD_HTLC, OPEN) =>
+      case (hc: HostedCommits, cmd: CMD_ADD_HTLC, state) =>
+        if (OPEN != state) throw CMDException(ChannelUnavailable(hc.channelId), cmd)
         val (hostedCommits1, updateAddHtlcMsg) = hc.sendAdd(cmd)
         BECOME(hostedCommits1, OPEN)
         SEND(updateAddHtlcMsg)

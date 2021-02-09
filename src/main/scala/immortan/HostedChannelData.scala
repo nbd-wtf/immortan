@@ -50,10 +50,10 @@ case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: La
     val add = UpdateAddHtlc(channelId, nextTotalLocal + 1, cmd.firstAmount, cmd.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet, cmd.partId)
     val commits1: HostedCommits = addLocalProposal(add)
 
-    if (commits1.nextLocalSpec.outgoingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) throw HtlcAddImpossible(TooManyAcceptedHtlcs(channelId), cmd)
-    if (commits1.nextLocalSpec.outgoingAdds.foldLeft(0L.msat)(_ + _.amountMsat) > maxInFlight) throw HtlcAddImpossible(HtlcValueTooHighInFlight(channelId), cmd)
-    if (commits1.nextLocalSpec.toLocal < 0L.msat) throw HtlcAddImpossible(InsufficientFunds(channelId), cmd)
-    if (cmd.payload.amount < minSendable) throw HtlcAddImpossible(HtlcValueTooSmall(channelId), cmd)
+    if (commits1.nextLocalSpec.outgoingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) throw CMDException(TooManyAcceptedHtlcs(channelId), cmd)
+    if (commits1.nextLocalSpec.outgoingAdds.foldLeft(0L.msat)(_ + _.amountMsat) > maxInFlight) throw CMDException(HtlcValueTooHighInFlight(channelId), cmd)
+    if (commits1.nextLocalSpec.toLocal < 0L.msat) throw CMDException(InsufficientFunds(channelId), cmd)
+    if (cmd.payload.amount < minSendable) throw CMDException(HtlcValueTooSmall(channelId), cmd)
     (commits1, add)
   }
 

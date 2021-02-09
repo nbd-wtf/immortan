@@ -20,7 +20,6 @@ object Channel {
 
   // All states below are persisted
   val WAIT_FUNDING_DONE = "WAIT-FUNDING-DONE"
-  val NEGOTIATIONS = "NEGOTIATIONS"
   val CLOSING = "CLOSING"
   val OPEN = "OPEN"
 

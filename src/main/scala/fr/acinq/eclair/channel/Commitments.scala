@@ -27,7 +27,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, DeterministicWallet, SatoshiLong}
 import fr.acinq.eclair.payment.OutgoingPacket
-import immortan.NodeAnnouncementExt
+import immortan.{LNParams, NodeAnnouncementExt}
 
 
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage] = Nil) {
@@ -238,20 +238,20 @@ object NormalCommits {
    */
   def sendAdd(commitments: NormalCommits, cmd: CMD_ADD_HTLC, blockHeight: Long, feeConf: OnChainFeeConf): (NormalCommits, UpdateAddHtlc) = {
     // we don't want to use too high a refund timeout, because our funds will be locked during that time if the payment is never fulfilled
-    val maxExpiry = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry(blockHeight)
+    val maxExpiry = LNParams.maxCltvExpiryDelta.toCltvExpiry(blockHeight)
     if (cmd.cltvExpiry >= maxExpiry) {
-      throw HtlcAddImpossible(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockCount = blockHeight), cmd)
+      throw CMDException(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockCount = blockHeight), cmd)
     }
 
     if (cmd.firstAmount < commitments.minSendable) {
-      throw HtlcAddImpossible(HtlcValueTooSmall(commitments.channelId), cmd)
+      throw CMDException(HtlcValueTooSmall(commitments.channelId), cmd)
     }
 
     // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
     // we need to verify that we're not disagreeing on feerates anymore before offering new HTLCs
     val localFeeratePerKw = feeConf.feeEstimator.getFeeratePerKw(target = feeConf.feeTargets.commitmentBlockTarget)
     if (Helpers.isFeeDiffTooHigh(localFeeratePerKw, commitments.localCommit.spec.feeratePerKw, feeConf.maxFeerateMismatchFor(commitments.announce.na.nodeId))) {
-      throw HtlcAddImpossible(FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = commitments.localCommit.spec.feeratePerKw), cmd)
+      throw CMDException(FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = commitments.localCommit.spec.feeratePerKw), cmd)
     }
 
     // let's compute the current commitment *as seen by them* with this change taken into account
@@ -275,19 +275,19 @@ object NormalCommits {
     val missingForSender = reduced.toRemote - commitments1.remoteParams.channelReserve - (if (commitments1.localParams.isFunder) fees.max(funderFeeBuffer.truncateToSatoshi) else 0.sat)
     val missingForReceiver = reduced.toLocal - commitments1.localParams.channelReserve - (if (commitments1.localParams.isFunder) 0.sat else fees)
     if (missingForSender < 0.msat) {
-      throw HtlcAddImpossible(InsufficientFunds(commitments.channelId), cmd)
+      throw CMDException(InsufficientFunds(commitments.channelId), cmd)
     } else if (missingForReceiver < 0.msat) {
       if (commitments.localParams.isFunder) {
         // receiver is fundee; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
       } else {
-        throw HtlcAddImpossible(RemoteCannotAffordFeesForNewHtlc(commitments.channelId, amount = cmd.firstAmount, missing = -missingForReceiver.truncateToSatoshi), cmd)
+        throw CMDException(RemoteCannotAffordFeesForNewHtlc(commitments.channelId, amount = cmd.firstAmount, missing = -missingForReceiver.truncateToSatoshi), cmd)
       }
     }
 
     // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since outgoingHtlcs is a Set).
     val htlcValueInFlight = outgoingHtlcs.foldLeft(0L.msat) { case (accumulator, outAdd) => accumulator + outAdd.amountMsat }
-    if (commitments1.maxInFlight < htlcValueInFlight) throw HtlcAddImpossible(HtlcValueTooHighInFlight(commitments.channelId), cmd)
-    if (outgoingHtlcs.size > commitments1.remoteParams.maxAcceptedHtlcs) throw HtlcAddImpossible(TooManyAcceptedHtlcs(commitments.channelId), cmd)
+    if (commitments1.maxInFlight < htlcValueInFlight) throw CMDException(HtlcValueTooHighInFlight(commitments.channelId), cmd)
+    if (outgoingHtlcs.size > commitments1.remoteParams.maxAcceptedHtlcs) throw CMDException(TooManyAcceptedHtlcs(commitments.channelId), cmd)
     (commitments1, add)
   }
 

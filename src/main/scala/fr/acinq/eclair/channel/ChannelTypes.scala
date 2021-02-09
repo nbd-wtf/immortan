@@ -20,8 +20,8 @@ import scodec.bits._
 import fr.acinq.eclair.wire._
 import scodec.bits.{BitVector, ByteVector}
 import fr.acinq.eclair.crypto.Sphinx.{DecryptedPacket, PacketAndSecrets}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitTx, CommitmentFormat, DefaultCommitmentFormat}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.CommitmentSpec
@@ -151,14 +151,12 @@ final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: NormalCommits, shortC
 
 final case class DATA_NORMAL(commitments: NormalCommits, shortChannelId: ShortChannelId, localShutdown: Option[Shutdown] = None, remoteShutdown: Option[Shutdown] = None) extends ChannelData with HasNormalCommitments
 
-final case class DATA_SHUTDOWN(commitments: NormalCommits, localShutdown: Shutdown, remoteShutdown: Shutdown) extends ChannelData with HasNormalCommitments
-
 final case class DATA_NEGOTIATING(commitments: NormalCommits, localShutdown: Shutdown, remoteShutdown: Shutdown, closingTxProposed: List[List[ClosingTxProposed]],
                                   bestUnpublishedClosingTxOpt: Option[Transaction] = None) extends ChannelData with HasNormalCommitments {
 
-  require(!commitments.localParams.isFunder || closingTxProposed.forall(_.nonEmpty), "funder must have at least one closing signature for every negotation attempt because it initiates the closing")
+  require(!commitments.localParams.isFunder || closingTxProposed.forall(_.nonEmpty), "Funder must have at least one closing signature for every negotation attempt because it initiates the closing")
 
-  require(closingTxProposed.nonEmpty, "there must always be a list for the current negotiation")
+  require(closingTxProposed.nonEmpty, "There must always be a list for the current negotiation")
 }
 
 final case class DATA_CLOSING(commitments: NormalCommits, fundingTx: Option[Transaction], waitingSince: Long, mutualCloseProposed: List[Transaction], mutualClosePublished: List[Transaction] = Nil,

@@ -14,6 +14,7 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.transactions.Transactions.TxOwner
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.crypto.ShaChain
 import scodec.bits.ByteVector
 
@@ -184,9 +185,69 @@ abstract class NormalChannel(bag: ChannelBag) extends Channel with NormalChannel
 
       // MAIN LOOP
 
+      // Works for both DATA_NORMAL and DATA_SHUTDOWN
+      case (some: HasNormalCommitments, ann: NodeAnnouncement, OPEN | SLEEPING)
+        if some.commitments.announce.na.nodeId == ann.nodeId && Announcements.checkSig(ann) =>
+        // Refresh remote node announcement without triggering of listeners
+        val data2 = some.modify(_.commitments.announce.na).setTo(ann)
+        data = STORE(data2)
+
+
+      case (norm: DATA_NORMAL, upd: ChannelUpdate, OPEN | SLEEPING)
+        if norm.commitments.updateOpt.forall(upd.timestamp > _.timestamp) &&
+          Announcements.checkSig(upd)(norm.commitments.announce.na.nodeId) &&
+          upd.shortChannelId == norm.shortChannelId =>
+
+          // Refresh remote channel update without triggering of listeners
+          val data2 = norm.modify(_.commitments.updateOpt).setTo(upd.toSome)
+          data = STORE(data2)
+
+
+      // We may schedule shutdown while channel is offline
+      case (norm: DATA_NORMAL, cmd: CMD_CLOSE, OPEN | SLEEPING) =>
+        val localScriptPubKey = cmd.scriptPubKey.getOrElse(norm.commitments.localParams.defaultFinalScriptPubKey)
+        val hasLocalHasUnsignedOutgoingHtlcs = NormalCommits.localHasUnsignedOutgoingHtlcs(norm.commitments)
+        val isValidFinalScriptPubkey = Helpers.Closing.isValidFinalScriptPubkey(localScriptPubKey)
+        val shutdown = Shutdown(norm.channelId, localScriptPubKey)
+
+        if (hasLocalHasUnsignedOutgoingHtlcs) CMDException(CannotCloseWithUnsignedOutgoingHtlcs(norm.channelId), cmd)
+        else if (norm.localShutdown.isDefined) CMDException(ClosingAlreadyInProgress(norm.channelId), cmd)
+        else if (!isValidFinalScriptPubkey) CMDException(InvalidFinalScript(norm.channelId), cmd)
+        else StoreBecomeSend(norm.copy(localShutdown = shutdown.toSome), state, shutdown)
+
+
+      case (norm: DATA_NORMAL, cmd: CMD_ADD_HTLC, state) =>
+        if (OPEN != state || norm.localShutdown.isDefined || norm.remoteShutdown.isDefined) throw CMDException(ChannelUnavailable(norm.channelId), cmd)
+        val (commits1, updateAddHtlcMsg) = NormalCommits.sendAdd(norm.commitments, cmd, LNParams.blockCount.get, LNParams.onChainFeeConf)
+        BECOME(norm.copy(commitments = commits1), state)
+        SEND(updateAddHtlcMsg)
+        doProcess(CMD_SIGN)
+
+
+      case (norm: DATA_NORMAL, cmd: CMD_FULFILL_HTLC, OPEN)
+        if cmd.add.channelId == norm.channelId && norm.commitments.unansweredIncoming.contains(cmd.add) =>
+        val (commits1, fulfill) = NormalCommits.sendFulfill(norm.commitments, cmd)
+        BECOME(norm.copy(commitments = commits1), OPEN)
+        SEND(fulfill)
+
+
+      case (norm: DATA_NORMAL, cmd: CMD_FAIL_HTLC, OPEN)
+        if cmd.add.channelId == norm.channelId && norm.commitments.unansweredIncoming.contains(cmd.add) =>
+        val (commits1, fail) = NormalCommits.sendFail(norm.commitments, cmd, norm.commitments.announce.nodeSpecificPrivKey)
+        BECOME(norm.copy(commitments = commits1), OPEN)
+        SEND(fail)
+
+
+      case (norm: DATA_NORMAL, cmd: CMD_FAIL_MALFORMED_HTLC, OPEN)
+        if cmd.add.channelId == norm.channelId && norm.commitments.unansweredIncoming.contains(cmd.add) =>
+        val (commits1, malformed) = NormalCommits.sendFailMalformed(norm.commitments, cmd)
+        BECOME(norm.copy(commitments = commits1), OPEN)
+        SEND(malformed)
+
+
       case (norm: DATA_NORMAL, CMD_SIGN, OPEN)
-        if NormalCommits.localHasChanges(norm.commitments) &&
-          norm.commitments.remoteNextCommitInfo.isRight =>
+        // We have something to sign and remote unused pubKey, don't forget to store revoked HTLC data
+        if NormalCommits.localHasChanges(norm.commitments) && norm.commitments.remoteNextCommitInfo.isRight =>
 
         val (commits1, commitSig) = NormalCommits.sendCommit(norm.commitments)
         val nextRemoteCommit = commits1.remoteNextCommitInfo.left.get.nextRemoteCommit
@@ -194,6 +255,56 @@ abstract class NormalChannel(bag: ChannelBag) extends Channel with NormalChannel
         val trimmedIncoming = Transactions.trimReceivedHtlcs(norm.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, norm.commitments.channelVersion.commitmentFormat)
         bag.putHtlcInfos(trimmedOutgoing ++ trimmedIncoming, norm.channelId, nextRemoteCommit.index)
         StoreBecomeSend(norm.copy(commitments = commits1), OPEN, commitSig)
+
+
+      case (norm: DATA_NORMAL, CMD_SIGN, OPEN)
+        // We have nothing to sign so check for valid shutdown state, only consider this if we have nothing in-flight
+        if norm.remoteShutdown.isDefined && !NormalCommits.localHasUnsignedOutgoingHtlcs(norm.commitments) =>
+        val (data1, replies) = maybeStartNegotiations(norm, norm.remoteShutdown.get)
+        StoreBecomeSend(data1, OPEN, replies:_*)
+
+
+      case (norm: DATA_NORMAL, add: UpdateAddHtlc, OPEN) =>
+        val commits1 = NormalCommits.receiveAdd(norm.commitments, add, LNParams.onChainFeeConf)
+        BECOME(norm.copy(commitments = commits1), OPEN)
+
+
+      case (norm: DATA_NORMAL, fulfill: UpdateFulfillHtlc, OPEN) =>
+        val (commits1, _) = NormalCommits.receiveFulfill(norm.commitments, fulfill)
+        BECOME(norm.copy(commitments = commits1), OPEN)
+        events.fulfillReceived(fulfill)
+
+
+      case (norm: DATA_NORMAL, fail: UpdateFailHtlc, OPEN) =>
+        val (commits1, _) = NormalCommits.receiveFail(norm.commitments, fail)
+        BECOME(norm.copy(commitments = commits1), OPEN)
+
+
+      case (norm: DATA_NORMAL, malformed: UpdateFailMalformedHtlc, OPEN) =>
+        val (commits1, _) = NormalCommits.receiveFailMalformed(norm.commitments, malformed)
+        BECOME(norm.copy(commitments = commits1), OPEN)
+
+
+      case (norm: DATA_NORMAL, commitSig: CommitSig, OPEN) =>
+        val (commits1, revocation) = NormalCommits.receiveCommit(norm.commitments, commitSig)
+        StoreBecomeSend(norm.copy(commitments = commits1), OPEN, revocation)
+        events.stateUpdated(commits1)
+
+
+      case (norm: DATA_NORMAL, revocation: RevokeAndAck, OPEN) =>
+        val commits1 = NormalCommits.receiveRevocation(norm.commitments, revocation)
+        StoreBecomeSend(norm.copy(commitments = commits1), OPEN)
+        doProcess(CMD_SIGN)
+
+
+      case (norm: DATA_NORMAL, remoteFee: UpdateFee, OPEN) =>
+        val commits1 = NormalCommits.receiveFee(norm.commitments, remoteFee, LNParams.onChainFeeConf)
+        BECOME(norm.copy(commitments = commits1), OPEN)
+
+
+      case (norm: DATA_NORMAL, remote: Shutdown, OPEN) =>
+        val (data1, replies) = handleRemoteShutdown(norm, remote)
+        StoreBecomeSend(data1, OPEN, replies:_*)
 
       // RESTORING FROM STORED DATA
 
@@ -235,7 +346,7 @@ abstract class NormalChannel(bag: ChannelBag) extends Channel with NormalChannel
 
       // OFFLINE IN PERSISTENT STATES
 
-      case (_, CMD_SOCKET_OFFLINE, WAIT_FUNDING_DONE | NEGOTIATIONS | OPEN) => BECOME(data, SLEEPING)
+      case (_, CMD_SOCKET_OFFLINE, WAIT_FUNDING_DONE | OPEN) => BECOME(data, SLEEPING)
 
       // REESTABLISHMENT IN PERSISTENT STATES
 
@@ -256,22 +367,16 @@ abstract class NormalChannel(bag: ChannelBag) extends Channel with NormalChannel
       case (wait: DATA_WAIT_FOR_FUNDING_CONFIRMED, _: ChannelReestablish, SLEEPING) =>
         // We put back the watch (operation is idempotent) because corresponding event may have been already fired while we were in SLEEPING
         chainWallet.watcher ! WatchConfirmed(receiver, wait.commitments.commitInput.outPoint.txid, wait.commitments.commitInput.txOut.publicKeyScript, LNParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
-        BECOME(wait, state1 = OPEN)
+        BECOME(wait, OPEN)
 
 
       case (wait: DATA_WAIT_FOR_FUNDING_LOCKED, _: ChannelReestablish, SLEEPING) =>
-        BECOME(wait, state1 = OPEN)
         SEND(wait.lastSent)
+        BECOME(wait, OPEN)
 
 
       case (data1: DATA_NORMAL, reestablish: ChannelReestablish, SLEEPING) => handleNormalSync(data1, reestablish)
       case (data1: DATA_NEGOTIATING, _: ChannelReestablish, SLEEPING) => handleNegotiationsSync(data1)
-
-
-      case (data1: DATA_SHUTDOWN, reestablish: ChannelReestablish, SLEEPING) =>
-        val (commitments1, sendQueue) = handleSync(reestablish, data1)
-        BECOME(data1.copy(commitments = commitments1), state1 = OPEN)
-        SEND(sendQueue :+ data1.localShutdown:_*)
     }
 
     // Change has been processed without failures
