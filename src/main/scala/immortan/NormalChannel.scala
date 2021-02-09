@@ -29,7 +29,7 @@ object NormalChannel {
   }
 }
 
-abstract class NormalChannel(bag: ChannelBag) extends Channel with NormalChannelHandler { me =>
+abstract class NormalChannel(bag: ChannelBag) extends Channel with Handlers { me =>
   val receiver: ActorRef = LNParams.system actorOf Props(new Receiver)
   var chainWallet: ChainWallet
 
@@ -185,7 +185,6 @@ abstract class NormalChannel(bag: ChannelBag) extends Channel with NormalChannel
 
       // MAIN LOOP
 
-      // Works for both DATA_NORMAL and DATA_SHUTDOWN
       case (some: HasNormalCommitments, ann: NodeAnnouncement, OPEN | SLEEPING)
         if some.commitments.announce.na.nodeId == ann.nodeId && Announcements.checkSig(ann) =>
         // Refresh remote node announcement without triggering of listeners
@@ -249,12 +248,12 @@ abstract class NormalChannel(bag: ChannelBag) extends Channel with NormalChannel
         // We have something to sign and remote unused pubKey, don't forget to store revoked HTLC data
         if NormalCommits.localHasChanges(norm.commitments) && norm.commitments.remoteNextCommitInfo.isRight =>
 
-        val (commits1, commitSig) = NormalCommits.sendCommit(norm.commitments)
+        val (commits1, commitSigMessage) = NormalCommits.sendCommit(norm.commitments)
         val nextRemoteCommit = commits1.remoteNextCommitInfo.left.get.nextRemoteCommit
-        val trimmedOutgoing = Transactions.trimOfferedHtlcs(norm.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, norm.commitments.channelVersion.commitmentFormat)
-        val trimmedIncoming = Transactions.trimReceivedHtlcs(norm.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, norm.commitments.channelVersion.commitmentFormat)
-        bag.putHtlcInfos(trimmedOutgoing ++ trimmedIncoming, norm.channelId, nextRemoteCommit.index)
-        StoreBecomeSend(norm.copy(commitments = commits1), OPEN, commitSig)
+        val out = Transactions.trimOfferedHtlcs(norm.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, norm.commitments.channelVersion.commitmentFormat)
+        val in = Transactions.trimReceivedHtlcs(norm.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, norm.commitments.channelVersion.commitmentFormat)
+        StoreBecomeSend(norm.copy(commitments = commits1), OPEN, commitSigMessage)
+        bag.putHtlcInfos(out ++ in, norm.channelId, nextRemoteCommit.index)
 
 
       case (norm: DATA_NORMAL, CMD_SIGN, OPEN)

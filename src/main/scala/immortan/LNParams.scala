@@ -41,7 +41,7 @@ object LNParams {
   val maxCltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(1008)
   val maxToLocalDelay: CltvExpiryDelta = CltvExpiryDelta(2016)
   val maxFundingSatoshis: Satoshi = Satoshi(10000000000L)
-  val maxNegotiationIterations: Int = 50
+  val maxNegotiationIterations: Int = 20
   val maxChainConnectionsCount: Int = 5
   val maxReserveToFundingRatio = 0.05
   val maxAcceptedHtlcs: Int = 483

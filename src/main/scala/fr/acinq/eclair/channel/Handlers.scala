@@ -29,8 +29,7 @@ import scala.collection.immutable.Queue
  * Created by PM on 20/08/2015.
  */
 
-trait NormalChannelHandler { me: NormalChannel =>
-
+trait Handlers { me: NormalChannel =>
   def doPublish(closingTx: Transaction): Unit = {
     chainWallet.watcher ! WatchConfirmed(receiver, closingTx, LNParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(closingTx))
     chainWallet.watcher ! PublishAsap(closingTx)
