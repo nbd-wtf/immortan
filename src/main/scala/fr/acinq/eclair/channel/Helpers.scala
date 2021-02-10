@@ -392,17 +392,17 @@ object Helpers {
       (closingTx, closingSigned)
     }
 
-    def checkClosingSignature(commitments: NormalCommits, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, remoteClosingFee: Satoshi, remoteClosingSig: ByteVector64): Either[ChannelException, Transaction] = {
+    def checkClosingSignature(commitments: NormalCommits, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, remoteClosingFee: Satoshi, remoteClosingSig: ByteVector64): Transaction = {
       import commitments._
       val lastCommitFeeSatoshi = commitments.commitInput.txOut.amount - commitments.localCommit.publishableTxs.commitTx.tx.txOut.map(_.amount).sum
       if (remoteClosingFee > lastCommitFeeSatoshi) {
-        Left(InvalidCloseFee(commitments.channelId, remoteClosingFee))
+        throw InvalidCloseFee(commitments.channelId, remoteClosingFee)
       } else {
         val (closingTx, closingSigned) = makeClosingTx(commitments, localScriptPubkey, remoteScriptPubkey, remoteClosingFee)
         val signedClosingTx = Transactions.addSigs(closingTx, commitments.announce.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
         Transactions.checkSpendable(signedClosingTx) match {
-          case Success(_) => Right(signedClosingTx.tx)
-          case _ => Left(InvalidCloseSignature(commitments.channelId, signedClosingTx.tx))
+          case Success(_) => signedClosingTx.tx
+          case _ => throw InvalidCloseSignature(commitments.channelId, signedClosingTx.tx)
         }
       }
     }

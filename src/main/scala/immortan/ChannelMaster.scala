@@ -83,9 +83,9 @@ case class PaymentSenderData(cmd: CMD_SEND_MPP, parts: Map[ByteVector, PartStatu
 
   def asString(denom: Denomination): String = {
     val failuresByAmount: Map[String, Failures] = failures.groupBy {
-      case fail: UnreadableRemoteFailure => denom asString fail.route.weight.costs.last
-      case fail: RemoteFailure => denom asString fail.route.weight.costs.last
-      case fail: LocalFailure => denom asString fail.amount
+      case fail: UnreadableRemoteFailure => denom.asString(fail.route.weight.costs.head)
+      case fail: RemoteFailure => denom.asString(fail.route.weight.costs.head)
+      case fail: LocalFailure => denom.asString(fail.amount)
     }
 
     val usedRoutes = inFlights.map(_.route asString denom).mkString("\n\n")
@@ -136,8 +136,8 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
   var listeners: Set[ChannelMasterListener] = Set.empty
 
   var all: List[Channel] = chanBag.all.map {
-    case hasNormalCommits: HasNormalCommitments => NormalChannel.make(channelListeners, hasNormalCommits, LNParams.chainWallet, chanBag)
-    case hostedCommits: HostedCommits => HostedChannel.make(channelListeners, hostedCommits, chanBag)
+    case hasNormalCommits: HasNormalCommitments => ChannelNormal.make(channelListeners, hasNormalCommits, LNParams.chainWallet, chanBag)
+    case hostedCommits: HostedCommits => ChannelHosted.make(channelListeners, hostedCommits, chanBag)
     case _ => throw new RuntimeException
   }
 

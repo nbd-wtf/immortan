@@ -19,8 +19,8 @@ import fr.acinq.eclair.crypto.ShaChain
 import scodec.bits.ByteVector
 
 
-object NormalChannel {
-  def make(initListeners: Set[ChannelListener], normalData: HasNormalCommitments, cw: ChainWallet, bag: ChannelBag): NormalChannel = new NormalChannel(bag) {
+object ChannelNormal {
+  def make(initListeners: Set[ChannelListener], normalData: HasNormalCommitments, cw: ChainWallet, bag: ChannelBag): ChannelNormal = new ChannelNormal(bag) {
     def SEND(messages: LightningMessage *): Unit = CommsTower.sendMany(messages, normalData.commitments.announce.nodeSpecificPair)
     def STORE(normalData1: PersistentChannelData): PersistentChannelData = bag.put(normalData1)
     var chainWallet: ChainWallet = cw
@@ -29,7 +29,7 @@ object NormalChannel {
   }
 }
 
-abstract class NormalChannel(bag: ChannelBag) extends Channel with Handlers { me =>
+abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me =>
   val receiver: ActorRef = LNParams.system actorOf Props(new Receiver)
   var chainWallet: ChainWallet
 
@@ -223,6 +223,10 @@ abstract class NormalChannel(bag: ChannelBag) extends Channel with Handlers { me
         doProcess(CMD_SIGN)
 
 
+      case (some: HasNormalCommitments, cmd: CMD_ADD_HTLC, _) =>
+        throw CMDException(ChannelUnavailable(some.channelId), cmd)
+
+
       case (norm: DATA_NORMAL, cmd: CMD_FULFILL_HTLC, OPEN)
         if cmd.add.channelId == norm.channelId && norm.commitments.unansweredIncoming.contains(cmd.add) =>
         val (commits1, fulfill) = NormalCommits.sendFulfill(norm.commitments, cmd)
@@ -305,6 +309,12 @@ abstract class NormalChannel(bag: ChannelBag) extends Channel with Handlers { me
         val (data1, replies) = handleRemoteShutdown(norm, remote)
         StoreBecomeSend(data1, OPEN, replies:_*)
 
+      // NEGOTIATIONS
+
+      case (negs: DATA_NEGOTIATING, remote: ClosingSigned, OPEN) =>
+        // Either become CLOSING or keep converging in OPEN
+        handleNegotiations(negs, remote)
+
       // RESTORING FROM STORED DATA
 
       case (null, normalData: HasNormalCommitments, null) =>
@@ -363,6 +373,12 @@ abstract class NormalChannel(bag: ChannelBag) extends Channel with Handlers { me
         SEND(reestablish)
 
 
+      case (data1: DATA_CLOSING, _: ChannelReestablish, CLOSING) =>
+        val exception = FundingTxSpent(data1.channelId, data1.commitTxes.head)
+        val error = Error(data1.channelId, exception.getMessage)
+        SEND(error)
+
+
       case (wait: DATA_WAIT_FOR_FUNDING_CONFIRMED, _: ChannelReestablish, SLEEPING) =>
         // We put back the watch (operation is idempotent) because corresponding event may have been already fired while we were in SLEEPING
         chainWallet.watcher ! WatchConfirmed(receiver, wait.commitments.commitInput.outPoint.txid, wait.commitments.commitInput.txOut.publicKeyScript, LNParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
@@ -375,7 +391,10 @@ abstract class NormalChannel(bag: ChannelBag) extends Channel with Handlers { me
 
 
       case (data1: DATA_NORMAL, reestablish: ChannelReestablish, SLEEPING) => handleNormalSync(data1, reestablish)
+
       case (data1: DATA_NEGOTIATING, _: ChannelReestablish, SLEEPING) => handleNegotiationsSync(data1)
+
+      case _ =>
     }
 
     // Change has been processed without failures

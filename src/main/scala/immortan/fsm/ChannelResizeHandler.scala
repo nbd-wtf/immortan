@@ -8,7 +8,7 @@ import fr.acinq.bitcoin.Satoshi
 
 
 // Successful resize may come from a different handler, client should always re-check if new capacity is OK
-abstract class ChannelResizeHandler(delta: Satoshi, chan: HostedChannel) extends ChannelListener { me =>
+abstract class ChannelResizeHandler(delta: Satoshi, chan: ChannelHosted) extends ChannelListener { me =>
   def onResizingSuccessful(hc1: HostedCommits): Unit
   def onChannelSuspended(hc1: HostedCommits): Unit
 

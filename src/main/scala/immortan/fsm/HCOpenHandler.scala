@@ -14,14 +14,14 @@ abstract class HCOpenHandler(ext: NodeAnnouncementExt, ourInit: Init, format: St
   val peerSpecificSecret: ByteVector32 = format.attachedChannelSecret(theirNodeId = ext.na.nodeId)
   val peerSpecificRefundPubKey: ByteVector = format.keys.refundPubKey(theirNodeId = ext.na.nodeId)
 
-  val freshChannel: HostedChannel = new HostedChannel {
+  val freshChannel: ChannelHosted = new ChannelHosted {
     def SEND(messages: LightningMessage *): Unit = CommsTower.sendMany(messages.map(ExtMessageMapping.prepareNormal), ext.nodeSpecificPair)
     def STORE(hostedData: PersistentChannelData): PersistentChannelData = cm.chanBag.put(hostedData)
   }
 
-  def onFailure(channel: HostedChannel, err: Throwable): Unit
+  def onFailure(channel: ChannelHosted, err: Throwable): Unit
   def onPeerDisconnect(worker: CommsTower.Worker): Unit
-  def onEstablished(channel: HostedChannel): Unit
+  def onEstablished(channel: ChannelHosted): Unit
 
   private val makeChanListener = new ConnectionListener with ChannelListener {
     override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = freshChannel process CMD_SOCKET_ONLINE

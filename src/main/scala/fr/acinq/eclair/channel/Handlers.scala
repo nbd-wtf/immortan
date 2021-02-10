@@ -18,18 +18,19 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.eclair._
 import immortan.Channel._
-import immortan.{LNParams, NormalChannel}
+import immortan.{ChannelNormal, LNParams}
 import fr.acinq.eclair.blockchain.{PublishAsap, WatchConfirmed, WatchSpent}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, SatoshiLong, Transaction}
-import fr.acinq.eclair.wire.{ChannelMessage, ChannelReestablish, Error, FundingLocked, LightningMessage, RevokeAndAck, Shutdown, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{ChannelMessage, ChannelReestablish, ClosingSigned, Error, FundingLocked, LightningMessage, RevokeAndAck, Shutdown, UpdateAddHtlc}
 import fr.acinq.eclair.channel.Helpers.Closing
+
 import scala.collection.immutable.Queue
 
 /**
  * Created by PM on 20/08/2015.
  */
 
-trait Handlers { me: NormalChannel =>
+trait Handlers { me: ChannelNormal =>
   def doPublish(closingTx: Transaction): Unit = {
     chainWallet.watcher ! WatchConfirmed(receiver, closingTx, LNParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(closingTx))
     chainWallet.watcher ! PublishAsap(closingTx)
@@ -277,6 +278,51 @@ trait Handlers { me: NormalChannel =>
     } else {
       // there are some pending signed htlcs, we need to fail/fulfill them
       (d.copy(localShutdown = Some(localShutdown), remoteShutdown = Some(remote)), sendList)
+    }
+  }
+
+  def handleMutualClose(closingTx: Transaction, d: Either[DATA_NEGOTIATING, DATA_CLOSING]): Unit = {
+    val nextData = d match {
+      case Left(negotiating) => DATA_CLOSING(negotiating.commitments, fundingTx = None,
+        waitingSince = System.currentTimeMillis, negotiating.closingTxProposed.flatten.map(_.unsignedTx), mutualClosePublished = closingTx :: Nil)
+      case Right(closing) => closing.copy(mutualClosePublished = closing.mutualClosePublished :+ closingTx)
+    }
+
+    BECOME(STORE(nextData), CLOSING)
+    doPublish(closingTx)
+  }
+
+  def handleNegotiations(d: DATA_NEGOTIATING, m: ClosingSigned): Unit = {
+    val signedClosingTx = Closing.checkClosingSignature(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, m.feeSatoshis, m.signature)
+    if (d.closingTxProposed.last.lastOption.map(_.localClosingSigned.feeSatoshis).contains(m.feeSatoshis) || d.closingTxProposed.flatten.size >= LNParams.maxNegotiationIterations) {
+      handleMutualClose(signedClosingTx, Left(d.copy(bestUnpublishedClosingTxOpt = Some(signedClosingTx))))
+    } else {
+      // if we are fundee and we were waiting for them to send their first closing_signed, we don't have a lastLocalClosingFee, so we compute a firstClosingFee
+      val lastLocalClosingFee = d.closingTxProposed.last.lastOption.map(_.localClosingSigned.feeSatoshis)
+      val nextClosingFee = if (d.commitments.localCommit.spec.toLocal == 0.msat) {
+        // if we have nothing at stake there is no need to negotiate and we accept their fee right away
+        m.feeSatoshis
+      } else {
+        Closing.nextClosingFee(localClosingFee = lastLocalClosingFee.getOrElse(Closing.firstClosingFee(d.commitments, d.localShutdown.scriptPubKey,
+          d.remoteShutdown.scriptPubKey, LNParams.onChainFeeConf.feeEstimator, LNParams.onChainFeeConf.feeTargets)), remoteClosingFee = m.feeSatoshis)
+      }
+      val (closingTx, closingSigned) = Closing.makeClosingTx(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nextClosingFee)
+      if (lastLocalClosingFee.contains(nextClosingFee)) {
+        // next computed fee is the same than the one we previously sent (probably because of rounding), let's close now
+        handleMutualClose(signedClosingTx, Left(d.copy(bestUnpublishedClosingTxOpt = Some(signedClosingTx))))
+      } else if (nextClosingFee == m.feeSatoshis) {
+        // we have converged!
+        val closingTxProposed1 = d.closingTxProposed match {
+          case previousNegotiations :+ currentNegotiation => previousNegotiations :+ (currentNegotiation :+ ClosingTxProposed(closingTx.tx, closingSigned))
+        }
+        handleMutualClose(signedClosingTx, Left(d.copy(closingTxProposed = closingTxProposed1, bestUnpublishedClosingTxOpt = Some(signedClosingTx))))
+        SEND(closingSigned)
+      } else {
+        val closingTxProposed1 = d.closingTxProposed match {
+          case previousNegotiations :+ currentNegotiation => previousNegotiations :+ (currentNegotiation :+ ClosingTxProposed(closingTx.tx, closingSigned))
+        }
+        StoreBecomeSend(d.copy(closingTxProposed = closingTxProposed1, bestUnpublishedClosingTxOpt = Some(signedClosingTx)), OPEN, closingSigned)
+      }
     }
   }
 }

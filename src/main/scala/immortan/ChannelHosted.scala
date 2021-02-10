@@ -14,8 +14,8 @@ import fr.acinq.bitcoin.SatoshiLong
 import scodec.bits.ByteVector
 
 
-object HostedChannel {
-  def make(initListeners: Set[ChannelListener], hostedData: HostedCommits, bag: ChannelBag): HostedChannel = new HostedChannel {
+object ChannelHosted {
+  def make(initListeners: Set[ChannelListener], hostedData: HostedCommits, bag: ChannelBag): ChannelHosted = new ChannelHosted {
     def SEND(messages: LightningMessage *): Unit = CommsTower.sendMany(messages.map(ExtMessageMapping.prepareNormal), hostedData.announce.nodeSpecificPair)
     def STORE(hostedData: PersistentChannelData): PersistentChannelData = bag.put(hostedData)
     listeners = initListeners
@@ -23,7 +23,7 @@ object HostedChannel {
   }
 }
 
-abstract class HostedChannel extends Channel { me =>
+abstract class ChannelHosted extends Channel { me =>
   def isBlockDayOutOfSync(currentBlockDay: Long): Boolean =
     math.abs(currentBlockDay - LNParams.currentBlockDay) > 1
 
@@ -219,10 +219,12 @@ abstract class HostedChannel extends Channel { me =>
         require(completeLocalLCSS.verifyRemoteSig(hc.announce.na.nodeId), "Provided override signature from remote host is wrong")
         StoreBecomeSend(restoreCommits(completeLocalLCSS, hc.announce), OPEN, completeLocalLCSS.stateUpdate)
 
-
       case (null, wait: WaitRemoteHostedReply, null) => super.become(wait, WAIT_FOR_INIT)
+
       case (null, hc: HostedCommits, null) if hc.getError.isDefined => super.become(hc, SUSPENDED)
+
       case (null, hc: HostedCommits, null) => super.become(hc, SLEEPING)
+
       case _ =>
     }
 

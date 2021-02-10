@@ -1,7 +1,7 @@
 package immortan.fsm
 
 import scala.concurrent.duration._
-import immortan.{ChanAndCommits, CommsTower, ConnectionListener, HostedChannel}
+import immortan.{ChanAndCommits, CommsTower, ConnectionListener, ChannelHosted}
 import fr.acinq.eclair.wire.{Init, SwapIn, SwapInPaymentDenied, SwapInPaymentRequest, SwapInState}
 import fr.acinq.eclair.payment.PaymentRequest
 import immortan.crypto.Tools.runAnd
