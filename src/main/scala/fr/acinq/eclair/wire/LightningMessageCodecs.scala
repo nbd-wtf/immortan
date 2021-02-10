@@ -340,7 +340,7 @@ object HostedMessagesCodecs {
   val hostedChannelBrandingCodec = {
     (rgb withContext "rgbColor") ::
       (varsizebinarydata withContext "pngIcon") ::
-      (variableSizeBytes(uint16, utf8) withContext "contactInfo")
+      (text withContext "contactInfo")
   }.as[HostedChannelBranding]
 
   val lastCrossSignedStateCodec = {
@@ -414,9 +414,6 @@ object HostedMessagesCodecs {
 }
 
 object SwapCodecs {
-  private val text = variableSizeBytes(uint16, utf8)
-  private val optionalText = optional(bool, text)
-
   val swapInResponseCodec = {
     ("btcAddress" | text) ::
       ("minChainDeposit" | satoshi)

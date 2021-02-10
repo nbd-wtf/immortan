@@ -286,13 +286,13 @@ object ChannelCodecs {
       (int64 withContext "startedAt")
   }.as[HostedCommits]
 
-  val persistentDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(byte)
-    .typecase(1, discriminated[PersistentChannelData].by(uint16)
-      .typecase(0x20, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
-      .typecase(0x21, DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
-      .typecase(0x22, DATA_NORMAL_Codec)
-      .typecase(0x24, DATA_NEGOTIATING_Codec)
-      .typecase(0x25, DATA_CLOSING_Codec)
-      .typecase(0x26, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec)
-      .typecase(0x27, hostedCommitsCodec))
+  val persistentDataCodec: Codec[PersistentChannelData] =
+    discriminated[PersistentChannelData].by(uint16)
+      .typecase(1, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
+      .typecase(2, DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
+      .typecase(3, DATA_NORMAL_Codec)
+      .typecase(4, DATA_NEGOTIATING_Codec)
+      .typecase(5, DATA_CLOSING_Codec)
+      .typecase(6, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec)
+      .typecase(7, hostedCommitsCodec)
 }

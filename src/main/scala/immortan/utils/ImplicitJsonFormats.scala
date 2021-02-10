@@ -2,16 +2,13 @@ package immortan.utils
 
 import immortan._
 import spray.json._
-import fr.acinq.eclair.wire._
 import fr.acinq.eclair.wire.CommonCodecs._
-import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.WalletReady
-import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import immortan.utils.FiatRates.{BitpayItemList, CoinGeckoItemMap}
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
-import scodec.bits.{BitVector, ByteVector}
+import fr.acinq.bitcoin.Crypto.PublicKey
 import immortan.crypto.Tools.Fiat2Btc
+import fr.acinq.bitcoin.Satoshi
+import scodec.bits.BitVector
 
 
 object ImplicitJsonFormats extends DefaultJsonProtocol {
@@ -33,42 +30,8 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
     def write(unserialized: T): JsValue = codec.encode(unserialized).require.toHex.toJson
   }
 
-  implicit val nodeAnnouncementFmt: JsonFormat[NodeAnnouncement] = sCodecJsonFmt(nodeAnnouncementCodec)
-  implicit val bytesFmt: JsonFormat[ByteVector] = sCodecJsonFmt(varsizebinarydata)
-  implicit val privateKeyFmt: JsonFormat[PrivateKey] = sCodecJsonFmt(privateKey)
   implicit val publicKeyFmt: JsonFormat[PublicKey] = sCodecJsonFmt(publicKey)
-  implicit val bytes32Fmt: JsonFormat[ByteVector32] = sCodecJsonFmt(bytes32)
   implicit val satoshiFmt: JsonFormat[Satoshi] = sCodecJsonFmt(satoshi)
-
-  // Wallet keys
-
-  implicit val keyPathFmt: JsonFormat[KeyPath] = jsonFormat[Seq[Long], KeyPath](KeyPath.apply, "path")
-  implicit val extendedPrivateKeyFmt: JsonFormat[ExtendedPrivateKey] = jsonFormat[ByteVector32, ByteVector32, Int, KeyPath, Long, ExtendedPrivateKey](ExtendedPrivateKey.apply, "secretkeybytes", "chaincode", "depth", "path", "parent")
-  implicit val lightningNodeKeysFmt: JsonFormat[LightningNodeKeys] = jsonFormat[ExtendedPrivateKey, String, PrivateKey, LightningNodeKeys](LightningNodeKeys.apply, "extendedNodeKey", "xpub", "hashingKey")
-
-  implicit object StorageFormatFmt extends JsonFormat[StorageFormat] {
-    def write(internal: StorageFormat): JsValue = internal match {
-      case mnemonicFormat: MnemonicExtStorageFormat => mnemonicFormat.toJson
-      case passwordFormat: PasswordStorageFormat => passwordFormat.toJson
-      case _ => throw new Exception
-    }
-
-    def read(raw: JsValue): StorageFormat = raw.asJsObject.fields(TAG) match {
-      case JsString("MnemonicExtStorageFormat") => raw.convertTo[MnemonicExtStorageFormat]
-      case JsString("PasswordStorageFormat") => raw.convertTo[PasswordStorageFormat]
-      case tag => throw new Exception(s"Unknown wallet key format=$tag")
-    }
-  }
-
-  implicit val mnemonicExtStorageFormatFmt: JsonFormat[MnemonicExtStorageFormat] =
-    taggedJsonFmt(jsonFormat[Set[NodeAnnouncement], LightningNodeKeys, Option[ByteVector],
-    MnemonicExtStorageFormat](MnemonicExtStorageFormat.apply, "outstandingProviders", "keys",
-      "seed"), tag = "MnemonicExtStorageFormat")
-
-  implicit val passwordStorageFormatFmt: JsonFormat[PasswordStorageFormat] =
-    taggedJsonFmt(jsonFormat[Set[NodeAnnouncement], LightningNodeKeys, String, Option[String],
-    PasswordStorageFormat](PasswordStorageFormat.apply, "outstandingProviders", "keys", "user",
-      "password"), tag = "PasswordStorageFormat")
 
   // Tx description
 

@@ -9,7 +9,7 @@ import immortan.PaymentFailure._
 import fr.acinq.eclair.channel._
 import scala.concurrent.duration._
 import com.softwaremill.quicklens._
-import immortan.utils.{Rx, ThrottledWork}
+import immortan.utils.{Denomination, Rx, ThrottledWork}
 import immortan.crypto.{CanBeRepliedTo, StateMachine, Tools}
 import immortan.ChannelListener.{Incoming, Malfunction, Transition}
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
@@ -36,29 +36,23 @@ object PaymentFailure {
   final val RUN_OUT_OF_RETRY_ATTEMPTS = "run-out-of-retry-attempts"
   final val PEER_COULD_NOT_PARSE_ONION = "peer-could-not-parse-onion"
   final val NOT_RETRYING_NO_DETAILS = "not-retrying-no-details"
-
-  def groupByAmount(data: PaymentSenderData): Map[MilliSatoshi, Failures] = data.failures.groupBy {
-    case unreadableRemote: UnreadableRemoteFailure => unreadableRemote.route.weight.costs.last
-    case readableRemote: RemoteFailure => readableRemote.route.weight.costs.last
-    case local: LocalFailure => local.amount
-  }
 }
 
 sealed trait PaymentFailure {
-  def translate: String
+  def asString(denom: Denomination): String
 }
 
 case class LocalFailure(status: String, amount: MilliSatoshi) extends PaymentFailure {
-  override def translate: String = s"LOCAL: $status"
+  override def asString(denom: Denomination): String = s"-- LocalFailure: $status"
 }
 
 case class UnreadableRemoteFailure(route: Route) extends PaymentFailure {
-  override def translate: String = "REMOTE: UnreadableRemoteFailure\nChannel: unknown"
+  override def asString(denom: Denomination): String = s"-- RemoteFailure @ unknown-channel: ${route asString denom}"
 }
 
 case class RemoteFailure(packet: Sphinx.DecryptedFailurePacket, route: Route) extends PaymentFailure {
-  def originChannelId: String = route.getEdgeForNode(packet.originNode).map(_.updExt.update.shortChannelId.toString).getOrElse("trampoline")
-  override def translate: String = s"REMOTE: ${packet.failureMessage.message}\nChannel: $originChannelId"
+  def originChannelId: String = route.getEdgeForNode(packet.originNode).map(_.updExt.update.shortChannelId.toString).getOrElse("Trampoline")
+  override def asString(denom: Denomination): String = s"-- ${packet.failureMessage.message} @ $originChannelId: ${route asString denom}"
 }
 
 
@@ -82,10 +76,23 @@ case class PaymentSenderData(cmd: CMD_SEND_MPP, parts: Map[ByteVector, PartStatu
   def withLocalFailure(reason: String, amount: MilliSatoshi): PaymentSenderData = copy(failures = LocalFailure(reason, amount) +: failures)
   def withoutPartId(partId: ByteVector): PaymentSenderData = copy(parts = parts - partId)
 
-  def successfulUpdates: Iterable[ChannelUpdate] = inFlights.flatMap(_.route.routedPerChannelHop).map { case (_, chanHop) => chanHop.edge.updExt.update }
   def inFlights: Iterable[InFlightInfo] = parts.values.flatMap { case wait: WaitForRouteOrInFlight => wait.flight case _ => None }
+  def successfulUpdates: Iterable[ChannelUpdate] = inFlights.flatMap(_.route.routedPerChannelHop).map { case (_, chanHop) => chanHop.edge.updExt.update }
   def closestCltvExpiry: InFlightInfo = inFlights.minBy(_.route.weight.cltv)
   def totalFee: MilliSatoshi = inFlights.map(_.route.fee).sum
+
+  def asString(denom: Denomination): String = {
+    val failuresByAmount: Map[String, Failures] = failures.groupBy {
+      case fail: UnreadableRemoteFailure => denom asString fail.route.weight.costs.last
+      case fail: RemoteFailure => denom asString fail.route.weight.costs.last
+      case fail: LocalFailure => denom asString fail.amount
+    }
+
+    val usedRoutes = inFlights.map(_.route asString denom).mkString("\n\n")
+    def translateFailures(failureList: Failures): String = failureList.map(_ asString denom).mkString("\n\n")
+    val errors = failuresByAmount.mapValues(translateFailures).map { case (amount, fails) => s"- $amount:\n\n$fails" }.mkString("\n\n")
+    s"Routes:\n\n$usedRoutes\n\n\n\nErrors:\n\n$errors"
+  }
 }
 
 case class SplitIntoHalves(amount: MilliSatoshi)

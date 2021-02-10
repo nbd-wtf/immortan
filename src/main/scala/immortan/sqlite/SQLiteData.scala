@@ -1,18 +1,17 @@
 package immortan.sqlite
 
-import spray.json._
 import immortan.sqlite.SQLiteData._
-import immortan.utils.ImplicitJsonFormats._
-
-import java.lang.{Integer => JInt}
-import fr.acinq.bitcoin.{BlockHeader, ByteVector32}
-import fr.acinq.eclair.wire.{HostedChannelBranding, SwapInState}
 import immortan.{DataTable, ElectrumHeadersTable, StorageFormat, SwapInStateExt}
+import fr.acinq.eclair.wire.{HostedChannelBranding, SwapInState}
+import fr.acinq.bitcoin.{BlockHeader, ByteVector32}
+import java.lang.{Integer => JInt}
+
+import fr.acinq.eclair.blockchain.electrum.db.WalletDb
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb.persistentDataCodec
 import fr.acinq.eclair.wire.HostedMessagesCodecs.hostedChannelBrandingCodec
-import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
 import fr.acinq.eclair.wire.SwapCodecs.swapInStateCodec
-import fr.acinq.eclair.blockchain.electrum.db.WalletDb
+import immortan.wire.ExtCodecs.storageFormatCodec
 import fr.acinq.bitcoin.Crypto.PublicKey
 import immortan.crypto.Tools.Bytes
 import scodec.bits.ByteVector
@@ -24,6 +23,7 @@ object SQLiteData {
   final val LABEL_ELECTRUM_DATA = "label-electrum-data"
   final val LABEL_BRANDING_PREFIX = "label-branding-node-"
   final val LABEL_SWAP_IN_STATE_PREFIX = "label-swap-in-node-"
+  final val LABEL_PAYMENT_REPORT_PREFIX = "label-payment-report-"
 }
 
 class SQLiteData(db: DBInterface) extends WalletDb {
@@ -39,9 +39,15 @@ class SQLiteData(db: DBInterface) extends WalletDb {
 
   // StorageFormat
 
-  def putFormat(format: StorageFormat): Unit = put(LABEL_FORMAT, format.toJson.compactPrint.getBytes)
+  def putFormat(format: StorageFormat): Unit = put(LABEL_FORMAT, storageFormatCodec.encode(format).require.toByteArray)
 
-  def tryGetFormat: Try[StorageFormat] = tryGet(LABEL_FORMAT).map(_.toHex) map to[StorageFormat]
+  def tryGetFormat: Try[StorageFormat] = tryGet(LABEL_FORMAT).map(raw => storageFormatCodec.decode(raw.toBitVector).require.value)
+
+  // Payment reports
+
+  def putReport(paymentHash: ByteVector32, report: String): Unit = put(LABEL_PAYMENT_REPORT_PREFIX + paymentHash.toHex, report getBytes "UTF-8")
+
+  def tryGetReport(paymentHash: ByteVector32): Try[String] = tryGet(LABEL_PAYMENT_REPORT_PREFIX + paymentHash.toHex).map(raw => new String(raw.toArray, "UTF-8").trim)
 
   // HostedChannelBranding
 

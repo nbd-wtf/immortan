@@ -67,6 +67,9 @@ object CommonCodecs {
   // this codec will fail if the amount does not fit on 32 bits
   val millisatoshi32: Codec[MilliSatoshi] = uint32.xmapc(l => MilliSatoshi(l))(_.toLong)
 
+  val text: Codec[String] = variableSizeBytes(uint16, utf8)
+  val optionalText: Codec[Option[String]] = optional(bool, text)
+
   /**
    * We impose a minimal encoding on some values (such as varint and truncated int) to ensure that signed hashes can be
    * re-computed correctly.
