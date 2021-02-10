@@ -142,6 +142,7 @@ abstract class ChannelHosted extends Channel { me =>
       // TODO: CMD_FAIL_HTLC
 
       case (hc: HostedCommits, CMD_SOCKET_ONLINE, SLEEPING | SUSPENDED) => SEND(hc.getError getOrElse hc.invokeMsg)
+
       case (hc: HostedCommits, CMD_SOCKET_OFFLINE, OPEN) => BECOME(hc, SLEEPING)
 
 

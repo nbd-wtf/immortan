@@ -291,13 +291,13 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
       case (norm: DATA_NORMAL, commitSig: CommitSig, OPEN) =>
         val (commits1, revocation) = NormalCommits.receiveCommit(norm.commitments, commitSig)
         StoreBecomeSend(norm.copy(commitments = commits1), OPEN, revocation)
-        events.stateUpdated(commits1)
+        doProcess(CMD_SIGN)
 
 
       case (norm: DATA_NORMAL, revocation: RevokeAndAck, OPEN) =>
         val commits1 = NormalCommits.receiveRevocation(norm.commitments, revocation)
         StoreBecomeSend(norm.copy(commitments = commits1), OPEN)
-        doProcess(CMD_SIGN)
+        events.stateUpdated(commits1)
 
 
       case (norm: DATA_NORMAL, remoteFee: UpdateFee, OPEN) =>
