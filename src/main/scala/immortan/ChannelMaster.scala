@@ -12,9 +12,9 @@ import com.softwaremill.quicklens._
 import fr.acinq.eclair.router.Router._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import immortan.utils.{Denomination, Rx, ThrottledWork}
+import immortan.ChannelListener.{Malfunction, Transition}
 import immortan.crypto.{CanBeRepliedTo, StateMachine, Tools}
-import immortan.ChannelListener.{Incoming, Malfunction, Transition}
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DescAndCapacity, GraphEdge}
 import fr.acinq.eclair.crypto.Sphinx.{DecryptedPacket, FailurePacket, PacketAndSecrets}
 import immortan.Channel.{OPEN, SLEEPING, SUSPENDED, isOperational, isOperationalAndOpen}
@@ -125,7 +125,7 @@ object ChannelMaster {
   }
 }
 
-abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: PathFinder) extends ChannelListener {
+abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: PathFinder) extends ChannelListener { me =>
   private[this] val getPaymentInfoMemo = memoize(payBag.getPaymentInfo)
   pf.listeners += PaymentMaster
 
@@ -133,7 +133,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
   val sockChannelBridge: ConnectionListener
 
   val connectionListeners: Set[ConnectionListener] = Set(sockBrandingBridge, sockChannelBridge)
-  val channelListeners: Set[ChannelListener] = Set(this, PaymentMaster)
+  val channelListeners: Set[ChannelListener] = Set(me, PaymentMaster)
   var listeners: Set[ChannelMasterListener] = Set.empty
 
   var all: List[Channel] = chanBag.all.map {
@@ -148,7 +148,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
   }
 
   val incomingTimeoutWorker: ThrottledWork[ByteVector, Any] = new ThrottledWork[ByteVector, Any] {
-    def process(hash: ByteVector, res: Any): Unit = all.headOption.foreach(_ process CMD_INCOMING_TIMEOUT)
+    def process(hash: ByteVector, res: Any): Unit = Future(me stateUpdated Nil)(Channel.channelContext)
     def work(hash: ByteVector): Observable[Null] = Rx.ioQueue.delay(60.seconds)
     def error(canNotHappen: Throwable): Unit = none
   }
@@ -162,7 +162,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
   def initConnect: Unit = all.flatMap(Channel.chanAndCommitsOpt).map(_.commits).foreach {
     case cs: HostedCommits => CommsTower.listen(connectionListeners, cs.announce.nodeSpecificPair, cs.announce.na, LNParams.hcInit)
     case cs: NormalCommits => CommsTower.listen(connectionListeners, cs.announce.nodeSpecificPair, cs.announce.na, LNParams.normInit)
-    case otherwise => throw new RuntimeException(s"Could not process $otherwise")
+    case otherwise => throw new RuntimeException
   }
 
   // RECEIVE/SEND UTILITIES
@@ -259,17 +259,9 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
 //    all.foreach(_ doProcess CMD_SIGN)
   }
 
-  override def onProcessSuccess: PartialFunction[Incoming, Unit] = {
-    // An incoming payment arrives so we prolong waiting for the rest of shards
-    case (_, _, add: UpdateAddHtlc) => incomingTimeoutWorker replaceWork add.paymentHash
-    // `incomingTimeoutWorker.hasFinishedOrNeverStarted` becomes true, fail pending incoming
-    case (_, cs: Commitments, CMD_INCOMING_TIMEOUT) => stateUpdated(Nil)
-  }
+  override def addReceived(add: UpdateAddHtlc): Unit = incomingTimeoutWorker replaceWork add.paymentHash
 
-  override def onBecome: PartialFunction[Transition, Unit] = {
-    // SLEEPING channel does not react to CMD_SIGN so resend on reconnect
-    case (_, _, cs: Commitments, SLEEPING, OPEN | SUSPENDED) => stateUpdated(Nil)
-  }
+  override def onBecome: PartialFunction[Transition, Unit] = { case (_, _, _, SLEEPING, OPEN | SUSPENDED) => me stateUpdated Nil }
 
   // SENDING OUTGOING PAYMENTS
 
@@ -374,7 +366,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
 
     override def fulfillReceived(fulfill: UpdateFulfillHtlc): Unit = self process fulfill
 
-    override def onException: PartialFunction[Malfunction, Unit] = { case (_, commandException: CMDException) => self process commandException }
+    override def onException: PartialFunction[Malfunction, Unit] = { case (_, exception: CMDException) => self process exception }
 
     override def onBecome: PartialFunction[Transition, Unit] = { case (_, _, _, SLEEPING | SUSPENDED, OPEN) => self process CMDChanGotOnline }
 

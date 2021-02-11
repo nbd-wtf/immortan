@@ -26,7 +26,7 @@ abstract class ChannelHosted extends Channel { me =>
   def isBlockDayOutOfSync(currentBlockDay: Long): Boolean =
     math.abs(currentBlockDay - LNParams.currentBlockDay) > 1
 
-  def doProcess(change: Any): Unit = {
+  def doProcess(change: Any): Unit =
     Tuple3(data, change, state) match {
       case (wait: WaitRemoteHostedReply, CMD_SOCKET_ONLINE, WAIT_FOR_INIT) =>
         me SEND InvokeHostedChannel(LNParams.chainHash, wait.refundScriptPubKey, wait.secret)
@@ -82,9 +82,9 @@ abstract class ChannelHosted extends Channel { me =>
 
       // CHANNEL IS ESTABLISHED
 
-      case (hc: HostedCommits, addHtlc: UpdateAddHtlc, OPEN) =>
-        // They have sent us an incoming payment, do not store yet
-        BECOME(hc.receiveAdd(addHtlc), OPEN)
+      case (hc: HostedCommits, add: UpdateAddHtlc, OPEN) =>
+        BECOME(hc.receiveAdd(add), OPEN)
+        events.addReceived(add)
 
 
       // Process their fulfill in any state to make sure we always get a preimage
@@ -230,10 +230,6 @@ abstract class ChannelHosted extends Channel { me =>
 
       case _ =>
     }
-
-    // Change has been processed without failures
-    events onProcessSuccess Tuple3(me, data, change)
-  }
 
   def restoreCommits(localLCSS: LastCrossSignedState, ext: NodeAnnouncementExt): HostedCommits = {
     val inFlightHtlcs = localLCSS.incomingHtlcs.map(IncomingHtlc) ++ localLCSS.outgoingHtlcs.map(OutgoingHtlc)

@@ -85,7 +85,6 @@ case class CMD_ADD_HTLC(firstAmount: MilliSatoshi, paymentHash: ByteVector32, cl
 case class CMD_HOSTED_STATE_OVERRIDE(so: StateOverride) extends Command
 case class HC_CMD_RESIZE(delta: Satoshi) extends Command
 
-case object CMD_INCOMING_TIMEOUT extends Command
 case object CMD_SOCKET_OFFLINE extends Command
 case object CMD_SOCKET_ONLINE extends Command
 case object CMD_SIGN extends Command

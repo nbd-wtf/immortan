@@ -1,8 +1,8 @@
 package immortan.fsm
 
-import immortan._
-import immortan.ChannelListener.{Incoming, Transition}
+import immortan.{ChannelHosted, ChannelListener, HostedCommits}
 import fr.acinq.eclair.channel.HC_CMD_RESIZE
+import immortan.ChannelListener.Transition
 import immortan.Channel.SUSPENDED
 import fr.acinq.bitcoin.Satoshi
 
@@ -21,13 +21,6 @@ abstract class ChannelResizeHandler(delta: Satoshi, chan: ChannelHosted) extends
     case(_, hc0: HostedCommits, hc1: HostedCommits, _, _) if hc0.resizeProposal.isDefined && hc1.resizeProposal.isEmpty =>
       // Previous state had resizing proposal while new one does not and channel is not suspended, meaning it's all fine
       onResizingSuccessful(hc1)
-      chan.listeners -= me
-  }
-
-  override def onProcessSuccess: PartialFunction[Incoming, Unit] = {
-    case (_, hc1: HostedCommits, _: HC_CMD_RESIZE) if SUSPENDED == chan.state =>
-      // We have sent a proposal to an already SUSPENDED channel
-      onChannelSuspended(hc1)
       chan.listeners -= me
   }
 

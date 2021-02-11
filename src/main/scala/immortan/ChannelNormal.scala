@@ -33,11 +33,8 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
   val receiver: ActorRef = LNParams.system actorOf Props(new Receiver)
   var chainWallet: ChainWallet
 
-  def doProcess(change: Any): Unit = {
+  def doProcess(change: Any): Unit =
     Tuple3(data, change, state) match {
-
-      // FUNDER FLOW
-
       case (null, init: INPUT_INIT_FUNDER, null) =>
         val channelKeyPath = init.announce.keyPath(init.localParams)
         val localFundingPubKey = init.announce.fundingPublicKey(init.localParams.fundingKeyPath).publicKey
@@ -270,6 +267,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
       case (norm: DATA_NORMAL, add: UpdateAddHtlc, OPEN) =>
         val commits1 = NormalCommits.receiveAdd(norm.commitments, add, LNParams.onChainFeeConf)
         BECOME(norm.copy(commitments = commits1), OPEN)
+        events.addReceived(add)
 
 
       case (norm: DATA_NORMAL, fulfill: UpdateFulfillHtlc, OPEN) =>
@@ -396,8 +394,4 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
       case _ =>
     }
-
-    // Change has been processed without failures
-    events onProcessSuccess Tuple3(me, data, change)
-  }
 }
