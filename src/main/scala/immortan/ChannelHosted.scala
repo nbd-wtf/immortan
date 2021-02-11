@@ -6,8 +6,7 @@ import fr.acinq.eclair.wire._
 import immortan.HCErrorCodes._
 import immortan.crypto.Tools._
 import fr.acinq.eclair.channel._
-
-import fr.acinq.eclair.transactions.{CommitmentSpec, IncomingHtlc, OutgoingHtlc}
+import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.bitcoin.ByteVector64
 import fr.acinq.bitcoin.SatoshiLong
@@ -78,7 +77,7 @@ abstract class ChannelHosted extends Channel { me =>
         else {
           StoreBecomeSend(hc, OPEN, hc.lastCrossSignedState)
           // We may have incoming HTLCs to fail or fulfill
-          events.stateUpdated(hc)
+          events.stateUpdated(Nil)
         }
 
       // CHANNEL IS ESTABLISHED
@@ -141,7 +140,10 @@ abstract class ChannelHosted extends Channel { me =>
 
       // TODO: CMD_FAIL_HTLC
 
-      case (hc: HostedCommits, CMD_SOCKET_ONLINE, SLEEPING | SUSPENDED) => SEND(hc.getError getOrElse hc.invokeMsg)
+      case (hc: HostedCommits, CMD_SOCKET_ONLINE, SLEEPING | SUSPENDED) =>
+        val invokeMsg = InvokeHostedChannel(LNParams.chainHash, hc.lastCrossSignedState.refundScriptPubKey, ByteVector.empty)
+        SEND(hc.getError getOrElse invokeMsg)
+
 
       case (hc: HostedCommits, CMD_SOCKET_OFFLINE, OPEN) => BECOME(hc, SLEEPING)
 
@@ -266,7 +268,7 @@ abstract class ChannelHosted extends Channel { me =>
       // Send an unconditional reply state update
       StoreBecomeSend(hc1, OPEN, lcss1.stateUpdate)
       // Another update once we have anything to resolve
-      events.stateUpdated(hc1)
+      events.stateUpdated(hc.remoteRejects)
     }
   }
 }

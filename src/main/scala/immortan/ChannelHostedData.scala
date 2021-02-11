@@ -4,8 +4,8 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.channel._
 import com.softwaremill.quicklens._
+import fr.acinq.eclair.transactions._
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
-import fr.acinq.eclair.transactions.CommitmentSpec
 import scodec.bits.ByteVector
 
 
@@ -13,26 +13,34 @@ case class WaitRemoteHostedReply(announce: NodeAnnouncementExt, refundScriptPubK
 
 case class WaitRemoteHostedStateUpdate(announce: NodeAnnouncementExt, hc: HostedCommits) extends ChannelData
 
-case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: LastCrossSignedState, nextLocalUpdates: List[UpdateMessage], nextRemoteUpdates: List[UpdateMessage],
-                         localSpec: CommitmentSpec, updateOpt: Option[ChannelUpdate], localError: Option[Error], remoteError: Option[Error], resizeProposal: Option[ResizeChannel] = None,
+case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: LastCrossSignedState, nextLocalUpdates: List[UpdateMessage],
+                         nextRemoteUpdates: List[UpdateMessage], localSpec: CommitmentSpec, updateOpt: Option[ChannelUpdate],
+                         localError: Option[Error], remoteError: Option[Error], resizeProposal: Option[ResizeChannel] = None,
                          startedAt: Long = System.currentTimeMillis) extends PersistentChannelData with Commitments { me =>
 
   lazy val nextTotalLocal: Long = lastCrossSignedState.localUpdates + nextLocalUpdates.size
+
   lazy val nextTotalRemote: Long = lastCrossSignedState.remoteUpdates + nextRemoteUpdates.size
+
   lazy val nextLocalSpec: CommitmentSpec = CommitmentSpec.reduce(localSpec, nextLocalUpdates, nextRemoteUpdates)
-  lazy val invokeMsg: InvokeHostedChannel = InvokeHostedChannel(LNParams.chainHash, lastCrossSignedState.refundScriptPubKey, ByteVector.empty)
+
   lazy val unansweredIncoming: Set[UpdateAddHtlc] = localSpec.incomingAdds intersect nextLocalSpec.incomingAdds // Cross-signed MINUS already resolved by us
+
   lazy val allOutgoing: Set[UpdateAddHtlc] = localSpec.outgoingAdds ++ nextLocalSpec.outgoingAdds // Cross-signed PLUS new payments offered by us
 
-  lazy val revealedHashes: Seq[ByteVector32] = {
-    val ourFulfills = nextLocalUpdates.collect { case fulfill: UpdateFulfillHtlc => fulfill.id }
-    ourFulfills.flatMap(localSpec.findIncomingHtlcById).map(_.add.paymentHash)
+  lazy val remoteRejects: Seq[RemoteReject] = nextRemoteUpdates.collect {
+    case fail: UpdateFailHtlc => RemoteUpdateFail(fail, localSpec.findOutgoingHtlcById(fail.id).get.add)
+    case malform: UpdateFailMalformedHtlc => RemoteUpdateMalform(malform, localSpec.findOutgoingHtlcById(malform.id).get.add)
   }
 
   val maxInFlight: MilliSatoshi = lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat.toMilliSatoshi
+
   val minSendable: MilliSatoshi = lastCrossSignedState.initHostedChannel.htlcMinimumMsat
+
   val availableBalanceForReceive: MilliSatoshi = nextLocalSpec.toRemote
+
   val availableBalanceForSend: MilliSatoshi = nextLocalSpec.toLocal
+
   val channelId: ByteVector32 = announce.nodeSpecificHostedChanId
 
   def nextLocalUnsignedLCSS(blockDay: Long): LastCrossSignedState =

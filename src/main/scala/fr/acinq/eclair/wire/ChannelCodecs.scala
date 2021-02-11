@@ -30,7 +30,6 @@ import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction, TxOut}
 import immortan.{HostedCommits, NodeAnnouncementExt}
 import scodec.{Attempt, Codec}
 
-
 /**
  * Created by PM on 02/06/2017.
  */
@@ -68,32 +67,11 @@ object ChannelCodecs {
     .typecase(true, lengthDelimited(updateAddHtlcCodec).as[IncomingHtlc])
     .typecase(false, lengthDelimited(updateAddHtlcCodec).as[OutgoingHtlc])
 
-  val theirFailedCodec = {
-    ("reason" | varsizebinarydata) ::
-      ("paymentHash" | bytes32) ::
-      ("amount" | millisatoshi) ::
-      ("partId" | varsizebinarydata)
-  }.as[TheirFailed]
-
-  val theirMalformedCodec = {
-    ("paymentHash" | bytes32) ::
-      ("amount" | millisatoshi) ::
-      ("partId" | varsizebinarydata)
-  }.as[TheirMalformed]
-
-  val ourFulfilledCodec = {
-    ("paymentHash" | bytes32) ::
-      ("amount" | millisatoshi)
-  }.as[OurFulfilled]
-
   val commitmentSpecCodec: Codec[CommitmentSpec] = {
     ("feeratePerKw" | feeratePerKw) ::
       ("toLocal" | millisatoshi) ::
       ("toRemote" | millisatoshi) ::
-      ("htlcs" | setCodec(htlcCodec)) ::
-      ("remoteFailed" | setCodec(theirFailedCodec)) ::
-      ("remoteMalformed" | setCodec(theirMalformedCodec)) ::
-      ("localFulfilled" | setCodec(ourFulfilledCodec))
+      ("htlcs" | setCodec(htlcCodec))
   }.as[CommitmentSpec]
 
   val inputInfoCodec: Codec[InputInfo] = (
