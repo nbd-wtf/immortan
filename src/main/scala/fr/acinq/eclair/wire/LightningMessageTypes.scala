@@ -91,28 +91,10 @@ case class Shutdown(channelId: ByteVector32, scriptPubKey: ByteVector) extends C
 
 case class ClosingSigned(channelId: ByteVector32, feeSatoshis: Satoshi, signature: ByteVector64) extends ChannelMessage with HasChannelId
 
-case class UpdateAddHtlc(channelId: ByteVector32, id: Long, amountMsat: MilliSatoshi,
-                         paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onionRoutingPacket: OnionRoutingPacket,
-                         partId: ByteVector) extends HtlcMessage with HasChannelId with UpdateMessage { me =>
+case class UpdateAddHtlc(channelId: ByteVector32, id: Long, amountMsat: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry,
+                         onionRoutingPacket: OnionRoutingPacket) extends HtlcMessage with HasChannelId with UpdateMessage {
 
-  lazy val resolution: AddResolution = {
-    // Important: this relies on format being defined at runtime
-    val invoiceKey = LNParams.format.keys.fakeInvoiceKey(paymentHash)
-    PaymentPacket.peel(invoiceKey, paymentHash, onionRoutingPacket) match {
-      case Left(parseError) => CMD_FAIL_MALFORMED_HTLC(parseError.onionHash, parseError.code, me)
-      case Right(packet) if !packet.isLastPacket => failHtlc(packet, incorrectDetails(me), me)
-
-      case Right(lastPacket) =>
-        OnionCodecs.finalPerHopPayloadCodec.decode(lastPacket.payload.bits) match {
-          case Attempt.Failure(error: MissingRequiredTlv) => failHtlc(lastPacket, InvalidOnionPayload(error.tag, offset = 0), me)
-          case _: Attempt.Failure => failHtlc(lastPacket, InvalidOnionPayload(tag = UInt64(0), offset = 0), me)
-
-          case Attempt.Successful(payload) if payload.value.expiry != cltvExpiry => failHtlc(lastPacket, FinalIncorrectCltvExpiry(cltvExpiry), me)
-          case Attempt.Successful(payload) if payload.value.amount != amountMsat => failHtlc(lastPacket, incorrectDetails(me), me)
-          case Attempt.Successful(payload) => FinalPayloadSpec(lastPacket, payload.value, me)
-        }
-    }
-  }
+  final val partId: ByteVector = onionRoutingPacket.publicKey
 }
 
 case class UpdateFulfillHtlc(channelId: ByteVector32, id: Long, paymentPreimage: ByteVector32) extends HtlcMessage with HasChannelId with UpdateMessage {

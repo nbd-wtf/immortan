@@ -81,15 +81,16 @@ case class NormalCommits(channelVersion: ChannelVersion, announce: NodeAnnouncem
 
   lazy val revealedHashes: Seq[ByteVector32] = {
     val ourFulfills = localChanges.all.collect { case fulfill: UpdateFulfillHtlc => fulfill.id }
-    ourFulfills.flatMap(localCommit.spec.findIncomingHtlcById).map(_.add.paymentHash)
+    ourFulfills.flatMap(localSpec.findIncomingHtlcById).map(_.add.paymentHash)
   }
 
   lazy val unansweredIncoming: Set[UpdateAddHtlc] = {
     val remote = remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit)
-    CommitmentSpec.reduce(remote.spec, remoteChanges.acked, localChanges.proposed).outgoingAdds
+    val remoteReduced = CommitmentSpec.reduce(remote.spec, remoteChanges.acked, localChanges.proposed)
+    localSpec.incomingAdds intersect remoteReduced.incomingAdds
   }
 
-  lazy val allOutgoing: Set[UpdateAddHtlc] = localCommit.spec.outgoingAdds ++ remoteCommit.spec.incomingAdds ++ localChanges.adds
+  lazy val allOutgoing: Set[UpdateAddHtlc] = localSpec.outgoingAdds ++ remoteCommit.spec.incomingAdds ++ localChanges.adds
 
   lazy val channelKeyPath: DeterministicWallet.KeyPath = announce.keyPath(localParams)
 
@@ -123,7 +124,7 @@ case class NormalCommits(channelVersion: ChannelVersion, announce: NodeAnnouncem
   }
 
   lazy val availableBalanceForReceive: MilliSatoshi = {
-    val reduced = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
+    val reduced = CommitmentSpec.reduce(localSpec, localChanges.acked, remoteChanges.proposed)
     val balanceNoFees = (reduced.toRemote - localParams.channelReserve).max(0.msat)
     if (localParams.isFunder) {
       // The fundee doesn't pay on-chain fees so we don't take those into account when receiving.
@@ -155,21 +156,21 @@ object NormalCommits {
 
   private def addRemoteProposal(commitments: NormalCommits, proposal: UpdateMessage): NormalCommits = commitments.modify(_.remoteChanges.proposed).using(_ :+ proposal)
 
-  def hasNoPendingHtlcs(commitments: NormalCommits): Boolean = commitments.localCommit.spec.htlcs.isEmpty && commitments.remoteCommit.spec.htlcs.isEmpty && commitments.remoteNextCommitInfo.isRight
+  def hasNoPendingHtlcs(commitments: NormalCommits): Boolean = commitments.localSpec.htlcs.isEmpty && commitments.remoteCommit.spec.htlcs.isEmpty && commitments.remoteNextCommitInfo.isRight
 
   def hasPendingOrProposedHtlcs(commitments: NormalCommits): Boolean = !hasNoPendingHtlcs(commitments) || commitments.localChanges.adds.nonEmpty || commitments.remoteChanges.adds.nonEmpty
 
   def timedOutOutgoingHtlcs(commitments: NormalCommits, blockheight: Long): Set[UpdateAddHtlc] = {
     val remoteNext = commitments.remoteNextCommitInfo.left.toSeq.flatMap(_.nextRemoteCommit.spec.incomingAdds.filter(add => blockheight >= add.cltvExpiry.toLong).toSet)
-    commitments.localCommit.spec.outgoingAdds.filter(blockheight >= _.cltvExpiry.toLong) ++ remoteNext ++ commitments.remoteCommit.spec.incomingAdds.filter(blockheight >= _.cltvExpiry.toLong)
+    commitments.localSpec.outgoingAdds.filter(blockheight >= _.cltvExpiry.toLong) ++ remoteNext ++ commitments.remoteCommit.spec.incomingAdds.filter(blockheight >= _.cltvExpiry.toLong)
   }
 
   def almostTimedOutIncomingHtlcs(commitments: NormalCommits, blockheight: Long, fulfillSafety: CltvExpiryDelta): Set[UpdateAddHtlc] =
-    commitments.localCommit.spec.incomingAdds.filter(add => CltvExpiry(blockheight) >= add.cltvExpiry - fulfillSafety)
+    commitments.localSpec.incomingAdds.filter(add => CltvExpiry(blockheight) >= add.cltvExpiry - fulfillSafety)
 
   def getOutgoingHtlcCrossSigned(commitments: NormalCommits, htlcId: Long): Option[UpdateAddHtlc] = for {
     localSigned <- commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments.remoteCommit).spec.findIncomingHtlcById(htlcId)
-    remoteSigned <- commitments.localCommit.spec.findOutgoingHtlcById(htlcId)
+    remoteSigned <- commitments.localSpec.findOutgoingHtlcById(htlcId)
   } yield {
     require(localSigned.add == remoteSigned.add)
     localSigned.add
@@ -177,7 +178,7 @@ object NormalCommits {
 
   def getIncomingHtlcCrossSigned(commitments: NormalCommits, htlcId: Long): Option[UpdateAddHtlc] = for {
     localSigned <- commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments.remoteCommit).spec.findOutgoingHtlcById(htlcId)
-    remoteSigned <- commitments.localCommit.spec.findIncomingHtlcById(htlcId)
+    remoteSigned <- commitments.localSpec.findIncomingHtlcById(htlcId)
   } yield {
     require(localSigned.add == remoteSigned.add)
     localSigned.add
@@ -204,13 +205,12 @@ object NormalCommits {
     // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
     // we need to verify that we're not disagreeing on feerates anymore before offering new HTLCs
     val localFeeratePerKw = feeConf.feeEstimator.getFeeratePerKw(target = feeConf.feeTargets.commitmentBlockTarget)
-    if (Helpers.isFeeDiffTooHigh(localFeeratePerKw, commitments.localCommit.spec.feeratePerKw, feeConf.maxFeerateMismatchFor(commitments.announce.na.nodeId))) {
-      throw CMDException(FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = commitments.localCommit.spec.feeratePerKw), cmd)
+    if (Helpers.isFeeDiffTooHigh(localFeeratePerKw, commitments.localSpec.feeratePerKw, feeConf.maxFeerateMismatchFor(commitments.announce.na.nodeId))) {
+      throw CMDException(FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = commitments.localSpec.feeratePerKw), cmd)
     }
 
     // let's compute the current commitment *as seen by them* with this change taken into account
-    val add = UpdateAddHtlc(commitments.channelId, commitments.localNextHtlcId, cmd.firstAmount, cmd.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet, cmd.partId)
-    // we increment the local htlc index and add an entry to the origins map
+    val add = UpdateAddHtlc(commitments.channelId, commitments.localNextHtlcId, cmd.firstAmount, cmd.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet)
     val commitments1 = addLocalProposal(commitments, add).copy(localNextHtlcId = commitments.localNextHtlcId + 1)
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
     val remoteCommit1 = commitments1.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments1.remoteCommit)
@@ -259,13 +259,13 @@ object NormalCommits {
     // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
     // we need to verify that we're not disagreeing on feerates anymore before accepting new HTLCs
     val localFeeratePerKw = feeConf.feeEstimator.getFeeratePerKw(target = feeConf.feeTargets.commitmentBlockTarget)
-    if (Helpers.isFeeDiffTooHigh(localFeeratePerKw, commitments.localCommit.spec.feeratePerKw, feeConf.maxFeerateMismatchFor(commitments.announce.na.nodeId))) {
-      throw FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = commitments.localCommit.spec.feeratePerKw)
+    if (Helpers.isFeeDiffTooHigh(localFeeratePerKw, commitments.localSpec.feeratePerKw, feeConf.maxFeerateMismatchFor(commitments.announce.na.nodeId))) {
+      throw FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = commitments.localSpec.feeratePerKw)
     }
 
     // let's compute the current commitment *as seen by us* including this change
     val commitments1 = addRemoteProposal(commitments, add).copy(remoteNextHtlcId = commitments.remoteNextHtlcId + 1)
-    val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
+    val reduced = CommitmentSpec.reduce(commitments1.localSpec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
     val incomingHtlcs = reduced.htlcs.collect(incoming)
 
     // note that the funder pays the fee, so if sender != funder, both sides will have to afford this payment
@@ -383,7 +383,7 @@ object NormalCommits {
         // let's compute the current commitment *as seen by us* including this change
         // update_fee replace each other, so we can remove previous ones
         val commitments1 = commitments.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
-        val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
+        val reduced = CommitmentSpec.reduce(commitments1.localSpec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
 
         // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
         val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced, commitments.channelVersion.commitmentFormat)
@@ -448,7 +448,7 @@ object NormalCommits {
     // we will reply to this sig with our old revocation hash preimage (at index) and our next revocation hash (at index + 1)
     // and will increment our index
 
-    val spec = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
+    val spec = CommitmentSpec.reduce(localSpec, localChanges.acked, remoteChanges.proposed)
     val localPerCommitmentPoint = commitments.announce.commitmentPoint(channelKeyPath, commitments.localCommit.index + 1)
     val (localCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeLocalTxs(commitments.announce, channelVersion, localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
     val sig = commitments.announce.sign(localCommitTx, commitments.announce.fundingPublicKey(commitments.localParams.fundingKeyPath), TxOwner.Local, channelVersion.commitmentFormat)

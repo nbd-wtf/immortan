@@ -78,7 +78,10 @@ case class CMD_FAIL_MALFORMED_HTLC(onionHash: ByteVector32, failureCode: Int, ad
 case class FinalPayloadSpec(packet: DecryptedPacket, payload: FinalPayload, add: UpdateAddHtlc) extends AddResolution
 case class CMD_FULFILL_HTLC(preimage: ByteVector32, add: UpdateAddHtlc) extends Command with AddResolution
 
-case class CMD_ADD_HTLC(partId: ByteVector, firstAmount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, packetAndSecrets: PacketAndSecrets, payload: FinalPayload) extends Command
+case class CMD_ADD_HTLC(firstAmount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, packetAndSecrets: PacketAndSecrets, payload: FinalPayload) extends Command {
+  final val partId: ByteVector = packetAndSecrets.packet.publicKey
+}
+
 case class CMD_HOSTED_STATE_OVERRIDE(so: StateOverride) extends Command
 case class HC_CMD_RESIZE(delta: Satoshi) extends Command
 

@@ -203,7 +203,7 @@ trait Handlers { me: ChannelNormal =>
         val revWasSentLast = commitments1.localCommit.index > waitingForRevocation.sentAfterLocalCommitIndex
         if (!revWasSentLast) resendRevocation
 
-        commitments1.localChanges.signed.foreach(revocation => sendQueue = sendQueue :+ revocation)
+        commitments1.localChanges.signed.foreach(revocation => sendQueue :+= revocation)
         sendQueue = sendQueue :+ waitingForRevocation.sent
 
         if (revWasSentLast) resendRevocation

@@ -16,20 +16,18 @@
 
 package fr.acinq.eclair.payment
 
-import java.util.UUID
-
-import akka.event.LoggingAdapter
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CannotExtractSharedSecret}
-import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, UInt64, randomKey}
-import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
-
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
+import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CannotExtractSharedSecret}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, UInt64}
+import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.bitcoin.ByteVector32
+import akka.event.LoggingAdapter
+import scodec.bits.ByteVector
 import scala.reflect.ClassTag
+import java.util.UUID
 
 /**
  * Created by t-bast on 08/10/2019.
@@ -143,9 +141,8 @@ object OutgoingPacket {
   /**
    * Build an encrypted onion packet from onion payloads and node public keys.
    */
-  def buildOnion[T <: Onion.PacketType](packetType: Sphinx.OnionRoutingPacket[T])(nodes: Seq[PublicKey], payloads: Seq[Onion.PerHopPayload], associatedData: ByteVector32): Sphinx.PacketAndSecrets = {
+  def buildOnion[T <: Onion.PacketType](packetType: Sphinx.OnionRoutingPacket[T])(sessionKey: PrivateKey, nodes: Seq[PublicKey], payloads: Seq[Onion.PerHopPayload], associatedData: ByteVector32): Sphinx.PacketAndSecrets = {
     require(nodes.size == payloads.size)
-    val sessionKey = randomKey
     val payloadsBin: Seq[ByteVector] = payloads
       .map {
         case p: Onion.FinalPayload => OnionCodecs.finalPerHopPayloadCodec.encode(p)
@@ -191,11 +188,11 @@ object OutgoingPacket {
    *         - firstExpiry is the cltv expiry for the first htlc in the route
    *         - the onion to include in the HTLC
    */
-  def buildPacket[T <: Onion.PacketType](packetType: Sphinx.OnionRoutingPacket[T])(paymentHash: ByteVector32, hops: Seq[Hop], finalPayload: Onion.FinalPayload): (MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets) = {
+  def buildPacket[T <: Onion.PacketType](packetType: Sphinx.OnionRoutingPacket[T])(sessionKey: PrivateKey, paymentHash: ByteVector32, hops: Seq[Hop], finalPayload: Onion.FinalPayload): (MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets) = {
     val (firstAmount, firstExpiry, payloads) = buildPayloads(hops.drop(1), finalPayload)
     val nodes = hops.map(_.nextNodeId)
     // BOLT 2 requires that associatedData == paymentHash
-    val onion = buildOnion(packetType)(nodes, payloads, paymentHash)
+    val onion = buildOnion(packetType)(sessionKey, nodes, payloads, paymentHash)
     (firstAmount, firstExpiry, onion)
   }
 
@@ -211,7 +208,7 @@ object OutgoingPacket {
    *         - firstExpiry is the cltv expiry for the first trampoline node in the route
    *         - the trampoline onion to include in final payload of a normal onion
    */
-  def buildTrampolineToLegacyPacket(invoice: PaymentRequest, hops: Seq[NodeHop], finalPayload: Onion.FinalPayload): (MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets) = {
+  def buildTrampolineToLegacyPacket(sessionKey: PrivateKey, invoice: PaymentRequest, hops: Seq[NodeHop], finalPayload: Onion.FinalPayload): (MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets) = {
     val (firstAmount, firstExpiry, payloads) = hops.drop(1).reverse.foldLeft((finalPayload.amount, finalPayload.expiry, Seq[Onion.PerHopPayload](finalPayload))) {
       case ((amount, expiry, payloads), hop) =>
         // The next-to-last trampoline hop must include invoice data to indicate the conversion to a legacy payment.
@@ -223,7 +220,7 @@ object OutgoingPacket {
         (amount + hop.fee(amount), expiry + hop.cltvExpiryDelta, payload +: payloads)
     }
     val nodes = hops.map(_.nextNodeId)
-    val onion = buildOnion(Sphinx.TrampolinePacket)(nodes, payloads, invoice.paymentHash)
+    val onion = buildOnion(Sphinx.TrampolinePacket)(sessionKey, nodes, payloads, invoice.paymentHash)
     (firstAmount, firstExpiry, onion)
   }
 

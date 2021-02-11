@@ -9,18 +9,20 @@ import immortan.PaymentFailure._
 import fr.acinq.eclair.channel._
 import scala.concurrent.duration._
 import com.softwaremill.quicklens._
+
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import immortan.utils.{Denomination, Rx, ThrottledWork}
 import immortan.crypto.{CanBeRepliedTo, StateMachine, Tools}
 import immortan.ChannelListener.{Incoming, Malfunction, Transition}
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DescAndCapacity, GraphEdge}
+import fr.acinq.eclair.transactions.{RemoteFailed, TheirFailed, TheirMalformed}
 import fr.acinq.eclair.crypto.Sphinx.{DecryptedPacket, FailurePacket, PacketAndSecrets}
 import immortan.Channel.{OPEN, SLEEPING, SUSPENDED, isOperational, isOperationalAndOpen}
-import fr.acinq.eclair.transactions.{OurFulfilled, RemoteFailed, TheirFailed, TheirMalformed}
 import fr.acinq.eclair.router.Router.{ChannelDesc, NoRouteAvailable, Route, RouteFound, RouteParams, RouteRequest, RouteResponse}
+
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.bitcoin.Crypto.PublicKey
 import java.util.concurrent.Executors
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.crypto.Sphinx
@@ -57,15 +59,19 @@ case class RemoteFailure(packet: Sphinx.DecryptedFailurePacket, route: Route) ex
 
 
 sealed trait PartStatus { me =>
+  final val partId: ByteVector = onionPrivKey.publicKey.value
   def tuple: (ByteVector, PartStatus) = (partId, me)
-  def partId: ByteVector
+  def onionPrivKey: PrivateKey
 }
 
 case class InFlightInfo(cmd: CMD_ADD_HTLC, route: Route)
 
-case class WaitForBetterConditions(partId: ByteVector, amount: MilliSatoshi) extends PartStatus
+case class WaitForBetterConditions(onionPrivKey: PrivateKey, amount: MilliSatoshi) extends PartStatus
 
-case class WaitForRouteOrInFlight(partId: ByteVector, amount: MilliSatoshi, cnc: ChanAndCommits, flight: Option[InFlightInfo] = None, localFailed: List[Channel] = Nil, remoteAttempts: Int = 0) extends PartStatus {
+case class WaitForRouteOrInFlight(onionPrivKey: PrivateKey, amount: MilliSatoshi, cnc: ChanAndCommits,
+                                  flight: Option[InFlightInfo] = None, localFailed: List[Channel] = Nil,
+                                  remoteAttempts: Int = 0) extends PartStatus {
+
   def oneMoreRemoteAttempt(cnc1: ChanAndCommits): WaitForRouteOrInFlight = copy(flight = None, remoteAttempts = remoteAttempts + 1, cnc = cnc1)
   def oneMoreLocalAttempt(cnc1: ChanAndCommits): WaitForRouteOrInFlight = copy(flight = None, localFailed = localFailedChans, cnc = cnc1)
   lazy val localFailedChans: List[Channel] = cnc.chan :: localFailed
@@ -99,9 +105,9 @@ case class SplitIntoHalves(amount: MilliSatoshi)
 case class NodeFailed(failedNodeId: PublicKey, increment: Int)
 case class ChannelFailed(failedDescAndCap: DescAndCapacity, increment: Int)
 
-case class CMD_SEND_MPP(paymentHash: ByteVector32, targetNodeId: PublicKey,
-                        totalAmount: MilliSatoshi = 0L.msat, paymentSecret: ByteVector32 = ByteVector32.Zeroes,
-                        targetExpiry: CltvExpiry = CltvExpiry(0), assistedEdges: Set[GraphEdge] = Set.empty)
+case class CMD_SEND_MPP(paymentHash: ByteVector32, targetNodeId: PublicKey, totalAmount: MilliSatoshi = 0L.msat,
+                        paymentSecret: ByteVector32 = ByteVector32.Zeroes, targetExpiry: CltvExpiry = CltvExpiry(0),
+                        assistedEdges: Set[GraphEdge] = Set.empty)
 
 object ChannelMaster {
   type PartIdToAmount = Map[ByteVector, MilliSatoshi]
@@ -219,42 +225,43 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
     */
 
   override def stateUpdated(cs: Commitments): Unit = {
-    val allChansAndCommits: List[ChanAndCommits] = all.flatMap(Channel.chanAndCommitsOpt)
-    val allRevealedHashes: Set[ByteVector32] = allChansAndCommits.flatMap(_.commits.revealedHashes).toSet // Payment hashes with preimage is revealed, but state not updated yet
-    val allFulfilledAdds = toMapBy[ByteVector32, OurFulfilled](allChansAndCommits.flatMap(_.commits.localSpec.localFulfilled), _.paymentHash) // Successfully settled incoming shards
-    val allIncomingAdds = toMapBy[ByteVector32, AddResolution](allChansAndCommits.flatMap(_.commits.localSpec.incomingAdds).map(_.resolution), _.add.paymentHash) // Pending incoming shards
-
-    val allIncomingResolves: List[AddResolution] = allChansAndCommits.flatMap(_.commits.unansweredIncoming).map(_.resolution)
-    val badRightAway: List[BadAddResolution] = allIncomingResolves collect { case badAddResolution: BadAddResolution => badAddResolution }
-    val maybeGood: List[FinalPayloadSpec] = allIncomingResolves collect { case finalPayloadSpec: FinalPayloadSpec => finalPayloadSpec }
-
-    // Grouping by payment hash assumes we never ask for two different payments with the same hash!
-    val results = maybeGood.groupBy(_.add.paymentHash).map(_.swap).mapValues(getPaymentInfoMemo) map {
-      // No such payment in our database or this is an outgoing payment, in any case we better fail it right away
-      case (payments, info) if !info.exists(_.isIncoming) => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
-      // These are multipart payments where preimage is revealed or some shards are partially fulfilled, proceed with fulfilling of the rest of shards
-      case (payments, Some(info)) if allFulfilledAdds.contains(info.paymentHash) => for (pay <- payments) yield CMD_FULFILL_HTLC(info.preimage, pay.add)
-      case (payments, Some(info)) if allRevealedHashes.contains(info.paymentHash) => for (pay <- payments) yield CMD_FULFILL_HTLC(info.preimage, pay.add)
-      // This is a multipart payment where some shards have different total amount values, this is a spec violation so we proceed with failing right away
-      case (payments, _) if payments.map(_.payload.totalAmount).toSet.size > 1 => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
-      // This is a payment where total amount is set to a value which is less than what we have originally requested, this is a spec violation so we proceed with failing right away
-      case (payments, Some(info)) if info.pr.amount.exists(_ > payments.head.payload.totalAmount) => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
-      // This is a payment where one of shards has a paymentSecret which is different from the one we have provided in invoice, this is a spec violation so we proceed with failing right away
-      case (payments, Some(info)) if !payments.flatMap(_.payload.paymentSecret).forall(info.pr.paymentSecret.contains) => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
-      // This is a payment which arrives too late, we would have too few blocks to prove that we have fulfilled it with an uncooperative peer, not a spec violation but we still fail it to be on safe side
-      case (payments, _) if payments.exists(_.add.cltvExpiry.toLong < LNParams.blockCount.get + LNParams.cltvRejectThreshold) => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
-      case (payments, Some(info)) if payments.map(_.add.amountMsat).sum >= payments.head.payload.totalAmount => for (pay <- payments) yield CMD_FULFILL_HTLC(info.preimage, pay.add)
-      // This can happen either when incoming payments time out or when we restart and have partial unanswered incoming leftovers, fail all of them
-      case (payments, _) if incomingTimeoutWorker.finishedOrNeverStarted => for (pay <- payments) yield failFinalPayloadSpec(PaymentTimeout, pay)
-      case _ => Nil
-    }
-
-    // This method should always be executed in channel context
-    // Using doProcess makes sure no external message gets intertwined in resolution
-    // For simplicity all resolutions are sent to all channels, filtering is up to channel
-    for (resolution <- badRightAway ++ results.flatten) all.foreach(_ doProcess resolution)
-    // Again, channel must only react to this if it has relevant changes
-    all.foreach(_ doProcess CMD_SIGN)
+//    val allChansAndCommits: List[ChanAndCommits] = all.flatMap(Channel.chanAndCommitsOpt)
+//    val allRevealedHashes: Set[ByteVector32] = allChansAndCommits.flatMap(_.commits.revealedHashes).toSet // Payment hashes with preimage is revealed, but state not updated yet
+//    val allFulfilledAdds = toMapBy[ByteVector32, OurFulfilled](allChansAndCommits.flatMap(_.commits.localSpec.localFulfilled), _.paymentHash) // Successfully settled incoming shards
+//    val allIncomingAdds = toMapBy[ByteVector32, AddResolution](allChansAndCommits.flatMap(_.commits.localSpec.incomingAdds).map(_.resolution), _.add.paymentHash) // Pending incoming shards
+//
+//    val allIncomingResolves: List[AddResolution] = allChansAndCommits.flatMap(_.commits.unansweredIncoming).map(_.resolution)
+//    val badRightAway: List[BadAddResolution] = allIncomingResolves collect { case badAddResolution: BadAddResolution => badAddResolution }
+//    val maybeGood: List[FinalPayloadSpec] = allIncomingResolves collect { case finalPayloadSpec: FinalPayloadSpec => finalPayloadSpec }
+//
+//    // Grouping by payment hash assumes we never ask for two different payments with the same hash!
+//    val results = maybeGood.groupBy(_.add.paymentHash).map(_.swap).mapValues(getPaymentInfoMemo) map {
+//      // TODO: reject incoming right away if we already have an onion with same session key
+//      // No such payment in our database or this is an outgoing payment, in any case we better fail it right away
+//      case (payments, info) if !info.exists(_.isIncoming) => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
+//      // These are multipart payments where preimage is revealed or some shards are partially fulfilled, proceed with fulfilling of the rest of shards
+//      case (payments, Some(info)) if allFulfilledAdds.contains(info.paymentHash) => for (pay <- payments) yield CMD_FULFILL_HTLC(info.preimage, pay.add)
+//      case (payments, Some(info)) if allRevealedHashes.contains(info.paymentHash) => for (pay <- payments) yield CMD_FULFILL_HTLC(info.preimage, pay.add)
+//      // This is a multipart payment where some shards have different total amount values, this is a spec violation so we proceed with failing right away
+//      case (payments, _) if payments.map(_.payload.totalAmount).toSet.size > 1 => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
+//      // This is a payment where total amount is set to a value which is less than what we have originally requested, this is a spec violation so we proceed with failing right away
+//      case (payments, Some(info)) if info.pr.amount.exists(_ > payments.head.payload.totalAmount) => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
+//      // This is a payment where one of shards has a paymentSecret which is different from the one we have provided in invoice, this is a spec violation so we proceed with failing right away
+//      case (payments, Some(info)) if !payments.flatMap(_.payload.paymentSecret).forall(info.pr.paymentSecret.contains) => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
+//      // This is a payment which arrives too late, we would have too few blocks to prove that we have fulfilled it with an uncooperative peer, not a spec violation but we still fail it to be on safe side
+//      case (payments, _) if payments.exists(_.add.cltvExpiry.toLong < LNParams.blockCount.get + LNParams.cltvRejectThreshold) => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
+//      case (payments, Some(info)) if payments.map(_.add.amountMsat).sum >= payments.head.payload.totalAmount => for (pay <- payments) yield CMD_FULFILL_HTLC(info.preimage, pay.add)
+//      // This can happen either when incoming payments time out or when we restart and have partial unanswered incoming leftovers, fail all of them
+//      case (payments, _) if incomingTimeoutWorker.finishedOrNeverStarted => for (pay <- payments) yield failFinalPayloadSpec(PaymentTimeout, pay)
+//      case _ => Nil
+//    }
+//
+//    // This method should always be executed in channel context
+//    // Using doProcess makes sure no external message gets intertwined in resolution
+//    // For simplicity all resolutions are sent to all channels, filtering is up to channel
+//    for (resolution <- badRightAway ++ results.flatten) all.foreach(_ doProcess resolution)
+//    // Again, channel must only react to this if it has relevant changes
+//    all.foreach(_ doProcess CMD_SIGN)
   }
 
   override def onProcessSuccess: PartialFunction[Incoming, Unit] = {
@@ -295,8 +302,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
         become(data.withFailureTimesReduced, state)
 
       case (cmd: CMD_SEND_MPP, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
-        // Make pathfinder aware of payee-provided routing hints
-        for (edge <- cmd.assistedEdges) pf process edge
+        for (assistedEdge <- cmd.assistedEdges) pf process assistedEdge
         relayOrCreateSender(cmd.paymentHash, cmd)
         self process CMDAskForRoute
 
@@ -414,8 +420,8 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
     private def getSendable(chans: List[Channel] = Nil): mutable.Map[ChanAndCommits, MilliSatoshi] = {
       val finals: mutable.Map[ChanAndCommits, MilliSatoshi] = mutable.Map.empty[ChanAndCommits, MilliSatoshi] withDefaultValue 0L.msat
       val waits: mutable.Map[ByteVector32, PartIdToAmount] = mutable.Map.empty[ByteVector32, PartIdToAmount] withDefaultValue Map.empty
-      // Wait part may have no route yet (but we expect a route to arrive shortly) or it may be sent to channel but not processed by channel yet
-      def waitPartsNotYetInChannel(cnc: ChanAndCommits): PartIdToAmount = waits(cnc.commits.channelId) -- cnc.commits.allOutgoing.map(ourAdd => ourAdd.partId)
+      // Wait part may have no route yet (but we expect a route to arrive) or it may be sent to channel but not processed by channel yet
+      def waitPartsNotYetInChannel(cnc: ChanAndCommits): PartIdToAmount = waits(cnc.commits.channelId) -- cnc.commits.allOutgoing.map(_.partId)
       data.payments.values.flatMap(_.data.parts.values).collect { case wait: WaitForRouteOrInFlight => waits(wait.cnc.commits.channelId) += wait.partId -> wait.amount }
       // Example 1: chan toLocal=100, 10 in-flight AND IS present in channel already, resulting sendable = 90 (toLocal with in-flight) - 0 (in-flight - partId) = 90
       // Example 2: chan toLocal=100, 10 in-flight AND IS NOT preset in channel yet, resulting sendable = 100 (toLocal) - 10 (in-flight - nothing) = 90
@@ -437,9 +443,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
 
     def doProcess(msg: Any): Unit = (msg, state) match {
       case (cmd: CMD_SEND_MPP, INIT | ABORTED) => assignToChans(PaymentMaster.currentSendable, PaymentSenderData(cmd, Map.empty), cmd.totalAmount)
-
       case (CMDException(_, cmd: CMD_ADD_HTLC), ABORTED) => self abortAndNotify data.withoutPartId(cmd.partId)
-
       case (err: RemoteFailed, ABORTED) => self abortAndNotify data.withoutPartId(err.partId)
 
       case (reject: RemoteFailed, INIT) =>
@@ -458,8 +462,8 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
         become(data, SUCCEEDED)
 
       case (CMDChanGotOnline, PENDING) =>
-        data.parts.values collectFirst { case WaitForBetterConditions(partId, amount) =>
-          assignToChans(PaymentMaster.currentSendable, data.withoutPartId(partId), amount)
+        data.parts.values collectFirst { case wait: WaitForBetterConditions =>
+          assignToChans(PaymentMaster.currentSendable, data.withoutPartId(wait.partId), wait.amount)
         }
 
       case (CMDAskForRoute, PENDING) =>
@@ -481,8 +485,8 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
       case (found: RouteFound, PENDING) =>
         data.parts.values collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isEmpty && wait.partId == found.partId =>
           val finalPayload = Onion.createMultiPartPayload(wait.amount, data.cmd.totalAmount, data.cmd.targetExpiry, data.cmd.paymentSecret)
-          val (firstAmount, firstExpiry, onion) = OutgoingPacket.buildPacket(Sphinx.PaymentPacket)(data.cmd.paymentHash, found.route.hops, finalPayload)
-          val cmdAdd = CMD_ADD_HTLC(wait.partId, firstAmount, data.cmd.paymentHash, firstExpiry, PacketAndSecrets(onion.packet, onion.sharedSecrets), finalPayload)
+          val (firstAmount, firstExpiry, onion) = OutgoingPacket.buildPacket(Sphinx.PaymentPacket)(wait.onionPrivKey, data.cmd.paymentHash, found.route.hops, finalPayload)
+          val cmdAdd = CMD_ADD_HTLC(firstAmount, data.cmd.paymentHash, firstExpiry, PacketAndSecrets(onion.packet, onion.sharedSecrets), finalPayload)
           become(data.copy(parts = data.parts + wait.copy(flight = InFlightInfo(cmdAdd, found.route).toSome).tuple), PENDING)
           wait.cnc.chan process cmdAdd
         }
@@ -605,7 +609,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
           val finalAmount = leftover max cnc.commits.minSendable min chanSendable
 
           if (finalAmount >= cnc.commits.minSendable) {
-            val wait = WaitForRouteOrInFlight(randomBytes(8), finalAmount, cnc)
+            val wait = WaitForRouteOrInFlight(randomKey, finalAmount, cnc)
             (accumulator + wait.tuple, leftover - finalAmount)
           } else (accumulator, leftover)
 
@@ -622,7 +626,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
 
         case (_, rest) if PaymentMaster.totalSendable - PaymentMaster.currentSendable.values.sum >= rest =>
           // Amount has not been fully split, but it is still possible to split it once some channel becomes OPEN
-          become(data1.copy(parts = data1.parts + WaitForBetterConditions(randomBytes(8), amount).tuple), PENDING)
+          become(data1.copy(parts = data1.parts + WaitForBetterConditions(randomKey, amount).tuple), PENDING)
 
         case _ =>
           // A non-zero leftover is present with no more channels left

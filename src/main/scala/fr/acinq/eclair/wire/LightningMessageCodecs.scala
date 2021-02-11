@@ -130,8 +130,7 @@ object LightningMessageCodecs {
       ("amountMsat" | millisatoshi) ::
       ("paymentHash" | bytes32) ::
       ("expiry" | cltvExpiry) ::
-      ("onionRoutingPacket" | OnionCodecs.paymentOnionPacketCodec) ::
-      ("partId" | varsizebinarydata)
+      ("onionRoutingPacket" | OnionCodecs.paymentOnionPacketCodec)
   }.as[UpdateAddHtlc]
 
   val updateFulfillHtlcCodec = {

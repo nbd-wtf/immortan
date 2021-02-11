@@ -28,10 +28,13 @@ object Tools {
     def toSome: Option[T] = Some(underlying)
   }
 
-  def toMapBy[K, V](items: Iterable[V], mapper: V => K): Map[K, V] = items.map(item => mapper(item) -> item).toMap
-  def mostFrequentItem[T](items: Iterable[T] = Nil): T = items.groupBy(identity) maxBy { case (_, xs) => xs.size } match { case (bestItem, _) => bestItem }
-  def mapKeys[K, V, K1](m: mutable.Map[K, V], fun: K => K1, defVal: V): mutable.Map[K1, V] = m map { case (key, value) => fun(key) -> value } withDefaultValue defVal
-  def memoize[In, Out](fun: In => Out): collection.mutable.HashMap[In, Out] = new collection.mutable.HashMap[In, Out] { self =>
+  def toMapBy[K, V](items: Iterable[V], mapper: V => K): Map[K, V] =
+    items.map(item => mapper(item) -> item).toMap
+
+  def mapKeys[K, V, K1](items: mutable.Map[K, V], mapper: K => K1, defVal: V): mutable.Map[K1, V] =
+    items map { case (key, value) => mapper(key) -> value } withDefaultValue defVal
+
+  def memoize[In, Out](fun: In => Out): collection.mutable.HashMap[In, Out] = new collection.mutable.HashMap[In, Out] {
     override def apply(key: In): Out = getOrElseUpdate(key, fun apply key)
   }
 
