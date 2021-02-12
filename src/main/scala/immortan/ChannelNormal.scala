@@ -246,8 +246,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         // We have something to sign and remote unused pubKey, don't forget to store revoked HTLC data
         if NormalCommits.localHasChanges(norm.commitments) && norm.commitments.remoteNextCommitInfo.isRight =>
 
-        val (commits1, commitSigMessage) = NormalCommits.sendCommit(norm.commitments)
-        val nextRemoteCommit = commits1.remoteNextCommitInfo.left.get.nextRemoteCommit
+        val (commits1, commitSigMessage, nextRemoteCommit) = NormalCommits.sendCommit(norm.commitments)
         val out = Transactions.trimOfferedHtlcs(norm.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, norm.commitments.channelVersion.commitmentFormat)
         val in = Transactions.trimReceivedHtlcs(norm.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, norm.commitments.channelVersion.commitmentFormat)
         StoreBecomeSend(norm.copy(commitments = commits1), OPEN, commitSigMessage)
