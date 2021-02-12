@@ -292,16 +292,16 @@ object NormalCommits {
   }
 
   def sendFulfill(commitments: NormalCommits, cmd: CMD_FULFILL_HTLC): (NormalCommits, UpdateFulfillHtlc) = {
-    NormalCommits.getIncomingHtlcCrossSigned(commitments, cmd.add.id) match {
+    NormalCommits.getIncomingHtlcCrossSigned(commitments, cmd.id) match {
       case Some(htlc) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
-        throw UnknownHtlcId(commitments.channelId, cmd.add.id)
-      case Some(htlc) if htlc.paymentHash == cmd.add.paymentHash =>
-        val fulfill = UpdateFulfillHtlc(commitments.channelId, cmd.add.id, cmd.preimage)
+        throw UnknownHtlcId(commitments.channelId, cmd.id)
+      case Some(htlc) if htlc.paymentHash == cmd.paymentHash =>
+        val fulfill = UpdateFulfillHtlc(commitments.channelId, cmd.id, cmd.preimage)
         val commitments1 = addLocalProposal(commitments, fulfill)
         (commitments1, fulfill)
-      case Some(_) => throw InvalidHtlcPreimage(commitments.channelId, cmd.add.id)
-      case None => throw UnknownHtlcId(commitments.channelId, cmd.add.id)
+      case Some(_) => throw InvalidHtlcPreimage(commitments.channelId, cmd.id)
+      case None => throw UnknownHtlcId(commitments.channelId, cmd.id)
     }
   }
 
@@ -313,18 +313,18 @@ object NormalCommits {
     }
   }
 
-  def sendFail(commitments: NormalCommits, cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): (NormalCommits, UpdateFailHtlc) = {
-    NormalCommits.getIncomingHtlcCrossSigned(commitments, cmd.add.id) match {
+  def sendFail(commitments: NormalCommits, cmd: CMD_FAIL_HTLC): (NormalCommits, UpdateFailHtlc) = {
+    NormalCommits.getIncomingHtlcCrossSigned(commitments, cmd.id) match {
       case Some(htlc) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
-        throw UnknownHtlcId(commitments.channelId, cmd.add.id)
+        throw UnknownHtlcId(commitments.channelId, cmd.id)
       case Some(htlc) =>
         // we need the shared secret to build the error packet
-        OutgoingPacket.buildHtlcFailure(nodeSecret, cmd, htlc) match {
+        OutgoingPacket.buildHtlcFailure(commitments.announce.nodeSpecificPrivKey, cmd, htlc) match {
           case Left(canNotExtractSharedSecret) => throw canNotExtractSharedSecret
           case Right(fail) => (addLocalProposal(commitments, fail), fail)
         }
-      case None => throw UnknownHtlcId(commitments.channelId, cmd.add.id)
+      case None => throw UnknownHtlcId(commitments.channelId, cmd.id)
     }
   }
 
@@ -333,15 +333,15 @@ object NormalCommits {
     if ((cmd.failureCode & FailureMessageCodecs.BADONION) == 0) {
       throw InvalidFailureCode(commitments.channelId)
     } else {
-      NormalCommits.getIncomingHtlcCrossSigned(commitments, cmd.add.id) match {
+      NormalCommits.getIncomingHtlcCrossSigned(commitments, cmd.id) match {
         case Some(htlc) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
           // we have already sent a fail/fulfill for this htlc
-          throw UnknownHtlcId(commitments.channelId, cmd.add.id)
+          throw UnknownHtlcId(commitments.channelId, cmd.id)
         case Some(_) =>
-          val fail = UpdateFailMalformedHtlc(commitments.channelId, cmd.add.id, cmd.onionHash, cmd.failureCode)
+          val fail = UpdateFailMalformedHtlc(commitments.channelId, cmd.id, cmd.onionHash, cmd.failureCode)
           val commitments1 = addLocalProposal(commitments, fail)
           (commitments1, fail)
-        case None => throw UnknownHtlcId(commitments.channelId, cmd.add.id)
+        case None => throw UnknownHtlcId(commitments.channelId, cmd.id)
       }
     }
   }

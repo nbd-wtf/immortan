@@ -118,12 +118,9 @@ object ChannelMaster {
   def incorrectDetails(add: UpdateAddHtlc): IncorrectOrUnknownPaymentDetails =
     IncorrectOrUnknownPaymentDetails(add.amountMsat, LNParams.blockCount.get)
 
-  def failFinalPayloadSpec(fail: FailureMessage, finalPayloadSpec: FinalPayloadSpec): CMD_FAIL_HTLC =
-    failHtlc(finalPayloadSpec.packet, fail, finalPayloadSpec.add)
-
-  def failHtlc(packet: DecryptedPacket, fail: FailureMessage, add: UpdateAddHtlc): CMD_FAIL_HTLC = {
+  def failHtlc(packet: DecryptedPacket, fail: FailureMessage, id: Long): CMD_FAIL_HTLC = {
     val localFailurePacket = FailurePacket.create(packet.sharedSecret, fail)
-    CMD_FAIL_HTLC(Left(localFailurePacket), add)
+    CMD_FAIL_HTLC(Left(localFailurePacket), id)
   }
 }
 
@@ -366,7 +363,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
 
     // ChannelListener implementation, call `process` to get out of channel context
 
-    override def fulfillReceived(fulfill: UpdateFulfillHtlc): Unit = self process fulfill
+    override def fulfillReceived(fulfill: UpdateFulfillHtlc, ourAdd: UpdateAddHtlc): Unit = self process fulfill
 
     override def onException: PartialFunction[Malfunction, Unit] = { case (_, exception: CMDException) => self process exception }
 

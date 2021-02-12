@@ -4,8 +4,10 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.channel._
 import com.softwaremill.quicklens._
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.eclair.transactions._
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
+import fr.acinq.eclair.payment.OutgoingPacket
 import scodec.bits.ByteVector
 
 
@@ -73,6 +75,16 @@ case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: La
     if (commits1.nextLocalSpec.toRemote < 0L.msat) throw InsufficientFunds(channelId)
     commits1
   }
+
+  def sendFail(cmd: CMD_FAIL_HTLC): (HostedCommits, UpdateFailHtlc) = // TODO: improve all send/receive methods
+    localSpec.findIncomingHtlcById(cmd.id).map { case IncomingHtlc(add) =>
+      OutgoingPacket.buildHtlcFailure(announce.nodeSpecificPrivKey, cmd, add) match {
+        case Left(canNotExtractSharedSecret) => throw canNotExtractSharedSecret
+        case Right(fail) => (addLocalProposal(fail), fail)
+      }
+    } getOrElse {
+      throw UnknownHtlcId(channelId, cmd.id)
+    }
 
   def withResize(resize: ResizeChannel): HostedCommits =
     me.modify(_.lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat).setTo(resize.newCapacityMsatU64)

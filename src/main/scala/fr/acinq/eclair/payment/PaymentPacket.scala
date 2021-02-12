@@ -242,7 +242,7 @@ object OutgoingPacket {
           case Left(forwarded) => Sphinx.FailurePacket.wrap(forwarded, sharedSecret)
           case Right(failure) => Sphinx.FailurePacket.create(sharedSecret, failure)
         }
-        Right(UpdateFailHtlc(add.channelId, cmd.add.id, reason))
+        Right(UpdateFailHtlc(add.channelId, cmd.id, reason))
       case Left(_) => Left(CannotExtractSharedSecret(add.channelId, add))
     }
   }

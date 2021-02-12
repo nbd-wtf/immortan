@@ -21,7 +21,7 @@ import fr.acinq.eclair.wire._
 import scodec.bits.{BitVector, ByteVector}
 import fr.acinq.eclair.crypto.Sphinx.{DecryptedPacket, PacketAndSecrets}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
-import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitTx, CommitmentFormat, DefaultCommitmentFormat}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.CommitmentSpec
@@ -71,27 +71,35 @@ case class BITCOIN_PARENT_TX_CONFIRMED(childTx: Transaction) extends BitcoinEven
  */
 
 sealed trait Command
-sealed trait AddResolution { val add: UpdateAddHtlc }
-sealed trait BadAddResolution extends Command with AddResolution
-case class CMD_FAIL_HTLC(reason: Either[ByteVector, FailureMessage], add: UpdateAddHtlc) extends BadAddResolution
-case class CMD_FAIL_MALFORMED_HTLC(onionHash: ByteVector32, failureCode: Int, add: UpdateAddHtlc) extends BadAddResolution
-case class FinalPayloadSpec(packet: DecryptedPacket, payload: FinalPayload, add: UpdateAddHtlc) extends AddResolution
-case class CMD_FULFILL_HTLC(preimage: ByteVector32, add: UpdateAddHtlc) extends Command with AddResolution
+
+case class CMD_FAIL_HTLC(reason: Either[ByteVector, FailureMessage], id: Long) extends Command
+
+case class CMD_FAIL_MALFORMED_HTLC(onionHash: ByteVector32, failureCode: Int, id: Long) extends Command
+
+case class CMD_FULFILL_HTLC(preimage: ByteVector32, id: Long) extends Command {
+  lazy val paymentHash: ByteVector32 = Crypto.sha256(preimage)
+}
 
 case class CMD_ADD_HTLC(firstAmount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, packetAndSecrets: PacketAndSecrets, payload: FinalPayload) extends Command {
   final val partId: ByteVector = packetAndSecrets.packet.publicKey
 }
 
 case class CMD_HOSTED_STATE_OVERRIDE(so: StateOverride) extends Command
+
 case class HC_CMD_RESIZE(delta: Satoshi) extends Command
 
 case object CMD_SOCKET_OFFLINE extends Command
+
 case object CMD_SOCKET_ONLINE extends Command
+
 case object CMD_SIGN extends Command
 
+
 sealed trait CloseCommand extends Command
-final case class CMD_CLOSE(scriptPubKey: Option[ByteVector] = None) extends CloseCommand
+
 case object CMD_FORCECLOSE extends CloseCommand
+
+final case class CMD_CLOSE(scriptPubKey: Option[ByteVector] = None) extends CloseCommand
 
 /*
       8888888b.        d8888 88888888888     d8888

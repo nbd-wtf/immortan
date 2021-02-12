@@ -77,9 +77,9 @@ trait Channel extends StateMachine[ChannelData] { me =>
   var listeners = Set.empty[ChannelListener]
 
   val events: ChannelListener = new ChannelListener {
-    override def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = for (lst <- listeners) lst stateUpdated rejects
-    override def fulfillReceived(remoteFulfill: UpdateFulfillHtlc): Unit = for (lst <- listeners) lst fulfillReceived remoteFulfill
-    override def addReceived(remoteAdd: UpdateAddHtlc): Unit = for (lst <- listeners) lst addReceived remoteAdd
+    override def fulfillReceived(fulfill: UpdateFulfillHtlc, ourAdd: UpdateAddHtlc): Unit = for (lst <- listeners) lst.fulfillReceived(fulfill, ourAdd)
+    override def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = for (lst <- listeners) lst.stateUpdated(rejects)
+    override def addReceived(remoteAdd: UpdateAddHtlc): Unit = for (lst <- listeners) lst.addReceived(remoteAdd)
 
     override def onException: PartialFunction[ChannelListener.Malfunction, Unit] = { case failure => for (lst <- listeners if lst.onException isDefinedAt failure) lst onException failure }
     override def onBecome: PartialFunction[ChannelListener.Transition, Unit] = { case transition => for (lst <- listeners if lst.onBecome isDefinedAt transition) lst onBecome transition }
@@ -98,8 +98,8 @@ object ChannelListener {
 }
 
 trait ChannelListener {
+  def fulfillReceived(fulfill: UpdateFulfillHtlc, ourAdd: UpdateAddHtlc): Unit = none
   def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = none
-  def fulfillReceived(remoteFulfill: UpdateFulfillHtlc): Unit = none
   def addReceived(remoteAdd: UpdateAddHtlc): Unit = none
 
   def onException: PartialFunction[ChannelListener.Malfunction, Unit] = none

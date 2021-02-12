@@ -91,9 +91,9 @@ abstract class ChannelHosted extends Channel { me =>
       // fails/fulfills when SUSPENDED are ignored because they may fulfill afterwards
       case (hc: HostedCommits, fulfill: UpdateFulfillHtlc, SLEEPING | OPEN | SUSPENDED) =>
         // Technically peer may send a preimage any time, even if new LCSS has not been reached yet
-        val isPresent = hc.nextLocalSpec.findIncomingHtlcById(fulfill.id).isDefined
-        if (isPresent) BECOME(hc.addRemoteProposal(fulfill), state)
-        events.fulfillReceived(fulfill)
+        val ourAdd = hc.nextLocalSpec.findOutgoingHtlcById(fulfill.id).get.add
+        BECOME(hc.addRemoteProposal(fulfill), state)
+        events.fulfillReceived(fulfill, ourAdd)
 
 
       case (hc: HostedCommits, fail: UpdateFailHtlc, OPEN) =>
@@ -127,18 +127,20 @@ abstract class ChannelHosted extends Channel { me =>
         attemptStateUpdate(remoteSU, hc)
 
 
-      // In SLEEPING | SUSPENDED state we still send a preimage to get it resolved, then notify user on UI because normal resolution is not possible
-      case (hc: HostedCommits, cmd: CMD_FULFILL_HTLC, SLEEPING | OPEN | SUSPENDED) if cmd.add.channelId == hc.channelId && hc.unansweredIncoming.contains(cmd.add) =>
-        val updateFulfill = UpdateFulfillHtlc(hc.channelId, cmd.add.id, cmd.preimage)
-        StoreBecomeSend(hc.addLocalProposal(updateFulfill), state, updateFulfill)
+      case (hc: HostedCommits, cmd: CMD_FULFILL_HTLC, OPEN) =>
+        val fulfill = UpdateFulfillHtlc(hc.channelId, cmd.id, cmd.preimage)
+        StoreBecomeSend(hc.addLocalProposal(fulfill), state, fulfill)
 
 
-      // In SLEEPING | SUSPENDED state this will not be accepted by peer, but will make pending shard invisible to `unansweredIncoming` method, which is desired
-      case (hc: HostedCommits, cmd: CMD_FAIL_MALFORMED_HTLC, SLEEPING | OPEN | SUSPENDED) if cmd.add.channelId == hc.channelId && hc.unansweredIncoming.contains(cmd.add) =>
-        val updateFailMalformed = UpdateFailMalformedHtlc(hc.channelId, cmd.add.id, cmd.onionHash, cmd.failureCode)
-        StoreBecomeSend(hc.addLocalProposal(updateFailMalformed), state, updateFailMalformed)
+      case (hc: HostedCommits, cmd: CMD_FAIL_HTLC, OPEN) =>
+        val (hc1, fail) = hc.sendFail(cmd)
+        StoreBecomeSend(hc1, OPEN, fail)
 
-      // TODO: CMD_FAIL_HTLC
+
+      case (hc: HostedCommits, cmd: CMD_FAIL_MALFORMED_HTLC, OPEN) =>
+        val failMalformed = UpdateFailMalformedHtlc(hc.channelId, cmd.id, cmd.onionHash, cmd.failureCode)
+        StoreBecomeSend(hc.addLocalProposal(failMalformed), state, failMalformed)
+
 
       case (hc: HostedCommits, CMD_SOCKET_ONLINE, SLEEPING | SUSPENDED) =>
         val invokeMsg = InvokeHostedChannel(LNParams.chainHash, hc.lastCrossSignedState.refundScriptPubKey, ByteVector.empty)

@@ -224,22 +224,19 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         throw CMDException(ChannelUnavailable(some.channelId), cmd)
 
 
-      case (norm: DATA_NORMAL, cmd: CMD_FULFILL_HTLC, OPEN)
-        if cmd.add.channelId == norm.channelId && norm.commitments.unansweredIncoming.contains(cmd.add) =>
+      case (norm: DATA_NORMAL, cmd: CMD_FULFILL_HTLC, OPEN) =>
         val (commits1, fulfill) = NormalCommits.sendFulfill(norm.commitments, cmd)
         BECOME(norm.copy(commitments = commits1), OPEN)
         SEND(fulfill)
 
 
-      case (norm: DATA_NORMAL, cmd: CMD_FAIL_HTLC, OPEN)
-        if cmd.add.channelId == norm.channelId && norm.commitments.unansweredIncoming.contains(cmd.add) =>
-        val (commits1, fail) = NormalCommits.sendFail(norm.commitments, cmd, norm.commitments.announce.nodeSpecificPrivKey)
+      case (norm: DATA_NORMAL, cmd: CMD_FAIL_HTLC, OPEN) =>
+        val (commits1, fail) = NormalCommits.sendFail(norm.commitments, cmd)
         BECOME(norm.copy(commitments = commits1), OPEN)
         SEND(fail)
 
 
-      case (norm: DATA_NORMAL, cmd: CMD_FAIL_MALFORMED_HTLC, OPEN)
-        if cmd.add.channelId == norm.channelId && norm.commitments.unansweredIncoming.contains(cmd.add) =>
+      case (norm: DATA_NORMAL, cmd: CMD_FAIL_MALFORMED_HTLC, OPEN) =>
         val (commits1, malformed) = NormalCommits.sendFailMalformed(norm.commitments, cmd)
         BECOME(norm.copy(commitments = commits1), OPEN)
         SEND(malformed)
@@ -271,9 +268,9 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
 
       case (norm: DATA_NORMAL, fulfill: UpdateFulfillHtlc, OPEN) =>
-        val (commits1, _) = NormalCommits.receiveFulfill(norm.commitments, fulfill)
+        val (commits1, ourAdd) = NormalCommits.receiveFulfill(norm.commitments, fulfill)
         BECOME(norm.copy(commitments = commits1), OPEN)
-        events.fulfillReceived(fulfill)
+        events.fulfillReceived(fulfill, ourAdd)
 
 
       case (norm: DATA_NORMAL, fail: UpdateFailHtlc, OPEN) =>
