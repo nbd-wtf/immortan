@@ -24,20 +24,22 @@ object ChannelTable extends Table {
 }
 
 object HtlcInfoTable extends Table {
-  val (table, channelId, commitNumber, paymentHash, cltvExpiry) = ("htlcinfo", "chanid", "commitnumber", "hash", "cltv")
-  val selectAllSql = s"SELECT $paymentHash, $cltvExpiry FROM $table WHERE $channelId = ? AND $commitNumber = ?"
+  val (table, sid, commitNumber, paymentHash160, cltvExpiry) = ("htlcinfo", "sid", "commitnumber", "hash160", "cltv")
+  val selectAllSql = s"SELECT $paymentHash160, $cltvExpiry FROM $table WHERE $commitNumber = ?"
   val newSql = s"INSERT INTO $table VALUES (?, ?, ?, ?)"
+  val killSql = s"DELETE FROM $table WHERE $sid = ?"
 
   def createStatements: Seq[String] = {
     val createTable = s"""CREATE TABLE IF NOT EXISTS $table(
-      $id INTEGER PRIMARY KEY AUTOINCREMENT, $channelId TEXT NOT NULL,
-      $commitNumber INTEGER NOT NULL, $paymentHash BLOB NOT NULL,
+      $id INTEGER PRIMARY KEY AUTOINCREMENT, $sid INTEGER NOT NULL,
+      $commitNumber INTEGER NOT NULL, $paymentHash160 BLOB NOT NULL,
       $cltvExpiry INTEGER NOT NULL
     )"""
 
     // Index can not be unique because for each commit we may have same local or remote number
-    val addIndex = s"CREATE INDEX IF NOT EXISTS idx1$table ON $table ($channelId, $commitNumber)"
-    createTable :: addIndex :: Nil
+    val addIndex1 = s"CREATE INDEX IF NOT EXISTS idx1$table ON $table ($commitNumber)"
+    val addIndex2 = s"CREATE INDEX IF NOT EXISTS idx2$table ON $table ($sid)"
+    createTable :: addIndex1 :: addIndex2 :: Nil
   }
 }
 

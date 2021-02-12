@@ -646,10 +646,10 @@ object Helpers {
           }
 
           // we retrieve the informations needed to rebuild htlc scripts
-          val htlcInfos = db.htlcInfosForChan(commitments.channelId, txnumber)
+          val htlcInfos = db.htlcInfos(txnumber)
           val htlcsRedeemScripts = (
-            htlcInfos.map(item => Scripts.htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(item.paymentHash), item.cltvExpiry, commitments.channelVersion.commitmentFormat)) ++
-              htlcInfos.map(item => Scripts.htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(item.paymentHash), commitments.channelVersion.commitmentFormat))
+            htlcInfos.map(item => Scripts.htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, item.hash160, item.cltvExpiry, commitments.channelVersion.commitmentFormat)) ++
+              htlcInfos.map(item => Scripts.htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, item.hash160, commitments.channelVersion.commitmentFormat))
             )
             .map(redeemScript => Script.write(pay2wsh(redeemScript)) -> Script.write(redeemScript))
             .toMap

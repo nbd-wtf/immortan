@@ -300,7 +300,7 @@ trait PaymentDBUpdater {
 }
 
 object ChannelBag {
-  case class CltvAndPaymentHash(paymentHash: ByteVector32, cltvExpiry: CltvExpiry)
+  case class CltvAndHash160(hash160: ByteVector, cltvExpiry: CltvExpiry)
 }
 
 trait ChannelBag {
@@ -309,7 +309,8 @@ trait ChannelBag {
   def delete(commitments: HostedCommits): Unit
   def put(data: PersistentChannelData): PersistentChannelData
 
-  def htlcInfosForChan(channelId: ByteVector32, commitNumer: Long): Iterable[ChannelBag.CltvAndPaymentHash]
-  def putHtlcInfo(channelId: ByteVector32, commitNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit
-  def putHtlcInfos(htlcs: Seq[DirectedHtlc], channelId: ByteVector32, commitNumber: Long): Unit
+  def htlcInfos(commitNumer: Long): Iterable[ChannelBag.CltvAndHash160]
+  def putHtlcInfo(sid: ShortChannelId, commitNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit
+  def putHtlcInfos(htlcs: Seq[DirectedHtlc], sid: ShortChannelId, commitNumber: Long): Unit
+  def rmHtlcInfos(sid: ShortChannelId): Unit
 }

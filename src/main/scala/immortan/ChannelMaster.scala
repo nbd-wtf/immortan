@@ -8,7 +8,6 @@ import immortan.PaymentStatus._
 import immortan.PaymentFailure._
 import fr.acinq.eclair.channel._
 import scala.concurrent.duration._
-import com.softwaremill.quicklens._
 import fr.acinq.eclair.router.Router._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import immortan.utils.{Denomination, Rx, ThrottledWork}
@@ -43,11 +42,11 @@ sealed trait PaymentFailure {
 }
 
 case class LocalFailure(status: String, amount: MilliSatoshi) extends PaymentFailure {
-  override def asString(denom: Denomination): String = s"-- LocalFailure: $status"
+  override def asString(denom: Denomination): String = s"-- Local failure: $status"
 }
 
 case class UnreadableRemoteFailure(route: Route) extends PaymentFailure {
-  override def asString(denom: Denomination): String = s"-- RemoteFailure @ unknown-channel: ${route asString denom}"
+  override def asString(denom: Denomination): String = s"-- Remote failure at unknown channel: ${route asString denom}"
 }
 
 case class RemoteFailure(packet: Sphinx.DecryptedFailurePacket, route: Route) extends PaymentFailure {
@@ -66,7 +65,10 @@ case class InFlightInfo(cmd: CMD_ADD_HTLC, route: Route)
 
 case class WaitForBetterConditions(onionPrivKey: PrivateKey, amount: MilliSatoshi) extends PartStatus
 
-case class WaitForRouteOrInFlight(onionPrivKey: PrivateKey, amount: MilliSatoshi, cnc: ChanAndCommits, flight: Option[InFlightInfo] = None, localFailed: List[Channel] = Nil, remoteAttempts: Int = 0) extends PartStatus {
+case class WaitForRouteOrInFlight(onionPrivKey: PrivateKey, amount: MilliSatoshi, cnc: ChanAndCommits,
+                                  flight: Option[InFlightInfo] = None, localFailed: List[Channel] = Nil,
+                                  remoteAttempts: Int = 0) extends PartStatus {
+
   def oneMoreRemoteAttempt(cnc1: ChanAndCommits): WaitForRouteOrInFlight = copy(flight = None, remoteAttempts = remoteAttempts + 1, cnc = cnc1)
   def oneMoreLocalAttempt(cnc1: ChanAndCommits): WaitForRouteOrInFlight = copy(flight = None, localFailed = localFailedChans, cnc = cnc1)
   lazy val localFailedChans: List[Channel] = cnc.chan :: localFailed
@@ -144,7 +146,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
 
   val events: ChannelMasterListener = new ChannelMasterListener {
     override def outgoingFailed(data: PaymentSenderData): Unit = for (lst <- listeners) lst.outgoingFailed(data)
-    override def outgoingSucceeded(data: PaymentSenderData): Unit = for (lst <- listeners) lst.outgoingSucceeded(data)
+    override def outgoingSucceeded(data: PaymentSenderData, preimage: ByteVector32): Unit = for (lst <- listeners) lst.outgoingSucceeded(data, preimage)
   }
 
   val incomingTimeoutWorker: ThrottledWork[ByteVector, Any] = new ThrottledWork[ByteVector, Any] {
@@ -162,7 +164,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
   def initConnect: Unit = all.flatMap(Channel.chanAndCommitsOpt).map(_.commits).foreach {
     case cs: HostedCommits => CommsTower.listen(connectionListeners, cs.announce.nodeSpecificPair, cs.announce.na, LNParams.hcInit)
     case cs: NormalCommits => CommsTower.listen(connectionListeners, cs.announce.nodeSpecificPair, cs.announce.na, LNParams.normInit)
-    case otherwise => throw new RuntimeException
+    case _ => throw new RuntimeException
   }
 
   // RECEIVE/SEND UTILITIES
@@ -375,12 +377,12 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
     // Utils
 
     private def relayOrCreateSender(paymentHash: ByteVector32, msg: Any): Unit = data.payments.get(paymentHash) match {
-      case None => withSender(new PaymentSender, paymentHash, msg) // Can happen after restart with leftoverts in channels
+      case None => withSender(new PaymentSender(paymentHash), msg) // Can happen after restart with leftovers in channels
       case Some(sender) => sender doProcess msg // Normal case, sender FSM is present
     }
 
-    private def withSender(sender: PaymentSender, paymentHash: ByteVector32, msg: Any): Unit = {
-      val payments1 = data.payments.updated(paymentHash, sender)
+    private def withSender(sender: PaymentSender, msg: Any): Unit = {
+      val payments1 = data.payments.updated(sender.paymentHash, sender)
       become(data.copy(payments = payments1), state)
       sender doProcess msg
     }
@@ -422,27 +424,18 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
     }
   }
 
-  class PaymentSender extends StateMachine[PaymentSenderData] { self =>
-    become(PaymentSenderData(CMD_SEND_MPP(ByteVector32.Zeroes, invalidPubKey), Map.empty), INIT)
+  class PaymentSender(val paymentHash: ByteVector32) extends StateMachine[PaymentSenderData] { self =>
+    become(PaymentSenderData(CMD_SEND_MPP(paymentHash, invalidPubKey), Map.empty), INIT)
 
     def doProcess(msg: Any): Unit = (msg, state) match {
+      case (reject: RemoteReject, ABORTED) => self abortAndNotify data.withoutPartId(reject.ourAdd.partId)
+      case (reject: RemoteReject, INIT) => self abortAndNotify data.withLocalFailure(NOT_RETRYING_NO_DETAILS, reject.ourAdd.amountMsat)
       case (cmd: CMD_SEND_MPP, INIT | ABORTED) => assignToChans(PaymentMaster.currentSendable, PaymentSenderData(cmd, Map.empty), cmd.totalAmount)
       case (CMDException(_, cmd: CMD_ADD_HTLC), ABORTED) => self abortAndNotify data.withoutPartId(cmd.partId)
-      case (reject: RemoteReject, ABORTED) => self abortAndNotify data.withoutPartId(reject.ourAdd.partId)
 
-      case (reject: RemoteReject, INIT) =>
-        val data1 = data.modify(_.cmd.paymentHash).setTo(reject.ourAdd.paymentHash)
-        self abortAndNotify data1.withLocalFailure(NOT_RETRYING_NO_DETAILS, reject.ourAdd.amountMsat)
-
-      case (fulfill: UpdateFulfillHtlc, INIT) =>
-        // An idempotent transition, fires a success event with implanted hash
-        val data1 = data.modify(_.cmd.paymentHash).setTo(fulfill.paymentHash)
-        events.outgoingSucceeded(data1) // TODO: fire when all parts are done?
-        become(data1, SUCCEEDED)
-
-      case (_: UpdateFulfillHtlc, PENDING | ABORTED) =>
-        // An idempotent transition, fires a success event
-        events.outgoingSucceeded(data)
+      case (fulfill: UpdateFulfillHtlc, INIT | PENDING | ABORTED) =>
+        // A terminal idempotent transition, fires a success event
+        events.outgoingSucceeded(data, fulfill.paymentPreimage)
         become(data, SUCCEEDED)
 
       case (CMDChanGotOnline, PENDING) =>
@@ -454,7 +447,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
         data.parts.values collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isEmpty =>
           val fakeLocalEdge = Tools.mkFakeLocalEdge(from = LNParams.format.keys.ourNodePubKey, toPeer = wait.cnc.commits.announce.na.nodeId)
           val params = RouteParams(pf.routerConf.searchMaxFeeBase, pf.routerConf.searchMaxFeePct, pf.routerConf.firstPassMaxRouteLength, pf.routerConf.firstPassMaxCltv)
-          PaymentMaster process RouteRequest(data.cmd.paymentHash, partId = wait.partId, LNParams.format.keys.ourNodePubKey, data.cmd.targetNodeId, wait.amount, fakeLocalEdge, params)
+          PaymentMaster process RouteRequest(paymentHash, partId = wait.partId, LNParams.format.keys.ourNodePubKey, data.cmd.targetNodeId, wait.amount, fakeLocalEdge, params)
         }
 
       case (fail: NoRouteAvailable, PENDING) =>
@@ -469,8 +462,8 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
       case (found: RouteFound, PENDING) =>
         data.parts.values collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isEmpty && wait.partId == found.partId =>
           val finalPayload = Onion.createMultiPartPayload(wait.amount, data.cmd.totalAmount, data.cmd.targetExpiry, data.cmd.paymentSecret)
-          val (firstAmount, firstExpiry, onion) = OutgoingPacket.buildPacket(Sphinx.PaymentPacket)(wait.onionPrivKey, data.cmd.paymentHash, found.route.hops, finalPayload)
-          val cmdAdd = CMD_ADD_HTLC(firstAmount, data.cmd.paymentHash, firstExpiry, PacketAndSecrets(onion.packet, onion.sharedSecrets), finalPayload)
+          val (firstAmount, firstExpiry, onion) = OutgoingPacket.buildPacket(Sphinx.PaymentPacket)(wait.onionPrivKey, paymentHash, found.route.hops, finalPayload)
+          val cmdAdd = CMD_ADD_HTLC(firstAmount, paymentHash, firstExpiry, PacketAndSecrets(onion.packet, onion.sharedSecrets), finalPayload)
           become(data.copy(parts = data.parts + wait.copy(flight = InFlightInfo(cmdAdd, found.route).toSome).tuple), PENDING)
           wait.cnc.chan process cmdAdd
         }
@@ -628,7 +621,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
       }
 
     private def abortAndNotify(data1: PaymentSenderData): Unit = {
-      val notInChannel = inChannelOutgoingHtlcs.forall(_.paymentHash != data1.cmd.paymentHash)
+      val notInChannel = inChannelOutgoingHtlcs.forall(_.paymentHash != paymentHash)
       if (notInChannel && data1.inFlights.isEmpty) events.outgoingFailed(data1)
       become(data1, ABORTED)
     }
@@ -636,6 +629,6 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
 }
 
 trait ChannelMasterListener {
-  def outgoingFailed(paymentSenderData: PaymentSenderData): Unit = none
-  def outgoingSucceeded(paymentSenderData: PaymentSenderData): Unit = none
+  def outgoingFailed(data: PaymentSenderData): Unit = none
+  def outgoingSucceeded(data: PaymentSenderData, preimage: ByteVector32): Unit = none
 }

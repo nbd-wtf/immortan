@@ -254,7 +254,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         val out = Transactions.trimOfferedHtlcs(norm.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, norm.commitments.channelVersion.commitmentFormat)
         val in = Transactions.trimReceivedHtlcs(norm.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, norm.commitments.channelVersion.commitmentFormat)
         StoreBecomeSend(norm.copy(commitments = commits1), OPEN, commitSigMessage)
-        bag.putHtlcInfos(out ++ in, norm.channelId, nextRemoteCommit.index)
+        bag.putHtlcInfos(out ++ in, norm.shortChannelId, nextRemoteCommit.index)
 
 
       case (norm: DATA_NORMAL, CMD_SIGN, OPEN)
