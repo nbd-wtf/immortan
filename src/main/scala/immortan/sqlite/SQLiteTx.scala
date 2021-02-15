@@ -3,7 +3,7 @@ package immortan.sqlite
 import spray.json._
 import immortan.utils.ImplicitJsonFormats._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
-import immortan.{TxDescription, TxInfo, TxTable}
+import immortan.{TxDescription, TxInfo}
 import java.lang.{Long => JLong}
 
 import immortan.crypto.Tools.Fiat2Btc

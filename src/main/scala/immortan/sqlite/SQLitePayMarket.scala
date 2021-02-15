@@ -2,7 +2,6 @@ package immortan.sqlite
 
 import immortan.utils.{LNUrl, PayLinkInfo, PayRequest}
 import fr.acinq.eclair.MilliSatoshi
-import immortan.PayMarketTable
 
 
 class SQLitePayMarket(db: DBInterface) {

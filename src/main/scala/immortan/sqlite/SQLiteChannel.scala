@@ -1,10 +1,10 @@
 package immortan.sqlite
 
 import java.lang.{Long => JLong}
+import immortan.{ChannelBag, HostedCommits}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
-import immortan.{ChannelBag, ChannelTable, HostedCommits, HtlcInfoTable}
-import fr.acinq.eclair.channel.{NormalCommits, PersistentChannelData}
 import fr.acinq.eclair.{CltvExpiry, ShortChannelId}
+import fr.acinq.eclair.channel.{NormalCommits, PersistentChannelData}
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.wire.ChannelCodecs
 

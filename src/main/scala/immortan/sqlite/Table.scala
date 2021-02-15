@@ -1,5 +1,4 @@
-package immortan
-
+package immortan.sqlite
 
 trait Table {
   val (id, fts) = "_id" -> "fts4"

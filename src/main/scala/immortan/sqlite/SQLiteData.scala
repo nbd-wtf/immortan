@@ -1,7 +1,7 @@
 package immortan.sqlite
 
 import immortan.sqlite.SQLiteData._
-import immortan.{DataTable, ElectrumHeadersTable, StorageFormat, SwapInStateExt}
+import immortan.{StorageFormat, SwapInStateExt}
 import fr.acinq.eclair.wire.{HostedChannelBranding, SwapInState}
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32}
 import java.lang.{Integer => JInt}
