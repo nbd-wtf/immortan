@@ -55,7 +55,7 @@ trait Channel extends StateMachine[ChannelData] { me =>
     case _ => // Do nothing
   }
 
-  def SEND(msg: LightningMessage *): Unit
+  def SEND(msg: LightningMessage*): Unit
 
   def STORE(data: PersistentChannelData): PersistentChannelData
 
@@ -66,7 +66,7 @@ trait Channel extends StateMachine[ChannelData] { me =>
     events.onBecome(trans)
   }
 
-  def StoreBecomeSend(data1: PersistentChannelData, state1: String, lnMessage: LightningMessage *): Unit = {
+  def StoreBecomeSend(data1: PersistentChannelData, state1: String, lnMessage: LightningMessage*): Unit = {
     // Storing goes first to ensure we retain an updated data before revealing it if anything goes wrong
 
     STORE(data1)

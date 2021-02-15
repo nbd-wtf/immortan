@@ -21,7 +21,7 @@ import scodec.bits.ByteVector
 
 object ChannelNormal {
   def make(initListeners: Set[ChannelListener], normalData: HasNormalCommitments, cw: ChainWallet, bag: ChannelBag): ChannelNormal = new ChannelNormal(bag) {
-    def SEND(messages: LightningMessage *): Unit = CommsTower.sendMany(messages, normalData.commitments.announce.nodeSpecificPair)
+    def SEND(messages: LightningMessage*): Unit = CommsTower.sendMany(messages, normalData.commitments.announce.nodeSpecificPair)
     def STORE(normalData1: PersistentChannelData): PersistentChannelData = bag.put(normalData1)
     var chainWallet: ChainWallet = cw
     listeners = initListeners

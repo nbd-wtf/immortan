@@ -154,7 +154,7 @@ object NodeAddress {
     }
   }
 
-  def unresolved(port: Int, host: Int *): NodeAddress =
+  def unresolved(port: Int, host: Int*): NodeAddress =
     InetAddress getByAddress host.toArray.map(_.toByte) match {
       case inetV4Address: Inet4Address => IPv4(inetV4Address, port)
       case inetV6Address: Inet6Address => IPv6(inetV6Address, port)

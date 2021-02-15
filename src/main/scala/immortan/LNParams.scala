@@ -185,12 +185,6 @@ class SyncParams {
 
 // Extension wrappers
 
-case class ChainWallet(wallet: ElectrumEclairWallet, eventsCatcher: ActorRef, clientPool: ActorRef, watcher: ActorRef)
-
-case class SwapInStateExt(state: SwapInState, nodeId: PublicKey)
-
-case class PaymentRequestExt(pr: PaymentRequest, raw: String)
-
 case class NodeAnnouncementExt(na: NodeAnnouncement) {
   lazy val nodeSpecificExtendedKey: DeterministicWallet.ExtendedPrivateKey = LNParams.format.keys.ourFakeNodeIdKey(na.nodeId)
 
@@ -248,6 +242,14 @@ case class NodeAnnouncementExt(na: NodeAnnouncement) {
   def sign(tx: Transactions.TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey, txOwner: Transactions.TxOwner, commitmentFormat: Transactions.CommitmentFormat): ByteVector64 =
     Transactions.sign(tx, Generators.revocationPrivKey(channelPrivateKeys(publicKey.path).privateKey, remoteSecret), txOwner, commitmentFormat)
 }
+
+case class NodeAnnounceExtAndTheirAdd(announce: NodeAnnouncementExt, theirAdd: UpdateAddHtlc)
+
+case class ChainWallet(wallet: ElectrumEclairWallet, eventsCatcher: ActorRef, clientPool: ActorRef, watcher: ActorRef)
+
+case class SwapInStateExt(state: SwapInState, nodeId: PublicKey)
+
+case class PaymentRequestExt(pr: PaymentRequest, raw: String)
 
 // Interfaces
 

@@ -20,19 +20,22 @@ case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: La
                          localError: Option[Error], remoteError: Option[Error], resizeProposal: Option[ResizeChannel] = None,
                          startedAt: Long = System.currentTimeMillis) extends PersistentChannelData with Commitments { me =>
 
-  lazy val nextTotalLocal: Long = lastCrossSignedState.localUpdates + nextLocalUpdates.size
+  val nextTotalLocal: Long = lastCrossSignedState.localUpdates + nextLocalUpdates.size
 
-  lazy val nextTotalRemote: Long = lastCrossSignedState.remoteUpdates + nextRemoteUpdates.size
+  val nextTotalRemote: Long = lastCrossSignedState.remoteUpdates + nextRemoteUpdates.size
 
-  lazy val nextLocalSpec: CommitmentSpec = CommitmentSpec.reduce(localSpec, nextLocalUpdates, nextRemoteUpdates)
+  val nextLocalSpec: CommitmentSpec = CommitmentSpec.reduce(localSpec, nextLocalUpdates, nextRemoteUpdates)
 
-  lazy val unProcessedIncoming: Set[UpdateAddHtlc] = localSpec.incomingAdds intersect nextLocalSpec.incomingAdds // Cross-signed MINUS already resolved by us
+  val unProcessedIncoming: Set[NodeAnnounceExtAndTheirAdd] = {
+    val unprocessed = localSpec.incomingAdds intersect nextLocalSpec.incomingAdds
+    for (add <- unprocessed) yield NodeAnnounceExtAndTheirAdd(announce, add)
+  }
 
-  lazy val allOutgoing: Set[UpdateAddHtlc] = localSpec.outgoingAdds ++ nextLocalSpec.outgoingAdds // Cross-signed PLUS new payments offered by us
+  val allOutgoing: Set[UpdateAddHtlc] = localSpec.outgoingAdds ++ nextLocalSpec.outgoingAdds
 
   val channelId: ByteVector32 = Tools.hostedChanId(announce.nodeSpecificPubKey.value, announce.na.nodeId.value)
 
-  lazy val remoteRejects: Seq[RemoteReject] = nextRemoteUpdates.collect {
+  val remoteRejects: Seq[RemoteReject] = nextRemoteUpdates.collect {
     case fail: UpdateFailHtlc => RemoteUpdateFail(fail, localSpec.findOutgoingHtlcById(fail.id).get.add)
     case malform: UpdateFailMalformedHtlc => RemoteUpdateMalform(malform, localSpec.findOutgoingHtlcById(malform.id).get.add)
   }
@@ -55,13 +58,13 @@ case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: La
   def addRemoteProposal(update: UpdateMessage): HostedCommits = copy(nextRemoteUpdates = nextRemoteUpdates :+ update)
   def isResizingSupported: Boolean = lastCrossSignedState.initHostedChannel.version == HostedChannelVersion.RESIZABLE
 
-  def sendFail(cmd: CMD_FAIL_HTLC): (HostedCommits, UpdateFailHtlc) = unProcessedIncoming.find(theirUpdateAdd => cmd.id == theirUpdateAdd.id) match {
-    case Some(add) => OutgoingPacket.buildHtlcFailure(cmd, add) match { case Right(fail) => (addLocalProposal(fail), fail) case Left(error) => throw error }
+  def sendFail(cmd: CMD_FAIL_HTLC): (HostedCommits, UpdateFailHtlc) = unProcessedIncoming.find(theirAddExt => cmd.id == theirAddExt.theirAdd.id) match {
+    case Some(data) => OutgoingPacket.buildHtlcFailure(cmd, data.theirAdd) match { case Right(fail) => (addLocalProposal(fail), fail) case Left(error) => throw error }
     case None => throw UnknownHtlcId(channelId, cmd.id)
   }
 
   def sendMalformed(cmd: CMD_FAIL_MALFORMED_HTLC): (HostedCommits, UpdateFailMalformedHtlc) = {
-    val isNotProcessedYet = unProcessedIncoming.exists(theirUpdateAdd => cmd.id == theirUpdateAdd.id)
+    val isNotProcessedYet = unProcessedIncoming.exists(theirAddExt => cmd.id == theirAddExt.theirAdd.id)
     val ourFailMalform = UpdateFailMalformedHtlc(channelId, cmd.id, cmd.onionHash, cmd.failureCode)
     if (cmd.failureCode.&(FailureMessageCodecs.BADONION) == 0) throw InvalidFailureCode(channelId)
     else if (isNotProcessedYet) (addLocalProposal(ourFailMalform), ourFailMalform)
@@ -69,12 +72,12 @@ case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: La
   }
 
   def sendFulfill(cmd: CMD_FULFILL_HTLC): (HostedCommits, UpdateFulfillHtlc) = {
-    val theirAddOpt = unProcessedIncoming.find(theirUpdateAdd => cmd.id == theirUpdateAdd.id)
-    val paymentHashMatches = theirAddOpt.exists(_.paymentHash == cmd.paymentHash)
-    if (!paymentHashMatches) throw InvalidHtlcPreimage(channelId, cmd.id)
-    else if (theirAddOpt.isEmpty) throw UnknownHtlcId(channelId, cmd.id)
-    val fulfill = UpdateFulfillHtlc(channelId, cmd.id, cmd.preimage)
-    (addLocalProposal(fulfill), fulfill)
+    val msg = UpdateFulfillHtlc(channelId, cmd.id, paymentPreimage = cmd.preimage)
+    unProcessedIncoming.find(theirAddExt => cmd.id == theirAddExt.theirAdd.id) match {
+      case Some(data) if data.theirAdd.paymentHash != cmd.paymentHash => throw InvalidHtlcPreimage(channelId, cmd.id)
+      case None => throw UnknownHtlcId(channelId, cmd.id)
+      case _ => (addLocalProposal(msg), msg)
+    }
   }
 
   def sendAdd(cmd: CMD_ADD_HTLC): (ChannelData, UpdateAddHtlc) = {

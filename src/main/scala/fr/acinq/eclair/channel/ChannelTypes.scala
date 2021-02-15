@@ -27,6 +27,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.wire.Onion.FinalPayload
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.eclair.payment.IncomingPacket
 import immortan.NodeAnnouncementExt
 
 
@@ -52,11 +53,12 @@ case object BITCOIN_FUNDING_LOST extends BitcoinEvent
 
 
 sealed trait Command
-
-case class CMD_FAIL_HTLC(reason: Either[ByteVector, FailureMessage], nodeSecret: PrivateKey, id: Long) extends Command
-case class CMD_FAIL_MALFORMED_HTLC(onionHash: ByteVector32, failureCode: Int, id: Long) extends Command
-
-case class CMD_FULFILL_HTLC(preimage: ByteVector32, id: Long) extends Command {
+sealed trait IncomingResolution
+sealed trait BadResolution extends IncomingResolution
+case class ReasonableResolution(packet: IncomingPacket) extends IncomingResolution
+case class CMD_FAIL_HTLC(reason: Either[ByteVector, FailureMessage], nodeSecret: PrivateKey, id: Long) extends Command with IncomingResolution with BadResolution
+case class CMD_FAIL_MALFORMED_HTLC(onionHash: ByteVector32, failureCode: Int, id: Long) extends Command with IncomingResolution with BadResolution
+case class CMD_FULFILL_HTLC(preimage: ByteVector32, id: Long) extends Command with IncomingResolution {
   lazy val paymentHash: ByteVector32 = Crypto.sha256(preimage)
 }
 
@@ -70,9 +72,7 @@ case object CMD_SOCKET_OFFLINE extends Command
 case object CMD_SOCKET_ONLINE extends Command
 case object CMD_SIGN extends Command
 
-
 sealed trait CloseCommand extends Command
-
 case object CMD_FORCECLOSE extends CloseCommand
 final case class CMD_CLOSE(scriptPubKey: Option[ByteVector] = None) extends CloseCommand
 

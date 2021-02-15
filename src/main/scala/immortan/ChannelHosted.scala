@@ -15,7 +15,7 @@ import scodec.bits.ByteVector
 
 object ChannelHosted {
   def make(initListeners: Set[ChannelListener], hostedData: HostedCommits, bag: ChannelBag): ChannelHosted = new ChannelHosted {
-    def SEND(messages: LightningMessage *): Unit = CommsTower.sendMany(messages.map(ExtMessageMapping.prepareNormal), hostedData.announce.nodeSpecificPair)
+    def SEND(messages: LightningMessage*): Unit = CommsTower.sendMany(messages.map(ExtMessageMapping.prepareNormal), hostedData.announce.nodeSpecificPair)
     def STORE(hostedData: PersistentChannelData): PersistentChannelData = bag.put(hostedData)
     listeners = initListeners
     doProcess(hostedData)
@@ -88,25 +88,26 @@ abstract class ChannelHosted extends Channel { me =>
 
 
       case (hc: HostedCommits, fulfill: UpdateFulfillHtlc, OPEN) =>
-        val ourOutOpt = hc.nextLocalSpec.findOutgoingHtlcById(fulfill.id)
-        val paymentHashMatches = ourOutOpt.exists(_.add.paymentHash == fulfill.paymentHash)
-        if (!paymentHashMatches) throw InvalidHtlcPreimage(hc.channelId, fulfill.id)
-        else if (ourOutOpt.isEmpty) throw UnknownHtlcId(hc.channelId, fulfill.id)
-        BECOME(data1 = hc.addRemoteProposal(fulfill), state)
-        events.fulfillReceived(fulfill, ourOutOpt.get.add)
+        hc.nextLocalSpec.findOutgoingHtlcById(fulfill.id) match {
+          case Some(out) if out.add.paymentHash != fulfill.paymentHash =>
+            throw InvalidHtlcPreimage(hc.channelId, fulfill.id)
+          case None =>
+            throw UnknownHtlcId(hc.channelId, fulfill.id)
+          case Some(out) =>
+            BECOME(hc.addRemoteProposal(fulfill), OPEN)
+            events.fulfillReceived(fulfill, out.add)
+        }
 
 
       case (hc: HostedCommits, fail: UpdateFailHtlc, OPEN) =>
-        val isNotResolvedYet = hc.allOutgoing.exists(ourAdd => fail.id == ourAdd.id)
-        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(fail), OPEN)
-        else throw UnknownHtlcId(hc.channelId, fail.id)
+        val isNotResolvedYet = hc.allOutgoing.exists(ourOutgoingAdd => fail.id == ourOutgoingAdd.id)
+        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(fail), OPEN) else throw UnknownHtlcId(hc.channelId, fail.id)
 
 
       case (hc: HostedCommits, malform: UpdateFailMalformedHtlc, OPEN) =>
+        val isNotResolvedYet = hc.allOutgoing.exists(ourOutgoingAdd => malform.id == ourOutgoingAdd.id)
         if (malform.failureCode.&(FailureMessageCodecs.BADONION) == 0) throw InvalidFailureCode(hc.channelId)
-        val isNotResolvedYet = hc.allOutgoing.exists(ourAdd => malform.id == ourAdd.id)
-        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(malform), OPEN)
-        else throw UnknownHtlcId(hc.channelId, malform.id)
+        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(malform), OPEN) else throw UnknownHtlcId(hc.channelId, malform.id)
 
 
       case (hc: HostedCommits, CMD_SIGN, OPEN) if hc.nextLocalUpdates.nonEmpty || hc.resizeProposal.isDefined =>
@@ -234,10 +235,10 @@ abstract class ChannelHosted extends Channel { me =>
       case _ =>
     }
 
-  def restoreCommits(localLCSS: LastCrossSignedState, ext: NodeAnnouncementExt): HostedCommits = {
+  def restoreCommits(localLCSS: LastCrossSignedState, announce: NodeAnnouncementExt): HostedCommits = {
     val inFlightHtlcs = localLCSS.incomingHtlcs.map(IncomingHtlc) ++ localLCSS.outgoingHtlcs.map(OutgoingHtlc)
     val localSpec = CommitmentSpec(FeeratePerKw(0L.sat), localLCSS.localBalanceMsat, localLCSS.remoteBalanceMsat, inFlightHtlcs.toSet)
-    HostedCommits(ext, localLCSS, nextLocalUpdates = Nil, nextRemoteUpdates = Nil, localSpec, updateOpt = None, localError = None, remoteError = None)
+    HostedCommits(announce, localLCSS, nextLocalUpdates = Nil, nextRemoteUpdates = Nil, localSpec, updateOpt = None, localError = None, remoteError = None)
   }
 
   def localSuspend(hc: HostedCommits, errCode: String): Unit = {

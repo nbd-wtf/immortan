@@ -15,10 +15,10 @@ import immortan.ChannelListener.{Malfunction, Transition}
 import immortan.crypto.{CanBeRepliedTo, StateMachine, Tools}
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DescAndCapacity, GraphEdge}
-import fr.acinq.eclair.crypto.Sphinx.{DecryptedPacket, FailurePacket, PacketAndSecrets}
 import immortan.Channel.{OPEN, SLEEPING, SUSPENDED, isOperational, isOperationalAndOpen}
 import fr.acinq.eclair.transactions.{RemoteReject, RemoteUpdateFail, RemoteUpdateMalform}
-import fr.acinq.eclair.payment.OutgoingPacket
+import fr.acinq.eclair.payment.{IncomingPacket, OutgoingPacket}
+import fr.acinq.eclair.crypto.Sphinx.PacketAndSecrets
 import fr.acinq.eclair.router.Announcements
 import java.util.concurrent.Executors
 import fr.acinq.bitcoin.ByteVector32
@@ -115,17 +115,28 @@ object ChannelMaster {
   val CMDChanGotOnline = "cmd-chan-got-online"
   val CMDAskForRoute = "cmd-ask-for-route"
 
-  def incorrectDetails(add: UpdateAddHtlc): IncorrectOrUnknownPaymentDetails =
-    IncorrectOrUnknownPaymentDetails(add.amountMsat, LNParams.blockCount.get)
+  def incorrectDetails(add: UpdateAddHtlc): Either[ByteVector, FailureMessage] = {
+    val failure = IncorrectOrUnknownPaymentDetails(add.amountMsat, LNParams.blockCount.get)
+    Right(failure)
+  }
 
-//  def failHtlc(packet: DecryptedPacket, fail: FailureMessage, id: Long): CMD_FAIL_HTLC = {
-//    val localFailurePacket = FailurePacket.create(packet.sharedSecret, fail)
-//    CMD_FAIL_HTLC(Left(localFailurePacket), id)
-//  }
+  val initResolveMemo: mutable.Map[NodeAnnounceExtAndTheirAdd, IncomingResolution] = memoize(initResolve)
+  def initResolve(payment: NodeAnnounceExtAndTheirAdd): IncomingResolution = IncomingPacket.decrypt(payment.theirAdd, payment.announce.nodeSpecificPrivKey) match {
+    case Right(_: IncomingPacket.FinalPacket) => CMD_FAIL_HTLC(incorrectDetails(payment.theirAdd), payment.announce.nodeSpecificPrivKey, payment.theirAdd.id)
+    case Left(_: BadOnion) => fallbackResolve(LNParams.format.keys.fakeInvoiceKey(payment.theirAdd.paymentHash), payment.theirAdd)
+    case Left(failure) => CMD_FAIL_HTLC(Right(failure), payment.announce.nodeSpecificPrivKey, payment.theirAdd.id)
+    case Right(packet: IncomingPacket.RelayPacket) => ReasonableResolution(packet)
+  }
+
+  def fallbackResolve(secret: PrivateKey, theirAdd: UpdateAddHtlc): IncomingResolution = IncomingPacket.decrypt(theirAdd, secret) match {
+    case Right(_: IncomingPacket.RelayPacket) => CMD_FAIL_HTLC(incorrectDetails(theirAdd), secret, theirAdd.id)
+    case Left(failure: BadOnion) => CMD_FAIL_MALFORMED_HTLC(failure.onionHash, failure.code, theirAdd.id)
+    case Right(packet: IncomingPacket.FinalPacket) => ReasonableResolution(packet)
+    case Left(failure) => CMD_FAIL_HTLC(Right(failure), secret, theirAdd.id)
+  }
 }
 
 abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: PathFinder) extends ChannelListener { me =>
-  private[this] val getPaymentInfoMemo = memoize(payBag.getPaymentInfo)
   pf.listeners += PaymentMaster
 
   val sockBrandingBridge: ConnectionListener
@@ -218,46 +229,6 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
     * 4. channel #1 stores, sends out a preimage and updates a state, `stateUpdated` is called, since shard #1 was the last one a payment as a whole is fulfilled in listener
     */
 
-  override def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = {
-//    val allChansAndCommits: List[ChanAndCommits] = all.flatMap(Channel.chanAndCommitsOpt)
-//    val allRevealedHashes: Set[ByteVector32] = allChansAndCommits.flatMap(_.commits.revealedHashes).toSet // Payment hashes with preimage is revealed, but state not updated yet
-//    val allFulfilledAdds = toMapBy[ByteVector32, OurFulfilled](allChansAndCommits.flatMap(_.commits.localSpec.localFulfilled), _.paymentHash) // Successfully settled incoming shards
-//    val allIncomingAdds = toMapBy[ByteVector32, AddResolution](allChansAndCommits.flatMap(_.commits.localSpec.incomingAdds).map(_.resolution), _.add.paymentHash) // Pending incoming shards
-//
-//    val allIncomingResolves: List[AddResolution] = allChansAndCommits.flatMap(_.commits.unansweredIncoming).map(_.resolution)
-//    val badRightAway: List[BadAddResolution] = allIncomingResolves collect { case badAddResolution: BadAddResolution => badAddResolution }
-//    val maybeGood: List[FinalPayloadSpec] = allIncomingResolves collect { case finalPayloadSpec: FinalPayloadSpec => finalPayloadSpec }
-//
-//    // Grouping by payment hash assumes we never ask for two different payments with the same hash!
-//    val results = maybeGood.groupBy(_.add.paymentHash).map(_.swap).mapValues(getPaymentInfoMemo) map {
-//      // TODO: reject incoming right away if we already have an upstream onion with same session key or downstream onion with same next key
-//      // No such payment in our database or this is an outgoing payment, in any case we better fail it right away
-//      case (payments, info) if !info.exists(_.isIncoming) => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
-//      // These are multipart payments where preimage is revealed or some shards are partially fulfilled, proceed with fulfilling of the rest of shards
-//      case (payments, Some(info)) if allFulfilledAdds.contains(info.paymentHash) => for (pay <- payments) yield CMD_FULFILL_HTLC(info.preimage, pay.add)
-//      case (payments, Some(info)) if allRevealedHashes.contains(info.paymentHash) => for (pay <- payments) yield CMD_FULFILL_HTLC(info.preimage, pay.add)
-//      // This is a multipart payment where some shards have different total amount values, this is a spec violation so we proceed with failing right away
-//      case (payments, _) if payments.map(_.payload.totalAmount).toSet.size > 1 => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
-//      // This is a payment where total amount is set to a value which is less than what we have originally requested, this is a spec violation so we proceed with failing right away
-//      case (payments, Some(info)) if info.pr.amount.exists(_ > payments.head.payload.totalAmount) => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
-//      // This is a payment where one of shards has a paymentSecret which is different from the one we have provided in invoice, this is a spec violation so we proceed with failing right away
-//      case (payments, Some(info)) if !payments.flatMap(_.payload.paymentSecret).forall(info.pr.paymentSecret.contains) => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
-//      // This is a payment which arrives too late, we would have too few blocks to prove that we have fulfilled it with an uncooperative peer, not a spec violation but we still fail it to be on safe side
-//      case (payments, _) if payments.exists(_.add.cltvExpiry.toLong < LNParams.blockCount.get + LNParams.cltvRejectThreshold) => for (pay <- payments) yield failFinalPayloadSpec(incorrectDetails(pay.add), pay)
-//      case (payments, Some(info)) if payments.map(_.add.amountMsat).sum >= payments.head.payload.totalAmount => for (pay <- payments) yield CMD_FULFILL_HTLC(info.preimage, pay.add)
-//      // This can happen either when incoming payments time out or when we restart and have partial unanswered incoming leftovers, fail all of them
-//      case (payments, _) if incomingTimeoutWorker.finishedOrNeverStarted => for (pay <- payments) yield failFinalPayloadSpec(PaymentTimeout, pay)
-//      case _ => Nil
-//    }
-//
-//    // This method should always be executed in channel context
-//    // Using doProcess makes sure no external message gets intertwined in resolution
-//    // For simplicity all resolutions are sent to all channels, filtering is up to channel
-//    for (resolution <- badRightAway ++ results.flatten) all.foreach(_ doProcess resolution)
-//    // Again, channel must only react to this if it has relevant changes
-//    all.foreach(_ doProcess CMD_SIGN)
-  }
-
   override def addReceived(add: UpdateAddHtlc): Unit = incomingTimeoutWorker replaceWork add.paymentHash
 
   override def onBecome: PartialFunction[Transition, Unit] = { case (_, _, _, SLEEPING, OPEN | SUSPENDED) => me stateUpdated Nil }
@@ -272,7 +243,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
     def withFailureTimesReduced: PaymentMasterData = {
       val chanFailedTimes1 = chanFailedTimes.mapValues(_ / 2)
       val nodeFailedWithUnknownUpdateTimes1 = nodeFailedWithUnknownUpdateTimes.mapValues(_ / 2)
-      // Cut in half recorded failure times to give failing nodes and channels a second chance and keep them susceptible to exclusion if they keep failing
+      // Cut in half recorded failure times to give failing nodes and channels a second chance, yet more susceptible to exclusion if they keep failing
       copy(chanFailedTimes = chanFailedTimes1, nodeFailedWithUnknownUpdateTimes = nodeFailedWithUnknownUpdateTimes1, chanFailedAtAmount = Map.empty)
     }
   }

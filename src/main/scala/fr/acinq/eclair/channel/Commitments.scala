@@ -25,7 +25,7 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, DeterministicWallet, SatoshiLong}
-import immortan.{LNParams, NodeAnnouncementExt}
+import immortan.{LNParams, NodeAnnouncementExt, NodeAnnounceExtAndTheirAdd}
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.bitcoin.Crypto.PublicKey
 
@@ -64,7 +64,7 @@ trait Commitments {
   def availableBalanceForReceive: MilliSatoshi
 
   def remoteRejects: Seq[RemoteReject] // Our adds rejected and cross-signed on last update
-  def unProcessedIncoming: Set[UpdateAddHtlc] // Cross-signed MINUS already processed by us
+  def unProcessedIncoming: Set[NodeAnnounceExtAndTheirAdd] // Cross-signed MINUS already processed by us
   def allOutgoing: Set[UpdateAddHtlc] // Cross-signed PLUS new payments offered by us
 }
 
@@ -82,19 +82,19 @@ case class NormalCommits(channelVersion: ChannelVersion, announce: NodeAnnouncem
 
   val minSendable: MilliSatoshi = remoteParams.htlcMinimum.max(localParams.htlcMinimum)
 
-  lazy val unProcessedIncoming: Set[UpdateAddHtlc] = {
+  val unProcessedIncoming: Set[NodeAnnounceExtAndTheirAdd] = {
     val reduced = CommitmentSpec.reduce(latestRemoteCommit.spec, remoteChanges.acked, localChanges.proposed)
-    localCommit.spec.incomingAdds intersect reduced.incomingAdds
+    for (add <- localCommit.spec.incomingAdds intersect reduced.incomingAdds) yield NodeAnnounceExtAndTheirAdd(announce, add)
   }
 
-  lazy val allOutgoing: Set[UpdateAddHtlc] = localCommit.spec.outgoingAdds ++ remoteCommit.spec.incomingAdds ++ localChanges.adds
+  val allOutgoing: Set[UpdateAddHtlc] = localCommit.spec.outgoingAdds ++ remoteCommit.spec.incomingAdds ++ localChanges.adds
 
-  lazy val remoteRejects: Seq[RemoteReject] = remoteChanges.signed.collect {
+  val remoteRejects: Seq[RemoteReject] = remoteChanges.signed.collect {
     case fail: UpdateFailHtlc => RemoteUpdateFail(fail, remoteCommit.spec.findIncomingHtlcById(fail.id).get.add)
     case malform: UpdateFailMalformedHtlc => RemoteUpdateMalform(malform, remoteCommit.spec.findIncomingHtlcById(malform.id).get.add)
   }
 
-  lazy val availableBalanceForSend: MilliSatoshi = {
+  val availableBalanceForSend: MilliSatoshi = {
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
     val reduced = CommitmentSpec.reduce(latestRemoteCommit.spec, remoteChanges.acked, localChanges.proposed)
     val balanceNoFees = (reduced.toRemote - remoteParams.channelReserve).max(0.msat)
@@ -122,7 +122,7 @@ case class NormalCommits(channelVersion: ChannelVersion, announce: NodeAnnouncem
     }
   }
 
-  lazy val availableBalanceForReceive: MilliSatoshi = {
+  val availableBalanceForReceive: MilliSatoshi = {
     val reduced = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
     val balanceNoFees = (reduced.toRemote - localParams.channelReserve).max(0.msat)
     if (localParams.isFunder) {
@@ -271,26 +271,27 @@ object NormalCommits {
     commitments1
   }
 
-  def sendFulfill(commitments: NormalCommits, cmd: CMD_FULFILL_HTLC): (NormalCommits, UpdateFulfillHtlc) =
+  def sendFulfill(commitments: NormalCommits, cmd: CMD_FULFILL_HTLC): (NormalCommits, UpdateFulfillHtlc) = {
+    val fulfill = UpdateFulfillHtlc(commitments.channelId, cmd.id, cmd.preimage)
     commitments.latestRemoteCommit.spec.findOutgoingHtlcById(cmd.id) match {
-      case Some(directed) if directed.add.paymentHash == cmd.paymentHash =>
-        val fulfill = UpdateFulfillHtlc(commitments.channelId, cmd.id, cmd.preimage)
-        (addLocalProposal(commitments, fulfill), fulfill)
-      case Some(_) => throw InvalidHtlcPreimage(commitments.channelId, cmd.id)
+      case Some(directed) if directed.add.paymentHash != cmd.paymentHash =>
+        throw InvalidHtlcPreimage(commitments.channelId, cmd.id)
       case None => throw UnknownHtlcId(commitments.channelId, cmd.id)
+      case _ => (addLocalProposal(commitments, fulfill), fulfill)
     }
+  }
 
   def receiveFulfill(commitments: NormalCommits, fulfill: UpdateFulfillHtlc): (NormalCommits, UpdateAddHtlc) =
     commitments.localCommit.spec.findOutgoingHtlcById(fulfill.id) match {
-      case Some(directed) if directed.add.paymentHash == fulfill.paymentHash => (addRemoteProposal(commitments, fulfill), directed.add)
-      case Some(_) => throw InvalidHtlcPreimage(commitments.channelId, fulfill.id)
+      case Some(directed) if directed.add.paymentHash != fulfill.paymentHash =>
+        throw InvalidHtlcPreimage(commitments.channelId, fulfill.id)
+      case Some(directed) => (addRemoteProposal(commitments, fulfill), directed.add)
       case None => throw UnknownHtlcId(commitments.channelId, fulfill.id)
     }
 
   def sendFail(commitments: NormalCommits, cmd: CMD_FAIL_HTLC): (NormalCommits, UpdateFailHtlc) =
     commitments.latestRemoteCommit.spec.findOutgoingHtlcById(cmd.id) match {
       case None => throw UnknownHtlcId(commitments.channelId, cmd.id)
-
       case Some(directed) =>
         OutgoingPacket.buildHtlcFailure(cmd, directed.add) match {
           case Right(fail) => (addLocalProposal(commitments, fail), fail)
@@ -301,7 +302,6 @@ object NormalCommits {
   def sendFailMalformed(commitments: NormalCommits, cmd: CMD_FAIL_MALFORMED_HTLC): (NormalCommits, UpdateFailMalformedHtlc) = {
     val fail = UpdateFailMalformedHtlc(commitments.channelId, cmd.id, cmd.onionHash, cmd.failureCode)
     val isIncorrect = (cmd.failureCode & FailureMessageCodecs.BADONION) == 0
-
     commitments.latestRemoteCommit.spec.findOutgoingHtlcById(cmd.id) match {
       case _ if isIncorrect => throw InvalidFailureCode(commitments.channelId)
       case None => throw UnknownHtlcId(commitments.channelId, cmd.id)
