@@ -120,12 +120,11 @@ object ChannelMaster {
     Right(failure)
   }
 
-  val initResolveMemo: mutable.Map[NodeAnnounceExtAndTheirAdd, IncomingResolution] = memoize(initResolve)
-  def initResolve(payment: NodeAnnounceExtAndTheirAdd): IncomingResolution = IncomingPacket.decrypt(payment.theirAdd, payment.announce.nodeSpecificPrivKey) match {
-    case Right(_: IncomingPacket.FinalPacket) => CMD_FAIL_HTLC(incorrectDetails(payment.theirAdd), payment.announce.nodeSpecificPrivKey, payment.theirAdd.id)
+  val initResolveMemo: mutable.Map[UpdateAddHtlcExt, IncomingResolution] = memoize(initResolve)
+  def initResolve(payment: UpdateAddHtlcExt): IncomingResolution = IncomingPacket.decrypt(payment.theirAdd, payment.announce.nodeSpecificPrivKey) match {
     case Left(_: BadOnion) => fallbackResolve(LNParams.format.keys.fakeInvoiceKey(payment.theirAdd.paymentHash), payment.theirAdd)
     case Left(failure) => CMD_FAIL_HTLC(Right(failure), payment.announce.nodeSpecificPrivKey, payment.theirAdd.id)
-    case Right(packet: IncomingPacket.RelayPacket) => ReasonableResolution(packet)
+    case Right(packet: IncomingPacket) => ReasonableResolution(packet)
   }
 
   def fallbackResolve(secret: PrivateKey, theirAdd: UpdateAddHtlc): IncomingResolution = IncomingPacket.decrypt(theirAdd, secret) match {
@@ -187,14 +186,15 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
 
   def checkIfSendable(paymentHash: ByteVector32, amount: MilliSatoshi): Int = {
     val presentInSenderFSM = PaymentMaster.data.payments.get(paymentHash)
-    val presentInDb = payBag.getPaymentInfo(paymentHash)
+    val paymentInDb = payBag.getPaymentInfo(paymentHash)
 
-    (presentInSenderFSM, presentInDb) match {
-      case (_, info) if info.exists(_.isIncoming) => PaymentInfo.NOT_SENDABLE_INCOMING // We have an incoming payment with such payment hash
-      case (_, info) if info.exists(SUCCEEDED == _.status) => PaymentInfo.NOT_SENDABLE_SUCCESS // This payment has been fulfilled a long time ago
+    (presentInSenderFSM, paymentInDb) match {
+      case (_, pay) if pay.exists(_.isIncoming) => PaymentInfo.NOT_SENDABLE_INCOMING // We have an incoming payment with such payment hash
+      case (_, pay) if pay.exists(SUCCEEDED == _.status) => PaymentInfo.NOT_SENDABLE_SUCCESS // This payment has been fulfilled a long time ago
       case (Some(senderFSM), _) if SUCCEEDED == senderFSM.state => PaymentInfo.NOT_SENDABLE_SUCCESS // This payment has just been fulfilled at runtime
       case (Some(senderFSM), _) if PENDING == senderFSM.state || INIT == senderFSM.state => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is pending in FSM
       case _ if inChannelOutgoingHtlcs.exists(_.paymentHash == paymentHash) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is pending in channels
+      case _ if payBag.getRelayedPreimageInfo(paymentHash).isDefined => PaymentInfo.NOT_SENDABLE_RELAYED // Related preimage has been relayed
       case _ if PaymentMaster.totalSendable < amount => PaymentInfo.NOT_SENDABLE_LOW_BALANCE // Not enough money
       case _ => PaymentInfo.SENDABLE
     }
@@ -332,15 +332,13 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
       * Can a payment with a trapped shard ever be failed? No, until SUSPENDED channel is overridden a shard will stay in it so payment will be either fulfilled or stay pending indefinitely.
       */
 
-    // ChannelListener implementation, call `process` to get out of channel context
-
-    override def fulfillReceived(fulfill: UpdateFulfillHtlc, ourAdd: UpdateAddHtlc): Unit = self process fulfill
-
     override def onException: PartialFunction[Malfunction, Unit] = { case (_, exception: CMDException) => self process exception }
 
     override def onBecome: PartialFunction[Transition, Unit] = { case (_, _, _, SLEEPING | SUSPENDED, OPEN) => self process CMDChanGotOnline }
 
     override def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = rejects foreach process
+
+    override def fulfillReceived(fulfill: UpdateFulfillHtlc): Unit = self process fulfill
 
     // Utils
 

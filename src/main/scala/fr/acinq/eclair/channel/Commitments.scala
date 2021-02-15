@@ -25,7 +25,7 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, DeterministicWallet, SatoshiLong}
-import immortan.{LNParams, NodeAnnouncementExt, NodeAnnounceExtAndTheirAdd}
+import immortan.{LNParams, NodeAnnouncementExt, UpdateAddHtlcExt}
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.bitcoin.Crypto.PublicKey
 
@@ -63,8 +63,8 @@ trait Commitments {
   def availableBalanceForSend: MilliSatoshi
   def availableBalanceForReceive: MilliSatoshi
 
-  def remoteRejects: Seq[RemoteReject] // Our adds rejected and cross-signed on last update
-  def unProcessedIncoming: Set[NodeAnnounceExtAndTheirAdd] // Cross-signed MINUS already processed by us
+  def remoteRejects: Seq[RemoteReject] // Our adds rejected and cross-signed on last state update
+  def unProcessedIncoming: Set[UpdateAddHtlcExt] // Cross-signed MINUS already processed by us
   def allOutgoing: Set[UpdateAddHtlc] // Cross-signed PLUS new payments offered by us
 }
 
@@ -82,9 +82,9 @@ case class NormalCommits(channelVersion: ChannelVersion, announce: NodeAnnouncem
 
   val minSendable: MilliSatoshi = remoteParams.htlcMinimum.max(localParams.htlcMinimum)
 
-  val unProcessedIncoming: Set[NodeAnnounceExtAndTheirAdd] = {
+  val unProcessedIncoming: Set[UpdateAddHtlcExt] = {
     val reduced = CommitmentSpec.reduce(latestRemoteCommit.spec, remoteChanges.acked, localChanges.proposed)
-    for (add <- localCommit.spec.incomingAdds intersect reduced.incomingAdds) yield NodeAnnounceExtAndTheirAdd(announce, add)
+    for (add <- localCommit.spec.incomingAdds intersect reduced.outgoingAdds) yield UpdateAddHtlcExt(add, announce)
   }
 
   val allOutgoing: Set[UpdateAddHtlc] = localCommit.spec.outgoingAdds ++ remoteCommit.spec.incomingAdds ++ localChanges.adds

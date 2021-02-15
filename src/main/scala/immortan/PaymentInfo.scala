@@ -16,7 +16,8 @@ object PaymentInfo {
   final val NOT_SENDABLE_LOW_BALANCE = 1
   final val NOT_SENDABLE_IN_FLIGHT = 2
   final val NOT_SENDABLE_INCOMING = 3
-  final val NOT_SENDABLE_SUCCESS = 4
+  final val NOT_SENDABLE_RELAYED = 4
+  final val NOT_SENDABLE_SUCCESS = 5
 }
 
 object PaymentStatus {
@@ -78,12 +79,21 @@ case class SwapInDescription(invoiceText: String, txid: String, internalId: Long
 
 case class SwapOutDescription(invoiceText: String, btcAddress: String, chainFee: Satoshi, nodeId: PublicKey) extends PaymentDescription
 
+// Relayed preimages
+
+case class RelayedPreimageInfo(paymentHashString: String, preimageString: String, relayed: MilliSatoshi,
+                               earned: MilliSatoshi, fromPeerNodeIdString: String, stamp: Long) {
+
+  lazy val preimage: ByteVector32 = ByteVector32(ByteVector fromValidHex preimageString)
+  lazy val paymentHash: ByteVector32 = ByteVector32(ByteVector fromValidHex paymentHashString)
+  lazy val fromPeerNodeId: PublicKey = PublicKey(ByteVector fromValidHex fromPeerNodeIdString)
+}
+
 // Tx descriptions
 
-case class TxInfo(txidString: String, depth: Long, receivedMsat: MilliSatoshi, sentMsat: MilliSatoshi,
-                  feeMsat: MilliSatoshi, seenAt: Long, completedAt: Long, descriptionString: String,
-                  balanceSnapshot: MilliSatoshi, fiatRatesString: String,
-                  incoming: Long, doubleSpent: Long) {
+case class TxInfo(txidString: String, depth: Long, receivedMsat: MilliSatoshi, sentMsat: MilliSatoshi, feeMsat: MilliSatoshi,
+                  seenAt: Long, completedAt: Long, descriptionString: String, balanceSnapshot: MilliSatoshi,
+                  fiatRatesString: String, incoming: Long, doubleSpent: Long) {
 
   def isIncoming: Boolean = 1L == incoming
   def isDoubleSpent: Boolean = 1L == doubleSpent

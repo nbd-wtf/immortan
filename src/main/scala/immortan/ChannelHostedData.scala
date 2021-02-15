@@ -15,9 +15,8 @@ case class WaitRemoteHostedReply(announce: NodeAnnouncementExt, refundScriptPubK
 
 case class WaitRemoteHostedStateUpdate(announce: NodeAnnouncementExt, hc: HostedCommits) extends ChannelData
 
-case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: LastCrossSignedState, nextLocalUpdates: List[UpdateMessage],
-                         nextRemoteUpdates: List[UpdateMessage], localSpec: CommitmentSpec, updateOpt: Option[ChannelUpdate],
-                         localError: Option[Error], remoteError: Option[Error], resizeProposal: Option[ResizeChannel] = None,
+case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: LastCrossSignedState, nextLocalUpdates: List[UpdateMessage], nextRemoteUpdates: List[UpdateMessage],
+                         localSpec: CommitmentSpec, updateOpt: Option[ChannelUpdate], localError: Option[Error], remoteError: Option[Error], resizeProposal: Option[ResizeChannel] = None,
                          startedAt: Long = System.currentTimeMillis) extends PersistentChannelData with Commitments { me =>
 
   val nextTotalLocal: Long = lastCrossSignedState.localUpdates + nextLocalUpdates.size
@@ -26,9 +25,9 @@ case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: La
 
   val nextLocalSpec: CommitmentSpec = CommitmentSpec.reduce(localSpec, nextLocalUpdates, nextRemoteUpdates)
 
-  val unProcessedIncoming: Set[NodeAnnounceExtAndTheirAdd] = {
+  val unProcessedIncoming: Set[UpdateAddHtlcExt] = {
     val unprocessed = localSpec.incomingAdds intersect nextLocalSpec.incomingAdds
-    for (add <- unprocessed) yield NodeAnnounceExtAndTheirAdd(announce, add)
+    for (add <- unprocessed) yield UpdateAddHtlcExt(add, announce)
   }
 
   val allOutgoing: Set[UpdateAddHtlc] = localSpec.outgoingAdds ++ nextLocalSpec.outgoingAdds
@@ -80,7 +79,7 @@ case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: La
     }
   }
 
-  def sendAdd(cmd: CMD_ADD_HTLC): (ChannelData, UpdateAddHtlc) = {
+  def sendAdd(cmd: CMD_ADD_HTLC): (HostedCommits, UpdateAddHtlc) = {
     // Let's add this change and see if the new state violates any of constraints including those imposed by them on us, proceed only if it does not
     val add = UpdateAddHtlc(channelId, nextTotalLocal + 1, cmd.firstAmount, cmd.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet)
     val commits1: HostedCommits = addLocalProposal(add)
@@ -92,7 +91,7 @@ case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: La
     (commits1, add)
   }
 
-  def receiveAdd(add: UpdateAddHtlc): ChannelData = {
+  def receiveAdd(add: UpdateAddHtlc): HostedCommits = {
     val commits1: HostedCommits = addRemoteProposal(add)
     if (commits1.nextLocalSpec.incomingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) throw TooManyAcceptedHtlcs(channelId)
     if (commits1.nextLocalSpec.incomingAdds.foldLeft(0L.msat)(_ + _.amountMsat) > maxInFlight) throw HtlcValueTooHighInFlight(channelId)

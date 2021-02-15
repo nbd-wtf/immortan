@@ -25,8 +25,8 @@ object ChannelTable extends Table {
 
 object HtlcInfoTable extends Table {
   val (table, sid, commitNumber, paymentHash160, cltvExpiry) = ("htlcinfo", "sid", "commitnumber", "hash160", "cltv")
-  val selectAllSql = s"SELECT $paymentHash160, $cltvExpiry FROM $table WHERE $commitNumber = ?"
-  val newSql = s"INSERT INTO $table VALUES (?, ?, ?, ?)"
+  val newSql = s"INSERT INTO $table ($sid, $commitNumber, $paymentHash160, $cltvExpiry) VALUES (?, ?, ?, ?)"
+  val selectAllSql = s"SELECT * FROM $table WHERE $commitNumber = ?"
   val killSql = s"DELETE FROM $table WHERE $sid = ?"
 
   def createStatements: Seq[String] = {
@@ -41,6 +41,20 @@ object HtlcInfoTable extends Table {
     val addIndex2 = s"CREATE INDEX IF NOT EXISTS idx2$table ON $table ($sid)"
     createTable :: addIndex1 :: addIndex2 :: Nil
   }
+}
+
+object RelayPreimageTable extends Table {
+  val (table, hash, preimage, fromPeer, stamp, relayed, earned) = ("relaypreimage", "hash", "preimage", "frompeer", "stamp", "relayed", "earned")
+  val newSql = s"INSERT OR IGNORE INTO $table ($hash, $preimage, $fromPeer, $stamp, $relayed, $earned) VALUES (?, ?, ?, ?, ?, ?)"
+  val selectSummarySql = s"SELECT SUM($relayed), SUM($earned), COUNT($id) FROM $table"
+  val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 5"
+  val selectByHashSql = s"SELECT * FROM $table WHERE $hash = ?"
+
+  def createStatements: Seq[String] =
+    s"""CREATE TABLE IF NOT EXISTS $table(
+      $id INTEGER PRIMARY KEY AUTOINCREMENT, $hash TEXT NOT NULL UNIQUE, $preimage TEXT NOT NULL,
+      $fromPeer TEXT NOT NULL, $stamp INTEGER NOT NULL, $relayed INTEGER NOT NULL, $earned INTEGER NOT NULL
+    )""" :: Nil
 }
 
 abstract class ChannelAnnouncementTable(val table: String) extends Table {
@@ -198,7 +212,7 @@ object DataTable extends Table {
 
 object ElectrumHeadersTable extends Table {
   val (table, height, blockHash, header) = ("headers", "height", "blockhash", "header")
-  val addHeaderSql = s"INSERT OR IGNORE INTO $table VALUES (?, ?, ?)"
+  val addHeaderSql = s"INSERT OR IGNORE INTO $table ($height, $blockHash, $header) VALUES (?, ?, ?)"
 
   val selectHeaderByHeightSql = s"SELECT * FROM $table WHERE $height = ?"
   val selectByBlockHashSql = s"SELECT * FROM $table WHERE $blockHash = ?"

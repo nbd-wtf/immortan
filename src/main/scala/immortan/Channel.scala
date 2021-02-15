@@ -77,7 +77,7 @@ trait Channel extends StateMachine[ChannelData] { me =>
   var listeners = Set.empty[ChannelListener]
 
   val events: ChannelListener = new ChannelListener {
-    override def fulfillReceived(fulfill: UpdateFulfillHtlc, ourAdd: UpdateAddHtlc): Unit = for (lst <- listeners) lst.fulfillReceived(fulfill, ourAdd)
+    override def fulfillReceived(fulfill: UpdateFulfillHtlc): Unit = for (lst <- listeners) lst.fulfillReceived(fulfill)
     override def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = for (lst <- listeners) lst.stateUpdated(rejects)
     override def addReceived(remoteAdd: UpdateAddHtlc): Unit = for (lst <- listeners) lst.addReceived(remoteAdd)
 
@@ -98,7 +98,7 @@ object ChannelListener {
 }
 
 trait ChannelListener {
-  def fulfillReceived(fulfill: UpdateFulfillHtlc, ourAdd: UpdateAddHtlc): Unit = none
+  def fulfillReceived(fulfill: UpdateFulfillHtlc): Unit = none
   def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = none
   def addReceived(remoteAdd: UpdateAddHtlc): Unit = none
 

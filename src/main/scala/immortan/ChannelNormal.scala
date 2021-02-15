@@ -20,10 +20,10 @@ import scodec.bits.ByteVector
 
 
 object ChannelNormal {
-  def make(initListeners: Set[ChannelListener], normalData: HasNormalCommitments, cw: ChainWallet, bag: ChannelBag): ChannelNormal = new ChannelNormal(bag) {
+  def make(initListeners: Set[ChannelListener], normalData: HasNormalCommitments, cw: WalletExt, bag: ChannelBag): ChannelNormal = new ChannelNormal(bag) {
     def SEND(messages: LightningMessage*): Unit = CommsTower.sendMany(messages, normalData.commitments.announce.nodeSpecificPair)
     def STORE(normalData1: PersistentChannelData): PersistentChannelData = bag.put(normalData1)
-    var chainWallet: ChainWallet = cw
+    var chainWallet: WalletExt = cw
     listeners = initListeners
     doProcess(normalData)
   }
@@ -31,7 +31,7 @@ object ChannelNormal {
 
 abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me =>
   val receiver: ActorRef = LNParams.system actorOf Props(new Receiver)
-  var chainWallet: ChainWallet
+  var chainWallet: WalletExt
 
   def doProcess(change: Any): Unit =
     Tuple3(data, change, state) match {
@@ -267,9 +267,9 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
 
       case (norm: DATA_NORMAL, fulfill: UpdateFulfillHtlc, OPEN) =>
-        val (commits1, ourAdd) = NormalCommits.receiveFulfill(norm.commitments, fulfill)
+        val (commits1, _) = NormalCommits.receiveFulfill(norm.commitments, fulfill)
         BECOME(norm.copy(commitments = commits1), OPEN)
-        events.fulfillReceived(fulfill, ourAdd)
+        events.fulfillReceived(fulfill)
 
 
       case (norm: DATA_NORMAL, fail: UpdateFailHtlc, OPEN) =>

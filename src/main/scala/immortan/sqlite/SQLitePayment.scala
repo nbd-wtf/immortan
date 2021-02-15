@@ -15,6 +15,8 @@ import scala.util.Try
 
 case class SentToNodeSummary(fees: MilliSatoshi, sent: MilliSatoshi, count: Long)
 
+case class RelayedSummary(relayed: MilliSatoshi, earned: MilliSatoshi, count: Long)
+
 case class TotalStatSummary(fees: MilliSatoshi, received: MilliSatoshi, sent: MilliSatoshi, count: Long)
 
 case class TotalStatSummaryExt(summary: Option[TotalStatSummary], from: Long, to: Long)
@@ -22,15 +24,24 @@ case class TotalStatSummaryExt(summary: Option[TotalStatSummary], from: Long, to
 class SQlitePaymentBag(db: DBInterface) extends PaymentBag with PaymentDBUpdater {
   def getPaymentInfo(paymentHash: ByteVector32): Option[PaymentInfo] = db.select(PaymentTable.selectOneSql, paymentHash.toHex).headTry(toPaymentInfo).toOption
 
+  def getRelayedPreimageInfo(paymentHash: ByteVector32): Option[RelayedPreimageInfo] = db.select(RelayPreimageTable.selectByHashSql, paymentHash.toHex).headTry(toRelayedPreimageInfo).toOption
+
   def addSearchablePayment(search: String, paymentHash: ByteVector32): Unit = db.change(PaymentTable.newVirtualSql, search, paymentHash.toHex)
 
   def searchPayments(rawSearchQuery: String): RichCursor = db.search(PaymentTable.searchSql, rawSearchQuery)
 
   def listRecentPayments: RichCursor = db.select(PaymentTable.selectRecentSql)
 
+  def listRecentRelays: RichCursor = db.select(RelayPreimageTable.selectRecentSql)
+
   def updOkOutgoing(upd: UpdateFulfillHtlc, fee: MilliSatoshi): Unit = db.change(PaymentTable.updOkOutgoingSql, upd.paymentPreimage.toHex, fee.toLong: JLong, upd.paymentHash.toHex)
 
   def updStatusIncoming(add: UpdateAddHtlc, status: String): Unit = db.change(PaymentTable.updParamsIncomingSql, status, add.amountMsat.toLong: JLong, System.currentTimeMillis: JLong, add.paymentHash.toHex)
+
+  def addRelayedPreimageInfo(info: RelayedPreimageInfo): Unit =
+    db.change(RelayPreimageTable.newSql, info.paymentHashString, info.preimageString,
+      info.fromPeerNodeIdString, info.stamp: JLong, info.relayed.toLong: JLong,
+      info.earned.toLong: JLong)
 
   def abortPayment(paymentHash: ByteVector32): Unit = db.change(PaymentTable.updStatusSql, PaymentStatus.ABORTED, paymentHash.toHex)
 
@@ -63,10 +74,19 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag with PaymentDBUpdater
     TotalStatSummary(fees = MilliSatoshi(rc long 0), received = MilliSatoshi(rc long 1), sent = MilliSatoshi(rc long 2), count = rc long 3)
   }
 
+  def relayedSummary: Try[RelayedSummary] = db.select(RelayPreimageTable.selectSummarySql) headTry { rc =>
+    RelayedSummary(relayed = MilliSatoshi(rc long 0), earned = MilliSatoshi(rc long 1), count = rc long 2)
+  }
+
   def toPaymentInfo(rc: RichCursor): PaymentInfo =
     PaymentInfo(payeeNodeIdString = rc string PaymentTable.nodeId, prString = rc string PaymentTable.pr, preimageString = rc string PaymentTable.preimage, status = rc string PaymentTable.status,
       stamp = rc long PaymentTable.stamp, descriptionString = rc string PaymentTable.description, actionString = rc string PaymentTable.action, paymentHashString = rc string PaymentTable.hash,
       received = MilliSatoshi(rc long PaymentTable.receivedMsat), sent = MilliSatoshi(rc long PaymentTable.sentMsat), fee = MilliSatoshi(rc long PaymentTable.feeMsat),
       balanceSnapshot = MilliSatoshi(rc long PaymentTable.balanceMsat), fiatRatesString = rc string PaymentTable.fiatRates,
       chainFee = MilliSatoshi(rc long PaymentTable.chainFee), incoming = rc long PaymentTable.incoming)
+
+  def toRelayedPreimageInfo(rc: RichCursor): RelayedPreimageInfo =
+    RelayedPreimageInfo(paymentHashString = rc string RelayPreimageTable.hash, preimageString = rc string RelayPreimageTable.preimage,
+      relayed = MilliSatoshi(rc long RelayPreimageTable.relayed), earned = MilliSatoshi(rc long RelayPreimageTable.earned),
+      fromPeerNodeIdString = rc string RelayPreimageTable.fromPeer, stamp = rc long RelayPreimageTable.stamp)
 }

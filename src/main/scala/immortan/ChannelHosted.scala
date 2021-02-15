@@ -86,17 +86,11 @@ abstract class ChannelHosted extends Channel { me =>
         BECOME(hc.receiveAdd(add), OPEN)
         events.addReceived(add)
 
-
-      case (hc: HostedCommits, fulfill: UpdateFulfillHtlc, OPEN) =>
-        hc.nextLocalSpec.findOutgoingHtlcById(fulfill.id) match {
-          case Some(out) if out.add.paymentHash != fulfill.paymentHash =>
-            throw InvalidHtlcPreimage(hc.channelId, fulfill.id)
-          case None =>
-            throw UnknownHtlcId(hc.channelId, fulfill.id)
-          case Some(out) =>
-            BECOME(hc.addRemoteProposal(fulfill), OPEN)
-            events.fulfillReceived(fulfill, out.add)
-        }
+      // Relaxed constraints for receiveng preimages over HCs
+      case (hc: HostedCommits, fulfill: UpdateFulfillHtlc, OPEN | SUSPENDED) =>
+        val ourAddExists = hc.nextLocalSpec.findOutgoingHtlcById(fulfill.id).isDefined
+        if (ourAddExists) BECOME(hc.addRemoteProposal(fulfill), state)
+        events.fulfillReceived(fulfill)
 
 
       case (hc: HostedCommits, fail: UpdateFailHtlc, OPEN) =>
@@ -123,9 +117,8 @@ abstract class ChannelHosted extends Channel { me =>
 
       case (hc: HostedCommits, cmd: CMD_ADD_HTLC, state) =>
         if (OPEN != state) throw CMDException(ChannelUnavailable(hc.channelId), cmd)
-        val (hostedCommits1, updateAddHtlcMsg) = hc.sendAdd(cmd)
-        BECOME(hostedCommits1, state)
-        SEND(updateAddHtlcMsg)
+        val (commits1, updateAddHtlcMsg) = hc.sendAdd(cmd)
+        StoreBecomeSend(commits1, OPEN, updateAddHtlcMsg)
         doProcess(CMD_SIGN)
 
 

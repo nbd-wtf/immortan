@@ -103,9 +103,9 @@ object LNParams {
       maxRemoteAttempts = 12, maxChannelFailures = 12, maxStrangeNodeFailures = 12)
 
   var format: StorageFormat = _
+  var chainWallet: WalletExt = _
   var syncParams: SyncParams = _
   var fiatRatesInfo: RatesInfo = _
-  var chainWallet: ChainWallet = _
   var channelMaster: ChannelMaster = _
 
   val defaultFeerates: FeeratesPerKB =
@@ -146,13 +146,13 @@ object LNParams {
     new EarnDotComFeeProvider(15.seconds)
   )
 
-  def createWallet(addresses: Set[ElectrumServerAddress], walletDb: WalletDb, seed: ByteVector): ChainWallet = {
+  def createWallet(addresses: Set[ElectrumServerAddress], walletDb: WalletDb, seed: ByteVector): WalletExt = {
     val clientPool = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(blockCount, addresses)), "pool", SupervisorStrategy.Resume))
     val watcher = system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(blockCount, clientPool)), "watcher", SupervisorStrategy.Resume))
     val wallet = system.actorOf(ElectrumWallet.props(seed, clientPool, ElectrumWallet.WalletParameters(chainHash, walletDb)), "wallet")
     val catcher = system.actorOf(Props(new WalletEventsCatcher), "catcher")
     val eclairWallet = new ElectrumEclairWallet(wallet, chainHash)
-    ChainWallet(eclairWallet, catcher, clientPool, watcher)
+    WalletExt(eclairWallet, catcher, clientPool, watcher)
   }
 
   def currentBlockDay: Long = blockCount.get / blocksPerDay
@@ -243,9 +243,9 @@ case class NodeAnnouncementExt(na: NodeAnnouncement) {
     Transactions.sign(tx, Generators.revocationPrivKey(channelPrivateKeys(publicKey.path).privateKey, remoteSecret), txOwner, commitmentFormat)
 }
 
-case class NodeAnnounceExtAndTheirAdd(announce: NodeAnnouncementExt, theirAdd: UpdateAddHtlc)
+case class WalletExt(wallet: ElectrumEclairWallet, eventsCatcher: ActorRef, clientPool: ActorRef, watcher: ActorRef)
 
-case class ChainWallet(wallet: ElectrumEclairWallet, eventsCatcher: ActorRef, clientPool: ActorRef, watcher: ActorRef)
+case class UpdateAddHtlcExt(theirAdd: UpdateAddHtlc, announce: NodeAnnouncementExt)
 
 case class SwapInStateExt(state: SwapInState, nodeId: PublicKey)
 
@@ -278,6 +278,7 @@ trait NetworkDataStore {
 
 trait PaymentBag {
   def getPaymentInfo(paymentHash: ByteVector32): Option[PaymentInfo]
+  def getRelayedPreimageInfo(paymentHash: ByteVector32): Option[RelayedPreimageInfo]
 }
 
 trait PaymentDBUpdater {
@@ -290,6 +291,7 @@ trait PaymentDBUpdater {
   // These MUST be the only two methods capable of updating payment state to SUCCEEDED
   def updOkOutgoing(upd: UpdateFulfillHtlc, fee: MilliSatoshi): Unit
   def updStatusIncoming(add: UpdateAddHtlc, status: String): Unit
+  def addRelayedPreimageInfo(info: RelayedPreimageInfo): Unit
 }
 
 object ChannelBag {
