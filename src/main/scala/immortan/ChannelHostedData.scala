@@ -4,11 +4,11 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.channel._
 import com.softwaremill.quicklens._
-import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.eclair.transactions._
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.payment.OutgoingPacket
 import scodec.bits.ByteVector
+import immortan.crypto.Tools
 
 
 case class WaitRemoteHostedReply(announce: NodeAnnouncementExt, refundScriptPubKey: ByteVector, secret: ByteVector) extends ChannelData
@@ -26,9 +26,11 @@ case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: La
 
   lazy val nextLocalSpec: CommitmentSpec = CommitmentSpec.reduce(localSpec, nextLocalUpdates, nextRemoteUpdates)
 
-  lazy val unansweredIncoming: Set[UpdateAddHtlc] = localSpec.incomingAdds intersect nextLocalSpec.incomingAdds // Cross-signed MINUS already resolved by us
+  lazy val unProcessedIncoming: Set[UpdateAddHtlc] = localSpec.incomingAdds intersect nextLocalSpec.incomingAdds // Cross-signed MINUS already resolved by us
 
   lazy val allOutgoing: Set[UpdateAddHtlc] = localSpec.outgoingAdds ++ nextLocalSpec.outgoingAdds // Cross-signed PLUS new payments offered by us
+
+  val channelId: ByteVector32 = Tools.hostedChanId(announce.nodeSpecificPubKey.value, announce.na.nodeId.value)
 
   lazy val remoteRejects: Seq[RemoteReject] = nextRemoteUpdates.collect {
     case fail: UpdateFailHtlc => RemoteUpdateFail(fail, localSpec.findOutgoingHtlcById(fail.id).get.add)
@@ -43,8 +45,6 @@ case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: La
 
   val availableBalanceForSend: MilliSatoshi = nextLocalSpec.toLocal
 
-  val channelId: ByteVector32 = announce.nodeSpecificHostedChanId
-
   def nextLocalUnsignedLCSS(blockDay: Long): LastCrossSignedState =
     LastCrossSignedState(lastCrossSignedState.isHost, lastCrossSignedState.refundScriptPubKey, lastCrossSignedState.initHostedChannel,
       blockDay, nextLocalSpec.toLocal, nextLocalSpec.toRemote, nextTotalLocal, nextTotalRemote, nextLocalSpec.incomingAdds.toList,
@@ -54,6 +54,28 @@ case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: La
   def addLocalProposal(update: UpdateMessage): HostedCommits = copy(nextLocalUpdates = nextLocalUpdates :+ update)
   def addRemoteProposal(update: UpdateMessage): HostedCommits = copy(nextRemoteUpdates = nextRemoteUpdates :+ update)
   def isResizingSupported: Boolean = lastCrossSignedState.initHostedChannel.version == HostedChannelVersion.RESIZABLE
+
+  def sendFail(cmd: CMD_FAIL_HTLC): (HostedCommits, UpdateFailHtlc) = unProcessedIncoming.find(theirUpdateAdd => cmd.id == theirUpdateAdd.id) match {
+    case Some(add) => OutgoingPacket.buildHtlcFailure(cmd, add) match { case Right(fail) => (addLocalProposal(fail), fail) case Left(error) => throw error }
+    case None => throw UnknownHtlcId(channelId, cmd.id)
+  }
+
+  def sendMalformed(cmd: CMD_FAIL_MALFORMED_HTLC): (HostedCommits, UpdateFailMalformedHtlc) = {
+    val isNotProcessedYet = unProcessedIncoming.exists(theirUpdateAdd => cmd.id == theirUpdateAdd.id)
+    val ourFailMalform = UpdateFailMalformedHtlc(channelId, cmd.id, cmd.onionHash, cmd.failureCode)
+    if (cmd.failureCode.&(FailureMessageCodecs.BADONION) == 0) throw InvalidFailureCode(channelId)
+    else if (isNotProcessedYet) (addLocalProposal(ourFailMalform), ourFailMalform)
+    else throw UnknownHtlcId(channelId, cmd.id)
+  }
+
+  def sendFulfill(cmd: CMD_FULFILL_HTLC): (HostedCommits, UpdateFulfillHtlc) = {
+    val theirAddOpt = unProcessedIncoming.find(theirUpdateAdd => cmd.id == theirUpdateAdd.id)
+    val paymentHashMatches = theirAddOpt.exists(_.paymentHash == cmd.paymentHash)
+    if (!paymentHashMatches) throw InvalidHtlcPreimage(channelId, cmd.id)
+    else if (theirAddOpt.isEmpty) throw UnknownHtlcId(channelId, cmd.id)
+    val fulfill = UpdateFulfillHtlc(channelId, cmd.id, cmd.preimage)
+    (addLocalProposal(fulfill), fulfill)
+  }
 
   def sendAdd(cmd: CMD_ADD_HTLC): (ChannelData, UpdateAddHtlc) = {
     // Let's add this change and see if the new state violates any of constraints including those imposed by them on us, proceed only if it does not
@@ -75,16 +97,6 @@ case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: La
     if (commits1.nextLocalSpec.toRemote < 0L.msat) throw InsufficientFunds(channelId)
     commits1
   }
-
-  def sendFail(cmd: CMD_FAIL_HTLC): (HostedCommits, UpdateFailHtlc) = // TODO: improve all send/receive methods
-    localSpec.findIncomingHtlcById(cmd.id).map { case IncomingHtlc(add) =>
-      OutgoingPacket.buildHtlcFailure(announce.nodeSpecificPrivKey, cmd, add) match {
-        case Left(canNotExtractSharedSecret) => throw canNotExtractSharedSecret
-        case Right(fail) => (addLocalProposal(fail), fail)
-      }
-    } getOrElse {
-      throw UnknownHtlcId(channelId, cmd.id)
-    }
 
   def withResize(resize: ResizeChannel): HostedCommits =
     me.modify(_.lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat).setTo(resize.newCapacityMsatU64)

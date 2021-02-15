@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair
 
-import com.typesafe.config.Config
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import scodec.bits.{BitVector, ByteVector}
 
@@ -26,40 +25,36 @@ import scodec.bits.{BitVector, ByteVector}
 
 sealed trait FeatureSupport
 
-// @formatter:off
 object FeatureSupport {
   case object Mandatory extends FeatureSupport { override def toString: String = "mandatory" }
   case object Optional extends FeatureSupport { override def toString: String = "optional" }
 }
 
 trait Feature {
-
-  def rfcName: String
   def mandatory: Int
   def optional: Int = mandatory + 1
+
+  def isCritical: Boolean = false
+  def isDesired: Boolean = false
+
+  def name: String
 
   def supportBit(support: FeatureSupport): Int = support match {
     case FeatureSupport.Mandatory => mandatory
     case FeatureSupport.Optional => optional
   }
-
-  override def toString = rfcName
-
 }
-// @formatter:on
 
 case class ActivatedFeature(feature: Feature, support: FeatureSupport)
 
 case class UnknownFeature(bitIndex: Int)
 
 case class Features(activated: Set[ActivatedFeature], unknown: Set[UnknownFeature] = Set.empty) {
-
   def hasFeature(feature: Feature, support: Option[FeatureSupport] = None): Boolean = support match {
     case Some(s) => activated.contains(ActivatedFeature(feature, s))
     case None => hasFeature(feature, Some(Optional)) || hasFeature(feature, Some(Mandatory))
   }
 
-  /** NB: this method is not reflexive, see [[Features.areCompatible]] if you want symmetric validation. */
   def areSupported(remoteFeatures: Features): Boolean = {
     // we allow unknown odd features (it's ok to be odd)
     val unknownFeaturesOk = remoteFeatures.unknown.forall(_.bitIndex % 2 == 1)
@@ -91,7 +86,7 @@ case class Features(activated: Set[ActivatedFeature], unknown: Set[UnknownFeatur
 
 object Features {
 
-  def empty = Features(Set.empty[ActivatedFeature])
+  def empty: Features = Features(Set.empty[ActivatedFeature])
 
   def apply(features: Set[ActivatedFeature]): Features = Features(activated = features)
 
@@ -110,112 +105,113 @@ object Features {
   }
 
   case object OptionDataLossProtect extends Feature {
-    val rfcName = "option_data_loss_protect"
+    override def isCritical: Boolean = true
+    val name = "Basic data loss protect"
     val mandatory = 0
   }
 
   case object InitialRoutingSync extends Feature {
-    val rfcName = "initial_routing_sync"
-    // reserved but not used as per lightningnetwork/lightning-rfc/pull/178
+    val name = "initial_routing_sync"
     val mandatory = 2
   }
 
   case object ChannelRangeQueries extends Feature {
-    val rfcName = "gossip_queries"
+    val name = "gossip_queries"
     val mandatory = 6
   }
 
   case object VariableLengthOnion extends Feature {
-    val rfcName = "var_onion_optin"
+    override def isCritical: Boolean = true
+    val name = "Modern onion format"
     val mandatory = 8
   }
 
   case object ChannelRangeQueriesExtended extends Feature {
-    val rfcName = "gossip_queries_ex"
+    override def isDesired: Boolean = true
+    val name = "Extended gossip queries"
     val mandatory = 10
   }
 
   case object StaticRemoteKey extends Feature {
-    val rfcName = "option_static_remotekey"
+    override def isCritical: Boolean = true
+    val name = "Direct wallet refund"
     val mandatory = 12
   }
 
   case object PaymentSecret extends Feature {
-    val rfcName = "payment_secret"
+    val name = "payment_secret"
     val mandatory = 14
   }
 
   case object BasicMultiPartPayment extends Feature {
-    val rfcName = "basic_mpp"
+    override def isCritical: Boolean = true
+    val name = "Multipart payments"
     val mandatory = 16
   }
 
   case object Wumbo extends Feature {
-    val rfcName = "option_support_large_channel"
+    override def isDesired: Boolean = true
+    val name = "Large channels"
     val mandatory = 18
   }
 
   case object AnchorOutputs extends Feature {
-    val rfcName = "option_anchor_outputs"
+    override def isCritical: Boolean = true
+    val name = "Anchor channels"
     val mandatory = 20
   }
 
-  // TODO: @t-bast: update feature bits once spec-ed (currently reserved here: https://github.com/lightningnetwork/lightning-rfc/issues/605)
-  // We're not advertising these bits yet in our announcements, clients have to assume support.
-  // This is why we haven't added them yet to `areSupported`.
   case object TrampolinePayment extends Feature {
-    val rfcName = "trampoline_payment"
+    val name = "trampoline_payment"
     val mandatory = 50
   }
 
-  case object KeySend extends Feature {
-    val rfcName = "keysend"
-    val mandatory = 54
-  }
-
   case object ChainSwap extends Feature {
-    val rfcName = "chain_swap"
+    override def isDesired: Boolean = true
+    val name = "Chain swaps"
     val mandatory = 32770
   }
 
   case object HostedChannels extends Feature {
-    val rfcName = "hosted_channels"
+    val name = "Hosted channels"
     val mandatory = 32772
   }
 
   case object PrivateRouting extends Feature {
-    val rfcName = "parivate_routing"
+    override def isDesired: Boolean = true
+    val name = "Private channel routing"
     val mandatory = 32774
   }
 
-  val knownFeatures: Set[Feature] = Set(
+  case object DataLossProtectExt extends Feature {
+    override def isDesired: Boolean = true
+    val name = "Extended peer backups"
+    val mandatory = 32776
+  }
+  
+  val visibleFeatures: Set[Feature] = Set(
     ChannelRangeQueriesExtended,
     BasicMultiPartPayment,
     OptionDataLossProtect,
-    ChannelRangeQueries,
     VariableLengthOnion,
-    InitialRoutingSync,
-    TrampolinePayment,
+    DataLossProtectExt,
     StaticRemoteKey,
     PrivateRouting,
     HostedChannels,
-    PaymentSecret,
     AnchorOutputs,
     ChainSwap,
-    KeySend,
     Wumbo
   )
+
+  val knownFeatures: Set[Feature] = Set(ChannelRangeQueries, InitialRoutingSync, TrampolinePayment) ++ visibleFeatures
 
   // Features may depend on other features, as specified in Bolt 9.
   private val featuresDependency = Map(
     ChannelRangeQueriesExtended -> (ChannelRangeQueries :: Nil),
-    // This dependency requirement was added to the spec after the Phoenix release, which means Phoenix users have "invalid"
-    // invoices in their payment history. We choose to treat such invoices as valid; this is a harmless spec violation.
-    // PaymentSecret -> (VariableLengthOnion :: Nil),
+    PaymentSecret -> (VariableLengthOnion :: Nil),
     BasicMultiPartPayment -> (PaymentSecret :: Nil),
     AnchorOutputs -> (StaticRemoteKey :: Nil),
-    TrampolinePayment -> (PaymentSecret :: Nil),
-    KeySend -> (VariableLengthOnion :: Nil)
+    TrampolinePayment -> (PaymentSecret :: Nil)
   )
 
   case class FeatureException(message: String) extends IllegalArgumentException(message)
@@ -232,5 +228,4 @@ object Features {
   def canUseFeature(localFeatures: Features, remoteFeatures: Features, feature: Feature): Boolean = {
     localFeatures.hasFeature(feature) && remoteFeatures.hasFeature(feature)
   }
-
 }

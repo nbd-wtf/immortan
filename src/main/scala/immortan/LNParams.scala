@@ -8,22 +8,23 @@ import com.softwaremill.sttp._
 import fr.acinq.eclair.Features._
 import scala.concurrent.duration._
 import fr.acinq.eclair.blockchain.fee._
+import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.bitcoin.DeterministicWallet._
 import scodec.bits.{ByteVector, HexStringSyntax}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import immortan.utils.{RatesInfo, WalletEventsCatcher}
 import scala.concurrent.{ExecutionContextExecutor, Future}
-import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt}
 import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import fr.acinq.eclair.transactions.{DirectedHtlc, Transactions}
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import fr.acinq.eclair.channel.{LocalParams, NormalCommits, PersistentChannelData}
-import fr.acinq.eclair.blockchain.electrum.{ElectrumClientPool, ElectrumEclairWallet, ElectrumWallet, ElectrumWatcher}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
+import fr.acinq.eclair.router.ChannelUpdateExt
 import fr.acinq.eclair.payment.PaymentRequest
+import org.bitcoinj.core.NetworkParameters
 import immortan.SyncMaster.ShortChanIdSet
 import fr.acinq.eclair.crypto.Generators
 import immortan.crypto.Noise.KeyPair
@@ -54,6 +55,7 @@ object LNParams {
   val minDustLimit: Satoshi = Satoshi(546L)
   val minDepthBlocks: Int = 3
 
+  val jParams: NetworkParameters = org.bitcoinj.params.MainNetParams.get
   val chainHash: ByteVector32 = Block.LivenetGenesisBlock.hash
   val reserveToFundingRatio = 0.0025 // %
 
@@ -63,28 +65,29 @@ object LNParams {
 
     // Mimic phoenix
     val normFeatures: Set[ActivatedFeature] = Set.empty +
-      ActivatedFeature(ChannelRangeQueries, FeatureSupport.Mandatory) +
-      ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Mandatory) +
-      ActivatedFeature(OptionDataLossProtect, FeatureSupport.Mandatory) +
-      ActivatedFeature(BasicMultiPartPayment, FeatureSupport.Mandatory) +
-      ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory) +
-      ActivatedFeature(AnchorOutputs, FeatureSupport.Mandatory) +
-      ActivatedFeature(PaymentSecret, FeatureSupport.Mandatory) +
+      ActivatedFeature(ChannelRangeQueries, FeatureSupport.Optional) +
+      ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Optional) +
+      ActivatedFeature(OptionDataLossProtect, FeatureSupport.Optional) +
+      ActivatedFeature(BasicMultiPartPayment, FeatureSupport.Optional) +
+      ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional) +
+      ActivatedFeature(DataLossProtectExt, FeatureSupport.Optional) +
       ActivatedFeature(PrivateRouting, FeatureSupport.Optional) +
+      ActivatedFeature(AnchorOutputs, FeatureSupport.Optional) +
+      ActivatedFeature(PaymentSecret, FeatureSupport.Optional) +
       ActivatedFeature(ChainSwap, FeatureSupport.Optional) +
-      ActivatedFeature(Wumbo, FeatureSupport.Mandatory)
+      ActivatedFeature(Wumbo, FeatureSupport.Optional)
 
     val phcSyncFeatures: Set[ActivatedFeature] = Set.empty +
-      ActivatedFeature(HostedChannels, FeatureSupport.Mandatory)
+      ActivatedFeature(HostedChannels, FeatureSupport.Optional)
 
     val hcFeatures: Set[ActivatedFeature] = Set.empty +
-      ActivatedFeature(ChannelRangeQueries, FeatureSupport.Mandatory) +
-      ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Mandatory) +
-      ActivatedFeature(BasicMultiPartPayment, FeatureSupport.Mandatory) +
-      ActivatedFeature(VariableLengthOnion, FeatureSupport.Mandatory) +
-      ActivatedFeature(HostedChannels, FeatureSupport.Mandatory) +
-      ActivatedFeature(PaymentSecret, FeatureSupport.Mandatory) +
+      ActivatedFeature(ChannelRangeQueries, FeatureSupport.Optional) +
+      ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Optional) +
+      ActivatedFeature(BasicMultiPartPayment, FeatureSupport.Optional) +
+      ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional) +
       ActivatedFeature(PrivateRouting, FeatureSupport.Optional) +
+      ActivatedFeature(HostedChannels, FeatureSupport.Optional) +
+      ActivatedFeature(PaymentSecret, FeatureSupport.Optional) +
       ActivatedFeature(ChainSwap, FeatureSupport.Optional)
 
     val norm = Init(Features(normFeatures), tlvStream)
@@ -189,13 +192,6 @@ case class SwapInStateExt(state: SwapInState, nodeId: PublicKey)
 case class PaymentRequestExt(pr: PaymentRequest, raw: String)
 
 case class NodeAnnouncementExt(na: NodeAnnouncement) {
-  lazy val prettyNodeName: String = na.addresses collectFirst {
-    case _: IPv4 | _: IPv6 => na.nodeId.toString take 15 grouped 3 mkString "\u0020"
-    case _: Tor2 => s"<strong>Tor</strong>\u0020${na.nodeId.toString take 12 grouped 3 mkString "\u0020"}"
-    case _: Tor3 => s"<strong>Tor</strong>\u0020${na.nodeId.toString take 12 grouped 3 mkString "\u0020"}"
-  } getOrElse "No IP address"
-
-  // Important: this relies on format being defined at runtime
   lazy val nodeSpecificExtendedKey: DeterministicWallet.ExtendedPrivateKey = LNParams.format.keys.ourFakeNodeIdKey(na.nodeId)
 
   lazy val nodeSpecificPrivKey: PrivateKey = nodeSpecificExtendedKey.privateKey
@@ -203,8 +199,6 @@ case class NodeAnnouncementExt(na: NodeAnnouncement) {
   lazy val nodeSpecificPubKey: PublicKey = nodeSpecificPrivKey.publicKey
 
   lazy val nodeSpecificPair: KeyPairAndPubKey = KeyPairAndPubKey(KeyPair(nodeSpecificPubKey.value, nodeSpecificPrivKey.value), na.nodeId)
-
-  lazy val nodeSpecificHostedChanId: ByteVector32 = hostedChanId(nodeSpecificPubKey.value, na.nodeId.value)
 
   private def derivePrivKey(path: KeyPath) = derivePrivateKey(nodeSpecificExtendedKey, path)
 
@@ -253,9 +247,6 @@ case class NodeAnnouncementExt(na: NodeAnnouncement) {
 
   def sign(tx: Transactions.TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey, txOwner: Transactions.TxOwner, commitmentFormat: Transactions.CommitmentFormat): ByteVector64 =
     Transactions.sign(tx, Generators.revocationPrivKey(channelPrivateKeys(publicKey.path).privateKey, remoteSecret), txOwner, commitmentFormat)
-
-  def signChannelAnnouncement(witness: ByteVector, fundingKeyPath: KeyPath): ByteVector64 =
-    Announcements.signChannelAnnouncement(witness, channelPrivateKeys(fundingKeyPath).privateKey)
 }
 
 // Interfaces
@@ -300,7 +291,7 @@ trait PaymentDBUpdater {
 }
 
 object ChannelBag {
-  case class CltvAndHash160(hash160: ByteVector, cltvExpiry: CltvExpiry)
+  case class Hash160AndCltv(hash160: ByteVector, cltvExpiry: CltvExpiry)
 }
 
 trait ChannelBag {
@@ -309,7 +300,7 @@ trait ChannelBag {
   def delete(commitments: HostedCommits): Unit
   def put(data: PersistentChannelData): PersistentChannelData
 
-  def htlcInfos(commitNumer: Long): Iterable[ChannelBag.CltvAndHash160]
+  def htlcInfos(commitNumer: Long): Iterable[ChannelBag.Hash160AndCltv]
   def putHtlcInfo(sid: ShortChannelId, commitNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit
   def putHtlcInfos(htlcs: Seq[DirectedHtlc], sid: ShortChannelId, commitNumber: Long): Unit
   def rmHtlcInfos(sid: ShortChannelId): Unit

@@ -12,10 +12,7 @@ abstract class Statistics[O] {
 
   def variance(items: Collection, mean: Double): Double = (0D /: items) { case (total, item) => math.pow(extract(item) - mean, 2) + total } / items.size
 
-  def mean(items: Collection): Double = items.map(extract).sum / items.size
+  def sd(items: Collection, mean: Double): Double = math sqrt variance(items, mean)
 
-  def sd(items: Collection, mean: Double): Double = {
-    val itemsVariance = variance(items, mean)
-    math.sqrt(itemsVariance)
-  }
+  def mean(items: Collection): Double = items.map(extract).sum / items.size
 }

@@ -4,6 +4,7 @@ import spray.json._
 import fr.acinq.eclair._
 import immortan.crypto.Tools._
 import immortan.utils.ImplicitJsonFormats._
+import fr.acinq.eclair.wire.{NodeAddress, NodeAnnouncement}
 import immortan.{LNParams, PaymentAction}
 import fr.acinq.bitcoin.{Bech32, Crypto}
 
@@ -12,9 +13,10 @@ import immortan.utils.LNUrl.LNUrlAndData
 import immortan.utils.PayRequest.PayMetaData
 import fr.acinq.eclair.payment.PaymentRequest
 import com.github.kevinsawicki.http.HttpRequest
-import fr.acinq.eclair.wire.NodeAddress
+import fr.acinq.bitcoin.Crypto.PublicKey
 import rx.lang.scala.Observable
 import scodec.bits.ByteVector
+import immortan.crypto.Tools
 import scala.util.Try
 
 
@@ -31,16 +33,15 @@ object LNUrl {
   def guardResponse(raw: String): String = {
     val validJson = Try(raw.parseJson.asJsObject.fields)
     val hasError = validJson.map(_ apply "reason").map(json2String)
-    if (validJson.isFailure) throw new Exception(s"Invalid json from remote provider: $raw")
-    if (hasError.isSuccess) throw new Exception(s"Error message from remote provider: ${hasError.get}")
+    if (validJson.isFailure) throw new Exception(s"Invalid json from vendor: $raw")
+    if (hasError.isSuccess) throw new Exception(s"Error message from vendor: ${hasError.get}")
     raw
   }
 
-  def checkHost(host: String): Uri = {
-    val uri = Uri.parse(host)
+  def checkHost(host: String): Uri = Uri parse host match { case uri =>
     val isOnion = host.startsWith("http://") && uri.getHost.endsWith(NodeAddress.onionSuffix)
     val isSSLPlain = host.startsWith("https://") && !uri.getHost.endsWith(NodeAddress.onionSuffix)
-    require(isSSLPlain || isOnion, "URI is neither Plain-HTTPS nor Onion-HTTP request")
+    require(isSSLPlain || isOnion, "URI is neither Plain/HTTPS nor Onion/HTTP request")
     uri
   }
 }
@@ -73,6 +74,25 @@ trait LNUrlData {
     val finalReq = req.appendQueryParameter(randomBytes(4).toHex, new String)
     HttpRequest.get(finalReq.build.toString, false).header("Connection", "close")
   }
+}
+
+case class NormalChannelRequest(uri: String, callback: String, k1: String) extends LNUrlData {
+  override def checkAgainstParent(lnUrl: LNUrl): Boolean = lnUrl.uri.getHost == callbackUri.getHost
+
+  val InputParser.nodeLink(nodeKey, hostAddress, portNumber) = uri
+  val pubKey: PublicKey = PublicKey.fromBin(ByteVector fromValidHex nodeKey)
+  val address: NodeAddress = NodeAddress.fromParts(hostAddress, portNumber.toInt)
+  val ann: NodeAnnouncement = Tools.mkNodeAnnouncement(pubKey, address, alias = hostAddress)
+  val callbackUri: Uri = LNUrl.checkHost(callback)
+}
+
+case class HostedChannelRequest(uri: String, alias: Option[String], k1: String) extends LNUrlData {
+
+  val secret: ByteVector = ByteVector fromValidHex k1
+  val InputParser.nodeLink(nodeKey, hostAddress, portNumber) = uri
+  val pubKey: PublicKey = PublicKey(ByteVector fromValidHex nodeKey)
+  val address: NodeAddress = NodeAddress.fromParts(hostAddress, portNumber.toInt)
+  val ann: NodeAnnouncement = Tools.mkNodeAnnouncement(pubKey, address, alias getOrElse hostAddress)
 }
 
 case class WithdrawRequest(callback: String, k1: String, maxWithdrawable: Long, defaultDescription: String, minWithdrawable: Option[Long] = None) extends LNUrlData { me =>

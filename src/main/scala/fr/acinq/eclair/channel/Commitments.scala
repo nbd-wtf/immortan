@@ -64,7 +64,7 @@ trait Commitments {
   def availableBalanceForReceive: MilliSatoshi
 
   def remoteRejects: Seq[RemoteReject] // Our adds rejected and cross-signed on last update
-  def unansweredIncoming: Set[UpdateAddHtlc] // Cross-signed MINUS already resolved by us
+  def unProcessedIncoming: Set[UpdateAddHtlc] // Cross-signed MINUS already processed by us
   def allOutgoing: Set[UpdateAddHtlc] // Cross-signed PLUS new payments offered by us
 }
 
@@ -74,11 +74,18 @@ case class NormalCommits(channelVersion: ChannelVersion, announce: NodeAnnouncem
                          remotePerCommitmentSecrets: ShaChain, updateOpt: Option[ChannelUpdate], channelId: ByteVector32,
                          startedAt: Long = System.currentTimeMillis) extends Commitments {
 
+  val latestRemoteCommit: RemoteCommit = remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit)
+
+  val channelKeyPath: DeterministicWallet.KeyPath = announce.keyPath(localParams)
+
   val maxInFlight: MilliSatoshi = remoteParams.maxHtlcValueInFlightMsat.toMilliSatoshi
 
   val minSendable: MilliSatoshi = remoteParams.htlcMinimum.max(localParams.htlcMinimum)
 
-  lazy val unansweredIncoming: Set[UpdateAddHtlc] = localCommit.spec.incomingAdds intersect CommitmentSpec.reduce(latestRemoteCommit.spec, remoteChanges.acked, localChanges.proposed).incomingAdds
+  lazy val unProcessedIncoming: Set[UpdateAddHtlc] = {
+    val reduced = CommitmentSpec.reduce(latestRemoteCommit.spec, remoteChanges.acked, localChanges.proposed)
+    localCommit.spec.incomingAdds intersect reduced.incomingAdds
+  }
 
   lazy val allOutgoing: Set[UpdateAddHtlc] = localCommit.spec.outgoingAdds ++ remoteCommit.spec.incomingAdds ++ localChanges.adds
 
@@ -86,10 +93,6 @@ case class NormalCommits(channelVersion: ChannelVersion, announce: NodeAnnouncem
     case fail: UpdateFailHtlc => RemoteUpdateFail(fail, remoteCommit.spec.findIncomingHtlcById(fail.id).get.add)
     case malform: UpdateFailMalformedHtlc => RemoteUpdateMalform(malform, remoteCommit.spec.findIncomingHtlcById(malform.id).get.add)
   }
-
-  lazy val latestRemoteCommit: RemoteCommit = remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit)
-
-  lazy val channelKeyPath: DeterministicWallet.KeyPath = announce.keyPath(localParams)
 
   lazy val availableBalanceForSend: MilliSatoshi = {
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
@@ -144,6 +147,11 @@ case class NormalCommits(channelVersion: ChannelVersion, announce: NodeAnnouncem
         (balanceNoFees - amountToReserve1).max(0.msat)
       }
     }
+  }
+
+  def isMoreRecent(other: NormalCommits): Boolean = {
+    val ourNextCommitSent = remoteCommit.index == other.remoteCommit.index && remoteNextCommitInfo.isLeft && other.remoteNextCommitInfo.isRight
+    localCommit.index > other.localCommit.index || remoteCommit.index > other.remoteCommit.index || ourNextCommitSent
   }
 }
 
@@ -281,12 +289,13 @@ object NormalCommits {
 
   def sendFail(commitments: NormalCommits, cmd: CMD_FAIL_HTLC): (NormalCommits, UpdateFailHtlc) =
     commitments.latestRemoteCommit.spec.findOutgoingHtlcById(cmd.id) match {
-      case Some(directed) =>
-        OutgoingPacket.buildHtlcFailure(commitments.announce.nodeSpecificPrivKey, cmd, directed.add) match {
-          case Left(canNotExtractSharedSecret) => throw canNotExtractSharedSecret
-          case Right(fail) => (addLocalProposal(commitments, fail), fail)
-        }
       case None => throw UnknownHtlcId(commitments.channelId, cmd.id)
+
+      case Some(directed) =>
+        OutgoingPacket.buildHtlcFailure(cmd, directed.add) match {
+          case Right(fail) => (addLocalProposal(commitments, fail), fail)
+          case Left(error) => throw error
+        }
     }
 
   def sendFailMalformed(commitments: NormalCommits, cmd: CMD_FAIL_MALFORMED_HTLC): (NormalCommits, UpdateFailMalformedHtlc) = {

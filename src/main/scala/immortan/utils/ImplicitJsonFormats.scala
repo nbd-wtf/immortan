@@ -14,7 +14,7 @@ import scodec.bits.BitVector
 object ImplicitJsonFormats extends DefaultJsonProtocol {
   def to[T : JsonFormat](raw: String): T = raw.parseJson.convertTo[T]
   val json2String: JsValue => String = (_: JsValue).convertTo[String]
-  val TAG = "tag"
+  final val TAG = "tag"
 
   def writeExt[T](ext: (String, JsValue), base: JsValue): JsObject = JsObject(base.asJsObject.fields + ext)
 
@@ -51,7 +51,7 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
       case JsString("CommitClaimTxDescription") => raw.convertTo[CommitClaimTxDescription]
       case JsString("HtlcClaimTxDescription") => raw.convertTo[HtlcClaimTxDescription]
       case JsString("PenaltyTxDescription") => raw.convertTo[PenaltyTxDescription]
-      case tag => throw new Exception(s"Unknown action=$tag")
+      case _ => throw new Exception
     }
   }
 
@@ -91,7 +91,7 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
       case JsString("PlainMetaDescription") => raw.convertTo[PlainMetaDescription]
       case JsString("SwapInDescription") => raw.convertTo[SwapInDescription]
       case JsString("SwapOutDescription") => raw.convertTo[SwapOutDescription]
-      case tag => throw new Exception(s"Unknown action=$tag")
+      case _ => throw new Exception
     }
   }
 
@@ -121,7 +121,7 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
       case JsString("message") => raw.convertTo[MessageAction]
       case JsString("aes") => raw.convertTo[AESAction]
       case JsString("url") => raw.convertTo[UrlAction]
-      case tag => throw new Exception(s"Unknown action=$tag")
+      case _ => throw new Exception
     }
   }
 
@@ -132,16 +132,24 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
   // LNURL
 
   implicit object LNUrlDataFmt extends JsonFormat[LNUrlData] {
-    def write(internal: LNUrlData): JsValue = throw new RuntimeException
-
-    def read(raw: JsValue): LNUrlData = raw.asJsObject.fields(TAG) match {
-      case JsString("withdrawRequest") => raw.convertTo[WithdrawRequest]
-      case JsString("payRequest") => raw.convertTo[PayRequest]
-      case tag => throw new Exception(s"Unknown lnurl=$tag")
+    def write(unserialized: LNUrlData): JsValue = throw new RuntimeException
+    def read(serialized: JsValue): LNUrlData = serialized.asJsObject fields TAG match {
+      case JsString("hostedChannelRequest") => serialized.convertTo[HostedChannelRequest]
+      case JsString("channelRequest") => serialized.convertTo[NormalChannelRequest]
+      case JsString("withdrawRequest") => serialized.convertTo[WithdrawRequest]
+      case JsString("payRequest") => serialized.convertTo[PayRequest]
+      case _ => throw new Exception
     }
   }
 
   // Note: tag on these MUST start with lower case because it is defined that way on protocol level
+
+  implicit val normalChannelRequestFmt: JsonFormat[NormalChannelRequest] = taggedJsonFmt(jsonFormat[String, String, String,
+    NormalChannelRequest](NormalChannelRequest.apply, "uri", "callback", "k1"), tag = "channelRequest")
+
+  implicit val hostedChannelRequestFmt: JsonFormat[HostedChannelRequest] = taggedJsonFmt(jsonFormat[String, Option[String], String,
+    HostedChannelRequest](HostedChannelRequest.apply, "uri", "alias", "k1"), tag = "hostedChannelRequest")
+
   implicit val withdrawRequestFmt: JsonFormat[WithdrawRequest] = taggedJsonFmt(jsonFormat[String, String, Long, String, Option[Long],
     WithdrawRequest](WithdrawRequest.apply, "callback", "k1", "maxWithdrawable", "defaultDescription", "minWithdrawable"), tag = "withdrawRequest")
 

@@ -27,11 +27,11 @@ class SQLiteChannel(db: DBInterface) extends ChannelBag {
 
   // HTLC infos
 
-  override def htlcInfos(commitNumer: Long): Iterable[ChannelBag.CltvAndHash160] =
+  override def htlcInfos(commitNumer: Long): Iterable[ChannelBag.Hash160AndCltv] =
     db.select(HtlcInfoTable.selectAllSql, commitNumer.toString) iterable { rc =>
       val cltvExpiry = CltvExpiry(rc int HtlcInfoTable.cltvExpiry)
       val hash160 = rc byteVec HtlcInfoTable.paymentHash160
-      ChannelBag.CltvAndHash160(hash160, cltvExpiry)
+      ChannelBag.Hash160AndCltv(hash160, cltvExpiry)
     }
 
   override def putHtlcInfo(sid: ShortChannelId, commitNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit =

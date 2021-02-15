@@ -24,10 +24,10 @@ import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CannotExtractSharedSecret}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, UInt64}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.bitcoin.ByteVector32
-import akka.event.LoggingAdapter
+import fr.acinq.eclair.transactions.IncomingHtlc
 import scodec.bits.ByteVector
+
 import scala.reflect.ClassTag
-import java.util.UUID
 
 /**
  * Created by t-bast on 08/10/2019.
@@ -54,7 +54,7 @@ object IncomingPacket {
 
   case class DecodedOnionPacket[T <: Onion.PacketType](payload: T, next: OnionRoutingPacket)
 
-  private def decryptOnion[T <: Onion.PacketType : ClassTag](add: UpdateAddHtlc, privateKey: PrivateKey)(packet: OnionRoutingPacket, packetType: Sphinx.OnionRoutingPacket[T])(implicit log: LoggingAdapter): Either[FailureMessage, DecodedOnionPacket[T]] =
+  private def decryptOnion[T <: Onion.PacketType : ClassTag](add: UpdateAddHtlc, privateKey: PrivateKey)(packet: OnionRoutingPacket, packetType: Sphinx.OnionRoutingPacket[T]): Either[FailureMessage, DecodedOnionPacket[T]] =
     packetType.peel(privateKey, add.paymentHash, packet) match {
       case Right(p@Sphinx.DecryptedPacket(payload, nextPacket, _)) =>
         OnionCodecs.perHopPayloadCodecByPacketType(packetType, p.isLastPacket).decode(payload.bits) match {
@@ -78,7 +78,7 @@ object IncomingPacket {
    * @param privateKey this node's private key
    * @return whether the payment is to be relayed or if our node is the final recipient (or an error).
    */
-  def decrypt(add: UpdateAddHtlc, privateKey: PrivateKey)(implicit log: LoggingAdapter): Either[FailureMessage, IncomingPacket] = {
+  def decrypt(add: UpdateAddHtlc, privateKey: PrivateKey): Either[FailureMessage, IncomingPacket] = {
     decryptOnion(add, privateKey)(add.onionRoutingPacket, Sphinx.PaymentPacket) match {
       case Left(failure) => Left(failure)
       // NB: we don't validate the ChannelRelayPacket here because its fees and cltv depend on what channel we'll choose to use.
@@ -224,19 +224,8 @@ object OutgoingPacket {
     (firstAmount, firstExpiry, onion)
   }
 
-  // @formatter:off
-  sealed trait Upstream
-  object Upstream {
-    case class Local(id: UUID) extends Upstream
-    case class Trampoline(adds: Seq[UpdateAddHtlc]) extends Upstream {
-      val amountIn: MilliSatoshi = adds.map(_.amountMsat).sum
-      val expiryIn: CltvExpiry = adds.map(_.cltvExpiry).min
-    }
-  }
-  // @formatter:on
-
-  def buildHtlcFailure(nodeSecret: PrivateKey, cmd: CMD_FAIL_HTLC, add: UpdateAddHtlc): Either[CannotExtractSharedSecret, UpdateFailHtlc] = {
-    Sphinx.PaymentPacket.peel(nodeSecret, add.paymentHash, add.onionRoutingPacket) match {
+  def buildHtlcFailure(cmd: CMD_FAIL_HTLC, add: UpdateAddHtlc): Either[CannotExtractSharedSecret, UpdateFailHtlc] = {
+    Sphinx.PaymentPacket.peel(cmd.nodeSecret, add.paymentHash, add.onionRoutingPacket) match {
       case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) =>
         val reason = cmd.reason match {
           case Left(forwarded) => Sphinx.FailurePacket.wrap(forwarded, sharedSecret)

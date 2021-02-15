@@ -118,10 +118,10 @@ object ChannelMaster {
   def incorrectDetails(add: UpdateAddHtlc): IncorrectOrUnknownPaymentDetails =
     IncorrectOrUnknownPaymentDetails(add.amountMsat, LNParams.blockCount.get)
 
-  def failHtlc(packet: DecryptedPacket, fail: FailureMessage, id: Long): CMD_FAIL_HTLC = {
-    val localFailurePacket = FailurePacket.create(packet.sharedSecret, fail)
-    CMD_FAIL_HTLC(Left(localFailurePacket), id)
-  }
+//  def failHtlc(packet: DecryptedPacket, fail: FailureMessage, id: Long): CMD_FAIL_HTLC = {
+//    val localFailurePacket = FailurePacket.create(packet.sharedSecret, fail)
+//    CMD_FAIL_HTLC(Left(localFailurePacket), id)
+//  }
 }
 
 abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: PathFinder) extends ChannelListener { me =>

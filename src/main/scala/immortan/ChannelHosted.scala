@@ -87,33 +87,26 @@ abstract class ChannelHosted extends Channel { me =>
         events.addReceived(add)
 
 
-      // Process their fulfill in any state to make sure we always get a preimage
-      // fails/fulfills when SUSPENDED are ignored because they may fulfill afterwards
-      case (hc: HostedCommits, fulfill: UpdateFulfillHtlc, SLEEPING | OPEN | SUSPENDED) =>
-        // Technically peer may send a preimage any time, even if new LCSS has not been reached yet
-        val ourAdd = hc.nextLocalSpec.findOutgoingHtlcById(fulfill.id).get.add
-        BECOME(hc.addRemoteProposal(fulfill), state)
-        events.fulfillReceived(fulfill, ourAdd)
+      case (hc: HostedCommits, fulfill: UpdateFulfillHtlc, OPEN) =>
+        val ourOutOpt = hc.nextLocalSpec.findOutgoingHtlcById(fulfill.id)
+        val paymentHashMatches = ourOutOpt.exists(_.add.paymentHash == fulfill.paymentHash)
+        if (!paymentHashMatches) throw InvalidHtlcPreimage(hc.channelId, fulfill.id)
+        else if (ourOutOpt.isEmpty) throw UnknownHtlcId(hc.channelId, fulfill.id)
+        BECOME(data1 = hc.addRemoteProposal(fulfill), state)
+        events.fulfillReceived(fulfill, ourOutOpt.get.add)
 
 
       case (hc: HostedCommits, fail: UpdateFailHtlc, OPEN) =>
-        // For both types of Fail we only consider them when channel is OPEN and only accept them if our outgoing payment has not been resolved already
-        val isNotResolvedYet = hc.localSpec.findOutgoingHtlcById(fail.id).isDefined && hc.nextLocalSpec.findOutgoingHtlcById(fail.id).isDefined
-        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(fail), OPEN) else throw UnknownHtlcId(hc.channelId, fail.id)
+        val isNotResolvedYet = hc.allOutgoing.exists(ourAdd => fail.id == ourAdd.id)
+        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(fail), OPEN)
+        else throw UnknownHtlcId(hc.channelId, fail.id)
 
 
-      case (hc: HostedCommits, fail: UpdateFailMalformedHtlc, OPEN) =>
-        if (fail.failureCode.&(FailureMessageCodecs.BADONION) == 0) throw InvalidFailureCode(hc.channelId)
-        val isNotResolvedYet = hc.localSpec.findOutgoingHtlcById(fail.id).isDefined && hc.nextLocalSpec.findOutgoingHtlcById(fail.id).isDefined
-        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(fail), OPEN) else throw UnknownHtlcId(hc.channelId, fail.id)
-
-
-      case (hc: HostedCommits, cmd: CMD_ADD_HTLC, state) =>
-        if (OPEN != state) throw CMDException(ChannelUnavailable(hc.channelId), cmd)
-        val (hostedCommits1, updateAddHtlcMsg) = hc.sendAdd(cmd)
-        BECOME(hostedCommits1, OPEN)
-        SEND(updateAddHtlcMsg)
-        doProcess(CMD_SIGN)
+      case (hc: HostedCommits, malform: UpdateFailMalformedHtlc, OPEN) =>
+        if (malform.failureCode.&(FailureMessageCodecs.BADONION) == 0) throw InvalidFailureCode(hc.channelId)
+        val isNotResolvedYet = hc.allOutgoing.exists(ourAdd => malform.id == ourAdd.id)
+        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(malform), OPEN)
+        else throw UnknownHtlcId(hc.channelId, malform.id)
 
 
       case (hc: HostedCommits, CMD_SIGN, OPEN) if hc.nextLocalUpdates.nonEmpty || hc.resizeProposal.isDefined =>
@@ -127,19 +120,27 @@ abstract class ChannelHosted extends Channel { me =>
         attemptStateUpdate(remoteSU, hc)
 
 
+      case (hc: HostedCommits, cmd: CMD_ADD_HTLC, state) =>
+        if (OPEN != state) throw CMDException(ChannelUnavailable(hc.channelId), cmd)
+        val (hostedCommits1, updateAddHtlcMsg) = hc.sendAdd(cmd)
+        BECOME(hostedCommits1, state)
+        SEND(updateAddHtlcMsg)
+        doProcess(CMD_SIGN)
+
+
       case (hc: HostedCommits, cmd: CMD_FULFILL_HTLC, OPEN) =>
-        val fulfill = UpdateFulfillHtlc(hc.channelId, cmd.id, cmd.preimage)
-        StoreBecomeSend(hc.addLocalProposal(fulfill), state, fulfill)
+        val (commits1, fulfill) = hc.sendFulfill(cmd)
+        StoreBecomeSend(commits1, OPEN, fulfill)
 
 
       case (hc: HostedCommits, cmd: CMD_FAIL_HTLC, OPEN) =>
-        val (hc1, fail) = hc.sendFail(cmd)
-        StoreBecomeSend(hc1, OPEN, fail)
+        val (commits1, fail) = hc.sendFail(cmd)
+        StoreBecomeSend(commits1, OPEN, fail)
 
 
       case (hc: HostedCommits, cmd: CMD_FAIL_MALFORMED_HTLC, OPEN) =>
-        val failMalformed = UpdateFailMalformedHtlc(hc.channelId, cmd.id, cmd.onionHash, cmd.failureCode)
-        StoreBecomeSend(hc.addLocalProposal(failMalformed), state, failMalformed)
+        val (commits1, malformed) = hc.sendMalformed(cmd)
+        StoreBecomeSend(commits1, OPEN, malformed)
 
 
       case (hc: HostedCommits, CMD_SOCKET_ONLINE, SLEEPING | SUSPENDED) =>
