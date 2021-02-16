@@ -70,10 +70,10 @@ object LNParams {
       ActivatedFeature(OptionDataLossProtect, FeatureSupport.Optional) +
       ActivatedFeature(BasicMultiPartPayment, FeatureSupport.Optional) +
       ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional) +
-      ActivatedFeature(DataLossProtectExt, FeatureSupport.Optional) +
       ActivatedFeature(PrivateRouting, FeatureSupport.Optional) +
       ActivatedFeature(AnchorOutputs, FeatureSupport.Optional) +
       ActivatedFeature(PaymentSecret, FeatureSupport.Optional) +
+      ActivatedFeature(PeerBackups, FeatureSupport.Optional) +
       ActivatedFeature(ChainSwap, FeatureSupport.Optional) +
       ActivatedFeature(Wumbo, FeatureSupport.Optional)
 
