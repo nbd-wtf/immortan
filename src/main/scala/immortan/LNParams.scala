@@ -274,7 +274,7 @@ trait NetworkDataStore {
   def processPureData(data: PureRoutingData): Unit
 }
 
-// Bag of stored payments
+// Bag of stored payments and successful relays
 
 trait PaymentBag {
   def getPaymentInfo(paymentHash: ByteVector32): Option[PaymentInfo]

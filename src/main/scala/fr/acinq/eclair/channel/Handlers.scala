@@ -18,12 +18,11 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.eclair._
 import immortan.Channel._
+import fr.acinq.eclair.wire._
 import immortan.{ChannelNormal, LNParams}
+import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction}
 import fr.acinq.eclair.blockchain.{PublishAsap, WatchConfirmed, WatchSpent}
-import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, SatoshiLong, Transaction}
-import fr.acinq.eclair.wire.{ChannelMessage, ChannelReestablish, ClosingSigned, Error, FundingLocked, LightningMessage, RevokeAndAck, Shutdown, UpdateAddHtlc}
 import fr.acinq.eclair.channel.Helpers.Closing
-
 import scala.collection.immutable.Queue
 
 /**
@@ -226,27 +225,29 @@ trait Handlers { me: ChannelNormal =>
     //        we are waiting for a rev          => we stop sending further htlcs, we wait for their revocation, will resign immediately after, and then we will send our shutdown message
     //    we have no pending unsigned htlcs
     //      we already sent a shutdown message
-    //        there are pending signed htlcs    => send our shutdown message, go to SHUTDOWN
+    //        there are pending signed changes  => send our shutdown message, go to SHUTDOWN
     //        there are no htlcs                => send our shutdown message, go to NEGOTIATING
     //      we did not send a shutdown message
-    //        there are pending signed htlcs    => go to SHUTDOWN
+    //        there are pending signed changes  => go to SHUTDOWN
     //        there are no htlcs                => go to NEGOTIATING
 
     if (!Closing.isValidFinalScriptPubkey(remote.scriptPubKey)) {
       throw InvalidFinalScript(d.channelId)
     } else if (NormalCommits.remoteHasUnsignedOutgoingHtlcs(d.commitments)) {
-      throw CannotCloseWithUnsignedOutgoingHtlcs(d.channelId)
+      throw CannotCloseWithUnsignedChanges(d.channelId)
+    } else if (NormalCommits.remoteHasUnsignedOutgoingUpdateFee(d.commitments)) {
+      throw CannotCloseWithUnsignedChanges(d.channelId)
     } else if (NormalCommits.localHasUnsignedOutgoingHtlcs(d.commitments)) { // do we have unsigned outgoing htlcs?
       require(d.localShutdown.isEmpty, "can't have pending unsigned outgoing htlcs after having sent Shutdown")
       // are we in the middle of a signature?
       d.commitments.remoteNextCommitInfo match {
         case Left(waitForRevocation) =>
-          // yes, let's just schedule a new signature ASAP, which will include all pending unsigned htlcs
+          // yes, let's just schedule a new signature ASAP, which will include all pending unsigned changes
           val commitments1 = d.commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true)))
-          // in the meantime we won't send new htlcs
+          // in the meantime we won't send new changes
           (d.copy(commitments = commitments1, remoteShutdown = Some(remote)), Nil)
         case Right(_) =>
-          // in the meantime we won't send new htlcs
+          // in the meantime we won't send new changes
           (d.copy(remoteShutdown = Some(remote)), Nil)
       }
     } else {
@@ -264,9 +265,9 @@ trait Handlers { me: ChannelNormal =>
         // we need to send our shutdown if we didn't previously
         (localShutdown, localShutdown :: Nil)
     }
-    // are there pending signed htlcs on either side? we need to have received their last revocation!
-    if (NormalCommits.hasNoPendingHtlcs(d.commitments)) {
-      // there are no pending signed htlcs, let's go directly to NEGOTIATING
+    // are there pending signed htlcs on either changes? we need to have received their last revocation!
+    if (d.commitments.hasNoPendingHtlcsOrFeeUpdate) {
+      // there are no pending signed changes, let's go directly to NEGOTIATING
       if (d.commitments.localParams.isFunder) {
         // we are funder, need to initiate the negotiation by sending the first closing_signed
         val (closingTx, closingSigned) = Closing.makeFirstClosingTx(d.commitments, localShutdown.scriptPubKey, remote.scriptPubKey, LNParams.onChainFeeConf.feeEstimator, LNParams.onChainFeeConf.feeTargets)
@@ -276,15 +277,14 @@ trait Handlers { me: ChannelNormal =>
         (DATA_NEGOTIATING(d.commitments, localShutdown, remote, closingTxProposed = List(Nil), bestUnpublishedClosingTxOpt = None), sendList)
       }
     } else {
-      // there are some pending signed htlcs, we need to fail/fulfill them
+      // there are some pending signed changes, we need to wait for them to be settled (fail/fulfill htlcs and sign fee updates)
       (d.copy(localShutdown = Some(localShutdown), remoteShutdown = Some(remote)), sendList)
     }
   }
 
   def handleMutualClose(closingTx: Transaction, d: Either[DATA_NEGOTIATING, DATA_CLOSING]): Unit = {
     val nextData = d match {
-      case Left(negotiating) => DATA_CLOSING(negotiating.commitments, fundingTx = None,
-        waitingSince = System.currentTimeMillis, negotiating.closingTxProposed.flatten.map(_.unsignedTx), mutualClosePublished = closingTx :: Nil)
+      case Left(negotiating) => DATA_CLOSING(negotiating.commitments, fundingTx = None, System.currentTimeMillis, negotiating.closingTxProposed.flatten.map(_.unsignedTx), closingTx :: Nil)
       case Right(closing) => closing.copy(mutualClosePublished = closing.mutualClosePublished :+ closingTx)
     }
 

@@ -153,6 +153,11 @@ case class NormalCommits(channelVersion: ChannelVersion, announce: NodeAnnouncem
     val ourNextCommitSent = remoteCommit.index == other.remoteCommit.index && remoteNextCommitInfo.isLeft && other.remoteNextCommitInfo.isRight
     localCommit.index > other.localCommit.index || remoteCommit.index > other.remoteCommit.index || ourNextCommitSent
   }
+
+  def hasNoPendingHtlcsOrFeeUpdate: Boolean = {
+    val feeUpdate = (localChanges.signed ++ localChanges.acked ++ remoteChanges.signed ++ remoteChanges.acked).collectFirst { case _: UpdateFee => true }
+    remoteNextCommitInfo.isRight && localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && feeUpdate.isEmpty
+  }
 }
 
 object NormalCommits {
@@ -281,15 +286,16 @@ object NormalCommits {
     }
   }
 
-  def receiveFulfill(commitments: NormalCommits, fulfill: UpdateFulfillHtlc): (NormalCommits, UpdateAddHtlc) =
+  def receiveFulfill(commitments: NormalCommits, fulfill: UpdateFulfillHtlc): (NormalCommits, UpdateAddHtlc) = {
     commitments.localCommit.spec.findOutgoingHtlcById(fulfill.id) match {
       case Some(directed) if directed.add.paymentHash != fulfill.paymentHash =>
         throw InvalidHtlcPreimage(commitments.channelId, fulfill.id)
       case Some(directed) => (addRemoteProposal(commitments, fulfill), directed.add)
       case None => throw UnknownHtlcId(commitments.channelId, fulfill.id)
     }
+  }
 
-  def sendFail(commitments: NormalCommits, cmd: CMD_FAIL_HTLC): (NormalCommits, UpdateFailHtlc) =
+  def sendFail(commitments: NormalCommits, cmd: CMD_FAIL_HTLC): (NormalCommits, UpdateFailHtlc) = {
     commitments.latestRemoteCommit.spec.findOutgoingHtlcById(cmd.id) match {
       case None => throw UnknownHtlcId(commitments.channelId, cmd.id)
       case Some(directed) =>
@@ -298,6 +304,7 @@ object NormalCommits {
           case Left(error) => throw error
         }
     }
+  }
 
   def sendFailMalformed(commitments: NormalCommits, cmd: CMD_FAIL_MALFORMED_HTLC): (NormalCommits, UpdateFailMalformedHtlc) = {
     val fail = UpdateFailMalformedHtlc(commitments.channelId, cmd.id, cmd.onionHash, cmd.failureCode)
@@ -309,11 +316,12 @@ object NormalCommits {
     }
   }
 
-  def receiveFail(commitments: NormalCommits, fail: UpdateFailHtlc): (NormalCommits, UpdateAddHtlc) =
+  def receiveFail(commitments: NormalCommits, fail: UpdateFailHtlc): (NormalCommits, UpdateAddHtlc) = {
     commitments.localCommit.spec.findOutgoingHtlcById(fail.id) match {
       case Some(directed) => (addRemoteProposal(commitments, fail), directed.add)
       case None => throw UnknownHtlcId(commitments.channelId, fail.id)
     }
+  }
 
   def receiveFailMalformed(commitments: NormalCommits, fail: UpdateFailMalformedHtlc): (NormalCommits, UpdateAddHtlc) = {
     val isIncorrect = (fail.failureCode & FailureMessageCodecs.BADONION) == 0
@@ -357,9 +365,11 @@ object NormalCommits {
     }
   }
 
-  def localHasUnsignedOutgoingHtlcs(commitments: NormalCommits): Boolean = commitments.localChanges.proposed.collectFirst { case u: UpdateAddHtlc => u }.isDefined
+  def localHasUnsignedOutgoingHtlcs(commitments: NormalCommits): Boolean = commitments.localChanges.proposed.collectFirst { case _: UpdateAddHtlc => true }.isDefined
 
-  def remoteHasUnsignedOutgoingHtlcs(commitments: NormalCommits): Boolean = commitments.remoteChanges.proposed.collectFirst { case u: UpdateAddHtlc => u }.isDefined
+  def remoteHasUnsignedOutgoingHtlcs(commitments: NormalCommits): Boolean = commitments.remoteChanges.proposed.collectFirst { case _: UpdateAddHtlc => true }.isDefined
+
+  def remoteHasUnsignedOutgoingUpdateFee(commitments: NormalCommits): Boolean = commitments.remoteChanges.proposed.collectFirst { case _: UpdateFee => true }.isDefined
 
   def localHasChanges(commitments: NormalCommits): Boolean = commitments.remoteChanges.acked.nonEmpty || commitments.localChanges.proposed.nonEmpty
 

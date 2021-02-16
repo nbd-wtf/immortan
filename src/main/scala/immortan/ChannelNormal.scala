@@ -206,7 +206,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         val isValidFinalScriptPubkey = Helpers.Closing.isValidFinalScriptPubkey(localScriptPubKey)
         val shutdown = Shutdown(norm.channelId, localScriptPubKey)
 
-        if (hasLocalHasUnsignedOutgoingHtlcs) CMDException(CannotCloseWithUnsignedOutgoingHtlcs(norm.channelId), cmd)
+        if (hasLocalHasUnsignedOutgoingHtlcs) CMDException(CannotCloseWithUnsignedChanges(norm.channelId), cmd)
         else if (norm.localShutdown.isDefined) CMDException(ClosingAlreadyInProgress(norm.channelId), cmd)
         else if (!isValidFinalScriptPubkey) CMDException(InvalidFinalScript(norm.channelId), cmd)
         else StoreBecomeSend(norm.copy(localShutdown = shutdown.toSome), state, shutdown)

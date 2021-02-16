@@ -121,6 +121,7 @@ object ChannelMaster {
   }
 
   val initResolveMemo: mutable.Map[UpdateAddHtlcExt, IncomingResolution] = memoize(initResolve)
+
   def initResolve(payment: UpdateAddHtlcExt): IncomingResolution = IncomingPacket.decrypt(payment.theirAdd, payment.announce.nodeSpecificPrivKey) match {
     case Left(_: BadOnion) => fallbackResolve(LNParams.format.keys.fakeInvoiceKey(payment.theirAdd.paymentHash), payment.theirAdd)
     case Left(failure) => CMD_FAIL_HTLC(Right(failure), payment.announce.nodeSpecificPrivKey, payment.theirAdd.id)
