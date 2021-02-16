@@ -54,7 +54,7 @@ object RelayPreimageTable extends Table {
       $id INTEGER PRIMARY KEY AUTOINCREMENT, $hash TEXT NOT NULL UNIQUE,
       $preimage TEXT NOT NULL, $stamp INTEGER NOT NULL, $fromNodeId TEXT NOT NULL,
       $relayed INTEGER NOT NULL, $earned INTEGER NOT NULL
-    )""" :: Nil
+    )"""
 
     // NodeId index can be used in future to efficiently group relays to peer
     val addIndex1 = s"CREATE INDEX IF NOT EXISTS idx1$table ON $table ($fromNodeId)"
@@ -103,7 +103,7 @@ abstract class ChannelUpdateTable(val table: String, val useHeuristics: Boolean)
   def createStatements: Seq[String] = {
     val createTable = s"""CREATE TABLE IF NOT EXISTS $table(
       $id INTEGER PRIMARY KEY AUTOINCREMENT, $sid INTEGER NOT NULL, $timestamp INTEGER NOT NULL, $msgFlags INTEGER NOT NULL,
-      $chanFlags INTEGER NOT NULL, $cltvExpiryDelta INTEGER NOT NULL, $minMsat INTEGER NOT NULL,$base INTEGER NOT NULL,
+      $chanFlags INTEGER NOT NULL, $cltvExpiryDelta INTEGER NOT NULL, $minMsat INTEGER NOT NULL, $base INTEGER NOT NULL,
       $proportional INTEGER NOT NULL, $maxMsat INTEGER NOT NULL, $position INTEGER NOT NULL,
       $score INTEGER NOT NULL, $crc32 INTEGER NOT NULL
     )"""

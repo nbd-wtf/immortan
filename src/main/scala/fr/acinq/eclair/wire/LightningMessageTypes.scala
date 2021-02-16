@@ -322,9 +322,9 @@ case class ReplyPublicHostedChannelsEnd(chainHash: ByteVector32) extends Routing
 
 // Private routing
 
-case class RoutableChannel(remoteNodeId: PublicKey, remoteUpdate: ChannelUpdate, localUpdate: ChannelUpdate, remoteBitcoinKey: PublicKey, localBitcoinKey: PublicKey, localBitcoinSignature: ByteVector64) extends RoutingMessage
-
-case class RoutableChannelRefresh(shortChannelId: ShortChannelId, availableBalanceForSend: MilliSatoshi, availableBalanceForReceive: MilliSatoshi) extends RoutingMessage
+case class RoutableChannel(remoteNodeId: PublicKey, remoteUpdate: ChannelUpdate, cltvExpiryDelta: CltvExpiryDelta,
+                           htlcMinimumMsat: MilliSatoshi, htlcMaximumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long,
+                           remoteBitcoinKey: PublicKey, localBitcoinKey: PublicKey, localBitcoinSignature: ByteVector64) extends RoutingMessage
 
 // Swap In/Out
 
