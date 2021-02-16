@@ -22,6 +22,7 @@ object Tools {
   type Fiat2Btc = Map[String, Double]
 
   def none: PartialFunction[Any, Unit] = { case _ => }
+
   def runAnd[T](result: T)(action: Any): T = result
 
   implicit class Any2Some[T](underlying: T) {

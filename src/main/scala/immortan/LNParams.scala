@@ -279,9 +279,10 @@ trait NetworkDataStore {
 trait PaymentBag {
   def getPaymentInfo(paymentHash: ByteVector32): Option[PaymentInfo]
   def getRelayedPreimageInfo(paymentHash: ByteVector32): Option[RelayedPreimageInfo]
-}
 
-trait PaymentDBUpdater {
+  def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32, stamp: Long,
+                             fromNodeIdOpt: Option[PublicKey], relayed: MilliSatoshi, earned: MilliSatoshi)
+
   def replaceOutgoingPayment(nodeId: PublicKey, prex: PaymentRequestExt, desc: PaymentDescription, action: Option[PaymentAction],
                              finalAmount: MilliSatoshi, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc, chainFee: MilliSatoshi): Unit
 
@@ -291,7 +292,6 @@ trait PaymentDBUpdater {
   // These MUST be the only two methods capable of updating payment state to SUCCEEDED
   def updOkOutgoing(upd: UpdateFulfillHtlc, fee: MilliSatoshi): Unit
   def updStatusIncoming(add: UpdateAddHtlc, status: String): Unit
-  def addRelayedPreimageInfo(info: RelayedPreimageInfo): Unit
 }
 
 object ChannelBag {

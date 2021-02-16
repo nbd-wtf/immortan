@@ -9,6 +9,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import scodec.bits.ByteVector
 import immortan.utils.uri.Uri
 import immortan.utils.LNUrl
+import scala.util.Try
 
 
 object PaymentInfo {
@@ -81,12 +82,12 @@ case class SwapOutDescription(invoiceText: String, btcAddress: String, chainFee:
 
 // Relayed preimages
 
-case class RelayedPreimageInfo(paymentHashString: String, preimageString: String, relayed: MilliSatoshi,
-                               earned: MilliSatoshi, fromPeerNodeIdString: String, stamp: Long) {
+case class RelayedPreimageInfo(paymentHashString: String, preimageString: String, fromNodeIdString: String,
+                               relayed: MilliSatoshi, earned: MilliSatoshi, stamp: Long) {
 
-  lazy val preimage: ByteVector32 = ByteVector32(ByteVector fromValidHex preimageString)
+  lazy val fromNodeIdTry: Try[PublicKey] = Try(ByteVector fromValidHex fromNodeIdString).map(PublicKey.apply)
   lazy val paymentHash: ByteVector32 = ByteVector32(ByteVector fromValidHex paymentHashString)
-  lazy val fromPeerNodeId: PublicKey = PublicKey(ByteVector fromValidHex fromPeerNodeIdString)
+  lazy val preimage: ByteVector32 = ByteVector32(ByteVector fromValidHex preimageString)
 }
 
 // Tx descriptions

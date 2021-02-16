@@ -21,7 +21,7 @@ case class TotalStatSummary(fees: MilliSatoshi, received: MilliSatoshi, sent: Mi
 
 case class TotalStatSummaryExt(summary: Option[TotalStatSummary], from: Long, to: Long)
 
-class SQlitePaymentBag(db: DBInterface) extends PaymentBag with PaymentDBUpdater {
+class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
   def getPaymentInfo(paymentHash: ByteVector32): Option[PaymentInfo] = db.select(PaymentTable.selectOneSql, paymentHash.toHex).headTry(toPaymentInfo).toOption
 
   def getRelayedPreimageInfo(paymentHash: ByteVector32): Option[RelayedPreimageInfo] = db.select(RelayPreimageTable.selectByHashSql, paymentHash.toHex).headTry(toRelayedPreimageInfo).toOption
@@ -34,16 +34,14 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag with PaymentDBUpdater
 
   def listRecentRelays: RichCursor = db.select(RelayPreimageTable.selectRecentSql)
 
+  def abortOutgoing(paymentHash: ByteVector32): Unit = db.change(PaymentTable.updStatusSql, PaymentStatus.ABORTED, paymentHash.toHex)
+
+  def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32, stamp: Long, fromNodeIdOpt: Option[PublicKey], relayed: MilliSatoshi, earned: MilliSatoshi): Unit =
+    db.change(RelayPreimageTable.newSql, paymentHash.toHex, preimage.toHex, stamp: JLong, relayed.toLong: JLong, earned.toLong: JLong, fromNodeIdOpt.map(_.toString) getOrElse new String)
+
   def updOkOutgoing(upd: UpdateFulfillHtlc, fee: MilliSatoshi): Unit = db.change(PaymentTable.updOkOutgoingSql, upd.paymentPreimage.toHex, fee.toLong: JLong, upd.paymentHash.toHex)
 
   def updStatusIncoming(add: UpdateAddHtlc, status: String): Unit = db.change(PaymentTable.updParamsIncomingSql, status, add.amountMsat.toLong: JLong, System.currentTimeMillis: JLong, add.paymentHash.toHex)
-
-  def addRelayedPreimageInfo(info: RelayedPreimageInfo): Unit =
-    db.change(RelayPreimageTable.newSql, info.paymentHashString, info.preimageString,
-      info.fromPeerNodeIdString, info.stamp: JLong, info.relayed.toLong: JLong,
-      info.earned.toLong: JLong)
-
-  def abortPayment(paymentHash: ByteVector32): Unit = db.change(PaymentTable.updStatusSql, PaymentStatus.ABORTED, paymentHash.toHex)
 
   def replaceOutgoingPayment(nodeId: PublicKey, prex: PaymentRequestExt, description: PaymentDescription, action: Option[PaymentAction],
                              finalAmount: MilliSatoshi, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc, chainFee: MilliSatoshi): Unit =
@@ -87,6 +85,6 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag with PaymentDBUpdater
 
   def toRelayedPreimageInfo(rc: RichCursor): RelayedPreimageInfo =
     RelayedPreimageInfo(paymentHashString = rc string RelayPreimageTable.hash, preimageString = rc string RelayPreimageTable.preimage,
-      relayed = MilliSatoshi(rc long RelayPreimageTable.relayed), earned = MilliSatoshi(rc long RelayPreimageTable.earned),
-      fromPeerNodeIdString = rc string RelayPreimageTable.fromPeer, stamp = rc long RelayPreimageTable.stamp)
+      fromNodeIdString = rc string RelayPreimageTable.fromNodeId, relayed = MilliSatoshi(rc long RelayPreimageTable.relayed),
+      earned = MilliSatoshi(rc long RelayPreimageTable.earned), stamp = rc long RelayPreimageTable.stamp)
 }

@@ -57,22 +57,22 @@ case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: La
   def addRemoteProposal(update: UpdateMessage): HostedCommits = copy(nextRemoteUpdates = nextRemoteUpdates :+ update)
   def isResizingSupported: Boolean = lastCrossSignedState.initHostedChannel.version == HostedChannelVersion.RESIZABLE
 
-  def sendFail(cmd: CMD_FAIL_HTLC): (HostedCommits, UpdateFailHtlc) = unProcessedIncoming.find(theirAddExt => cmd.id == theirAddExt.theirAdd.id) match {
+  def sendFail(cmd: CMD_FAIL_HTLC): (HostedCommits, UpdateFailHtlc) = unProcessedIncoming.find(updateAddHtlcExt => cmd.id == updateAddHtlcExt.theirAdd.id) match {
     case Some(data) => OutgoingPacket.buildHtlcFailure(cmd, data.theirAdd) match { case Right(fail) => (addLocalProposal(fail), fail) case Left(error) => throw error }
     case None => throw UnknownHtlcId(channelId, cmd.id)
   }
 
   def sendMalformed(cmd: CMD_FAIL_MALFORMED_HTLC): (HostedCommits, UpdateFailMalformedHtlc) = {
-    val isNotProcessedYet = unProcessedIncoming.exists(theirAddExt => cmd.id == theirAddExt.theirAdd.id)
-    val ourFailMalform = UpdateFailMalformedHtlc(channelId, cmd.id, cmd.onionHash, cmd.failureCode)
+    val isNotProcessedYet = unProcessedIncoming.exists(updateAddHtlcExt => cmd.id == updateAddHtlcExt.theirAdd.id)
+    val ourFailMalformMsg = UpdateFailMalformedHtlc(channelId, cmd.id, cmd.onionHash, cmd.failureCode)
     if (cmd.failureCode.&(FailureMessageCodecs.BADONION) == 0) throw InvalidFailureCode(channelId)
-    else if (isNotProcessedYet) (addLocalProposal(ourFailMalform), ourFailMalform)
+    else if (isNotProcessedYet) (addLocalProposal(ourFailMalformMsg), ourFailMalformMsg)
     else throw UnknownHtlcId(channelId, cmd.id)
   }
 
   def sendFulfill(cmd: CMD_FULFILL_HTLC): (HostedCommits, UpdateFulfillHtlc) = {
     val msg = UpdateFulfillHtlc(channelId, cmd.id, paymentPreimage = cmd.preimage)
-    unProcessedIncoming.find(theirAddExt => cmd.id == theirAddExt.theirAdd.id) match {
+    unProcessedIncoming.find(updateAddHtlcExt => cmd.id == updateAddHtlcExt.theirAdd.id) match {
       case Some(data) if data.theirAdd.paymentHash != cmd.paymentHash => throw InvalidHtlcPreimage(channelId, cmd.id)
       case None => throw UnknownHtlcId(channelId, cmd.id)
       case _ => (addLocalProposal(msg), msg)
