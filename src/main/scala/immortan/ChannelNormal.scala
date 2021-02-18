@@ -10,8 +10,8 @@ import com.softwaremill.quicklens._
 
 import scala.util.{Success, Try}
 import akka.actor.{ActorRef, Props}
-import fr.acinq.bitcoin.{ByteVector32, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
+import fr.acinq.bitcoin.{ByteVector32, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.transactions.Transactions.TxOwner
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.bitcoin.Crypto.PrivateKey
@@ -183,20 +183,12 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
       // MAIN LOOP
 
-      case (some: HasNormalCommitments, ann: NodeAnnouncement, OPEN | SLEEPING)
-        if some.commitments.remoteInfo.nodeId == ann.nodeId && Announcements.checkSig(ann) && ann.addresses.nonEmpty =>
-        val data1 = some.modify(_.commitments.remoteInfo).setTo(ann.remoteNodeInfo)
-        data = STORE(data1)
+      case (some: HasNormalCommitments, remoteInfo: RemoteNodeInfo, OPEN | SLEEPING) if some.commitments.remoteInfo.nodeId == remoteInfo.nodeId =>
+        data = me STORE some.modify(_.commitments.remoteInfo).setTo(remoteInfo)
 
 
-      case (norm: DATA_NORMAL, update: ChannelUpdate, OPEN | SLEEPING)
-        if norm.commitments.updateOpt.forall(update.timestamp > _.timestamp) &&
-          Announcements.checkSig(update)(norm.commitments.remoteInfo.nodeId) &&
-          update.shortChannelId == norm.shortChannelId =>
-
-          // Refresh remote channel update without triggering of listeners
-          val data1 = norm.modify(_.commitments.updateOpt).setTo(update.toSome)
-          data = STORE(data1)
+      case (norm: DATA_NORMAL, update: ChannelUpdate, OPEN | SLEEPING) if update.shortChannelId == norm.shortChannelId && Announcements.checkSig(update)(norm.commitments.remoteInfo.nodeId) =>
+        data = me STORE norm.modify(_.commitments.updateOpt).setTo(update.toSome)
 
 
       // We may schedule shutdown while channel is offline
@@ -385,9 +377,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
 
       case (data1: DATA_NORMAL, reestablish: ChannelReestablish, SLEEPING) => handleNormalSync(data1, reestablish)
-
       case (data1: DATA_NEGOTIATING, _: ChannelReestablish, SLEEPING) => handleNegotiationsSync(data1)
-
       case _ =>
     }
 }

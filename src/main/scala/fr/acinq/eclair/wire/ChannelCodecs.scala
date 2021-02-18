@@ -256,7 +256,7 @@ object ChannelCodecs {
   }.as[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
 
   val hostedCommitsCodec: Codec[HostedCommits] = {
-    ("remoteInfo" | remoteNodeInfoCodec) ::
+    (remoteNodeInfoCodec withContext "remoteInfo") ::
       (lengthDelimited(lastCrossSignedStateCodec) withContext "lastCrossSignedState") ::
       (listOfN(uint16, updateMessageCodec) withContext "nextLocalUpdates") ::
       (listOfN(uint16, updateMessageCodec) withContext "nextRemoteUpdates") ::
