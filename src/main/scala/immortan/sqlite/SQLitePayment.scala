@@ -13,13 +13,9 @@ import fr.acinq.bitcoin.ByteVector32
 import scala.util.Try
 
 
-case class SentToNodeSummary(fees: MilliSatoshi, sent: MilliSatoshi, count: Long)
-
 case class RelayedSummary(relayed: MilliSatoshi, earned: MilliSatoshi, count: Long)
 
-case class TotalStatSummary(fees: MilliSatoshi, received: MilliSatoshi, sent: MilliSatoshi, count: Long)
-
-case class TotalStatSummaryExt(summary: Option[TotalStatSummary], from: Long, to: Long)
+case class PaidSummary(fees: MilliSatoshi, received: MilliSatoshi, sent: MilliSatoshi, count: Long)
 
 class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
   def getPaymentInfo(paymentHash: ByteVector32): Option[PaymentInfo] = db.select(PaymentTable.selectOneSql, paymentHash.toHex).headTry(toPaymentInfo).toOption
@@ -64,12 +60,8 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
         0L: JLong /* NO FEE FOR INCOMING */, balanceSnap.toLong: JLong, fiatRateSnap.toJson.compactPrint, chainFee.toLong: JLong, 1: java.lang.Integer /* INCOMING = 1 */, new String)
     }
 
-  def toNodeSummary(nodeId: PublicKey): Try[SentToNodeSummary] = db.select(PaymentTable.selectToNodeSummarySql, nodeId.toString) headTry { rc =>
-    SentToNodeSummary(fees = MilliSatoshi(rc long 0), sent = MilliSatoshi(rc long 1), count = rc long 2)
-  }
-
-  def betweenSummary(start: Long, end: Long): Try[TotalStatSummary] = db.select(PaymentTable.selectBetweenSummarySql, start.toString, end.toString) headTry { rc =>
-    TotalStatSummary(fees = MilliSatoshi(rc long 0), received = MilliSatoshi(rc long 1), sent = MilliSatoshi(rc long 2), count = rc long 3)
+  def paidSummary: Try[PaidSummary] = db.select(PaymentTable.selectSummarySql) headTry { rc =>
+    PaidSummary(fees = MilliSatoshi(rc long 0), received = MilliSatoshi(rc long 1), sent = MilliSatoshi(rc long 2), count = rc long 3)
   }
 
   def relayedSummary: Try[RelayedSummary] = db.select(RelayPreimageTable.selectSummarySql) headTry { rc =>
@@ -77,11 +69,11 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
   }
 
   def toPaymentInfo(rc: RichCursor): PaymentInfo =
-    PaymentInfo(payeeNodeIdString = rc string PaymentTable.nodeId, prString = rc string PaymentTable.pr, preimageString = rc string PaymentTable.preimage, status = rc string PaymentTable.status,
-      stamp = rc long PaymentTable.stamp, descriptionString = rc string PaymentTable.description, actionString = rc string PaymentTable.action, paymentHashString = rc string PaymentTable.hash,
-      received = MilliSatoshi(rc long PaymentTable.receivedMsat), sent = MilliSatoshi(rc long PaymentTable.sentMsat), fee = MilliSatoshi(rc long PaymentTable.feeMsat),
-      balanceSnapshot = MilliSatoshi(rc long PaymentTable.balanceMsat), fiatRatesString = rc string PaymentTable.fiatRates,
-      chainFee = MilliSatoshi(rc long PaymentTable.chainFee), incoming = rc long PaymentTable.incoming)
+    PaymentInfo(prString = rc string PaymentTable.pr, preimageString = rc string PaymentTable.preimage,
+      status = rc string PaymentTable.status, stamp = rc long PaymentTable.stamp, descriptionString = rc string PaymentTable.description,
+      actionString = rc string PaymentTable.action, paymentHashString = rc string PaymentTable.hash, received = MilliSatoshi(rc long PaymentTable.receivedMsat),
+      sent = MilliSatoshi(rc long PaymentTable.sentMsat), fee = MilliSatoshi(rc long PaymentTable.feeMsat), balanceSnapshot = MilliSatoshi(rc long PaymentTable.balanceMsat),
+      fiatRatesString = rc string PaymentTable.fiatRates, chainFee = MilliSatoshi(rc long PaymentTable.chainFee), incoming = rc long PaymentTable.incoming)
 
   def toRelayedPreimageInfo(rc: RichCursor): RelayedPreimageInfo =
     RelayedPreimageInfo(paymentHashString = rc string RelayPreimageTable.hash, preimageString = rc string RelayPreimageTable.preimage,

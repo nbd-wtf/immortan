@@ -30,13 +30,13 @@ object PaymentStatus {
   final val HIDDEN = "state-hidden"
 }
 
-case class PaymentInfo(payeeNodeIdString: String, prString: String, preimageString: String, status: String, stamp: Long, descriptionString: String,
-                       actionString: String, paymentHashString: String, received: MilliSatoshi, sent: MilliSatoshi, fee: MilliSatoshi,
-                       balanceSnapshot: MilliSatoshi, fiatRatesString: String, chainFee: MilliSatoshi, incoming: Long) {
+case class PaymentInfo(prString: String, preimageString: String, status: String, stamp: Long, descriptionString: String,
+                       actionString: String, paymentHashString: String, received: MilliSatoshi, sent: MilliSatoshi,
+                       fee: MilliSatoshi, balanceSnapshot: MilliSatoshi, fiatRatesString: String,
+                       chainFee: MilliSatoshi, incoming: Long) {
 
   def isIncoming: Boolean = 1 == incoming
   lazy val pr: PaymentRequest = PaymentRequest.read(prString)
-  lazy val payeeNodeId: PublicKey = PublicKey(ByteVector fromValidHex payeeNodeIdString)
   lazy val preimage: ByteVector32 = ByteVector32(ByteVector fromValidHex preimageString)
   lazy val paymentHash: ByteVector32 = ByteVector32(ByteVector fromValidHex paymentHashString)
 
