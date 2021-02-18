@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.wire
 
+import scodec.codecs._
 import fr.acinq.eclair._
 import scodec.bits.{BitVector, ByteVector}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -26,6 +27,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.router.Announcements
 import com.google.common.base.Charsets
+import immortan.crypto.Tools
 import java.nio.ByteOrder
 import immortan.LNParams
 
@@ -85,10 +87,20 @@ case class Shutdown(channelId: ByteVector32, scriptPubKey: ByteVector) extends C
 
 case class ClosingSigned(channelId: ByteVector32, feeSatoshis: Satoshi, signature: ByteVector64) extends ChannelMessage with HasChannelId
 
-case class UpdateAddHtlc(channelId: ByteVector32, id: Long, amountMsat: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry,
-                         onionRoutingPacket: OnionRoutingPacket) extends HtlcMessage with HasChannelId with UpdateMessage {
+case class UpdateAddHtlc(channelId: ByteVector32,
+                         id: Long, amountMsat: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onionRoutingPacket: OnionRoutingPacket,
+                         tlvStream: TlvStream.GenericTlvStream = TlvStream.empty) extends HtlcMessage with HasChannelId with UpdateMessage {
 
   final val partId: ByteVector = onionRoutingPacket.publicKey
+
+  lazy val encryptedTypeOpt: Option[PaymentTypeTlv.EncryptedType] = tlvStream.get[PaymentTypeTlv.EncryptedType]
+
+  // Important: LNParams.format must be defined
+  lazy val paymentTypeOpt: PaymentType = encryptedTypeOpt.map { case PaymentTypeTlv.EncryptedType(cipherData) =>
+    val plainDataTry = Tools.chaChaDecrypt(LNParams.format.keys.paymentTypeEncryptionKey(paymentHash), cipherData)
+    val plainTypeTry = plainDataTry.map(plainData => uint32.decode(plainData.toBitVector).require.value)
+    PaymentType(paymentHash, plainTypeTry getOrElse PaymentTypeTlv.UNDEFINED)
+  } getOrElse PaymentType(paymentHash, PaymentTypeTlv.UNDEFINED)
 }
 
 case class UpdateFulfillHtlc(channelId: ByteVector32, id: Long, paymentPreimage: ByteVector32) extends HtlcMessage with HasChannelId with UpdateMessage {

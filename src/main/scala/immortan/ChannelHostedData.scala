@@ -80,8 +80,8 @@ case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: La
   }
 
   def sendAdd(cmd: CMD_ADD_HTLC): (HostedCommits, UpdateAddHtlc) = {
-    // Let's add this change and see if the new state violates any of constraints including those imposed by them on us, proceed only if it does not
-    val add = UpdateAddHtlc(channelId, nextTotalLocal + 1, cmd.firstAmount, cmd.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet)
+    val encryptedType: TlvStream[Tlv] = TlvStream(PaymentTypeTlv.EncryptedType(cmd.encryptedType) :: Nil)
+    val add = UpdateAddHtlc(channelId, nextTotalLocal + 1, cmd.firstAmount, cmd.paymentType.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet, encryptedType)
     val commits1: HostedCommits = addLocalProposal(add)
 
     if (commits1.nextLocalSpec.outgoingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) throw CMDException(TooManyAcceptedHtlcs(channelId), cmd)

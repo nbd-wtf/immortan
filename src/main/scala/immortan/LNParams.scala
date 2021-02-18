@@ -184,6 +184,7 @@ class SyncParams {
 
 // Extension wrappers
 
+// Important: LNParams.format must be defined
 case class NodeAnnouncementExt(na: NodeAnnouncement) {
   lazy val nodeSpecificExtendedKey: DeterministicWallet.ExtendedPrivateKey = LNParams.format.keys.ourFakeNodeIdKey(na.nodeId)
 

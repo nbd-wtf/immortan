@@ -125,13 +125,19 @@ object ChannelMaster {
   def initResolve(payment: UpdateAddHtlcExt): IncomingResolution = IncomingPacket.decrypt(payment.theirAdd, payment.announce.nodeSpecificPrivKey) match {
     case Left(_: BadOnion) => fallbackResolve(LNParams.format.keys.fakeInvoiceKey(payment.theirAdd.paymentHash), payment.theirAdd)
     case Left(failure) => CMD_FAIL_HTLC(Right(failure), payment.announce.nodeSpecificPrivKey, payment.theirAdd.id)
-    case Right(packet: IncomingPacket) => ReasonableResolution(packet)
+    case Right(packet: IncomingPacket) => defineResolution(packet)
   }
 
   def fallbackResolve(secret: PrivateKey, theirAdd: UpdateAddHtlc): IncomingResolution = IncomingPacket.decrypt(theirAdd, secret) match {
     case Left(failure: BadOnion) => CMD_FAIL_MALFORMED_HTLC(failure.onionHash, failure.code, theirAdd.id)
     case Left(failure) => CMD_FAIL_HTLC(Right(failure), secret, theirAdd.id)
-    case Right(packet: IncomingPacket) => ReasonableResolution(packet)
+    case Right(packet: IncomingPacket) => defineResolution(packet)
+  }
+
+  def defineResolution(packet: IncomingPacket): ReasonableResolution = packet match {
+    case pkt: IncomingPacket.ChannelRelayPacket => ReasonableResolution(PaymentType(pkt.add.paymentHash, PaymentTypeTlv.CHANNEL_ROUTED), packet)
+    case pkt: IncomingPacket.NodeRelayPacket => ReasonableResolution(PaymentType(pkt.add.paymentHash, PaymentTypeTlv.NODE_ROUTED), packet)
+    case pkt: IncomingPacket.FinalPacket => ReasonableResolution(PaymentType(pkt.add.paymentHash, PaymentTypeTlv.LOCAL), packet)
   }
 }
 
@@ -302,7 +308,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
         become(data.copy(nodeFailedWithUnknownUpdateTimes = atTimes1), state)
 
       case (exception @ CMDException(_, cmd: CMD_ADD_HTLC), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
-        data.payments.get(cmd.paymentHash).foreach(_ doProcess exception)
+        data.payments.get(cmd.paymentType.paymentHash).foreach(_ doProcess exception)
         self process CMDAskForRoute
 
       case (fulfill: UpdateFulfillHtlc, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
@@ -418,13 +424,13 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
         }
 
       case (found: RouteFound, PENDING) =>
-        data.parts.values collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isEmpty && wait.partId == found.partId =>
-          val finalPayload = Onion.createMultiPartPayload(wait.amount, data.cmd.totalAmount, data.cmd.targetExpiry, data.cmd.paymentSecret)
-          val (firstAmount, firstExpiry, onion) = OutgoingPacket.buildPacket(Sphinx.PaymentPacket)(wait.onionPrivKey, paymentHash, found.route.hops, finalPayload)
-          val cmdAdd = CMD_ADD_HTLC(firstAmount, paymentHash, firstExpiry, PacketAndSecrets(onion.packet, onion.sharedSecrets), finalPayload)
-          become(data.copy(parts = data.parts + wait.copy(flight = InFlightInfo(cmdAdd, found.route).toSome).tuple), PENDING)
-          wait.cnc.chan process cmdAdd
-        }
+//        data.parts.values collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isEmpty && wait.partId == found.partId =>
+//          val finalPayload = Onion.createMultiPartPayload(wait.amount, data.cmd.totalAmount, data.cmd.targetExpiry, data.cmd.paymentSecret)
+//          val (firstAmount, firstExpiry, onion) = OutgoingPacket.buildPacket(Sphinx.PaymentPacket)(wait.onionPrivKey, paymentHash, found.route.hops, finalPayload)
+//          val cmdAdd = CMD_ADD_HTLC(firstAmount, paymentHash, firstExpiry, PacketAndSecrets(onion.packet, onion.sharedSecrets), finalPayload)
+//          become(data.copy(parts = data.parts + wait.copy(flight = InFlightInfo(cmdAdd, found.route).toSome).tuple), PENDING)
+//          wait.cnc.chan process cmdAdd
+//        }
 
       case (CMDException(reason, cmd: CMD_ADD_HTLC), PENDING) =>
         data.parts.values collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isDefined && wait.partId == cmd.partId =>

@@ -17,18 +17,21 @@
 package fr.acinq.eclair.channel
 
 import scodec.bits._
+import scodec.codecs._
+import fr.acinq.eclair._
+import fr.acinq.bitcoin._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.transactions.Transactions._
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import immortan.{LNParams, NodeAnnouncementExt}
 import scodec.bits.{BitVector, ByteVector}
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
-import fr.acinq.bitcoin.{ByteVector32, Crypto, DeterministicWallet, OutPoint, Satoshi, Transaction}
+
 import fr.acinq.eclair.crypto.Sphinx.PacketAndSecrets
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.wire.Onion.FinalPayload
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.payment.IncomingPacket
-import immortan.NodeAnnouncementExt
+import immortan.crypto.Tools
 
 
 case class INPUT_INIT_FUNDER(announce: NodeAnnouncementExt, temporaryChannelId: ByteVector32, fundingAmount: Satoshi, pushAmount: MilliSatoshi,
@@ -39,7 +42,6 @@ case class INPUT_INIT_FUNDEE(announce: NodeAnnouncementExt, temporaryChannelId: 
                              remoteInit: Init, channelVersion: ChannelVersion, theirOpen: OpenChannel)
 
 sealed trait BitcoinEvent
-
 case class BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId: ShortChannelId) extends BitcoinEvent
 case class BITCOIN_PARENT_TX_CONFIRMED(childTx: Transaction) extends BitcoinEvent
 case class BITCOIN_TX_CONFIRMED(tx: Transaction) extends BitcoinEvent
@@ -54,14 +56,16 @@ case object BITCOIN_FUNDING_LOST extends BitcoinEvent
 
 sealed trait Command
 sealed trait IncomingResolution
-case class ReasonableResolution(packet: IncomingPacket) extends IncomingResolution
+case class ReasonableResolution(paymentType: PaymentType, packet: IncomingPacket) extends IncomingResolution
 case class CMD_FAIL_HTLC(reason: Either[ByteVector, FailureMessage], nodeSecret: PrivateKey, id: Long) extends Command with IncomingResolution
 case class CMD_FAIL_MALFORMED_HTLC(onionHash: ByteVector32, failureCode: Int, id: Long) extends Command with IncomingResolution
 case class CMD_FULFILL_HTLC(preimage: ByteVector32, id: Long) extends Command with IncomingResolution {
   lazy val paymentHash: ByteVector32 = Crypto.sha256(preimage)
 }
 
-case class CMD_ADD_HTLC(firstAmount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, packetAndSecrets: PacketAndSecrets, payload: FinalPayload) extends Command {
+// Important: LNParams.format must be defined
+case class CMD_ADD_HTLC(paymentType: PaymentType, firstAmount: MilliSatoshi, cltvExpiry: CltvExpiry, packetAndSecrets: PacketAndSecrets, payload: FinalPayload) extends Command {
+  lazy val encryptedType: ByteVector = Tools.chaChaEncrypt(LNParams.format.keys.paymentTypeEncryptionKey(paymentType.paymentHash), randomBytes(12), uint32.encode(paymentType.tag).require.toByteVector)
   final val partId: ByteVector = packetAndSecrets.packet.publicKey
 }
 

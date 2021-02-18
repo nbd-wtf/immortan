@@ -2,9 +2,10 @@ package immortan
 
 import fr.acinq.bitcoin.DeterministicWallet._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Protocol, Script}
+import fr.acinq.bitcoin.{ByteVector32, Protocol, Script}
 import fr.acinq.eclair.crypto.Mac32
 import java.io.ByteArrayInputStream
+
 import immortan.crypto.Tools.Bytes
 import scodec.bits.ByteVector
 import java.nio.ByteOrder
@@ -30,16 +31,19 @@ case class LightningNodeKeys(extendedNodeKey: ExtendedPrivateKey, xpub: String, 
   lazy val ourNodePrivateKey: PrivateKey = extendedNodeKey.privateKey
   lazy val ourNodePubKey: PublicKey = extendedNodeKey.publicKey
 
+  def paymentTypeEncryptionKey(paymentHash: ByteVector32): ByteVector32 =
+    Mac32.hmac256(ourNodePrivateKey.value.bytes, paymentHash.bytes)
+
   // Used for separate key per domain
   def makeLinkingKey(domain: String): PrivateKey = {
     val domainBytes = ByteVector.view(domain getBytes "UTF-8")
-    val pathMaterial = Mac32.hmac256(hashingKey.value, domainBytes)
-    val chain = hardened(138) :: makeKeyPath(pathMaterial)
+    val pathMaterial = Mac32.hmac256(hashingKey.value.bytes, domainBytes)
+    val chain = hardened(138) :: makeKeyPath(pathMaterial.bytes)
     derivePrivateKey(extendedNodeKey, chain).privateKey
   }
 
-  def fakeInvoiceKey(paymentHash: ByteVector): PrivateKey = {
-    val chain = hardened(184) :: makeKeyPath(paymentHash)
+  def fakeInvoiceKey(paymentHash: ByteVector32): PrivateKey = {
+    val chain = hardened(184) :: makeKeyPath(paymentHash.bytes)
     derivePrivateKey(extendedNodeKey, chain).privateKey
   }
 

@@ -55,9 +55,13 @@ case class TlvStream[T <: Tlv](records: Traversable[T], unknown: Traversable[Gen
 }
 
 object TlvStream {
+  type GenericTlvStream = TlvStream[Tlv]
+
   def empty[T <: Tlv]: TlvStream[T] = TlvStream[T](Nil, Nil)
 
   def apply[T <: Tlv](records: T*): TlvStream[T] = TlvStream(records, Nil)
 
   final val keySendTag = 5482373484L
+
+  final val paymentTypeTag = 4127926135L
 }
