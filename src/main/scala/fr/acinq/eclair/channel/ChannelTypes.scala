@@ -54,10 +54,9 @@ case object BITCOIN_FUNDING_LOST extends BitcoinEvent
 
 sealed trait Command
 sealed trait IncomingResolution
-sealed trait BadResolution extends IncomingResolution
 case class ReasonableResolution(packet: IncomingPacket) extends IncomingResolution
-case class CMD_FAIL_HTLC(reason: Either[ByteVector, FailureMessage], nodeSecret: PrivateKey, id: Long) extends Command with IncomingResolution with BadResolution
-case class CMD_FAIL_MALFORMED_HTLC(onionHash: ByteVector32, failureCode: Int, id: Long) extends Command with IncomingResolution with BadResolution
+case class CMD_FAIL_HTLC(reason: Either[ByteVector, FailureMessage], nodeSecret: PrivateKey, id: Long) extends Command with IncomingResolution
+case class CMD_FAIL_MALFORMED_HTLC(onionHash: ByteVector32, failureCode: Int, id: Long) extends Command with IncomingResolution
 case class CMD_FULFILL_HTLC(preimage: ByteVector32, id: Long) extends Command with IncomingResolution {
   lazy val paymentHash: ByteVector32 = Crypto.sha256(preimage)
 }

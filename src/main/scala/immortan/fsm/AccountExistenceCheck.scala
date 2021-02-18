@@ -76,7 +76,7 @@ abstract class AccountExistenceCheck(format: StorageFormat, chainHash: ByteVecto
       become(data, FINALIZED)
 
     case (CMDStart(outstandingProviderExts), null) =>
-      val remainingHosts = toMapBy[NodeAnnouncement, NodeAnnouncementExt](outstandingProviderExts, _.na)
+      val remainingHosts = outstandingProviderExts.map(item => item.na -> item).toMap
       become(CheckData(remainingHosts, remainingHosts.mapValues(_ => false), remainingHosts.size * 4), OPERATIONAL)
       for (ext <- outstandingProviderExts) CommsTower.listen(Set(accountCheckListener), ext.nodeSpecificPair, ext.na, init)
       Rx.ioQueue.delay(30.seconds).foreach(_ => me doSearch true)

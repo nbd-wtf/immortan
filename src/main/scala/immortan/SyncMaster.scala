@@ -172,7 +172,7 @@ trait SyncMasterData extends {
 
 trait GetNewSyncMachine extends CanBeRepliedTo { me =>
   def getNewSync(data1: SyncMasterData, allNodes: Set[NodeAnnouncement], ourInit: Init): SyncWorker = {
-    val goodAnnounces: Set[NodeAnnouncement] = allNodes -- data1.activeSyncs.map(_.ann)
+    val goodAnnounces = data1.activeSyncs.foldLeft(allNodes) { case (nodes, activeSync) => nodes - activeSync.ann }
     SyncWorker(me, randomKeyPair, shuffle(goodAnnounces.toList).head, ourInit)
   }
 }

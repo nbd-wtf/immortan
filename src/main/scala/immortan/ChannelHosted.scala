@@ -62,7 +62,7 @@ abstract class ChannelHosted extends Channel { me =>
         if (!isRemoteSigOk) throw new RuntimeException("Their signature is wrong")
         if (!isRightRemoteUpdateNumber) throw new RuntimeException("Their remote update number is wrong")
         if (!isRightLocalUpdateNumber) throw new RuntimeException("Their local update number is wrong")
-        become(me STORE localHalfSignedHC.copy(lastCrossSignedState = localCompleteLCSS), OPEN)
+        BECOME(me STORE localHalfSignedHC.copy(lastCrossSignedState = localCompleteLCSS), OPEN)
 
 
       case (wait: WaitRemoteHostedReply, remoteLCSS: LastCrossSignedState, WAIT_FOR_ACCEPT) =>

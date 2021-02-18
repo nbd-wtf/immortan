@@ -129,10 +129,9 @@ object ChannelMaster {
   }
 
   def fallbackResolve(secret: PrivateKey, theirAdd: UpdateAddHtlc): IncomingResolution = IncomingPacket.decrypt(theirAdd, secret) match {
-    case Right(_: IncomingPacket.RelayPacket) => CMD_FAIL_HTLC(incorrectDetails(theirAdd), secret, theirAdd.id)
     case Left(failure: BadOnion) => CMD_FAIL_MALFORMED_HTLC(failure.onionHash, failure.code, theirAdd.id)
-    case Right(packet: IncomingPacket.FinalPacket) => ReasonableResolution(packet)
     case Left(failure) => CMD_FAIL_HTLC(Right(failure), secret, theirAdd.id)
+    case Right(packet: IncomingPacket) => ReasonableResolution(packet)
   }
 }
 
@@ -155,12 +154,6 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
   val events: ChannelMasterListener = new ChannelMasterListener {
     override def outgoingFailed(data: PaymentSenderData): Unit = for (lst <- listeners) lst.outgoingFailed(data)
     override def outgoingSucceeded(data: PaymentSenderData, preimage: ByteVector32): Unit = for (lst <- listeners) lst.outgoingSucceeded(data, preimage)
-  }
-
-  val incomingTimeoutWorker: ThrottledWork[ByteVector, Any] = new ThrottledWork[ByteVector, Any] {
-    def process(hash: ByteVector, res: Any): Unit = Future(me stateUpdated Nil)(Channel.channelContext)
-    def work(hash: ByteVector): Observable[Null] = Rx.ioQueue.delay(60.seconds)
-    def error(canNotHappen: Throwable): Unit = none
   }
 
   // CHANNEL MANAGEMENT
@@ -229,8 +222,6 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
     * 3. channel #2 stores, sends out a preimage and updates a state, `stateUpdated` is called, because of shard #1 payment is not recognized as fulfilled yet, shard #1 is pending in listener
     * 4. channel #1 stores, sends out a preimage and updates a state, `stateUpdated` is called, since shard #1 was the last one a payment as a whole is fulfilled in listener
     */
-
-  override def addReceived(add: UpdateAddHtlc): Unit = incomingTimeoutWorker replaceWork add.paymentHash
 
   override def onBecome: PartialFunction[Transition, Unit] = { case (_, _, _, SLEEPING, OPEN | SUSPENDED) => me stateUpdated Nil }
 

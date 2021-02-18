@@ -9,12 +9,14 @@ import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Router.ChannelDesc
 import fr.acinq.eclair.router.RouteCalculation
+import fr.acinq.eclair.crypto.ChaCha20Poly1305
 import immortan.crypto.Noise.KeyPair
 import java.io.ByteArrayInputStream
 import language.implicitConversions
 import scala.collection.mutable
 import scodec.bits.ByteVector
 import java.nio.ByteOrder
+import scala.util.Try
 
 
 object Tools {
@@ -28,9 +30,6 @@ object Tools {
   implicit class Any2Some[T](underlying: T) {
     def toSome: Option[T] = Some(underlying)
   }
-
-  def toMapBy[K, V](items: Iterable[V], mapper: V => K): Map[K, V] =
-    items.map(item => mapper(item) -> item).toMap
 
   def mapKeys[K, V, K1](items: mutable.Map[K, V], mapper: K => K1, defVal: V): mutable.Map[K1, V] =
     items map { case (key, value) => mapper(key) -> value } withDefaultValue defVal
@@ -67,7 +66,7 @@ object Tools {
       nodeId = id, rgbColor = Color(-128, -128, -128), alias, addresses = na :: Nil)
 
   def mkFakeLocalEdge(from: PublicKey, toPeer: PublicKey): GraphEdge = {
-    // Augments a graph with local edge corresponding to our hosted channel
+    // Augments a graph with local edge corresponding to our local channel
     // Parameters do not matter except that it must point from us to peer
 
     val zeroCltvDelta = CltvExpiryDelta(0)
@@ -80,6 +79,15 @@ object Tools {
   def randomKeyPair: KeyPair = {
     val pk: PrivateKey = randomKey
     KeyPair(pk.publicKey.value, pk.value)
+  }
+
+  def chaChaEncrypt(key: ByteVector32, nonce: ByteVector, data: ByteVector): ByteVector = {
+    val (ciphertext, mac) = ChaCha20Poly1305.encrypt(key, nonce, data, ByteVector.empty)
+    mac ++ nonce ++ ciphertext // 16b + 12b + variable size
+  }
+
+  def chaChaDecrypt(key: ByteVector32, data: ByteVector): Try[ByteVector] = Try {
+    ChaCha20Poly1305.decrypt(key, nonce = data drop 16 take 12, ciphertext = data drop 28, ByteVector.empty, mac = data take 16)
   }
 }
 

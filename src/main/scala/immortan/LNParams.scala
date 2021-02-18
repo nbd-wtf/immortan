@@ -63,7 +63,6 @@ object LNParams {
     val networks: InitTlv = InitTlv.Networks(chainHash :: Nil)
     val tlvStream: TlvStream[InitTlv] = TlvStream(networks)
 
-    // Mimic phoenix
     val normFeatures: Set[ActivatedFeature] = Set.empty +
       ActivatedFeature(ChannelRangeQueries, FeatureSupport.Optional) +
       ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Optional) +
