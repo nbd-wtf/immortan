@@ -3,9 +3,9 @@ package immortan.fsm
 import immortan.crypto.Tools._
 import scala.concurrent.duration._
 import immortan.fsm.SwapInAddressHandler._
-import immortan.{ChanAndCommits, CommsTower, ConnectionListener}
+import immortan.{ChanAndCommits, CommsTower, ConnectionListener, RemoteNodeInfo}
+import fr.acinq.eclair.wire.{Init, SwapIn, SwapInRequest, SwapInResponse}
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
-import fr.acinq.eclair.wire.{Init, NodeAnnouncement, SwapIn, SwapInRequest, SwapInResponse}
 import java.util.concurrent.Executors
 import immortan.crypto.StateMachine
 import fr.acinq.eclair.Features
@@ -20,10 +20,10 @@ object SwapInAddressHandler {
 
   case class NoSwapInSupport(worker: CommsTower.Worker)
   case class YesSwapInSupport(worker: CommsTower.Worker, msg: SwapIn)
-  case class SwapInResponseExt(msg: SwapInResponse, ann: NodeAnnouncement)
+  case class SwapInResponseExt(msg: SwapInResponse, remoteInfo: RemoteNodeInfo)
 
   type SwapInResponseOpt = Option[SwapInResponseExt]
-  case class AddressData(results: Map[NodeAnnouncement, SwapInResponseOpt], cmdStart: CMDStart)
+  case class AddressData(results: Map[RemoteNodeInfo, SwapInResponseOpt], cmdStart: CMDStart)
   case class CMDStart(capableCncs: Set[ChanAndCommits] = Set.empty)
 }
 
@@ -48,28 +48,28 @@ abstract class SwapInAddressHandler(ourInit: Init) extends StateMachine[AddressD
 
   def doProcess(change: Any): Unit = (change, state) match {
     case (NoSwapInSupport(worker), WAITING_FIRST_RESPONSE | WAITING_REST_OF_RESPONSES) =>
-      become(data.copy(results = data.results - worker.ann), state)
+      become(data.copy(results = data.results - worker.info), state)
       doSearch(force = false)
 
     case (YesSwapInSupport(worker, msg: SwapInResponse), WAITING_FIRST_RESPONSE) =>
-      val results1 = data.results.updated(worker.ann, SwapInResponseExt(msg, worker.ann).toSome)
+      val results1 = data.results.updated(worker.info, SwapInResponseExt(msg, worker.info).toSome)
       become(data.copy(results = results1), WAITING_REST_OF_RESPONSES) // Start waiting for the rest of responses
       Rx.ioQueue.delay(5.seconds).foreach(_ => me doSearch true) // Decrease timeout for the rest of responses
       doSearch(force = false)
 
     case (YesSwapInSupport(worker, msg: SwapInResponse), WAITING_REST_OF_RESPONSES) =>
-      val results1 = data.results.updated(worker.ann, SwapInResponseExt(msg, worker.ann).toSome)
+      val results1 = data.results.updated(worker.info, SwapInResponseExt(msg, worker.info).toSome)
       become(data.copy(results = results1), state)
       doSearch(force = false)
 
     case (CMDCancel, WAITING_FIRST_RESPONSE | WAITING_REST_OF_RESPONSES) =>
       // Do not disconnect from remote peer because we have a channel with them, but remove this exact SwapIn listener
-      for (cnc <- data.cmdStart.capableCncs) CommsTower.listeners(cnc.commits.announce.nodeSpecificPair) -= swapInListener
+      for (cnc <- data.cmdStart.capableCncs) CommsTower.listeners(cnc.commits.remoteInfo.nodeSpecificPair) -= swapInListener
       become(data, FINALIZED)
 
     case (cmd: CMDStart, null) =>
-      become(freshData = AddressData(results = cmd.capableCncs.map(_.commits.announce.na -> None).toMap, cmd), WAITING_FIRST_RESPONSE)
-      for (cnc <- cmd.capableCncs) CommsTower.listen(Set(swapInListener), cnc.commits.announce.nodeSpecificPair, cnc.commits.announce.na, ourInit)
+      become(freshData = AddressData(results = cmd.capableCncs.map(_.commits.remoteInfo -> None).toMap, cmd), WAITING_FIRST_RESPONSE)
+      for (cnc <- cmd.capableCncs) CommsTower.listen(Set(swapInListener), cnc.commits.remoteInfo.nodeSpecificPair, cnc.commits.remoteInfo, ourInit)
       Rx.ioQueue.delay(30.seconds).foreach(_ => me doSearch true)
 
     case _ =>

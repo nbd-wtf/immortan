@@ -1,13 +1,12 @@
 package immortan.utils
 
-import immortan.{LNParams, PaymentRequestExt}
+import immortan.{LNParams, PaymentRequestExt, RemoteNodeInfo}
 import fr.acinq.eclair.payment.PaymentRequest
 import scala.util.matching.UnanchoredRegex
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.wire.NodeAddress
 import org.bitcoinj.uri.BitcoinURI
 import scodec.bits.ByteVector
-import immortan.crypto.Tools
 
 
 object InputParser {
@@ -35,8 +34,8 @@ object InputParser {
   def parse(rawInput: String): Any = rawInput take 2880 match {
     case bitcoinUriLink if bitcoinUriLink startsWith "bitcoin" => bitcoinUri(bitcoinUriLink)
     case bitcoinUriLink if bitcoinUriLink startsWith "BITCOIN" => bitcoinUri(bitcoinUriLink.toLowerCase)
-    case nodeLink(key, host, port) => Tools.mkNodeAnnouncement(PublicKey.fromBin(ByteVector fromValidHex key), NodeAddress.fromParts(host, port.toInt), key take 16 grouped 4 mkString " ")
-    case shortNodeLink(key, host) => Tools.mkNodeAnnouncement(PublicKey.fromBin(ByteVector fromValidHex key), NodeAddress.fromParts(host, port = 9735), key take 16 grouped 4 mkString " ")
+    case nodeLink(key, host, port) => RemoteNodeInfo(PublicKey.fromBin(ByteVector fromValidHex key), NodeAddress.fromParts(host, port.toInt), key take 16 grouped 4 mkString "-")
+    case shortNodeLink(key, host) => RemoteNodeInfo(PublicKey.fromBin(ByteVector fromValidHex key), NodeAddress.fromParts(host, port = 9735), key take 16 grouped 4 mkString "-")
     case lnPayReq(prefix, data) => PaymentRequestExt(pr = PaymentRequest.read(s"$prefix$data"), raw = s"$prefix$data")
     case lnUrl(prefix, data) => LNUrl.fromBech32(s"$prefix$data")
     case _ => bitcoinUri(s"bitcoin:$rawInput")

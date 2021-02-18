@@ -1,10 +1,9 @@
 package immortan.fsm
 
-import immortan.crypto.Tools._
+import fr.acinq.eclair.wire._
 import scala.concurrent.duration._
 import immortan.fsm.AccountExistenceCheck._
-import fr.acinq.eclair.wire.{HostedChannelMessage, Init, InitHostedChannel, InvokeHostedChannel, LastCrossSignedState, NodeAnnouncement}
-import immortan.{CommsTower, ConnectionListener, NodeAnnouncementExt, StorageFormat}
+import immortan.{CommsTower, ConnectionListener, RemoteNodeInfo, StorageFormat}
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import java.util.concurrent.Executors
 import fr.acinq.bitcoin.ByteVector32
@@ -17,13 +16,10 @@ object AccountExistenceCheck {
   val FINALIZED = "existance-state-finalized"
   val CMDCancel = "existance-cmd-cancel"
 
-  case class CMDStart(exts: Set[NodeAnnouncementExt] = Set.empty)
-  case class PeerResponse(msg: HostedChannelMessage, worker: CommsTower.Worker)
   case class PeerDisconnected(worker: CommsTower.Worker)
-
-  case class CheckData(hosts: Map[NodeAnnouncement, NodeAnnouncementExt], // Need this for node specific keys
-                       results: Map[NodeAnnouncement, Boolean], // False is unknown, True is channel exists
-                       reconnectsLeft: Int)
+  case class PeerResponse(msg: HostedChannelMessage, worker: CommsTower.Worker)
+  case class CheckData(hosts: Set[RemoteNodeInfo], results: Map[RemoteNodeInfo, Boolean], reconnectsLeft: Int)
+  case class CMDStart(remoteInfos: Set[RemoteNodeInfo] = Set.empty)
 }
 
 abstract class AccountExistenceCheck(format: StorageFormat, chainHash: ByteVector32, init: Init) extends StateMachine[CheckData] { me =>
@@ -35,8 +31,8 @@ abstract class AccountExistenceCheck(format: StorageFormat, chainHash: ByteVecto
     override def onHostedMessage(worker: CommsTower.Worker, msg: HostedChannelMessage): Unit = me process PeerResponse(msg, worker)
 
     override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = {
-      val peerSpecificSecret = format.keys.refundPubKey(theirNodeId = worker.ann.nodeId)
-      val peerSpecificRefundPubKey = format.attachedChannelSecret(theirNodeId = worker.ann.nodeId)
+      val peerSpecificSecret = format.keys.refundPubKey(theirNodeId = worker.info.nodeId)
+      val peerSpecificRefundPubKey = format.attachedChannelSecret(theirNodeId = worker.info.nodeId)
       worker.handler process InvokeHostedChannel(chainHash, peerSpecificSecret, peerSpecificRefundPubKey)
     }
   }
@@ -56,29 +52,28 @@ abstract class AccountExistenceCheck(format: StorageFormat, chainHash: ByteVecto
 
     case (worker: CommsTower.Worker, OPERATIONAL) =>
       // We get previously scheduled worker and use its peer data to reconnect again
-      CommsTower.listen(Set(accountCheckListener), worker.pair, worker.ann, init)
+      CommsTower.listen(Set(accountCheckListener), worker.pair, worker.info, init)
 
     case (PeerResponse(_: InitHostedChannel, worker), OPERATIONAL) =>
       // Remote node offers to create a new channel, no "account" there
-      become(data.copy(results = data.results - worker.ann), OPERATIONAL)
+      become(data.copy(results = data.results - worker.info), OPERATIONAL)
       doSearch(force = false)
 
     case (PeerResponse(remoteLCSS: LastCrossSignedState, worker), OPERATIONAL) =>
-      // Remote node replies with a state, check our signature to make sure it's valid
-      val isLocalSigOk = remoteLCSS.verifyRemoteSig(data.hosts(worker.ann).nodeSpecificPubKey)
-      val results1 = if (isLocalSigOk) data.results.updated(worker.ann, true) else data.results - worker.ann
+      val isLocalSigOk = remoteLCSS.verifyRemoteSig(worker.info.nodeSpecificPubKey)
+      // Remote node replies with some channel state, check our signature to make sure state is valid
+      val results1 = if (isLocalSigOk) data.results.updated(worker.info, true) else data.results - worker.info
       become(data.copy(results = results1), OPERATIONAL)
       doSearch(force = false)
 
     case (CMDCancel, OPERATIONAL) =>
       // User has manually cancelled a check, disconnect all peers
-      data.hosts.values.foreach(CommsTower forget _.nodeSpecificPair)
+      data.hosts.foreach(CommsTower forget _.nodeSpecificPair)
       become(data, FINALIZED)
 
-    case (CMDStart(outstandingProviderExts), null) =>
-      val remainingHosts = outstandingProviderExts.map(item => item.na -> item).toMap
-      become(CheckData(remainingHosts, remainingHosts.mapValues(_ => false), remainingHosts.size * 4), OPERATIONAL)
-      for (ext <- outstandingProviderExts) CommsTower.listen(Set(accountCheckListener), ext.nodeSpecificPair, ext.na, init)
+    case (CMDStart(remoteInfos), null) =>
+      become(CheckData(remoteInfos, remoteInfos.map(_ -> false).toMap, remoteInfos.size * 4), OPERATIONAL)
+      for (info <- remoteInfos) CommsTower.listen(Set(accountCheckListener), info.nodeSpecificPair, info, init)
       Rx.ioQueue.delay(30.seconds).foreach(_ => me doSearch true)
   }
 

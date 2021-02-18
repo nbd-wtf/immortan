@@ -122,9 +122,9 @@ object ChannelMaster {
 
   val initResolveMemo: mutable.Map[UpdateAddHtlcExt, IncomingResolution] = memoize(initResolve)
 
-  def initResolve(payment: UpdateAddHtlcExt): IncomingResolution = IncomingPacket.decrypt(payment.theirAdd, payment.announce.nodeSpecificPrivKey) match {
+  def initResolve(payment: UpdateAddHtlcExt): IncomingResolution = IncomingPacket.decrypt(payment.theirAdd, payment.remoteInfo.nodeSpecificPrivKey) match {
     case Left(_: BadOnion) => fallbackResolve(LNParams.format.keys.fakeInvoiceKey(payment.theirAdd.paymentHash), payment.theirAdd)
-    case Left(failure) => CMD_FAIL_HTLC(Right(failure), payment.announce.nodeSpecificPrivKey, payment.theirAdd.id)
+    case Left(failure) => CMD_FAIL_HTLC(Right(failure), payment.remoteInfo.nodeSpecificPrivKey, payment.theirAdd.id)
     case Right(packet: IncomingPacket) => defineResolution(packet)
   }
 
@@ -166,11 +166,11 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
 
   def inChannelOutgoingHtlcs: List[UpdateAddHtlc] = all.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing)
 
-  def fromNode(nodeId: PublicKey): List[ChanAndCommits] = all.flatMap(Channel.chanAndCommitsOpt).filter(_.commits.announce.na.nodeId == nodeId)
+  def fromNode(nodeId: PublicKey): List[ChanAndCommits] = all.flatMap(Channel.chanAndCommitsOpt).filter(_.commits.remoteInfo.nodeId == nodeId)
 
   def initConnect: Unit = all.flatMap(Channel.chanAndCommitsOpt).map(_.commits).foreach {
-    case cs: HostedCommits => CommsTower.listen(connectionListeners, cs.announce.nodeSpecificPair, cs.announce.na, LNParams.hcInit)
-    case cs: NormalCommits => CommsTower.listen(connectionListeners, cs.announce.nodeSpecificPair, cs.announce.na, LNParams.normInit)
+    case cs: HostedCommits => CommsTower.listen(connectionListeners, cs.remoteInfo.nodeSpecificPair, cs.remoteInfo, LNParams.hcInit)
+    case cs: NormalCommits => CommsTower.listen(connectionListeners, cs.remoteInfo.nodeSpecificPair, cs.remoteInfo, LNParams.normInit)
     case _ => throw new RuntimeException
   }
 
@@ -409,7 +409,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
 
       case (CMDAskForRoute, PENDING) =>
         data.parts.values collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isEmpty =>
-          val fakeLocalEdge = Tools.mkFakeLocalEdge(from = LNParams.format.keys.ourNodePubKey, toPeer = wait.cnc.commits.announce.na.nodeId)
+          val fakeLocalEdge = Tools.mkFakeLocalEdge(from = LNParams.format.keys.ourNodePubKey, toPeer = wait.cnc.commits.remoteInfo.nodeId)
           val params = RouteParams(pf.routerConf.searchMaxFeeBase, pf.routerConf.searchMaxFeePct, pf.routerConf.firstPassMaxRouteLength, pf.routerConf.firstPassMaxCltv)
           PaymentMaster process RouteRequest(paymentHash, partId = wait.partId, LNParams.format.keys.ourNodePubKey, data.cmd.targetNodeId, wait.amount, fakeLocalEdge, params)
         }
@@ -536,7 +536,7 @@ abstract class ChannelMaster(payBag: PaymentBag, val chanBag: ChannelBag, pf: Pa
     def canBeSplit(totalAmount: MilliSatoshi): Boolean = totalAmount / 2 > pf.routerConf.mppMinPartAmount
 
     private def assignToChans(sendable: mutable.Map[ChanAndCommits, MilliSatoshi], data1: PaymentSenderData, amount: MilliSatoshi): Unit = {
-      val directChansFirst = shuffle(sendable.toSeq).sortBy { case (cnc, _) => if (cnc.commits.announce.na.nodeId == data1.cmd.targetNodeId) 0 else 1 }
+      val directChansFirst = shuffle(sendable.toSeq) sortBy { case (cnc, _) => if (cnc.commits.remoteInfo.nodeId == data1.cmd.targetNodeId) 0 else 1 }
       // This is a terminal method in a sense that it either successfully assigns a given amount to channels or turns a payment into failed state
       // this method always sets a new partId to assigned parts so old payment statuses in data must be cleared before calling it
 

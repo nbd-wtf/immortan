@@ -23,9 +23,9 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
+import immortan.{LNParams, RemoteNodeInfo, UpdateAddHtlcExt}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, DeterministicWallet, SatoshiLong}
-import immortan.{LNParams, NodeAnnouncementExt, UpdateAddHtlcExt}
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.bitcoin.Crypto.PublicKey
 
@@ -55,7 +55,7 @@ case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig,
 
 trait Commitments {
   def channelId: ByteVector32
-  def announce: NodeAnnouncementExt
+  def remoteInfo: RemoteNodeInfo
   def updateOpt: Option[ChannelUpdate]
 
   def maxInFlight: MilliSatoshi
@@ -68,7 +68,7 @@ trait Commitments {
   def allOutgoing: Set[UpdateAddHtlc] // Cross-signed PLUS new payments offered by us
 }
 
-case class NormalCommits(channelVersion: ChannelVersion, announce: NodeAnnouncementExt, localParams: LocalParams, remoteParams: RemoteParams,
+case class NormalCommits(channelVersion: ChannelVersion, remoteInfo: RemoteNodeInfo, localParams: LocalParams, remoteParams: RemoteParams,
                          channelFlags: Byte, localCommit: LocalCommit, remoteCommit: RemoteCommit, localChanges: LocalChanges, remoteChanges: RemoteChanges,
                          localNextHtlcId: Long, remoteNextHtlcId: Long, remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey], commitInput: InputInfo,
                          remotePerCommitmentSecrets: ShaChain, updateOpt: Option[ChannelUpdate], channelId: ByteVector32,
@@ -76,7 +76,7 @@ case class NormalCommits(channelVersion: ChannelVersion, announce: NodeAnnouncem
 
   val latestRemoteCommit: RemoteCommit = remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit)
 
-  val channelKeyPath: DeterministicWallet.KeyPath = announce.keyPath(localParams)
+  val channelKeyPath: DeterministicWallet.KeyPath = remoteInfo.keyPath(localParams)
 
   val maxInFlight: MilliSatoshi = remoteParams.maxHtlcValueInFlightMsat.toMilliSatoshi
 
@@ -84,7 +84,7 @@ case class NormalCommits(channelVersion: ChannelVersion, announce: NodeAnnouncem
 
   val unProcessedIncoming: Set[UpdateAddHtlcExt] = {
     val reduced = CommitmentSpec.reduce(latestRemoteCommit.spec, remoteChanges.acked, localChanges.proposed)
-    for (add <- localCommit.spec.incomingAdds intersect reduced.outgoingAdds) yield UpdateAddHtlcExt(add, announce)
+    for (add <- localCommit.spec.incomingAdds intersect reduced.outgoingAdds) yield UpdateAddHtlcExt(add, remoteInfo)
   }
 
   val allOutgoing: Set[UpdateAddHtlc] = localCommit.spec.outgoingAdds ++ remoteCommit.spec.incomingAdds ++ localChanges.adds
@@ -191,7 +191,7 @@ object NormalCommits {
     // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
     // we need to verify that we're not disagreeing on feerates anymore before offering new HTLCs
     val localFeeratePerKw = feeConf.feeEstimator.getFeeratePerKw(target = feeConf.feeTargets.commitmentBlockTarget)
-    if (Helpers.isFeeDiffTooHigh(localFeeratePerKw, commitments.localCommit.spec.feeratePerKw, feeConf.maxFeerateMismatchFor(commitments.announce.na.nodeId))) {
+    if (Helpers.isFeeDiffTooHigh(localFeeratePerKw, commitments.localCommit.spec.feeratePerKw, feeConf maxFeerateMismatchFor commitments.remoteInfo.nodeId)) {
       throw CMDException(FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = commitments.localCommit.spec.feeratePerKw), cmd)
     }
 
@@ -245,7 +245,7 @@ object NormalCommits {
     // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
     // we need to verify that we're not disagreeing on feerates anymore before accepting new HTLCs
     val localFeeratePerKw = feeConf.feeEstimator.getFeeratePerKw(target = feeConf.feeTargets.commitmentBlockTarget)
-    if (Helpers.isFeeDiffTooHigh(localFeeratePerKw, commitments.localCommit.spec.feeratePerKw, feeConf.maxFeerateMismatchFor(commitments.announce.na.nodeId))) {
+    if (Helpers.isFeeDiffTooHigh(localFeeratePerKw, commitments.localCommit.spec.feeratePerKw, feeConf maxFeerateMismatchFor commitments.remoteInfo.nodeId)) {
       throw FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = commitments.localCommit.spec.feeratePerKw)
     }
 
@@ -341,7 +341,7 @@ object NormalCommits {
       throw FeerateTooSmall(commitments.channelId, remoteFeeratePerKw = fee.feeratePerKw)
     } else {
       val localFeeratePerKw = feeConf.feeEstimator.getFeeratePerKw(target = feeConf.feeTargets.commitmentBlockTarget)
-      if (Helpers.isFeeDiffTooHigh(localFeeratePerKw, fee.feeratePerKw, feeConf.maxFeerateMismatchFor(commitments.announce.na.nodeId)) && hasPendingOrProposedHtlcs(commitments)) {
+      if (Helpers.isFeeDiffTooHigh(localFeeratePerKw, fee.feeratePerKw, feeConf maxFeerateMismatchFor commitments.remoteInfo.nodeId) && hasPendingOrProposedHtlcs(commitments)) {
         throw FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = fee.feeratePerKw)
       } else {
         // NB: we check that the funder can afford this new fee even if spec allows to do it at next signature
@@ -382,11 +382,11 @@ object NormalCommits {
       case Right(remoteNextPerCommitmentPoint) =>
         // remote commitment will includes all local changes + remote acked changes
         val spec = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
-        val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeRemoteTxs(commitments.announce, channelVersion, remoteCommit.index + 1, localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
-        val sig = commitments.announce.sign(remoteCommitTx, commitments.announce.fundingPublicKey(commitments.localParams.fundingKeyPath), TxOwner.Remote, channelVersion.commitmentFormat)
+        val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeRemoteTxs(commitments.remoteInfo, channelVersion, remoteCommit.index + 1, localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
+        val sig = commitments.remoteInfo.sign(remoteCommitTx, commitments.remoteInfo.fundingPublicKey(commitments.localParams.fundingKeyPath), TxOwner.Remote, channelVersion.commitmentFormat)
 
         val sortedHtlcTxs: Seq[TransactionWithInputInfo] = (htlcTimeoutTxs ++ htlcSuccessTxs).sortBy(_.input.outPoint.index)
-        val htlcSigs = sortedHtlcTxs.map(commitments.announce.sign(_, commitments.announce.htlcPoint(channelKeyPath), remoteNextPerCommitmentPoint, TxOwner.Remote, channelVersion.commitmentFormat))
+        val htlcSigs = sortedHtlcTxs.map(commitments.remoteInfo.sign(_, commitments.remoteInfo.htlcPoint(channelKeyPath), remoteNextPerCommitmentPoint, TxOwner.Remote, channelVersion.commitmentFormat))
 
         val commitSig = CommitSig(channelId = commitments.channelId, signature = sig, htlcSignatures = htlcSigs.toList)
         val waiting = WaitingForRevocation(RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint), commitSig, commitments.localCommit.index)
@@ -410,12 +410,12 @@ object NormalCommits {
     // and will increment our index
 
     val spec = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
-    val localPerCommitmentPoint = commitments.announce.commitmentPoint(channelKeyPath, commitments.localCommit.index + 1)
-    val (localCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeLocalTxs(commitments.announce, channelVersion, localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
-    val sig = commitments.announce.sign(localCommitTx, commitments.announce.fundingPublicKey(commitments.localParams.fundingKeyPath), TxOwner.Local, channelVersion.commitmentFormat)
+    val localPerCommitmentPoint = commitments.remoteInfo.commitmentPoint(channelKeyPath, commitments.localCommit.index + 1)
+    val (localCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeLocalTxs(commitments.remoteInfo, channelVersion, localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
+    val sig = commitments.remoteInfo.sign(localCommitTx, commitments.remoteInfo.fundingPublicKey(commitments.localParams.fundingKeyPath), TxOwner.Local, channelVersion.commitmentFormat)
 
     // no need to compute htlc sigs if commit sig doesn't check out
-    val signedCommitTx = Transactions.addSigs(localCommitTx, commitments.announce.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, sig, commit.signature)
+    val signedCommitTx = Transactions.addSigs(localCommitTx, commitments.remoteInfo.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, sig, commit.signature)
     if (Transactions.checkSpendable(signedCommitTx).isFailure) {
       throw InvalidCommitmentSignature(commitments.channelId, signedCommitTx.tx)
     }
@@ -424,7 +424,7 @@ object NormalCommits {
     if (commit.htlcSignatures.size != sortedHtlcTxs.size) {
       throw HtlcSigCountMismatch(commitments.channelId, sortedHtlcTxs.size, commit.htlcSignatures.size)
     }
-    val htlcSigs = sortedHtlcTxs.map(commitments.announce.sign(_, commitments.announce.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, channelVersion.commitmentFormat))
+    val htlcSigs = sortedHtlcTxs.map(commitments.remoteInfo.sign(_, commitments.remoteInfo.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, channelVersion.commitmentFormat))
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
     // combine the sigs to make signed txes
     val htlcTxsAndSigs = (sortedHtlcTxs, htlcSigs, commit.htlcSignatures).zipped.toList.collect {
@@ -443,8 +443,8 @@ object NormalCommits {
     }
 
     // we will send our revocation preimage + our next revocation hash
-    val localPerCommitmentSecret = commitments.announce.commitmentSecret(channelKeyPath, commitments.localCommit.index)
-    val localNextPerCommitmentPoint = commitments.announce.commitmentPoint(channelKeyPath, commitments.localCommit.index + 2)
+    val localPerCommitmentSecret = commitments.remoteInfo.commitmentSecret(channelKeyPath, commitments.localCommit.index)
+    val localNextPerCommitmentPoint = commitments.remoteInfo.commitmentPoint(channelKeyPath, commitments.localCommit.index + 2)
     val revocation = RevokeAndAck(channelId = commitments.channelId, perCommitmentSecret = localPerCommitmentSecret, nextPerCommitmentPoint = localNextPerCommitmentPoint)
 
     // update our commitment data
@@ -477,16 +477,16 @@ object NormalCommits {
 
   type HtlcSuccessTxSeq = Seq[HtlcSuccessTx]
 
-  def makeLocalTxs(announce: NodeAnnouncementExt, channelVersion: ChannelVersion, commitTxNumber: Long, localParams: LocalParams, remoteParams: RemoteParams,
+  def makeLocalTxs(remoteInfo: RemoteNodeInfo, channelVersion: ChannelVersion, commitTxNumber: Long, localParams: LocalParams, remoteParams: RemoteParams,
                    commitmentInput: InputInfo, localPerCommitmentPoint: PublicKey, spec: CommitmentSpec): (CommitTx, HtlcTimeoutTxSeq, HtlcSuccessTxSeq) = {
-    val channelKeyPath = announce.keyPath(localParams)
-    val localFundingPubkey = announce.fundingPublicKey(localParams.fundingKeyPath).publicKey
-    val localDelayedPaymentPubkey = Generators.derivePubKey(announce.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
-    val localHtlcPubkey = Generators.derivePubKey(announce.htlcPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
+    val channelKeyPath = remoteInfo.keyPath(localParams)
+    val localFundingPubkey = remoteInfo.fundingPublicKey(localParams.fundingKeyPath).publicKey
+    val localDelayedPaymentPubkey = Generators.derivePubKey(remoteInfo.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
+    val localHtlcPubkey = Generators.derivePubKey(remoteInfo.htlcPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
     val remotePaymentPubkey = if (channelVersion.hasStaticRemotekey) remoteParams.paymentBasepoint else Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
     val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
-    val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(announce.paymentPoint(channelKeyPath).publicKey)
+    val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(remoteInfo.paymentPoint(channelKeyPath).publicKey)
     val outputs = makeCommitTxOutputs(localParams.isFunder, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey,
       remotePaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, localFundingPubkey, remoteParams.fundingPubKey, spec, channelVersion.commitmentFormat)
     val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, localPaymentBasepoint, remoteParams.paymentBasepoint, localParams.isFunder, outputs)
@@ -495,16 +495,16 @@ object NormalCommits {
     (commitTx, htlcTimeoutTxs, htlcSuccessTxs)
   }
 
-  def makeRemoteTxs(announce: NodeAnnouncementExt, channelVersion: ChannelVersion, commitTxNumber: Long, localParams: LocalParams, remoteParams: RemoteParams,
+  def makeRemoteTxs(remoteInfo: RemoteNodeInfo, channelVersion: ChannelVersion, commitTxNumber: Long, localParams: LocalParams, remoteParams: RemoteParams,
                     commitmentInput: InputInfo, remotePerCommitmentPoint: PublicKey, spec: CommitmentSpec): (CommitTx, HtlcTimeoutTxSeq, HtlcSuccessTxSeq) = {
-    val channelKeyPath = announce.keyPath(localParams)
-    val localFundingPubkey = announce.fundingPublicKey(localParams.fundingKeyPath).publicKey
-    val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(announce.paymentPoint(channelKeyPath).publicKey)
+    val channelKeyPath = remoteInfo.keyPath(localParams)
+    val localFundingPubkey = remoteInfo.fundingPublicKey(localParams.fundingKeyPath).publicKey
+    val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(remoteInfo.paymentPoint(channelKeyPath).publicKey)
     val localPaymentPubkey = if (channelVersion.hasStaticRemotekey) localPaymentBasepoint else Generators.derivePubKey(localPaymentBasepoint, remotePerCommitmentPoint)
-    val localHtlcPubkey = Generators.derivePubKey(announce.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+    val localHtlcPubkey = Generators.derivePubKey(remoteInfo.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
     val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)
-    val remoteRevocationPubkey = Generators.revocationPubKey(announce.revocationPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+    val remoteRevocationPubkey = Generators.revocationPubKey(remoteInfo.revocationPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
     val outputs = makeCommitTxOutputs(!localParams.isFunder, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey,
       localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, remoteParams.fundingPubKey, localFundingPubkey, spec, channelVersion.commitmentFormat)
     val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, localPaymentBasepoint, !localParams.isFunder, outputs)

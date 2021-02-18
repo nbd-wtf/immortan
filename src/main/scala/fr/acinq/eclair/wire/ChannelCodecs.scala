@@ -27,7 +27,7 @@ import fr.acinq.eclair.crypto.ShaChain
 
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction, TxOut}
-import immortan.{HostedCommits, NodeAnnouncementExt}
+import immortan.{HostedCommits, RemoteNodeInfo}
 import scodec.{Attempt, Codec}
 
 /**
@@ -158,11 +158,15 @@ object ChannelCodecs {
       ("htlcBasepoint" | publicKey)
   }.as[RemoteParams]
 
-  val nodeAnnouncementExtCodec: Codec[NodeAnnouncementExt] = (lengthDelimited(nodeAnnouncementCodec) withContext "na").as[NodeAnnouncementExt]
+  val remoteNodeInfoCodec = {
+    (publicKey withContext "nodeId") ::
+      (nodeaddress withContext "address") ::
+      (zeropaddedstring(32) withContext "alias")
+  }.as[RemoteNodeInfo]
 
   val commitmentsCodec: Codec[NormalCommits] = (
     ("channelVersion" | channelVersionCodec) >>:~ { channelVersion =>
-      ("announce" | nodeAnnouncementExtCodec) ::
+      ("remoteInfo" | remoteNodeInfoCodec) ::
       ("localParams" | localParamsCodec(channelVersion)) ::
       ("remoteParams" | remoteParamsCodec) ::
       ("channelFlags" | byte) ::
@@ -252,7 +256,7 @@ object ChannelCodecs {
   }.as[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
 
   val hostedCommitsCodec: Codec[HostedCommits] = {
-    (nodeAnnouncementExtCodec withContext "announce") ::
+    ("remoteInfo" | remoteNodeInfoCodec) ::
       (lengthDelimited(lastCrossSignedStateCodec) withContext "lastCrossSignedState") ::
       (listOfN(uint16, updateMessageCodec) withContext "nextLocalUpdates") ::
       (listOfN(uint16, updateMessageCodec) withContext "nextRemoteUpdates") ::

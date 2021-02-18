@@ -23,13 +23,15 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering, Protocol, Satoshi}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
 import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
+
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.router.Announcements
 import com.google.common.base.Charsets
 import immortan.crypto.Tools
 import java.nio.ByteOrder
-import immortan.LNParams
+
+import immortan.{LNParams, RemoteNodeInfo}
 
 /**
  * Created by PM on 15/11/2016.
@@ -198,8 +200,12 @@ case class Domain(domain: String, port: Int) extends NodeAddress {
   override def toString: String = s"$domain:$port"
 }
 
-case class NodeAnnouncement(signature: ByteVector64, features: Features, timestamp: Long, nodeId: PublicKey, rgbColor: Color, alias: String, addresses: List[NodeAddress],
-                            unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp
+case class NodeAnnouncement(signature: ByteVector64,
+                            features: Features, timestamp: Long, nodeId: PublicKey, rgbColor: Color, alias: String, addresses: List[NodeAddress],
+                            unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp {
+
+  lazy val remoteNodeInfo: RemoteNodeInfo = RemoteNodeInfo(nodeId, addresses.head, alias)
+}
 
 object ChannelUpdate {
   final val POSITION1NODE: java.lang.Integer = 1

@@ -23,7 +23,7 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import immortan.{LNParams, NodeAnnouncementExt}
+import immortan.{LNParams, RemoteNodeInfo}
 import scodec.bits.{BitVector, ByteVector}
 
 import fr.acinq.eclair.crypto.Sphinx.PacketAndSecrets
@@ -34,11 +34,11 @@ import fr.acinq.eclair.payment.IncomingPacket
 import immortan.crypto.Tools
 
 
-case class INPUT_INIT_FUNDER(announce: NodeAnnouncementExt, temporaryChannelId: ByteVector32, fundingAmount: Satoshi, pushAmount: MilliSatoshi,
+case class INPUT_INIT_FUNDER(remoteInfo: RemoteNodeInfo, temporaryChannelId: ByteVector32, fundingAmount: Satoshi, pushAmount: MilliSatoshi,
                              initialFeeratePerKw: FeeratePerKw, fundingTxFeeratePerKw: FeeratePerKw, localParams: LocalParams, remoteInit: Init,
                              channelFlags: Byte, channelVersion: ChannelVersion)
 
-case class INPUT_INIT_FUNDEE(announce: NodeAnnouncementExt, temporaryChannelId: ByteVector32, localParams: LocalParams,
+case class INPUT_INIT_FUNDEE(remoteInfo: RemoteNodeInfo, temporaryChannelId: ByteVector32, localParams: LocalParams,
                              remoteInit: Init, channelVersion: ChannelVersion, theirOpen: OpenChannel)
 
 sealed trait BitcoinEvent
@@ -123,13 +123,12 @@ final case class DATA_WAIT_FOR_FUNDING_INTERNAL(initFunder: INPUT_INIT_FUNDER, r
 
 final case class DATA_WAIT_FOR_FUNDING_CREATED(initFundee: INPUT_INIT_FUNDEE, remoteParams: RemoteParams, lastSent: AcceptChannel) extends ChannelData
 
-final case class DATA_WAIT_FOR_FUNDING_SIGNED(announce: NodeAnnouncementExt,
-                                              channelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingTx: Transaction,
-                                              fundingTxFee: Satoshi, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit,
-                                              channelFlags: Byte, channelVersion: ChannelVersion, lastSent: FundingCreated) extends ChannelData
+final case class DATA_WAIT_FOR_FUNDING_SIGNED(remoteInfo: RemoteNodeInfo, channelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingTx: Transaction,
+                                              fundingTxFee: Satoshi, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit, channelFlags: Byte,
+                                              channelVersion: ChannelVersion, lastSent: FundingCreated) extends ChannelData
 
-final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: NormalCommits,
-                                                 fundingTx: Option[Transaction], waitingSince: Long, lastSent: Either[FundingCreated, FundingSigned],
+final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: NormalCommits, fundingTx: Option[Transaction],
+                                                 waitingSince: Long, lastSent: Either[FundingCreated, FundingSigned],
                                                  deferred: Option[FundingLocked] = None) extends ChannelData with HasNormalCommitments
 
 final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: NormalCommits, shortChannelId: ShortChannelId, lastSent: FundingLocked) extends ChannelData with HasNormalCommitments

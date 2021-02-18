@@ -10,12 +10,12 @@ import scodec.bits.ByteVector
 
 
 // Important: this must be initiated when chain tip is actually known
-abstract class HCOpenHandler(ext: NodeAnnouncementExt, ourInit: Init, format: StorageFormat, cm: ChannelMaster) {
-  val peerSpecificSecret: ByteVector32 = format.attachedChannelSecret(theirNodeId = ext.na.nodeId)
-  val peerSpecificRefundPubKey: ByteVector = format.keys.refundPubKey(theirNodeId = ext.na.nodeId)
+abstract class HCOpenHandler(info: RemoteNodeInfo, ourInit: Init, format: StorageFormat, cm: ChannelMaster) {
+  val peerSpecificSecret: ByteVector32 = format.attachedChannelSecret(theirNodeId = info.nodeId)
+  val peerSpecificRefundPubKey: ByteVector = format.keys.refundPubKey(theirNodeId = info.nodeId)
 
   val freshChannel: ChannelHosted = new ChannelHosted {
-    def SEND(messages: LightningMessage*): Unit = CommsTower.sendMany(messages.map(ExtMessageMapping.prepareNormal), ext.nodeSpecificPair)
+    def SEND(messages: LightningMessage*): Unit = CommsTower.sendMany(messages.map(ExtMessageMapping.prepareNormal), info.nodeSpecificPair)
     def STORE(hostedData: PersistentChannelData): PersistentChannelData = cm.chanBag.put(hostedData)
   }
 
@@ -31,7 +31,7 @@ abstract class HCOpenHandler(ext: NodeAnnouncementExt, ourInit: Init, format: St
 
     override def onBecome: PartialFunction[Transition, Unit] = {
       case (_, _, _: HostedCommits, WAIT_FOR_ACCEPT, OPEN | SUSPENDED) =>
-        CommsTower.listeners(ext.nodeSpecificPair) -= this // Stop sending messages from this connection listener
+        CommsTower.listeners(info.nodeSpecificPair) -= this // Stop sending messages from this connection listener
         freshChannel.listeners = cm.channelListeners // Add standard channel listeners to new established channel
         cm.all :+= freshChannel // Put this channel to vector of established channels
         cm.initConnect // Add standard connection listeners for this peer
@@ -47,6 +47,6 @@ abstract class HCOpenHandler(ext: NodeAnnouncementExt, ourInit: Init, format: St
   }
 
   freshChannel.listeners = Set(makeChanListener)
-  freshChannel doProcess WaitRemoteHostedReply(ext, peerSpecificRefundPubKey, peerSpecificSecret)
-  CommsTower.listen(Set(makeChanListener, cm.sockBrandingBridge), ext.nodeSpecificPair, ext.na, ourInit)
+  freshChannel doProcess WaitRemoteHostedReply(info, peerSpecificRefundPubKey, peerSpecificSecret)
+  CommsTower.listen(Set(makeChanListener, cm.sockBrandingBridge), info.nodeSpecificPair, info, ourInit)
 }

@@ -4,19 +4,18 @@ import spray.json._
 import fr.acinq.eclair._
 import immortan.crypto.Tools._
 import immortan.utils.ImplicitJsonFormats._
-import fr.acinq.eclair.wire.{NodeAddress, NodeAnnouncement}
-import immortan.{LNParams, PaymentAction}
+import immortan.{LNParams, PaymentAction, RemoteNodeInfo}
 import fr.acinq.bitcoin.{Bech32, Crypto}
 
-import immortan.utils.uri.Uri
-import immortan.utils.LNUrl.LNUrlAndData
-import immortan.utils.PayRequest.PayMetaData
-import fr.acinq.eclair.payment.PaymentRequest
 import com.github.kevinsawicki.http.HttpRequest
+import fr.acinq.eclair.payment.PaymentRequest
+import immortan.utils.PayRequest.PayMetaData
+import immortan.utils.LNUrl.LNUrlAndData
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.wire.NodeAddress
 import rx.lang.scala.Observable
 import scodec.bits.ByteVector
-import immortan.crypto.Tools
+import immortan.utils.uri.Uri
 import scala.util.Try
 
 
@@ -82,7 +81,7 @@ case class NormalChannelRequest(uri: String, callback: String, k1: String) exten
   val InputParser.nodeLink(nodeKey, hostAddress, portNumber) = uri
   val pubKey: PublicKey = PublicKey.fromBin(ByteVector fromValidHex nodeKey)
   val address: NodeAddress = NodeAddress.fromParts(hostAddress, portNumber.toInt)
-  val ann: NodeAnnouncement = Tools.mkNodeAnnouncement(pubKey, address, alias = hostAddress)
+  val remoteInfo: RemoteNodeInfo = RemoteNodeInfo(pubKey, address, hostAddress)
   val callbackUri: Uri = LNUrl.checkHost(callback)
 }
 
@@ -92,7 +91,7 @@ case class HostedChannelRequest(uri: String, alias: Option[String], k1: String) 
   val InputParser.nodeLink(nodeKey, hostAddress, portNumber) = uri
   val pubKey: PublicKey = PublicKey(ByteVector fromValidHex nodeKey)
   val address: NodeAddress = NodeAddress.fromParts(hostAddress, portNumber.toInt)
-  val ann: NodeAnnouncement = Tools.mkNodeAnnouncement(pubKey, address, alias getOrElse hostAddress)
+  val remoteInfo: RemoteNodeInfo = RemoteNodeInfo(pubKey, address, hostAddress)
 }
 
 case class WithdrawRequest(callback: String, k1: String, maxWithdrawable: Long, defaultDescription: String, minWithdrawable: Option[Long] = None) extends LNUrlData { me =>

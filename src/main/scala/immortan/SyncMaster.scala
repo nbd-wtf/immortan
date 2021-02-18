@@ -85,10 +85,10 @@ case class SyncWorkerPHCData(phcMaster: PHCSyncMaster,
       expectedPositions.getOrElse(cu.shortChannelId, Set.empty).contains(cu.position) // Remote node must not send the same update twice
 }
 
-case class SyncWorker(master: CanBeRepliedTo, keyPair: KeyPair, ann: NodeAnnouncement, ourInit: Init) extends StateMachine[SyncWorkerData] { me =>
+case class SyncWorker(master: CanBeRepliedTo, keyPair: KeyPair, remoteInfo: RemoteNodeInfo, ourInit: Init) extends StateMachine[SyncWorkerData] { me =>
   implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
   def process(changeMessage: Any): Unit = scala.concurrent.Future(me doProcess changeMessage)
-  val pair: KeyPairAndPubKey = KeyPairAndPubKey(keyPair, ann.nodeId)
+  val pair: KeyPairAndPubKey = KeyPairAndPubKey(keyPair, remoteInfo.nodeId)
 
   val listener: ConnectionListener = new ConnectionListener {
     override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = me process worker
@@ -103,8 +103,8 @@ case class SyncWorker(master: CanBeRepliedTo, keyPair: KeyPair, ann: NodeAnnounc
   }
 
   become(null, WAITING)
-  // Connect and start listening immediately
-  CommsTower.listen(Set(listener), pair, ann, ourInit)
+  // Connect to remote peer and start listening immediately
+  CommsTower.listen(Set(listener), pair, remoteInfo, ourInit)
 
   def doProcess(change: Any): Unit = (change, data, state) match {
     case (data1: SyncWorkerPHCData, null, WAITING) => become(data1, PHC_SYNC)
@@ -171,8 +171,8 @@ trait SyncMasterData extends {
 }
 
 trait GetNewSyncMachine extends CanBeRepliedTo { me =>
-  def getNewSync(data1: SyncMasterData, allNodes: Set[NodeAnnouncement], ourInit: Init): SyncWorker = {
-    val goodAnnounces = data1.activeSyncs.foldLeft(allNodes) { case (nodes, activeSync) => nodes - activeSync.ann }
+  def getNewSync(data1: SyncMasterData, allNodes: Set[RemoteNodeInfo], ourInit: Init): SyncWorker = {
+    val goodAnnounces = data1.activeSyncs.foldLeft(allNodes) { case (nodes, sync) => nodes - sync.remoteInfo }
     SyncWorker(me, randomKeyPair, shuffle(goodAnnounces.toList).head, ourInit)
   }
 }
@@ -185,7 +185,7 @@ case class UpdateConifrmState(liteUpdOpt: Option[ChannelUpdate], confirmedBy: Co
   def add(cu: ChannelUpdate, from: PublicKey): UpdateConifrmState = copy(liteUpdOpt = Some(cu), confirmedBy = confirmedBy + from)
 }
 
-abstract class SyncMaster(extraNodes: Set[NodeAnnouncement], excluded: Set[Long], routerData: Data) extends StateMachine[SyncMasterData] with GetNewSyncMachine { me =>
+abstract class SyncMaster(extraNodes: Set[RemoteNodeInfo], excluded: Set[Long], routerData: Data) extends StateMachine[SyncMasterData] with GetNewSyncMachine { me =>
   val confirmedChanUpdates: mutable.Map[UpdateCore, UpdateConifrmState] = mutable.Map.empty withDefaultValue UpdateConifrmState(None, Set.empty)
   val confirmedChanAnnounces: mutable.Map[ChannelAnnouncement, ConfirmedBySet] = mutable.Map.empty withDefaultValue Set.empty
   var newExcludedChanUpdates: Set[UpdateCore] = Set.empty
@@ -329,7 +329,7 @@ abstract class SyncMaster(extraNodes: Set[NodeAnnouncement], excluded: Set[Long]
 
 case class CompleteHostedRoutingData(announces: Set[ChannelAnnouncement], updates: Set[ChannelUpdate] = Set.empty)
 case class SyncMasterPHCData(activeSyncs: Set[SyncWorker], attemptsLeft: Int) extends SyncMasterData { final val maxSyncs: Int = 1 }
-abstract class PHCSyncMaster(extraNodes: Set[NodeAnnouncement], routerData: Data) extends StateMachine[SyncMasterPHCData] with GetNewSyncMachine { me =>
+abstract class PHCSyncMaster(extraNodes: Set[RemoteNodeInfo], routerData: Data) extends StateMachine[SyncMasterPHCData] with GetNewSyncMachine { me =>
   implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
   def process(changeMessage: Any): Unit = scala.concurrent.Future(me doProcess changeMessage)
   become(SyncMasterPHCData(Set.empty, attemptsLeft = 12), PHC_SYNC)

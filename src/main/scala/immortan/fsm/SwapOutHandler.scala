@@ -10,8 +10,8 @@ import immortan.utils.Rx
 
 
 abstract class SwapOutHandler(cnc: ChanAndCommits, ourInit: Init, amount: Satoshi, btcAddress: String, blockTarget: Int, feerateKey: ByteVector32) { me =>
-  def finish: Unit = runAnd(shutdownTimer.unsubscribe)(CommsTower.listeners(cnc.commits.announce.nodeSpecificPair) -= swapOutListener)
-  CommsTower.listen(listeners1 = Set(swapOutListener), cnc.commits.announce.nodeSpecificPair, cnc.commits.announce.na, ourInit)
+  def finish: Unit = runAnd(shutdownTimer.unsubscribe)(CommsTower.listeners(cnc.commits.remoteInfo.nodeSpecificPair) -= swapOutListener)
+  CommsTower.listen(listeners1 = Set(swapOutListener), cnc.commits.remoteInfo.nodeSpecificPair, cnc.commits.remoteInfo, ourInit)
   val shutdownTimer: Subscription = Rx.ioQueue.delay(30.seconds).doOnCompleted(finish).subscribe(_ => onTimeout)
 
   lazy private val swapOutListener = new ConnectionListener {

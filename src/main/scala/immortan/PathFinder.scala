@@ -3,12 +3,12 @@ package immortan
 import immortan.PathFinder._
 import immortan.crypto.Tools._
 import immortan.crypto.{CanBeRepliedTo, StateMachine}
-import fr.acinq.eclair.wire.{ChannelUpdate, NodeAnnouncement}
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt, Router, Sync}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Router.{Data, PublicChannel, RouteRequest, RouterConf}
 import fr.acinq.eclair.router.RouteCalculation.handleRouteRequest
+import fr.acinq.eclair.wire.ChannelUpdate
 import java.util.concurrent.Executors
 import immortan.utils.Rx
 
@@ -39,7 +39,7 @@ abstract class PathFinder(normalStore: NetworkDataStore, hostedStore: NetworkDat
   def getLastNormalResyncStamp: Long
   def updateLastTotalResyncStamp(stamp: Long): Unit
   def updateLastNormalResyncStamp(stamp: Long): Unit
-  def getExtraNodes: Set[NodeAnnouncement]
+  def getExtraNodes: Set[RemoteNodeInfo]
 
   def doProcess(change: Any): Unit = (change, state) match {
     // This covers two cases: when graph is still not loaded at all and when we have a loaded empty graph (likey a first launch)

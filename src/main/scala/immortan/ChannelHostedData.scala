@@ -11,11 +11,11 @@ import scodec.bits.ByteVector
 import immortan.crypto.Tools
 
 
-case class WaitRemoteHostedReply(announce: NodeAnnouncementExt, refundScriptPubKey: ByteVector, secret: ByteVector) extends ChannelData
+case class WaitRemoteHostedReply(remoteInfo: RemoteNodeInfo, refundScriptPubKey: ByteVector, secret: ByteVector) extends ChannelData
 
-case class WaitRemoteHostedStateUpdate(announce: NodeAnnouncementExt, hc: HostedCommits) extends ChannelData
+case class WaitRemoteHostedStateUpdate(remoteInfo: RemoteNodeInfo, hc: HostedCommits) extends ChannelData
 
-case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: LastCrossSignedState, nextLocalUpdates: List[UpdateMessage], nextRemoteUpdates: List[UpdateMessage],
+case class HostedCommits(remoteInfo: RemoteNodeInfo, lastCrossSignedState: LastCrossSignedState, nextLocalUpdates: List[UpdateMessage], nextRemoteUpdates: List[UpdateMessage],
                          localSpec: CommitmentSpec, updateOpt: Option[ChannelUpdate], localError: Option[Error], remoteError: Option[Error], resizeProposal: Option[ResizeChannel] = None,
                          startedAt: Long = System.currentTimeMillis) extends PersistentChannelData with Commitments { me =>
 
@@ -27,12 +27,12 @@ case class HostedCommits(announce: NodeAnnouncementExt, lastCrossSignedState: La
 
   val unProcessedIncoming: Set[UpdateAddHtlcExt] = {
     val unprocessed = localSpec.incomingAdds intersect nextLocalSpec.incomingAdds
-    for (add <- unprocessed) yield UpdateAddHtlcExt(add, announce)
+    for (add <- unprocessed) yield UpdateAddHtlcExt(add, remoteInfo)
   }
 
   val allOutgoing: Set[UpdateAddHtlc] = localSpec.outgoingAdds ++ nextLocalSpec.outgoingAdds
 
-  val channelId: ByteVector32 = Tools.hostedChanId(announce.nodeSpecificPubKey.value, announce.na.nodeId.value)
+  val channelId: ByteVector32 = Tools.hostedChanId(remoteInfo.nodeSpecificPubKey.value, remoteInfo.nodeId.value)
 
   val remoteRejects: Seq[RemoteReject] = nextRemoteUpdates.collect {
     case fail: UpdateFailHtlc => RemoteUpdateFail(fail, localSpec.findOutgoingHtlcById(fail.id).get.add)

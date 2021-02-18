@@ -21,22 +21,17 @@ case class KeyPairAndPubKey(keyPair: KeyPair, them: PublicKey)
 
 object CommsTower {
   type Listeners = Set[ConnectionListener]
-
   val workers: mutable.Map[KeyPairAndPubKey, Worker] = new ConcurrentHashMap[KeyPairAndPubKey, Worker].asScala
-
   val listeners: mutable.Map[KeyPairAndPubKey, Listeners] = new ConcurrentHashMap[KeyPairAndPubKey, Listeners].asScala withDefaultValue Set.empty
 
-  def listen(listeners1: Set[ConnectionListener], pair: KeyPairAndPubKey, ann: NodeAnnouncement, ourInit: Init): Unit = synchronized {
+  def listen(listeners1: Set[ConnectionListener], pair: KeyPairAndPubKey, info: RemoteNodeInfo, ourInit: Init): Unit = synchronized {
     // Update and either insert a new worker or fire onOperational on new listeners iff worker currently exists and is online
     // First add listeners, then try to add worker because we may already have a connected worker, but no listeners
     listeners(pair) ++= listeners1
 
-    workers.get(pair) map { presentWorker =>
-      // A connected worker is already present, inform listener if it's established
-      presentWorker.theirInit.foreach(presentWorker handleTheirRemoteInitMessage listeners1)
-    } getOrElse {
-      // No worker is present, add a new one and try to connect right away
-      workers(pair) = new Worker(pair, ann, ourInit, new Bytes(1024), new Socket)
+    workers.get(pair) match {
+      case Some(worker) => worker.theirInit.foreach(worker handleTheirRemoteInitMessage listeners1)
+      case None => workers(pair) = new Worker(pair, info, ourInit, new Bytes(1024), new Socket)
     }
   }
 
@@ -51,7 +46,7 @@ object CommsTower {
   def sendMany(messages: Traversable[LightningMessage], pair: KeyPairAndPubKey): Unit =
     CommsTower.workers.get(pair).foreach(messages foreach _.handler.process)
 
-  class Worker(val pair: KeyPairAndPubKey, val ann: NodeAnnouncement, ourInit: Init, buffer: Bytes, sock: Socket) { me =>
+  class Worker(val pair: KeyPairAndPubKey, val info: RemoteNodeInfo, ourInit: Init, buffer: Bytes, sock: Socket) { me =>
     implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
 
     var lastMessage: Long = System.currentTimeMillis
@@ -74,7 +69,7 @@ object CommsTower {
     }
 
     val handler: TransportHandler =
-      new TransportHandler(pair.keyPair, ann.nodeId.value) {
+      new TransportHandler(pair.keyPair, info.nodeId.value) {
         def handleEncryptedOutgoingData(data: ByteVector): Unit =
           try sock.getOutputStream.write(data.toArray) catch {
             case _: Throwable => disconnect
@@ -115,8 +110,7 @@ object CommsTower {
       }
 
     private[this] val thread = Future {
-      // Always use the first address, it's safe to throw here
-      sock.connect(ann.addresses.head.socketAddress, 7500)
+      sock.connect(info.address.socketAddress, 7500)
       handler.init
 
       while (true) {

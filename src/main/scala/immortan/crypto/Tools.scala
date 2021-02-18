@@ -3,8 +3,7 @@ package immortan.crypto
 import fr.acinq.eclair._
 import fr.acinq.bitcoin._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.wire.{Color, NodeAddress, NodeAnnouncement}
-import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId}
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, ShortChannelId}
 import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Router.ChannelDesc
@@ -60,10 +59,6 @@ object Tools {
     val id = List.fill(8)(getChunk).foldLeft(Long.MaxValue)(_ % _)
     ShortChannelId(id)
   }
-
-  def mkNodeAnnouncement(id: PublicKey, na: NodeAddress, alias: String): NodeAnnouncement =
-    NodeAnnouncement(signature = ByteVector64.Zeroes, features = Features.empty, timestamp = 0L,
-      nodeId = id, rgbColor = Color(-128, -128, -128), alias, addresses = na :: Nil)
 
   def mkFakeLocalEdge(from: PublicKey, toPeer: PublicKey): GraphEdge = {
     // Augments a graph with local edge corresponding to our local channel
