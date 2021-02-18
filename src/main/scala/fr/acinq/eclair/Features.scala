@@ -183,12 +183,6 @@ object Features {
     val mandatory = 32774
   }
 
-  case object PeerBackups extends Feature {
-    override def isDesired: Boolean = true
-    val name = "Peer backups"
-    val mandatory = 32776
-  }
-
   val visibleFeatures: Set[Feature] = Set(
     ChannelRangeQueriesExtended,
     BasicMultiPartPayment,
@@ -198,7 +192,6 @@ object Features {
     PrivateRouting,
     HostedChannels,
     AnchorOutputs,
-    PeerBackups,
     ChainSwap,
     Wumbo
   )

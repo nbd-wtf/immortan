@@ -514,25 +514,9 @@ object PrivateRoutingCodecs {
   final val ROUTABLE_CHANNEL_TAG = 55009
 }
 
-object PeerBackupCodecs {
-  val peerBackupResponseCodec = ("data" | varsizebinarydata).as[PeerBackupResponse]
-
-  val peerBackupUploadCodec = ("data" | varsizebinarydata).as[PeerBackupUpload]
-
-  val peerBackupRejectedCodec = ("allowedInSec" | uint32).as[PeerBackupRejected]
-
-  final val PEER_BACKUP_REQUEST_TAG = 54999
-  final val PEER_BACKUP_NOT_FOUND_RESPONSE_TAG = 54997
-  final val PEER_BACKUP_RESPONSE_TAG = 54995
-  final val PEER_BACKUP_UPLOAD_TAG = 54993
-  final val PEER_BACKUP_ACCEPTED_TAG = 54991
-  final val PEER_BACKUP_REJECTED_TAG = 54989
-}
-
 object ExtMessageMapping {
   import PrivateRoutingCodecs._
   import HostedMessagesCodecs._
-  import PeerBackupCodecs._
   import SwapCodecs._
 
   def decode(msg: UnknownMessage): LightningMessage = msg.tag match {
@@ -569,15 +553,7 @@ object ExtMessageMapping {
     case SWAP_OUT_TRANSACTION_REQUEST_MESSAGE_TAG => swapOutTransactionRequestCodec.decode(msg.data).require.value
     case SWAP_OUT_TRANSACTION_RESPONSE_MESSAGE_TAG => swapOutTransactionResponseCodec.decode(msg.data).require.value
     case SWAP_OUT_TRANSACTION_DENIED_MESSAGE_TAG => swapOutTransactionDeniedCodec.decode(msg.data).require.value
-
     case ROUTABLE_CHANNEL_TAG => routableChannelCodec.decode(msg.data).require.value
-
-    case PEER_BACKUP_REQUEST_TAG => provide(PeerBackupRequest).decode(msg.data).require.value
-    case PEER_BACKUP_NOT_FOUND_RESPONSE_TAG => provide(PeerBackupNotFoundResponse).decode(msg.data).require.value
-    case PEER_BACKUP_RESPONSE_TAG => peerBackupResponseCodec.decode(msg.data).require.value
-    case PEER_BACKUP_UPLOAD_TAG => peerBackupUploadCodec.decode(msg.data).require.value
-    case PEER_BACKUP_ACCEPTED_TAG => provide(PeerBackupAccepted).decode(msg.data).require.value
-    case PEER_BACKUP_REJECTED_TAG => peerBackupRejectedCodec.decode(msg.data).require.value
     case _ => throw new RuntimeException
   }
 
@@ -606,15 +582,7 @@ object ExtMessageMapping {
     case msg: SwapOutTransactionRequest => UnknownMessage(SWAP_OUT_TRANSACTION_REQUEST_MESSAGE_TAG, swapOutTransactionRequestCodec.encode(msg).require)
     case msg: SwapOutTransactionResponse => UnknownMessage(SWAP_OUT_TRANSACTION_RESPONSE_MESSAGE_TAG, swapOutTransactionResponseCodec.encode(msg).require)
     case msg: SwapOutTransactionDenied => UnknownMessage(SWAP_OUT_TRANSACTION_DENIED_MESSAGE_TAG, swapOutTransactionDeniedCodec.encode(msg).require)
-
     case msg: RoutableChannel => UnknownMessage(ROUTABLE_CHANNEL_TAG, routableChannelCodec.encode(msg).require)
-
-    case PeerBackupRequest => UnknownMessage(PEER_BACKUP_REQUEST_TAG, provide(PeerBackupRequest).encode(PeerBackupRequest).require)
-    case PeerBackupNotFoundResponse => UnknownMessage(PEER_BACKUP_NOT_FOUND_RESPONSE_TAG, provide(PeerBackupNotFoundResponse).encode(PeerBackupNotFoundResponse).require)
-    case msg: PeerBackupResponse => UnknownMessage(PEER_BACKUP_RESPONSE_TAG, peerBackupResponseCodec.encode(msg).require)
-    case msg: PeerBackupUpload => UnknownMessage(PEER_BACKUP_UPLOAD_TAG, peerBackupUploadCodec.encode(msg).require)
-    case PeerBackupAccepted => UnknownMessage(PEER_BACKUP_ACCEPTED_TAG, provide(PeerBackupAccepted).encode(PeerBackupAccepted).require)
-    case msg: PeerBackupRejected => UnknownMessage(PEER_BACKUP_REJECTED_TAG, peerBackupRejectedCodec.encode(msg).require)
     case _ => msg
   }
 

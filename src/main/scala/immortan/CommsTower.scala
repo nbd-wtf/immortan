@@ -88,7 +88,6 @@ object CommsTower {
           lightningMessageCodecWithFallback.decode(data.bits).require.value match {
             case message: UnknownMessage => ExtMessageMapping.decode(message) match {
               case message: HostedChannelMessage => for (lst <- ourListeners) lst.onHostedMessage(me, message)
-              case message: PeerBackup => for (lst <- ourListeners) lst.onPeerBackupMessage(me, message)
               case message: SwapOut => for (lst <- ourListeners) lst.onSwapOutMessage(me, message)
               case message: SwapIn => for (lst <- ourListeners) lst.onSwapInMessage(me, message)
               case message => for (lst <- ourListeners) lst.onMessage(me, message)
@@ -140,7 +139,6 @@ class ConnectionListener {
   def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = none
   def onMessage(worker: CommsTower.Worker, msg: LightningMessage): Unit = none
   def onHostedMessage(worker: CommsTower.Worker, msg: HostedChannelMessage): Unit = none
-  def onPeerBackupMessage(worker: CommsTower.Worker, msg: PeerBackup): Unit = none
   def onSwapOutMessage(worker: CommsTower.Worker, msg: SwapOut): Unit = none
   def onSwapInMessage(worker: CommsTower.Worker, msg: SwapIn): Unit = none
   def onDisconnect(worker: CommsTower.Worker): Unit = none

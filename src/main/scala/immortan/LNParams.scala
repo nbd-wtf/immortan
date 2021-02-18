@@ -72,7 +72,6 @@ object LNParams {
       ActivatedFeature(PrivateRouting, FeatureSupport.Optional) +
       ActivatedFeature(AnchorOutputs, FeatureSupport.Optional) +
       ActivatedFeature(PaymentSecret, FeatureSupport.Optional) +
-      ActivatedFeature(PeerBackups, FeatureSupport.Optional) +
       ActivatedFeature(ChainSwap, FeatureSupport.Optional) +
       ActivatedFeature(Wumbo, FeatureSupport.Optional)
 

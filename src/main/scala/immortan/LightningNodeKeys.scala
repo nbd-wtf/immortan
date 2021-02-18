@@ -5,7 +5,6 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Protocol, Script}
 import fr.acinq.eclair.crypto.Mac32
 import java.io.ByteArrayInputStream
-
 import immortan.crypto.Tools.Bytes
 import scodec.bits.ByteVector
 import java.nio.ByteOrder

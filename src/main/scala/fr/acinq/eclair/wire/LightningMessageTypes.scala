@@ -385,19 +385,3 @@ object SwapOutTransactionDenied {
 }
 
 case class SwapOutTransactionDenied(btcAddress: String, reason: Long) extends SwapOut with ChainSwapMessage
-
-// Peer backup
-
-sealed trait PeerBackup extends LightningMessage
-
-case object PeerBackupRequest extends PeerBackup
-
-case object PeerBackupNotFoundResponse extends PeerBackup
-
-case class PeerBackupResponse(data: ByteVector) extends PeerBackup
-
-case class PeerBackupUpload(data: ByteVector) extends PeerBackup
-
-case object PeerBackupAccepted extends PeerBackup
-
-case class PeerBackupRejected(allowedInSec: Long) extends PeerBackup
