@@ -10,7 +10,7 @@ import com.softwaremill.quicklens._
 
 import scala.util.{Success, Try}
 import akka.actor.{ActorRef, Props}
-import fr.acinq.eclair.transactions.{Scripts, Transactions}
+import fr.acinq.eclair.transactions.{RemoteFulfill, Scripts, Transactions}
 import fr.acinq.bitcoin.{ByteVector32, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.transactions.Transactions.TxOwner
 import fr.acinq.eclair.router.Announcements
@@ -40,11 +40,12 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         val localFundingPubKey = init.remoteInfo.fundingPublicKey(init.localParams.fundingKeyPath).publicKey
         val emptyUpfrontShutdown: TlvStream[OpenChannelTlv] = TlvStream(ChannelTlv UpfrontShutdownScript ByteVector.empty)
 
+        val basePoint = init.localParams.walletStaticPaymentBasepoint.getOrElse(init.remoteInfo.paymentPoint(channelKeyPath).publicKey)
         val open = OpenChannel(LNParams.chainHash, init.temporaryChannelId, init.fundingAmount, init.pushAmount, init.localParams.dustLimit, init.localParams.maxHtlcValueInFlightMsat,
           init.localParams.channelReserve, init.localParams.htlcMinimum, init.initialFeeratePerKw, init.localParams.toSelfDelay, init.localParams.maxAcceptedHtlcs, localFundingPubKey,
-          init.remoteInfo.revocationPoint(channelKeyPath).publicKey, init.localParams.walletStaticPaymentBasepoint.getOrElse(init.remoteInfo.paymentPoint(channelKeyPath).publicKey),
-          init.remoteInfo.delayedPaymentPoint(channelKeyPath).publicKey, init.remoteInfo.htlcPoint(channelKeyPath).publicKey,
-          init.remoteInfo.commitmentPoint(channelKeyPath, index = 0L), init.channelFlags, emptyUpfrontShutdown)
+          init.remoteInfo.revocationPoint(channelKeyPath).publicKey, basePoint, init.remoteInfo.delayedPaymentPoint(channelKeyPath).publicKey,
+          init.remoteInfo.htlcPoint(channelKeyPath).publicKey, init.remoteInfo.commitmentPoint(channelKeyPath, index = 0L),
+          init.channelFlags, emptyUpfrontShutdown)
 
         val data1 = DATA_WAIT_FOR_ACCEPT_CHANNEL(init, open)
         BECOME(data1, WAIT_FOR_ACCEPT)
@@ -258,8 +259,9 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         events.addReceived(add)
 
 
-      case (norm: DATA_NORMAL, fulfill: UpdateFulfillHtlc, OPEN) =>
-        val (commits1, _) = NormalCommits.receiveFulfill(norm.commitments, fulfill)
+      case (norm: DATA_NORMAL, msg: UpdateFulfillHtlc, OPEN) =>
+        val (commits1, ourAdd) = NormalCommits.receiveFulfill(norm.commitments, msg)
+        val fulfill = RemoteFulfill(msg.paymentPreimage, ourAdd)
         BECOME(norm.copy(commitments = commits1), OPEN)
         events.fulfillReceived(fulfill)
 

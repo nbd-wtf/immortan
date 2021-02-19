@@ -87,10 +87,11 @@ abstract class ChannelHosted extends Channel { me =>
         events.addReceived(add)
 
       // Relaxed constraints for receiveng preimages over HCs
-      case (hc: HostedCommits, fulfill: UpdateFulfillHtlc, OPEN | SUSPENDED) =>
-        val ourAddExists = hc.nextLocalSpec.findOutgoingHtlcById(fulfill.id).isDefined
-        if (ourAddExists) BECOME(hc.addRemoteProposal(fulfill), state)
-        events.fulfillReceived(fulfill)
+      case (hc: HostedCommits, msg: UpdateFulfillHtlc, OPEN | SUSPENDED) =>
+        val ourAdd = hc.nextLocalSpec.findOutgoingHtlcById(msg.id).get.add
+        val filfill = RemoteFulfill(msg.paymentPreimage, ourAdd)
+        BECOME(hc.addRemoteProposal(msg), state)
+        events.fulfillReceived(filfill)
 
 
       case (hc: HostedCommits, fail: UpdateFailHtlc, OPEN) =>

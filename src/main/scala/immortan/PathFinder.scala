@@ -6,7 +6,7 @@ import immortan.crypto.{CanBeRepliedTo, StateMachine}
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt, Router, Sync}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Router.{Data, PublicChannel, RouteRequest, RouterConf}
+import fr.acinq.eclair.router.Router.{Data, PublicChannel, RouteRequest}
 import fr.acinq.eclair.router.RouteCalculation.handleRouteRequest
 import fr.acinq.eclair.wire.ChannelUpdate
 import java.util.concurrent.Executors
@@ -25,7 +25,7 @@ object PathFinder {
   val RESYNC_PERIOD: Long = 1000L * 3600 * 24 * 3 // 3 days in msecs
 }
 
-abstract class PathFinder(normalStore: NetworkDataStore, hostedStore: NetworkDataStore, val routerConf: RouterConf) extends StateMachine[Data] { me =>
+abstract class PathFinder(normalStore: NetworkDataStore, hostedStore: NetworkDataStore) extends StateMachine[Data] { me =>
   implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
   def process(changeMessage: Any): Unit = scala.concurrent.Future(me doProcess changeMessage)
   var listeners: Set[CanBeRepliedTo] = Set.empty
@@ -50,7 +50,7 @@ abstract class PathFinder(normalStore: NetworkDataStore, hostedStore: NetworkDat
       // In OPERATIONAL state we instruct graph to search through the single pre-selected local channel
       // it is safe to not check for existance becase base graph never has our private outgoing edges
       val graph1 = data.graph.addEdge(edge = request.localEdge, checkIfContains = false)
-      sender process handleRouteRequest(graph1, routerConf, request)
+      sender process handleRouteRequest(graph1, request)
 
     case (CMDResync, WAITING) =>
       // We need a loaded routing data to sync properly

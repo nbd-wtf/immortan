@@ -3,13 +3,16 @@ package immortan
 import immortan.crypto.Tools._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire.{LightningMessage, UpdateAddHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.transactions.RemoteReject
+import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteReject}
+
 import scala.concurrent.ExecutionContextExecutor
 import immortan.Channel.channelContext
 import java.util.concurrent.Executors
+
 import immortan.crypto.StateMachine
 import fr.acinq.eclair.MilliSatoshi
 import immortan.crypto.Tools.none
+
 import scala.concurrent.Future
 import scala.util.Failure
 import akka.actor.Actor
@@ -77,12 +80,11 @@ trait Channel extends StateMachine[ChannelData] { me =>
   var listeners = Set.empty[ChannelListener]
 
   val events: ChannelListener = new ChannelListener {
-    override def fulfillReceived(fulfill: UpdateFulfillHtlc): Unit = for (lst <- listeners) lst.fulfillReceived(fulfill)
-    override def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = for (lst <- listeners) lst.stateUpdated(rejects)
-    override def addReceived(remoteAdd: UpdateAddHtlc): Unit = for (lst <- listeners) lst.addReceived(remoteAdd)
-
     override def onException: PartialFunction[ChannelListener.Malfunction, Unit] = { case failure => for (lst <- listeners if lst.onException isDefinedAt failure) lst onException failure }
     override def onBecome: PartialFunction[ChannelListener.Transition, Unit] = { case transition => for (lst <- listeners if lst.onBecome isDefinedAt transition) lst onBecome transition }
+    override def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = for (lst <- listeners) lst.stateUpdated(rejects)
+    override def fulfillReceived(fulfill: RemoteFulfill): Unit = for (lst <- listeners) lst.fulfillReceived(fulfill)
+    override def addReceived(remoteAdd: UpdateAddHtlc): Unit = for (lst <- listeners) lst.addReceived(remoteAdd)
   }
 
   class Receiver extends Actor {
@@ -98,12 +100,11 @@ object ChannelListener {
 }
 
 trait ChannelListener {
-  def fulfillReceived(fulfill: UpdateFulfillHtlc): Unit = none
-  def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = none
-  def addReceived(remoteAdd: UpdateAddHtlc): Unit = none
-
   def onException: PartialFunction[ChannelListener.Malfunction, Unit] = none
   def onBecome: PartialFunction[ChannelListener.Transition, Unit] = none
+  def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = none
+  def fulfillReceived(fulfill: RemoteFulfill): Unit = none
+  def addReceived(remoteAdd: UpdateAddHtlc): Unit = none
 }
 
 case class ChanAndCommits(chan: Channel, commits: Commitments)

@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.transactions
 
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -47,6 +48,7 @@ case class OutgoingHtlc(add: UpdateAddHtlc) extends DirectedHtlc
 trait RemoteReject { val ourAdd: UpdateAddHtlc }
 case class RemoteUpdateFail(fail: UpdateFailHtlc, ourAdd: UpdateAddHtlc) extends RemoteReject
 case class RemoteUpdateMalform(malform: UpdateFailMalformedHtlc, ourAdd: UpdateAddHtlc) extends RemoteReject
+case class RemoteFulfill(preimage: ByteVector32, ourAdd: UpdateAddHtlc)
 
 final case class CommitmentSpec(feeratePerKw: FeeratePerKw, toLocal: MilliSatoshi, toRemote: MilliSatoshi, htlcs: Set[DirectedHtlc] = Set.empty) {
   def findIncomingHtlcById(id: Long): Option[IncomingHtlc] = htlcs.collectFirst { case htlc: IncomingHtlc if htlc.add.id == id => htlc }
@@ -56,11 +58,6 @@ final case class CommitmentSpec(feeratePerKw: FeeratePerKw, toLocal: MilliSatosh
 }
 
 object CommitmentSpec {
-  def removeHtlc(changes: List[UpdateMessage], id: Long): List[UpdateMessage] = changes.filterNot {
-    case u: UpdateAddHtlc => u.id == id
-    case _ => false
-  }
-
   def addHtlc(spec: CommitmentSpec, directedHtlc: DirectedHtlc): CommitmentSpec = directedHtlc match {
     case OutgoingHtlc(add) => spec.copy(toLocal = spec.toLocal - add.amountMsat, htlcs = spec.htlcs + directedHtlc)
     case IncomingHtlc(add) => spec.copy(toRemote = spec.toRemote - add.amountMsat, htlcs = spec.htlcs + directedHtlc)

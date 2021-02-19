@@ -279,7 +279,8 @@ object Graph {
           removeEdge(edge.desc).addEdge(edge) // the recursive call will have the original params
         } else {
           val withVertices = addVertex(vertexIn).addVertex(vertexOut)
-          DirectedGraph(withVertices.vertices.updated(vertexOut, edge +: withVertices.vertices(vertexOut)))
+          val vertices1 = edge +: withVertices.vertices(vertexOut)
+          DirectedGraph(withVertices.vertices.updated(vertexOut, vertices1))
         }
       }
 
@@ -312,7 +313,7 @@ object Graph {
        * Adds a new vertex to the graph, starting with no edges
        */
       def addVertex(key: PublicKey): DirectedGraph = vertices.get(key) match {
-        case None => DirectedGraph(vertices + (key -> List.empty))
+        case None => DirectedGraph(vertices.updated(key, List.empty))
         case _ => this
       }
 

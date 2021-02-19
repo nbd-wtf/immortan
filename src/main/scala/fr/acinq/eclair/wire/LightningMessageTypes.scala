@@ -97,7 +97,7 @@ case class UpdateAddHtlc(channelId: ByteVector32,
   lazy val encryptedTypeOpt: Option[PaymentTypeTlv.EncryptedType] = tlvStream.get[PaymentTypeTlv.EncryptedType]
 
   // Important: LNParams.format must be defined
-  lazy val paymentTypeOpt: PaymentType = encryptedTypeOpt.map { case PaymentTypeTlv.EncryptedType(cipherData) =>
+  lazy val paymentType: PaymentType = encryptedTypeOpt.map { case PaymentTypeTlv.EncryptedType(cipherData) =>
     val plainDataTry = Tools.chaChaDecrypt(LNParams.format.keys.paymentTypeEncryptionKey(paymentHash), cipherData)
     val plainTypeTry = plainDataTry.map(plainData => uint32.decode(plainData.toBitVector).require.value)
     PaymentType(paymentHash, plainTypeTry getOrElse PaymentTypeTlv.UNDEFINED)

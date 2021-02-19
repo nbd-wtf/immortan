@@ -309,10 +309,7 @@ abstract class SyncMaster(extraNodes: Set[RemoteNodeInfo], excluded: Set[Long], 
     } yield QueryShortChannelIds(LNParams.chainHash, shortChannelIds, TlvStream apply tlv)
   }
 
-  private def computeFlag(shortlId: ShortChannelId,
-                          theirTimestamps: ReplyChannelRangeTlv.Timestamps,
-                          theirChecksums: ReplyChannelRangeTlv.Checksums) = {
-
+  private def computeFlag(shortlId: ShortChannelId, theirTimestamps: ReplyChannelRangeTlv.Timestamps, theirChecksums: ReplyChannelRangeTlv.Checksums) =
     if (routerData.channels contains shortlId) {
       val (stamps: ReplyChannelRangeTlv.Timestamps, checksums: ReplyChannelRangeTlv.Checksums) = Sync.getChannelDigestInfo(routerData.channels)(shortlId)
       val shouldRequestUpdate1 = Sync.shouldRequestUpdate(stamps.timestamp1, checksums.checksum1, theirTimestamps.timestamp1, theirChecksums.checksum1)
@@ -324,11 +321,11 @@ abstract class SyncMaster(extraNodes: Set[RemoteNodeInfo], excluded: Set[Long], 
     } else {
       INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2
     }
-  }
 }
 
 case class CompleteHostedRoutingData(announces: Set[ChannelAnnouncement], updates: Set[ChannelUpdate] = Set.empty)
 case class SyncMasterPHCData(activeSyncs: Set[SyncWorker], attemptsLeft: Int) extends SyncMasterData { final val maxSyncs: Int = 1 }
+
 abstract class PHCSyncMaster(extraNodes: Set[RemoteNodeInfo], routerData: Data) extends StateMachine[SyncMasterPHCData] with GetNewSyncMachine { me =>
   implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
   def process(changeMessage: Any): Unit = scala.concurrent.Future(me doProcess changeMessage)

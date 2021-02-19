@@ -16,61 +16,51 @@
 
 package fr.acinq.eclair.router
 
+import fr.acinq.eclair._
+import scala.concurrent.duration._
+import fr.acinq.eclair.router.Router._
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
-import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, ExtraHops}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.RichWeight
-import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.ChannelUpdate
-import fr.acinq.eclair._
-
+import immortan.crypto.Tools.Any2Some
 import scala.annotation.tailrec
-import scala.concurrent.duration._
+import immortan.LNParams
+
 
 object RouteCalculation {
-  def handleRouteRequest(graph: DirectedGraph, routerConf: RouterConf, r: RouteRequest): RouteResponse =
+  def handleRouteRequest(graph: DirectedGraph, r: RouteRequest): RouteResponse =
     findRouteInternal(graph, r.source, r.target, r.amount, r.ignoreChannels, r.ignoreNodes, r.routeParams) match {
-      case Some(searchResult) => RouteFound(r.paymentHash, r.partId, Route(searchResult.weight, searchResult.path.map(ChannelHop)))
-      case _ => NoRouteAvailable(r.paymentHash, r.partId)
+      case Some(searchResult) => RouteFound(Route(searchResult.path.map(ChannelHop), searchResult.weight), r.paymentType, r.partId)
+      case _ => NoRouteAvailable(r.paymentType, r.partId)
     }
 
-  def makeExtraEdges(assistedRoutes: Seq[Seq[ExtraHop]], source: PublicKey, target: PublicKey): Set[GraphEdge] = {
-    // we convert extra routing info provided in the payment request to fake channelUpdate, also we ignore routing hints for our own channels
-    val assistedChannels: Map[ShortChannelId, AssistedChannel] = assistedRoutes.flatMap(toAssistedChannels(_, target)).filterNot { case (_, ac) => ac.extraHop.nodeId == source }.toMap
-    assistedChannels.values.map(ac => GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop))).toSet
+  def makeExtraEdges(assistedRoutes: List[ExtraHops], target: PublicKey): Set[GraphEdge] = {
+    val converter = routeToEdges(_: ExtraHops, target)
+    assistedRoutes.flatMap(converter).toSet
   }
 
-  def toFakeUpdate(extraHop: ExtraHop): ChannelUpdateExt = {
-    ChannelUpdateExt(ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, System.currentTimeMillis.milliseconds.toSeconds,
-      messageFlags = 1, // the `direction` bit in flags will not be accurate but it doesn't matter because it is not used what matters is that the `disable` bit is 0 so that this update doesn't get filtered out
-      channelFlags = 0, extraHop.cltvExpiryDelta, htlcMinimumMsat = 0L.msat, extraHop.feeBase, extraHop.feeProportionalMillionths,
-      Some(MilliSatoshi(Long.MaxValue)) // Lets assume a capacity is infinite, will be corrected by failed-at-amount
-    ), crc32 = 0, score = 1L, useHeuristics = false)
-  }
-
-  private def toAssistedChannels(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey): Map[ShortChannelId, AssistedChannel] = {
+  def routeToEdges(extraHops: ExtraHops, targetNodeId: PublicKey): List[GraphEdge] = {
     // BOLT 11: "For each entry, the pubkey is the node ID of the start of the channel", and the last node is the destination
-    val nextNodeIds = extraRoute.map(_.nodeId).drop(1) :+ targetNodeId
-    extraRoute.zip(nextNodeIds).reverse.foldLeft(Map.empty[ShortChannelId, AssistedChannel]) {
-      case (acs, (extraHop: ExtraHop, nextNodeId)) =>
-        acs + (extraHop.shortChannelId -> AssistedChannel(extraHop, nextNodeId))
-    }
+    val protoDescs = (extraHops.map(_.shortChannelId), extraHops.map(_.nodeId), extraHops.map(_.nodeId).drop(1) :+ targetNodeId)
+    (protoDescs.zipped.toList map ChannelDesc.tupled).zip(extraHops map toFakeUpdate).map(GraphEdge.tupled)
   }
 
-  /** https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#clarifications */
-  val ROUTE_MAX_LENGTH = 20
+  def toFakeUpdate(extraHop: ExtraHop): ChannelUpdateExt =
+    // Lets assume this fake channel's capacity is infinite, it will be corrected by failed-at-amount
+    ChannelUpdateExt(ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId,
+      System.currentTimeMillis.milliseconds.toSeconds, messageFlags = 1, channelFlags = 0, extraHop.cltvExpiryDelta, LNParams.minPayment,
+      extraHop.feeBase, extraHop.feeProportionalMillionths, Long.MaxValue.msat.toSome), crc32 = 0, score = 1L, useHeuristics = false)
 
-  /** Max allowed CLTV for a route (two weeks) */
+  val ROUTE_MAX_LENGTH: Int = 20
+
   val DEFAULT_ROUTE_MAX_CLTV: CltvExpiryDelta = CltvExpiryDelta(2016)
 
   @tailrec
-  private def findRouteInternal(g: DirectedGraph,
-                                localNodeId: PublicKey,
-                                targetNodeId: PublicKey,
-                                amount: MilliSatoshi,
-                                ignoredEdges: Set[ChannelDesc] = Set.empty,
-                                ignoredVertices: Set[PublicKey] = Set.empty,
+  private def findRouteInternal(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi,
+                                ignoredEdges: Set[ChannelDesc] = Set.empty, ignoredVertices: Set[PublicKey] = Set.empty,
                                 routeParams: RouteParams): Option[Graph.WeightedPath] = {
 
     val maxFee: MilliSatoshi = routeParams.getMaxFee(amount)
@@ -81,7 +71,7 @@ object RouteCalculation {
 
     def cltvOk(cltv: CltvExpiryDelta): Boolean = cltv <= routeParams.routeMaxCltv
 
-    val boundaries: RichWeight => Boolean = { weight => feeOk(weight.costs.head - amount) && lengthOk(weight.length) && cltvOk(weight.cltv) }
+    val boundaries: RichWeight => Boolean = weight => feeOk(weight.costs.head - amount) && lengthOk(weight.length) && cltvOk(weight.cltv)
 
     val res = Graph.bestPath(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, boundaries)
 

@@ -18,11 +18,9 @@ package fr.acinq.eclair.router
 
 import fr.acinq.eclair._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.router.Graph.GraphStructure._
 import fr.acinq.eclair.router.Graph.RichWeight
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.ByteVector32
 import immortan.utils.Denomination
 import scodec.bits.ByteVector
 
@@ -42,8 +40,6 @@ object Router {
   case class PublicChannel(update1Opt: Option[ChannelUpdateExt], update2Opt: Option[ChannelUpdateExt], ann: ChannelAnnouncement) {
     def getChannelUpdateSameSideAs(cu: ChannelUpdate): Option[ChannelUpdateExt] = if (cu.position == ChannelUpdate.POSITION1NODE) update1Opt else update2Opt
   }
-
-  case class AssistedChannel(extraHop: ExtraHop, nextNodeId: PublicKey)
 
   trait Hop {
     def nodeId: PublicKey
@@ -83,7 +79,7 @@ object Router {
     def getMaxFee(amount: MilliSatoshi): MilliSatoshi = maxFeeBase.max(amount * maxFeePct)
   }
 
-  case class RouteRequest(paymentHash: ByteVector32, partId: ByteVector, source: PublicKey,
+  case class RouteRequest(paymentType: PaymentType, partId: ByteVector, source: PublicKey,
                           target: PublicKey, amount: MilliSatoshi, localEdge: GraphEdge, routeParams: RouteParams,
                           ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[ChannelDesc] = Set.empty)
 
@@ -91,27 +87,25 @@ object Router {
 
   type RoutedPerChannelHop = (MilliSatoshi, ChannelHop)
 
-  case class Route(weight: RichWeight, hops: Seq[Hop] = Nil) {
+  case class Route(hops: Seq[Hop], weight: RichWeight) {
     lazy val fee: MilliSatoshi = weight.costs.head - weight.costs.last
 
-    lazy val routedPerHop: Seq[RoutedPerHop] = weight.costs.tail.zip(hops.tail) // We don't care about first hop and amount
+    lazy val routedPerHop: Seq[RoutedPerHop] = weight.costs.tail.zip(hops.tail)
 
-    lazy val routedPerChannelHop: Seq[RoutedPerChannelHop] = routedPerHop.collect { case (amount, chanHop: ChannelHop) => amount -> chanHop }
+    lazy val routedPerChannelHop: Seq[RoutedPerChannelHop] = routedPerHop.collect { case (amt, chanHop: ChannelHop) => amt -> chanHop }
 
-    def getEdgeForNode(nodeId: PublicKey): Option[GraphEdge] = routedPerChannelHop.collectFirst { case (_, chanHop) if nodeId == chanHop.nodeId => chanHop.edge }
+    def getEdgeForNode(nodeId: PublicKey): Option[GraphEdge] = routedPerChannelHop.collectFirst { case (_, chanHop: ChannelHop) if nodeId == chanHop.nodeId => chanHop.edge }
 
-    def asString(denom: Denomination): String = routedPerHop
-      .collect { case (amount, hop) => hop.asString(denom asString amount).trim }
-      .mkString("me -> peer ", " -> ", s" -> receiver, route fee: ${denom asString fee}")
+    def asString(denom: Denomination): String = routedPerHop.collect { case (amt, hop) => hop.asString(denom asString amt).trim }.mkString("me -> peer ", " -> ", s" -> receiver, route fee: ${denom asString fee}")
 
     require(hops.nonEmpty, "Route cannot be empty")
   }
 
-  sealed trait RouteResponse { def paymentHash: ByteVector32 }
+  sealed trait RouteResponse { def paymentType: PaymentType }
 
-  case class RouteFound(paymentHash: ByteVector32, partId: ByteVector, route: Route) extends RouteResponse
+  case class RouteFound(route: Route, paymentType: PaymentType, partId: ByteVector) extends RouteResponse
 
-  case class NoRouteAvailable(paymentHash: ByteVector32, partId: ByteVector) extends RouteResponse
+  case class NoRouteAvailable(paymentType: PaymentType, partId: ByteVector) extends RouteResponse
 
   case class Data(channels: Map[ShortChannelId, PublicChannel], hostedChannels: Map[ShortChannelId, PublicChannel], extraEdges: Map[ShortChannelId, GraphEdge], graph: DirectedGraph)
 

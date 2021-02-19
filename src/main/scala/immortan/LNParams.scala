@@ -154,8 +154,6 @@ object LNParams {
   }
 
   def currentBlockDay: Long = blockCount.get / blocksPerDay
-
-  def isBlockCountTrusted: Boolean = blockCount.get > 650000L
 }
 
 class SyncParams {
@@ -180,8 +178,6 @@ class SyncParams {
   val messagesToAsk = 1000 // Ask for this many messages from peer before they say this chunk is done
   val chunksToWait = 4 // Wait for at least this much chunk iterations from any peer before recording results
 }
-
-// Extension wrappers
 
 // Important: LNParams.format must be defined
 case class RemoteNodeInfo(nodeId: PublicKey, address: NodeAddress, alias: String) {

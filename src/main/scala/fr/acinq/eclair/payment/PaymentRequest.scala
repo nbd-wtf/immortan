@@ -74,7 +74,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     case f: PaymentRequest.FallbackAddress => PaymentRequest.FallbackAddress.toAddress(f, prefix)
   }
 
-  lazy val routingInfo: Seq[Seq[ExtraHop]] = tags.collect { case t: RoutingInfo => t.path }
+  lazy val routingInfo: List[ExtraHops] = tags.collect { case t: RoutingInfo => t.path }
 
   lazy val expiry: Option[Long] = tags.collectFirst {
     case expiry: PaymentRequest.Expiry => expiry.toLong
@@ -117,12 +117,11 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
 
 object PaymentRequest {
 
+  type ExtraHops = List[ExtraHop]
+
   val DEFAULT_EXPIRY_SECONDS = 3600
 
-  val prefixes = Map(
-    Block.RegtestGenesisBlock.hash -> "lnbcrt",
-    Block.TestnetGenesisBlock.hash -> "lntb",
-    Block.LivenetGenesisBlock.hash -> "lnbc")
+  val prefixes = Map(Block.RegtestGenesisBlock.hash -> "lnbcrt", Block.TestnetGenesisBlock.hash -> "lntb", Block.LivenetGenesisBlock.hash -> "lnbc")
 
   def apply(chainHash: ByteVector32,
             amount: Option[MilliSatoshi],
@@ -132,7 +131,7 @@ object PaymentRequest {
             minFinalCltvExpiryDelta: CltvExpiryDelta,
             fallbackAddress: Option[String] = None,
             expirySeconds: Option[Long] = None,
-            extraHops: List[List[ExtraHop]] = Nil,
+            extraHops: List[ExtraHops] = Nil,
             timestamp: Long = System.currentTimeMillis() / 1000L,
             features: Option[PaymentRequestFeatures] = Some(PaymentRequestFeatures(Features.VariableLengthOnion.optional, Features.PaymentSecret.optional))): PaymentRequest = {
 
@@ -302,7 +301,7 @@ object PaymentRequest {
    *
    * @param path one or more entries containing extra routing information for a private route
    */
-  case class RoutingInfo(path: List[ExtraHop]) extends TaggedField
+  case class RoutingInfo(path: ExtraHops) extends TaggedField
 
   /**
    * Expiry Date
