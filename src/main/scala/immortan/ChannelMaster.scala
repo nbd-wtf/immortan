@@ -64,11 +64,13 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
   // CHANNEL MANAGEMENT
 
-  def inChannelOutgoingHtlcs: List[UpdateAddHtlc] = all.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing)
+  def allInChanOutgoingHtlcs: Seq[UpdateAddHtlc] = all.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing)
 
-  def fromNode(nodeId: PublicKey): List[ChanAndCommits] = all.flatMap(Channel.chanAndCommitsOpt).filter(_.commits.remoteInfo.nodeId == nodeId)
+  def allUnProcessedIncomingHtlcs: Seq[UpdateAddHtlcExt] = all.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.unProcessedIncoming)
 
-  def initConnect: Unit = all.flatMap(Channel.chanAndCommitsOpt).map(_.commits).foreach {
+  def fromNode(nodeId: PublicKey): Seq[ChanAndCommits] = all.flatMap(Channel.chanAndCommitsOpt).filter(_.commits.remoteInfo.nodeId == nodeId)
+
+  def initConnect: Unit = all.filter(Channel.isOperationalOrWaiting).flatMap(Channel.chanAndCommitsOpt).map(_.commits).foreach {
     case cs: HostedCommits => CommsTower.listen(connectionListeners, cs.remoteInfo.nodeSpecificPair, cs.remoteInfo, LNParams.hcInit)
     case cs: NormalCommits => CommsTower.listen(connectionListeners, cs.remoteInfo.nodeSpecificPair, cs.remoteInfo, LNParams.normInit)
     case _ => throw new RuntimeException
@@ -77,8 +79,8 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
   // RECEIVE/SEND UTILITIES
 
   def maxReceivableInfo: Option[CommitsAndMax] = {
-    val canReceive = all.flatMap(Channel.chanAndCommitsOpt).filter(_.commits.updateOpt.isDefined).sortBy(_.commits.availableBalanceForReceive)
-    // Example: (5, 50, 60, 100) -> (50, 60, 100), receivable = 50*3 = 150 (the idea is for smallest remaining channel to be able to handle an evenly split amount)
+    val canReceive = all.filter(Channel.isOperational).flatMap(Channel.chanAndCommitsOpt).filter(_.commits.updateOpt.isDefined).sortBy(_.commits.availableBalanceForReceive)
+    // Example: (5, 50, 60, 100) -> (50, 60, 100), receivable = 50*3 = 150 (the idea is for smallest remaining operational channel to be able to handle an evenly split amount)
     val withoutSmall = canReceive.dropWhile(_.commits.availableBalanceForReceive * canReceive.size < canReceive.last.commits.availableBalanceForReceive).takeRight(4)
     val candidates = for (cs <- withoutSmall.indices map withoutSmall.drop) yield CommitsAndMax(cs, cs.head.commits.availableBalanceForReceive * cs.size)
     if (candidates.isEmpty) None else candidates.maxBy(_.maxReceivable).toSome
@@ -87,17 +89,16 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
   def checkIfSendable(paymentType: PaymentType, amount: MilliSatoshi): Int = {
     val inRelayDb = payBag.getRelayedPreimageInfo(paymentType.paymentHash)
     val inPaymentDb = payBag.getPaymentInfo(paymentType.paymentHash)
-    val presentInSenderFSM = opm.data.payments.get(paymentType)
 
-    (presentInSenderFSM, inPaymentDb) match {
-      case (_, pay) if pay.exists(_.isIncoming) => PaymentInfo.NOT_SENDABLE_INCOMING // We have an incoming payment with such payment hash
-      case (_, pay) if pay.exists(SUCCEEDED == _.status) => PaymentInfo.NOT_SENDABLE_SUCCESS // This payment has been fulfilled a long time ago
-      case (Some(senderFSM), _) if SUCCEEDED == senderFSM.state => PaymentInfo.NOT_SENDABLE_SUCCESS // This payment has just been fulfilled at runtime
-      case (Some(senderFSM), _) if PENDING == senderFSM.state || INIT == senderFSM.state => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is pending in FSM
-      case _ if inChannelOutgoingHtlcs.exists(_.paymentHash == paymentType.paymentHash) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is pending in channels
+    opm.data.payments.get(paymentType) match {
+      case Some(senderFSM) if SUCCEEDED == senderFSM.state => PaymentInfo.NOT_SENDABLE_SUCCESS // This payment has just been fulfilled at runtime
+      case Some(senderFSM) if PENDING == senderFSM.state || INIT == senderFSM.state => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is pending in FSM
+      case _ if allInChanOutgoingHtlcs.exists(_.paymentHash == paymentType.paymentHash) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is pending in channels
       case _ if opm.inPrincipleSendable(all, LNParams.routerConf) < amount => PaymentInfo.NOT_SENDABLE_LOW_BALANCE // Not enough money
+      case _ if inPaymentDb.exists(SUCCEEDED == _.status) => PaymentInfo.NOT_SENDABLE_SUCCESS // Successfully sent a long time ago
+      case _ if inPaymentDb.exists(_.isIncoming) => PaymentInfo.NOT_SENDABLE_INCOMING // Incoming payment with this hash exists
       case _ if inRelayDb.isDefined => PaymentInfo.NOT_SENDABLE_RELAYED // Related preimage has been relayed
-      case _ => PaymentInfo.SENDABLE
+      case _ => PaymentInfo.SENDABLE // Has never been sent or ABORTED by now
     }
   }
 }

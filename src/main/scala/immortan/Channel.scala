@@ -39,14 +39,15 @@ object Channel {
     case _ => false
   }
 
-  def isOpening(chan: Channel): Boolean = chan.data match {
+  def isWaiting(chan: Channel): Boolean = chan.data match {
     case _: DATA_WAIT_FOR_FUNDING_CONFIRMED => true
     case _: DATA_WAIT_FOR_FUNDING_LOCKED => true
     case _ => false
   }
 
-  def isOperationalAndOpen(chan: Channel): Boolean =
-    isOperational(chan) && OPEN == chan.state
+  def isOperationalOrWaiting(chan: Channel): Boolean = isOperational(chan) || isWaiting(chan)
+
+  def isOperationalAndOpen(chan: Channel): Boolean = isOperational(chan) && OPEN == chan.state
 }
 
 trait Channel extends StateMachine[ChannelData] { me =>

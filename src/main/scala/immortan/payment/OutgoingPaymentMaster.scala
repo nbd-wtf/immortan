@@ -79,8 +79,6 @@ object OutgoingPaymentMaster {
   type PartIdToAmount = Map[ByteVector, MilliSatoshi]
   val EXPECTING_PAYMENTS = "state-expecting-payments"
   val WAITING_FOR_ROUTE = "state-waiting-for-route"
-
-  val CMDClearFailHistory = "cmd-clear-fail-history"
   val CMDChanGotOnline = "cmd-chan-got-online"
   val CMDAskForRoute = "cmd-ask-for-route"
 }
@@ -91,11 +89,11 @@ class OutgoingPaymentMaster(cm: ChannelMaster) extends StateMachine[OutgoingPaym
   become(OutgoingPaymentMasterData(payments = Map.empty), EXPECTING_PAYMENTS)
 
   def doProcess(change: Any): Unit = (change, state) match {
-    case (CMDClearFailHistory, _) if data.payments.values.forall(fsm => SUCCEEDED == fsm.state || ABORTED == fsm.state) =>
-      // This should be sent BEFORE sending another payment IF there are no active payments currently
-      become(data.withFailuresReduced, state)
-
     case (cmd: SendMultiPart, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
+      // Before going further, maybe reduce previous failure times to give failing channels a chance
+      val noPendingPayments = data.payments.values.forall(fsm => SUCCEEDED == fsm.state || ABORTED == fsm.state)
+      if (noPendingPayments) become(data.withFailuresReduced, state)
+
       // They may provide a hint to our nodeSpecificPubKey, but it's harmless
       for (assistedEdge <- cmd.assistedEdges) cm.pf process assistedEdge
       relayOrCreateSender(cmd.paymentType, cmd)
@@ -176,10 +174,10 @@ class OutgoingPaymentMaster(cm: ChannelMaster) extends StateMachine[OutgoingPaym
   }
 
   def inPrincipleSendable(chans: Seq[Channel] = Nil, conf: RouterConf): MilliSatoshi =
-    getSendable(chans filter Channel.isOperational, conf).values.sum
+    getSendable(chans.filter(Channel.isOperational), conf).values.sum
 
   def rightNowSendable(chans: Seq[Channel] = Nil, conf: RouterConf): mutable.Map[ChanAndCommits, MilliSatoshi] =
-    getSendable(chans filter Channel.isOperationalAndOpen, conf)
+    getSendable(chans.filter(Channel.isOperationalAndOpen), conf)
 
   // What can be sent through given channels with waiting parts taken into account
   private def getSendable(chans: Seq[Channel] = Nil, routerConf: RouterConf): mutable.Map[ChanAndCommits, MilliSatoshi] = {
@@ -296,9 +294,9 @@ class OutgoingPaymentSender(val paymentType: PaymentType, cm: ChannelMaster) ext
 
     case (fail: NoRouteAvailable, PENDING) =>
       data.parts.values.collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isEmpty && wait.partId == fail.partId =>
-        val singleCapableCncOption = cm.opm.rightNowSendable(data.cmd.allowedChans diff wait.localFailedChans, data.cmd.routerConf)
+        val singleCapableCncCandidates = cm.opm.rightNowSendable(data.cmd.allowedChans diff wait.localFailedChans, data.cmd.routerConf)
 
-        singleCapableCncOption.collectFirst { case (cnc, chanSendable) if chanSendable >= wait.amount => cnc } match {
+        singleCapableCncCandidates.collectFirst { case (cnc, chanSendable) if chanSendable >= wait.amount => cnc } match {
           case Some(anotherCapableCnc) => become(data.copy(parts = data.parts + wait.oneMoreLocalAttempt(anotherCapableCnc).tuple), PENDING)
           case None if canBeSplit(wait.amount) => become(data.withoutPartId(wait.partId), PENDING) doProcess SplitIntoHalves(wait.amount)
           case None => self abortAndNotify data.withoutPartId(wait.partId).withLocalFailure(RUN_OUT_OF_RETRY_ATTEMPTS, wait.amount)
@@ -316,10 +314,10 @@ class OutgoingPaymentSender(val paymentType: PaymentType, cm: ChannelMaster) ext
 
     case (CMDException(reason, cmd: CMD_ADD_HTLC), PENDING) =>
       data.parts.values.collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isDefined && wait.partId == cmd.partId =>
-        val singleCapableCncOption = cm.opm.rightNowSendable(data.cmd.allowedChans diff wait.localFailedChans, data.cmd.routerConf)
+        val singleCapableCncCandidates = cm.opm.rightNowSendable(data.cmd.allowedChans diff wait.localFailedChans, data.cmd.routerConf)
         val otherCncsAvailableForSplitByNow = cm.opm.rightNowSendable(data.cmd.allowedChans, data.cmd.routerConf)
 
-        (singleCapableCncOption.collectFirst { case (cnc, chanSendable) if chanSendable >= wait.amount => cnc }, reason) match {
+        (singleCapableCncCandidates.collectFirst { case (cnc, chanSendable) if chanSendable >= wait.amount => cnc }, reason) match {
           case (Some(anotherCapableCnc), _) => become(data.copy(parts = data.parts + wait.oneMoreLocalAttempt(anotherCapableCnc).tuple), PENDING)
           case (None, _: ChannelUnavailable) => assignToChans(otherCncsAvailableForSplitByNow, data.withoutPartId(wait.partId), wait.amount)
           case (None, _) => self abortAndNotify data.withoutPartId(wait.partId).withLocalFailure(RUN_OUT_OF_RETRY_ATTEMPTS, wait.amount)
@@ -328,9 +326,9 @@ class OutgoingPaymentSender(val paymentType: PaymentType, cm: ChannelMaster) ext
 
     case (reject: RemoteUpdateMalform, PENDING) =>
       data.parts.values.collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isDefined && wait.partId == reject.ourAdd.partId =>
-        val singleCapableCncOption = cm.opm.rightNowSendable(data.cmd.allowedChans diff wait.localFailedChans, data.cmd.routerConf)
+        val singleCapableCncCandidates = cm.opm.rightNowSendable(data.cmd.allowedChans diff wait.localFailedChans, data.cmd.routerConf)
 
-        singleCapableCncOption.collectFirst { case (otherCnc, chanSendable) if chanSendable >= wait.amount => otherCnc } match {
+        singleCapableCncCandidates.collectFirst { case (otherCnc, chanSendable) if chanSendable >= wait.amount => otherCnc } match {
           case Some(anotherCapableCnc) => become(data.copy(parts = data.parts + wait.oneMoreLocalAttempt(anotherCapableCnc).tuple), PENDING)
           case None => self abortAndNotify data.withoutPartId(wait.partId).withLocalFailure(PEER_COULD_NOT_PARSE_ONION, wait.amount)
         }
@@ -474,7 +472,7 @@ class OutgoingPaymentSender(val paymentType: PaymentType, cm: ChannelMaster) ext
     }
 
   private def abortAndNotify(data1: OutgoingPaymentSenderData): Unit = {
-    val notInChannel = cm.inChannelOutgoingHtlcs.forall(_.paymentType != paymentType)
+    val notInChannel = cm.allInChanOutgoingHtlcs.forall(_.paymentType != paymentType)
     if (notInChannel && data1.inFlights.isEmpty) cm.events.outgoingFailed(data1)
     become(data1, ABORTED)
   }

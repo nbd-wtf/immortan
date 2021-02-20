@@ -190,14 +190,14 @@ case class RemoteNodeInfo(nodeId: PublicKey, address: NodeAddress, alias: String
 
   private def derivePrivKey(path: KeyPath) = derivePrivateKey(nodeSpecificExtendedKey, path)
 
-  private val channelPrivateKeys = memoize(derivePrivKey)
+  private val channelPrivateKeysMemo = memoize(derivePrivKey)
 
-  private val channelPublicKeys = memoize(channelPrivateKeys.get _ andThen publicKey)
+  private val channelPublicKeysMemo = memoize(channelPrivateKeysMemo.get _ andThen publicKey)
 
   private def internalKeyPath(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Seq[Long] = channelKeyPath.path :+ hardened(index)
 
   private def shaSeed(channelKeyPath: DeterministicWallet.KeyPath): ByteVector32 = {
-    val extendedKey = channelPrivateKeys getUnchecked internalKeyPath(channelKeyPath, 5L)
+    val extendedKey = channelPrivateKeysMemo getUnchecked internalKeyPath(channelKeyPath, 5L)
     Crypto.sha256(extendedKey.privateKey.value :+ 1.toByte)
   }
 
@@ -216,28 +216,28 @@ case class RemoteNodeInfo(nodeId: PublicKey, address: NodeAddress, alias: String
     DeterministicWallet.KeyPath(path)
   }
 
-  def fundingPublicKey(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = channelPublicKeys getUnchecked internalKeyPath(channelKeyPath, 0L)
+  def fundingPublicKey(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = channelPublicKeysMemo getUnchecked internalKeyPath(channelKeyPath, 0L)
 
-  def revocationPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = channelPublicKeys getUnchecked internalKeyPath(channelKeyPath, 1L)
+  def revocationPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = channelPublicKeysMemo getUnchecked internalKeyPath(channelKeyPath, 1L)
 
-  def paymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = channelPublicKeys getUnchecked internalKeyPath(channelKeyPath, 2L)
+  def paymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = channelPublicKeysMemo getUnchecked internalKeyPath(channelKeyPath, 2L)
 
-  def delayedPaymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = channelPublicKeys getUnchecked internalKeyPath(channelKeyPath, 3L)
+  def delayedPaymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = channelPublicKeysMemo getUnchecked internalKeyPath(channelKeyPath, 3L)
 
-  def htlcPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = channelPublicKeys getUnchecked internalKeyPath(channelKeyPath, 4L)
+  def htlcPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = channelPublicKeysMemo getUnchecked internalKeyPath(channelKeyPath, 4L)
 
   def commitmentSecret(channelKeyPath: DeterministicWallet.KeyPath, index: Long): PrivateKey = Generators.perCommitSecret(shaSeed(channelKeyPath), index)
 
   def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): PublicKey = Generators.perCommitPoint(shaSeed(channelKeyPath), index)
 
   def sign(tx: Transactions.TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: Transactions.TxOwner, commitmentFormat: Transactions.CommitmentFormat): ByteVector64 =
-    Transactions.sign(tx, channelPrivateKeys(publicKey.path).privateKey, txOwner, commitmentFormat)
+    Transactions.sign(tx, channelPrivateKeysMemo(publicKey.path).privateKey, txOwner, commitmentFormat)
 
   def sign(tx: Transactions.TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: Transactions.TxOwner, commitmentFormat: Transactions.CommitmentFormat): ByteVector64 =
-    Transactions.sign(tx, Generators.derivePrivKey(channelPrivateKeys(publicKey.path).privateKey, remotePoint), txOwner, commitmentFormat)
+    Transactions.sign(tx, Generators.derivePrivKey(channelPrivateKeysMemo(publicKey.path).privateKey, remotePoint), txOwner, commitmentFormat)
 
   def sign(tx: Transactions.TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey, txOwner: Transactions.TxOwner, commitmentFormat: Transactions.CommitmentFormat): ByteVector64 =
-    Transactions.sign(tx, Generators.revocationPrivKey(channelPrivateKeys(publicKey.path).privateKey, remoteSecret), txOwner, commitmentFormat)
+    Transactions.sign(tx, Generators.revocationPrivKey(channelPrivateKeysMemo(publicKey.path).privateKey, remoteSecret), txOwner, commitmentFormat)
 }
 
 case class WalletExt(wallet: ElectrumEclairWallet, eventsCatcher: ActorRef, clientPool: ActorRef, watcher: ActorRef)
