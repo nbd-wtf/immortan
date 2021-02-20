@@ -2,17 +2,14 @@ package immortan
 
 import immortan.crypto.Tools._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.wire.{LightningMessage, UpdateAddHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteReject}
-
+import fr.acinq.eclair.wire.{LightningMessage, UpdateAddHtlc}
 import scala.concurrent.ExecutionContextExecutor
 import immortan.Channel.channelContext
 import java.util.concurrent.Executors
-
 import immortan.crypto.StateMachine
 import fr.acinq.eclair.MilliSatoshi
 import immortan.crypto.Tools.none
-
 import scala.concurrent.Future
 import scala.util.Failure
 import akka.actor.Actor

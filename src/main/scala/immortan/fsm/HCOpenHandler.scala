@@ -32,7 +32,7 @@ abstract class HCOpenHandler(info: RemoteNodeInfo, ourInit: Init, format: Storag
     override def onBecome: PartialFunction[Transition, Unit] = {
       case (_, _, _: HostedCommits, WAIT_FOR_ACCEPT, OPEN | SUSPENDED) =>
         CommsTower.listeners(info.nodeSpecificPair) -= this // Stop sending messages from this connection listener
-        freshChannel.listeners = cm.channelListeners // Add standard channel listeners to new established channel
+        freshChannel.listeners = Set(cm) // Add standard channel listeners to new established channel
         cm.all :+= freshChannel // Put this channel to vector of established channels
         cm.initConnect // Add standard connection listeners for this peer
 
