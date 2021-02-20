@@ -115,10 +115,10 @@ class OutgoingPaymentMaster(cm: ChannelMaster) extends StateMachine[OutgoingPaym
       // IMPLICIT GUARD: ignore in other states, payment will be able to re-send later
       val currentUsedCapacities: mutable.Map[DescAndCapacity, MilliSatoshi] = usedCapacities
       val currentUsedDescs = mapKeys[DescAndCapacity, MilliSatoshi, ChannelDesc](currentUsedCapacities, _.desc, defVal = 0L.msat)
-      val ignoreChansFailedTimes = data.chanFailedTimes collect { case (desc, failTimes) if failTimes >= LNParams.routerConf.maxChannelFailures => desc }
-      val ignoreChansCanNotHandle = currentUsedCapacities collect { case (DescAndCapacity(desc, capacity), used) if used + req.amount >= capacity - req.amount / 32 => desc }
-      val ignoreChansFailedAtAmount = data.chanFailedAtAmount collect { case (desc, failedAt) if failedAt - currentUsedDescs(desc) - req.amount / 8 <= req.amount => desc }
-      val ignoreNodes = data.nodeFailedWithUnknownUpdateTimes collect { case (nodeId, failTimes) if failTimes >= LNParams.routerConf.maxStrangeNodeFailures => nodeId }
+      val ignoreChansFailedTimes = data.chanFailedTimes.collect { case (desc, failTimes) if failTimes >= LNParams.routerConf.maxChannelFailures => desc }
+      val ignoreChansCanNotHandle = currentUsedCapacities.collect { case (DescAndCapacity(desc, capacity), used) if used + req.amount >= capacity - req.amount / 32 => desc }
+      val ignoreChansFailedAtAmount = data.chanFailedAtAmount.collect { case (desc, failedAt) if failedAt - currentUsedDescs(desc) - req.amount / 8 <= req.amount => desc }
+      val ignoreNodes = data.nodeFailedWithUnknownUpdateTimes.collect { case (nodeId, failTimes) if failTimes >= LNParams.routerConf.maxStrangeNodeFailures => nodeId }
       val ignoreChans = ignoreChansFailedTimes.toSet ++ ignoreChansCanNotHandle ++ ignoreChansFailedAtAmount
       val request1 = req.copy(ignoreNodes = ignoreNodes.toSet, ignoreChannels = ignoreChans)
       cm.pf process Tuple2(self, request1)

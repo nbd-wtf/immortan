@@ -24,9 +24,7 @@ object PaymentTypeTlv {
 
   val codec: Codec[TlvStream.GenericTlvStream] = {
     val encryptedTypeCodec: Codec[EncryptedType] = Codec(varsizebinarydata withContext "data").as[EncryptedType]
-
     val discriminatorCodec: DiscriminatorCodec[Tlv, UInt64] = discriminated.by(varint).typecase(UInt64(TlvStream.paymentTypeTag), encryptedTypeCodec)
-
     val prefixedTlvCodec: Codec[TlvStream.GenericTlvStream] = variableSizeBytesLong(value = TlvCodecs.tlvStream(discriminatorCodec), size = varintoverflow)
 
     fallback(provide(TlvStream.empty[Tlv]), prefixedTlvCodec).narrow(f = {

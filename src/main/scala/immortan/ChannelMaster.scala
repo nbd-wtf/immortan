@@ -8,8 +8,8 @@ import fr.acinq.eclair.channel._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import immortan.payment.{OutgoingPaymentMaster, OutgoingPaymentSenderData}
 import fr.acinq.eclair.payment.IncomingPacket
+import com.google.common.cache.LoadingCache
 import fr.acinq.bitcoin.ByteVector32
-import scala.collection.mutable
 import scodec.bits.ByteVector
 
 
@@ -19,7 +19,7 @@ object ChannelMaster {
     Right(failure)
   }
 
-  val initResolveMemo: mutable.Map[UpdateAddHtlcExt, IncomingResolution] = memoize(initResolve)
+  val initResolveMemo: LoadingCache[UpdateAddHtlcExt, IncomingResolution] = memoize(initResolve)
 
   def initResolve(payment: UpdateAddHtlcExt): IncomingResolution =
     IncomingPacket.decrypt(payment.theirAdd, payment.remoteInfo.nodeSpecificPrivKey) match {

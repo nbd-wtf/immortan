@@ -29,7 +29,6 @@ import immortan.SyncMaster.ShortChanIdSet
 import fr.acinq.eclair.crypto.Generators
 import immortan.crypto.Noise.KeyPair
 import java.io.ByteArrayInputStream
-import scala.collection.mutable
 import java.nio.ByteOrder
 import akka.util.Timeout
 
@@ -191,14 +190,14 @@ case class RemoteNodeInfo(nodeId: PublicKey, address: NodeAddress, alias: String
 
   private def derivePrivKey(path: KeyPath) = derivePrivateKey(nodeSpecificExtendedKey, path)
 
-  private val channelPrivateKeys: mutable.Map[KeyPath, ExtendedPrivateKey] = memoize(derivePrivKey)
+  private val channelPrivateKeys = memoize(derivePrivKey)
 
-  private val channelPublicKeys: mutable.Map[KeyPath, ExtendedPublicKey] = memoize(channelPrivateKeys andThen publicKey)
+  private val channelPublicKeys = memoize(channelPrivateKeys.get _ andThen publicKey)
 
   private def internalKeyPath(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Seq[Long] = channelKeyPath.path :+ hardened(index)
 
   private def shaSeed(channelKeyPath: DeterministicWallet.KeyPath): ByteVector32 = {
-    val extendedKey = channelPrivateKeys apply internalKeyPath(channelKeyPath, 5L)
+    val extendedKey = channelPrivateKeys getUnchecked internalKeyPath(channelKeyPath, 5L)
     Crypto.sha256(extendedKey.privateKey.value :+ 1.toByte)
   }
 
@@ -217,15 +216,15 @@ case class RemoteNodeInfo(nodeId: PublicKey, address: NodeAddress, alias: String
     DeterministicWallet.KeyPath(path)
   }
 
-  def fundingPublicKey(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = channelPublicKeys apply internalKeyPath(channelKeyPath, 0L)
+  def fundingPublicKey(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = channelPublicKeys getUnchecked internalKeyPath(channelKeyPath, 0L)
 
-  def revocationPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = channelPublicKeys apply internalKeyPath(channelKeyPath, 1L)
+  def revocationPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = channelPublicKeys getUnchecked internalKeyPath(channelKeyPath, 1L)
 
-  def paymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = channelPublicKeys apply internalKeyPath(channelKeyPath, 2L)
+  def paymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = channelPublicKeys getUnchecked internalKeyPath(channelKeyPath, 2L)
 
-  def delayedPaymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = channelPublicKeys apply internalKeyPath(channelKeyPath, 3L)
+  def delayedPaymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = channelPublicKeys getUnchecked internalKeyPath(channelKeyPath, 3L)
 
-  def htlcPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = channelPublicKeys apply internalKeyPath(channelKeyPath, 4L)
+  def htlcPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = channelPublicKeys getUnchecked internalKeyPath(channelKeyPath, 4L)
 
   def commitmentSecret(channelKeyPath: DeterministicWallet.KeyPath, index: Long): PrivateKey = Generators.perCommitSecret(shaSeed(channelKeyPath), index)
 

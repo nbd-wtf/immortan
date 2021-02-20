@@ -4,12 +4,14 @@ import fr.acinq.eclair._
 import fr.acinq.bitcoin._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, ShortChannelId}
+import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Router.ChannelDesc
 import fr.acinq.eclair.router.RouteCalculation
 import fr.acinq.eclair.crypto.ChaCha20Poly1305
 import immortan.crypto.Noise.KeyPair
+import java.util.concurrent.TimeUnit
 import java.io.ByteArrayInputStream
 import language.implicitConversions
 import scala.collection.mutable
@@ -33,8 +35,9 @@ object Tools {
   def mapKeys[K, V, K1](items: mutable.Map[K, V], mapper: K => K1, defVal: V): mutable.Map[K1, V] =
     items map { case (key, value) => mapper(key) -> value } withDefaultValue defVal
 
-  def memoize[In, Out](fun: In => Out): collection.mutable.HashMap[In, Out] = new collection.mutable.HashMap[In, Out] {
-    override def apply(key: In): Out = getOrElseUpdate(key, fun apply key)
+  def memoize[In <: Object, Out <: Object](fun: In => Out): LoadingCache[In, Out] = {
+    val loader = new CacheLoader[In, Out] { override def load(key: In): Out = fun apply key }
+    CacheBuilder.newBuilder.expireAfterAccess(7, TimeUnit.DAYS).maximumSize(2000).build[In, Out](loader)
   }
 
   def randomBest[T, B](bestItem: T, mapper: T => B, items: Iterable[T] = Nil): T = {
