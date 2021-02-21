@@ -10,6 +10,7 @@ import immortan.payment.{OutgoingPaymentMaster, OutgoingPaymentSenderData}
 import fr.acinq.eclair.payment.IncomingPacket
 import com.google.common.cache.LoadingCache
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.transactions.RemoteFulfill
 import scodec.bits.ByteVector
 
 
@@ -42,9 +43,9 @@ object ChannelMaster {
 }
 
 abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val pf: PathFinder) extends ChannelListener { me =>
+  val opm: OutgoingPaymentMaster = new OutgoingPaymentMaster(me)
   val sockBrandingBridge: ConnectionListener
   val sockChannelBridge: ConnectionListener
-  val opm = new OutgoingPaymentMaster(me)
   pf.listeners += opm
 
   val connectionListeners: Set[ConnectionListener] = Set(sockBrandingBridge, sockChannelBridge)
@@ -59,7 +60,7 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
   val events: ChannelMasterListener = new ChannelMasterListener {
     override def outgoingFailed(data: OutgoingPaymentSenderData): Unit = for (lst <- listeners) lst.outgoingFailed(data)
-    override def outgoingSucceeded(data: OutgoingPaymentSenderData, preimage: ByteVector32): Unit = for (lst <- listeners) lst.outgoingSucceeded(data, preimage)
+    override def outgoingSucceeded(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill, first: Boolean, leftovers: Boolean): Unit = for (lst <- listeners) lst.outgoingSucceeded(data, fulfill, first, leftovers)
   }
 
   // CHANNEL MANAGEMENT
@@ -105,5 +106,5 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
 trait ChannelMasterListener {
   def outgoingFailed(data: OutgoingPaymentSenderData): Unit = none
-  def outgoingSucceeded(data: OutgoingPaymentSenderData, preimage: ByteVector32): Unit = none
+  def outgoingSucceeded(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill, isFirst: Boolean, leftoversPresent: Boolean): Unit = none
 }

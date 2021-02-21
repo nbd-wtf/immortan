@@ -33,7 +33,7 @@ object Tools {
   }
 
   def mapKeys[K, V, K1](items: mutable.Map[K, V], mapper: K => K1, defVal: V): mutable.Map[K1, V] =
-    items map { case (key, value) => mapper(key) -> value } withDefaultValue defVal
+    items.map { case (key, value) => mapper(key) -> value } withDefaultValue defVal
 
   def memoize[In <: Object, Out <: Object](fun: In => Out): LoadingCache[In, Out] = {
     val loader = new CacheLoader[In, Out] { override def load(key: In): Out = fun apply key }

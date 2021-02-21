@@ -240,30 +240,23 @@ case class OutgoingPaymentSenderData(cmd: SendMultiPart, parts: Map[ByteVector, 
   def closestCltvExpiry: InFlightInfo = inFlights.minBy(_.route.weight.cltv)
   def totalFee: MilliSatoshi = inFlights.map(_.route.fee).sum
 
-  def asString(denom: Denomination): String = {
+  def usedRoutesAsString(denom: Denomination): String =
+    inFlights.map(_.route asString denom).mkString("\n\n")
+
+  def failuresAsString(denom: Denomination): String = {
     val failByAmount: Map[String, Failures] = failures.groupBy {
       case fail: UnreadableRemoteFailure => denom.asString(fail.route.weight.costs.head)
       case fail: RemoteFailure => denom.asString(fail.route.weight.costs.head)
       case fail: LocalFailure => denom.asString(fail.amount)
     }
 
-    val usedRoutes = inFlights.map(_.route asString denom).mkString("\n\n")
-    def translateFailures(failureList: Failures): String = failureList.map(_ asString denom).mkString("\n\n")
-    val errors = failByAmount.mapValues(translateFailures).map { case (amount, fails) => s"» $amount:\n\n$fails" }.mkString("\n\n")
-    s"Routes:\n\n$usedRoutes\n\n\n\nErrors:\n\n$errors"
+    def translateFails(failureList: Failures): String = failureList.map(_ asString denom).mkString("\n\n")
+    failByAmount.mapValues(translateFails).map { case (amount, fails) => s"» $amount:\n\n$fails" }.mkString("\n\n")
   }
 }
 
 class OutgoingPaymentSender(val paymentType: PaymentType, cm: ChannelMaster) extends StateMachine[OutgoingPaymentSenderData] { self =>
   become(OutgoingPaymentSenderData(SendMultiPart(paymentType, LNParams.routerConf, invalidPubKey), Map.empty), INIT)
-
-  /**
-   * When in-flight outgoing HTLC gets trapped in a SUSPENDED channel: nothing happens (this is OK).
-   * Can trapped in-flight HTLC be removed from FSM and retried? No because `stateUpdated` can not be called in SUSPENDED channel (this is desired).
-   * Can FSM continue retrying other shards with a trapped shard present? Yes, because trapped one is not removed from FSM, its amount won't be re-sent again.
-   * Can a payment with a trapped shard be fulfilled with or without FSM present? Yes because host has to provide a preimage even in SUSPENDED state and has an incentive to do so.
-   * Can a payment with a trapped shard ever be failed? No, until SUSPENDED channel is overridden a shard will stay in it so payment will be either fulfilled or stay pending indefinitely.
-   */
 
   def doProcess(msg: Any): Unit = (msg, state) match {
     case (CMDException(_, cmd: CMD_ADD_HTLC), ABORTED) => self abortAndNotify data.withoutPartId(cmd.partId)
@@ -275,9 +268,13 @@ class OutgoingPaymentSender(val paymentType: PaymentType, cm: ChannelMaster) ext
       assignToChans(nowSendable, OutgoingPaymentSenderData(cmd, Map.empty), cmd.totalAmount)
 
     case (fulfill: RemoteFulfill, INIT | PENDING | ABORTED) =>
-      // A terminal idempotent transition, fires a success event
-      cm.events.outgoingSucceeded(data, fulfill.preimage)
+      // First idempotent successful event, fired once with get a first preimage
+      cm.events.outgoingSucceeded(data, fulfill, isFirst = true, noLeftoversInChans)
       become(data, SUCCEEDED)
+
+    case (fulfill: RemoteFulfill, SUCCEEDED) =>
+      // Subsequent series of events which fire as rest of parts gets fulfilled
+      cm.events.outgoingSucceeded(data, fulfill, isFirst = false, noLeftoversInChans)
 
     case (CMDChanGotOnline, PENDING) =>
       data.parts.values.collectFirst { case wait: WaitForBetterConditions =>
@@ -415,10 +412,11 @@ class OutgoingPaymentSender(val paymentType: PaymentType, cm: ChannelMaster) ext
     case _ =>
   }
 
-  def canBeSplit(totalAmount: MilliSatoshi): Boolean =
-    totalAmount / 2 > data.cmd.routerConf.mppMinPartAmount
+  def noLeftoversInChans: Boolean = cm.allInChanOutgoingHtlcs.forall(_.paymentType != paymentType)
 
-  private def assignToChans(sendable: mutable.Map[ChanAndCommits, MilliSatoshi], data1: OutgoingPaymentSenderData, amount: MilliSatoshi): Unit = {
+  def canBeSplit(totalAmount: MilliSatoshi): Boolean = totalAmount / 2 > data.cmd.routerConf.mppMinPartAmount
+
+  def assignToChans(sendable: mutable.Map[ChanAndCommits, MilliSatoshi], data1: OutgoingPaymentSenderData, amount: MilliSatoshi): Unit = {
     val directChansFirst = shuffle(sendable.toSeq) sortBy { case (cnc, _) => if (cnc.commits.remoteInfo.nodeId == data1.cmd.targetNodeId) 0 else 1 }
     // This is a terminal method in a sense that it either successfully assigns a given amount to channels or turns a payment into failed state
     // this method always sets a new partId to assigned parts so old payment statuses in data must be cleared before calling it
@@ -448,11 +446,11 @@ class OutgoingPaymentSender(val paymentType: PaymentType, cm: ChannelMaster) ext
         // leftover may be slightly negative due to min sendable corrections
         become(data1.copy(parts = data1.parts ++ parts), PENDING)
 
-      case (_, rest) =>
+      case (_, leftover) =>
         val inPrincipleSendable = cm.opm.inPrincipleSendable(data.cmd.allowedChans, data.cmd.routerConf)
         val rightNowSendable = cm.opm.rightNowSendable(data.cmd.allowedChans, data.cmd.routerConf).values.sum
 
-        if (inPrincipleSendable - rightNowSendable >= rest) {
+        if (inPrincipleSendable - rightNowSendable >= leftover) {
           // Amount has not been fully split, but it is still possible to split it once some channel becomes OPEN
           become(data1.copy(parts = data1.parts + WaitForBetterConditions(randomKey, amount).tuple), PENDING)
         } else {
@@ -464,16 +462,16 @@ class OutgoingPaymentSender(val paymentType: PaymentType, cm: ChannelMaster) ext
   }
 
   // Turn "in-flight" into "waiting for route" and expect for subsequent `CMDAskForRoute`
-  private def resolveRemoteFail(data1: OutgoingPaymentSenderData, wait: WaitForRouteOrInFlight): Unit =
+  def resolveRemoteFail(data1: OutgoingPaymentSenderData, wait: WaitForRouteOrInFlight): Unit =
     shuffle(cm.opm.rightNowSendable(data.cmd.allowedChans, data.cmd.routerConf).toSeq).collectFirst { case (otherCnc, chanSendable) if chanSendable >= wait.amount => otherCnc } match {
       case Some(anotherCnc) if wait.remoteAttempts < data.cmd.routerConf.maxRemoteAttempts => become(data1.copy(parts = data1.parts + wait.oneMoreRemoteAttempt(anotherCnc).tuple), PENDING)
       case _ if canBeSplit(wait.amount) => become(data1.withoutPartId(wait.partId), PENDING) doProcess SplitIntoHalves(wait.amount)
       case _ => self abortAndNotify data1.withoutPartId(wait.partId).withLocalFailure(RUN_OUT_OF_RETRY_ATTEMPTS, wait.amount)
     }
 
-  private def abortAndNotify(data1: OutgoingPaymentSenderData): Unit = {
-    val notInChannel = cm.allInChanOutgoingHtlcs.forall(_.paymentType != paymentType)
-    if (notInChannel && data1.inFlights.isEmpty) cm.events.outgoingFailed(data1)
+  def abortAndNotify(data1: OutgoingPaymentSenderData): Unit = {
+    // Outgoing payment is failed only when nothing is left in both channels and FSM
+    if (data1.inFlights.isEmpty && noLeftoversInChans) cm.events.outgoingFailed(data1)
     become(data1, ABORTED)
   }
 }
