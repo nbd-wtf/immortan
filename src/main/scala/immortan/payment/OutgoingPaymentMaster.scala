@@ -4,6 +4,7 @@ import fr.acinq.eclair._
 import immortan.crypto.Tools._
 import immortan.PaymentStatus._
 import scala.concurrent.duration._
+import fr.acinq.eclair.router.Router._
 import immortan.payment.PaymentFailure._
 import immortan.payment.OutgoingPaymentMaster._
 import immortan.PaymentStatus.{ABORTED, SUCCEEDED}
@@ -11,16 +12,13 @@ import immortan.crypto.{CanBeRepliedTo, StateMachine}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import immortan.utils.{Denomination, Rx, ThrottledWork}
 import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt}
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import immortan.{ChanAndCommits, Channel, ChannelMaster, LNParams, PathFinder}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DescAndCapacity, GraphEdge}
 import fr.acinq.eclair.channel.{CMDException, CMD_ADD_HTLC, ChannelUnavailable}
 import fr.acinq.eclair.wire.{GenericTlv, Node, Onion, OnionTlv, PaymentTimeout, PaymentType, Update}
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteReject, RemoteUpdateFail, RemoteUpdateMalform}
-import fr.acinq.eclair.router.Router.{ChannelDesc, NoRouteAvailable, Route, RouteFound, RouteParams, RouteRequest, RouteResponse, RouterConf}
 import fr.acinq.eclair.crypto.Sphinx.PacketAndSecrets
 import fr.acinq.eclair.payment.OutgoingPacket
-import java.util.concurrent.Executors
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.crypto.Sphinx
 import scala.util.Random.shuffle
@@ -87,8 +85,7 @@ object OutgoingPaymentMaster {
 }
 
 class OutgoingPaymentMaster(cm: ChannelMaster) extends StateMachine[OutgoingPaymentMasterData] with CanBeRepliedTo { self =>
-  implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
-  def process(changeMessage: Any): Unit = scala.concurrent.Future(self doProcess changeMessage)
+  def process(change: Any): Unit = scala.concurrent.Future(self doProcess change)(Channel.channelContext)
   become(OutgoingPaymentMasterData(payments = Map.empty), EXPECTING_PAYMENTS)
 
   def doProcess(change: Any): Unit = (change, state) match {

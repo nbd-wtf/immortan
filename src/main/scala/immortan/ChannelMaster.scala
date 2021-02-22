@@ -1,13 +1,15 @@
 package immortan
 
 import fr.acinq.eclair._
+import immortan.Channel._
 import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
 import immortan.PaymentStatus._
 import fr.acinq.eclair.channel._
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import immortan.payment.{OutgoingPaymentMaster, OutgoingPaymentSenderData}
-import fr.acinq.eclair.transactions.RemoteFulfill
+import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteReject}
+import immortan.ChannelListener.{Malfunction, Transition}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.payment.IncomingPacket
 import com.google.common.cache.LoadingCache
 import scodec.bits.ByteVector
@@ -102,6 +104,21 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
       case _ => PaymentInfo.SENDABLE // Has never been sent or ABORTED by now
     }
   }
+
+  // These are executed in Channel context
+
+  override def onBecome: PartialFunction[Transition, Unit] = {
+    case (_, _, _: Commitments, SLEEPING | SUSPENDED, OPEN) =>
+      opm process OutgoingPaymentMaster.CMDChanGotOnline
+  }
+
+  override def onException: PartialFunction[Malfunction, Unit] = { case (_, error: CMDException) => opm process error }
+
+  override def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = rejects.foreach(opm.process)
+
+  override def fulfillReceived(fulfill: RemoteFulfill): Unit = opm process fulfill
+
+  override def addReceived(remoteAdd: UpdateAddHtlc): Unit = none
 }
 
 trait ChannelMasterListener {
