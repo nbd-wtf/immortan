@@ -277,13 +277,13 @@ class OutgoingPaymentSender(val paymentType: PaymentType, cm: ChannelMaster) ext
     case (CMDAbort, INIT | PENDING) if data.waitOnlineParts.nonEmpty => self abortAndNotify data.copy(parts = data.parts -- data.waitOnlineParts.keySet)
 
     case (fulfill: RemoteFulfill, INIT | PENDING | ABORTED) =>
-      // First idempotent successful event, fired once with get a first preimage
-      cm.events.outgoingSucceeded(data, fulfill, isFirst = true, noLeftoversInChans)
+      // First idempotent successful event, fired once with get a first preimage, but not subsequent ones
+      for (lst <- cm.paymentListeners) lst.outgoingSucceeded(data, fulfill, isFirst = true, noLeftoversInChans)
       become(data, SUCCEEDED)
 
     case (fulfill: RemoteFulfill, SUCCEEDED) =>
-      // Subsequent series of events which fire as rest of parts gets fulfilled
-      cm.events.outgoingSucceeded(data, fulfill, isFirst = false, noLeftoversInChans)
+      // Subsequent series of events which fire as rest of parts get fulfilled, but not on first one
+      for (lst <- cm.paymentListeners) lst.outgoingSucceeded(data, fulfill, isFirst = false, noLeftoversInChans)
 
     case (CMDChanGotOnline, PENDING) =>
       data.parts.values.collectFirst { case wait: WaitForChanOnline =>
@@ -484,8 +484,8 @@ class OutgoingPaymentSender(val paymentType: PaymentType, cm: ChannelMaster) ext
     }
 
   def abortAndNotify(data1: OutgoingPaymentSenderData): Unit = {
-    // Outgoing payment is failed only when nothing is left in both channels and FSM
-    if (data1.inFlightParts.isEmpty && noLeftoversInChans) cm.events.outgoingFailed(data1)
+    val noLeftoversAnywhere = data1.inFlightParts.isEmpty && noLeftoversInChans
+    if (noLeftoversAnywhere) for (lst <- cm.paymentListeners) lst.outgoingFailed(data1)
     become(data1, ABORTED)
   }
 }

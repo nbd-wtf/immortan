@@ -44,12 +44,11 @@ object ChannelMaster {
 }
 
 abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val pf: PathFinder) extends ChannelListener { me =>
-  val opm: OutgoingPaymentMaster = new OutgoingPaymentMaster(me)
-  val sockBrandingBridge: ConnectionListener
-  val sockChannelBridge: ConnectionListener
+  val opm = new OutgoingPaymentMaster(me)
   pf.listeners += opm
 
-  val connectionListeners: Set[ConnectionListener] = Set(sockBrandingBridge, sockChannelBridge)
+  val sockBrandingBridge: ConnectionListener
+  val sockChannelBridge: ConnectionListener
 
   var all: List[Channel] = chanBag.all.map {
     case data: HasNormalCommitments => ChannelNormal.make(Set(me), data, LNParams.chainWallet, chanBag)
@@ -57,27 +56,23 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
     case _ => throw new RuntimeException
   }
 
-  var listeners: Set[ChannelMasterListener] = Set.empty
+  var paymentListeners: Set[ChannelMasterListener] = Set.empty
 
-  val events: ChannelMasterListener = new ChannelMasterListener {
-    override def outgoingFailed(data: OutgoingPaymentSenderData): Unit = for (lst <- listeners) lst.outgoingFailed(data)
-    override def outgoingSucceeded(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill, first: Boolean, noLeftovers: Boolean): Unit =
-      for (lst <- listeners) lst.outgoingSucceeded(data, fulfill, first, noLeftovers)
-  }
+  val connectionListeners: Set[ConnectionListener] = Set(sockBrandingBridge, sockChannelBridge)
 
   // CHANNEL MANAGEMENT
-
-  def allInChanOutgoingHtlcs: Seq[UpdateAddHtlc] = all.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing)
-
-  def allUnProcessedIncomingHtlcs: Seq[UpdateAddHtlcExt] = all.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.unProcessedIncoming)
-
-  def fromNode(nodeId: PublicKey): Seq[ChanAndCommits] = all.flatMap(Channel.chanAndCommitsOpt).filter(_.commits.remoteInfo.nodeId == nodeId)
 
   def initConnect: Unit = all.filter(Channel.isOperationalOrWaiting).flatMap(Channel.chanAndCommitsOpt).map(_.commits).foreach {
     case cs: HostedCommits => CommsTower.listen(connectionListeners, cs.remoteInfo.nodeSpecificPair, cs.remoteInfo, LNParams.hcInit)
     case cs: NormalCommits => CommsTower.listen(connectionListeners, cs.remoteInfo.nodeSpecificPair, cs.remoteInfo, LNParams.normInit)
     case _ => throw new RuntimeException
   }
+
+  def allInChanOutgoingHtlcs: Seq[UpdateAddHtlc] = all.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing)
+
+  def allUnProcessedIncomingHtlcs: Seq[UpdateAddHtlcExt] = all.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.unProcessedIncoming)
+
+  def fromNode(nodeId: PublicKey): Seq[ChanAndCommits] = all.flatMap(Channel.chanAndCommitsOpt).filter(_.commits.remoteInfo.nodeId == nodeId)
 
   // RECEIVE/SEND UTILITIES
 
