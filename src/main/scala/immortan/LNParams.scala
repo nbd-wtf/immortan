@@ -12,7 +12,7 @@ import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.bitcoin.DeterministicWallet._
 import scodec.bits.{ByteVector, HexStringSyntax}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import immortan.utils.{RatesInfo, WalletEventsCatcher}
+import immortan.utils.{FiatRatesInfo, WalletEventsCatcher}
 import scala.concurrent.{ExecutionContextExecutor, Future}
 import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
@@ -20,6 +20,7 @@ import fr.acinq.eclair.transactions.{DirectedHtlc, Transactions}
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import fr.acinq.eclair.channel.{LocalParams, NormalCommits, PersistentChannelData}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
+import immortan.LNParams.AdaptiveRelayFees.ChannelId2RoutingParams
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
 import fr.acinq.eclair.router.ChannelUpdateExt
@@ -29,6 +30,7 @@ import immortan.SyncMaster.ShortChanIdSet
 import fr.acinq.eclair.crypto.Generators
 import immortan.crypto.Noise.KeyPair
 import java.io.ByteArrayInputStream
+import rx.lang.scala.Observable
 import java.nio.ByteOrder
 import akka.util.Timeout
 
@@ -58,11 +60,13 @@ object LNParams {
   val chainHash: ByteVector32 = Block.LivenetGenesisBlock.hash
   val reserveToFundingRatio = 0.0025 // %
 
-  val (normInit, phcSyncInit, hcInit) = {
-    val networks: InitTlv = InitTlv.Networks(chainHash :: Nil)
-    val tlvStream: TlvStream[InitTlv] = TlvStream(networks)
+  // Init messages + features
 
-    val normFeatures: Set[ActivatedFeature] = Set.empty +
+  private[this] val networks: InitTlv = InitTlv.Networks(chainHash :: Nil)
+  private[this] val tlvStream: TlvStream[InitTlv] = TlvStream(networks)
+
+  val normInit: Init = {
+    val features = Set.empty +
       ActivatedFeature(ChannelRangeQueries, FeatureSupport.Optional) +
       ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Optional) +
       ActivatedFeature(OptionDataLossProtect, FeatureSupport.Optional) +
@@ -74,10 +78,20 @@ object LNParams {
       ActivatedFeature(ChainSwap, FeatureSupport.Optional) +
       ActivatedFeature(Wumbo, FeatureSupport.Optional)
 
-    val phcSyncFeatures: Set[ActivatedFeature] = Set.empty +
+    Init(Features(features), tlvStream)
+  }
+
+  val phcSyncInit: Init = {
+    val features = Set.empty +
+      ActivatedFeature(ChannelRangeQueries, FeatureSupport.Optional) +
+      ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Optional) +
       ActivatedFeature(HostedChannels, FeatureSupport.Optional)
 
-    val hcFeatures: Set[ActivatedFeature] = Set.empty +
+    Init(Features(features), tlvStream)
+  }
+
+  val hcInit: Init = {
+    val features = Set.empty +
       ActivatedFeature(ChannelRangeQueries, FeatureSupport.Optional) +
       ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Optional) +
       ActivatedFeature(BasicMultiPartPayment, FeatureSupport.Optional) +
@@ -87,11 +101,17 @@ object LNParams {
       ActivatedFeature(PaymentSecret, FeatureSupport.Optional) +
       ActivatedFeature(ChainSwap, FeatureSupport.Optional)
 
-    val norm = Init(Features(normFeatures), tlvStream)
-    val phcSync = Init(Features(phcSyncFeatures), tlvStream)
-    val hc = Init(Features(hcFeatures), tlvStream)
-    (norm, phcSync, hc)
+    Init(Features(features), tlvStream)
   }
+
+  // Variables to be assigned at runtime
+
+  var cm: ChannelMaster = _
+  var format: StorageFormat = _
+  var chainWallet: WalletExt = _
+  var syncParams: SyncParams = _
+  var fiatRatesInfo: FiatRatesInfo = _
+  var defRoutingParams: RoutingParams = _
 
   var routerConf: RouterConf =
     RouterConf(searchMaxFeeBase = MilliSatoshi(25000L),
@@ -99,11 +119,7 @@ object LNParams {
       firstPassMaxRouteLength = 6, mppMinPartAmount = MilliSatoshi(30000000L),
       maxRemoteAttempts = 12, maxChannelFailures = 12, maxStrangeNodeFailures = 12)
 
-  var format: StorageFormat = _
-  var chainWallet: WalletExt = _
-  var syncParams: SyncParams = _
-  var fiatRatesInfo: RatesInfo = _
-  var channelMaster: ChannelMaster = _
+  // Chain feerate utils
 
   val defaultFeerates: FeeratesPerKB =
     FeeratesPerKB(
@@ -142,6 +158,32 @@ object LNParams {
     new BitgoFeeProvider(chainHash, 15.seconds),
     new EarnDotComFeeProvider(15.seconds)
   )
+
+  object AdaptiveRelayFees {
+    type ChannelId2RoutingParams = Map[ByteVector32, RoutingParams]
+    var history: List[ChannelId2RoutingParams] = List(updatedFees)
+    var listeners: List[AdaptiveRelayFeesListener] = List.empty
+    Observable.interval(1.minute).foreach(_ => update)
+
+    def update: Unit = {
+      history = updatedFees :: history take 2
+      val List(latestFees, previousFees) = history
+      val changes = (latestFees.toSet diff previousFees.toSet).toMap
+      if (changes.nonEmpty) for (lst <- listeners) lst.onRoutingFeesUpdated(changes)
+    }
+
+    // Check if any history item contains acceptable fees to account for peer proposing a payment before getting our update
+    def isRelayFeeAcceptable(amountToForward: MilliSatoshi, proposedRelayFee: MilliSatoshi, channelId: ByteVector32): Boolean =
+      history.flatMap(_ get channelId).exists(_.currentRelayFee(amountToForward) <= proposedRelayFee)
+
+    def updatedFees: ChannelId2RoutingParams = cm.all.flatMap(Channel.chanAndCommitsOpt).map(_.commits).map { cs =>
+      val ppm = adjustedProportionalMillionths(defRoutingParams.feeProportionalMillionths, cs.availableBalanceForSend, cs.availableBalanceForReceive)
+      cs.channelId -> RoutingParams(defRoutingParams.cltvExpiryDelta, defRoutingParams.htlcMinimumMsat, defRoutingParams.feeBaseMsat, ppm.toLong)
+    }.toMap withDefaultValue defRoutingParams
+
+    def adjustedProportionalMillionths(base: Long, ourBalance: MilliSatoshi, theirBalance: MilliSatoshi): Double =
+      base / math.pow(ourBalance.truncateToSatoshi.toLong / theirBalance.truncateToSatoshi.toLong, 0.2)
+  }
 
   def createWallet(addresses: Set[ElectrumServerAddress], walletDb: WalletDb, seed: ByteVector): WalletExt = {
     val clientPool = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(blockCount, addresses)), "pool", SupervisorStrategy.Resume))
@@ -247,6 +289,16 @@ case class UpdateAddHtlcExt(theirAdd: UpdateAddHtlc, remoteInfo: RemoteNodeInfo)
 case class SwapInStateExt(state: SwapInState, nodeId: PublicKey)
 
 case class PaymentRequestExt(pr: PaymentRequest, raw: String)
+
+// Routing params and listener
+
+case class RoutingParams(cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long) {
+  def currentRelayFee(amountToForward: MilliSatoshi): MilliSatoshi = nodeFee(feeBaseMsat, feeProportionalMillionths, amountToForward)
+}
+
+class AdaptiveRelayFeesListener {
+  def onRoutingFeesUpdated(changes: ChannelId2RoutingParams): Unit = none
+}
 
 // Interfaces
 

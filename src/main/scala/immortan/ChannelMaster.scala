@@ -7,10 +7,9 @@ import immortan.PaymentStatus._
 import fr.acinq.eclair.channel._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import immortan.payment.{OutgoingPaymentMaster, OutgoingPaymentSenderData}
+import fr.acinq.eclair.transactions.RemoteFulfill
 import fr.acinq.eclair.payment.IncomingPacket
 import com.google.common.cache.LoadingCache
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.transactions.RemoteFulfill
 import scodec.bits.ByteVector
 
 
@@ -60,7 +59,8 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
   val events: ChannelMasterListener = new ChannelMasterListener {
     override def outgoingFailed(data: OutgoingPaymentSenderData): Unit = for (lst <- listeners) lst.outgoingFailed(data)
-    override def outgoingSucceeded(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill, first: Boolean, leftovers: Boolean): Unit = for (lst <- listeners) lst.outgoingSucceeded(data, fulfill, first, leftovers)
+    override def outgoingSucceeded(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill, first: Boolean, noLeftovers: Boolean): Unit =
+      for (lst <- listeners) lst.outgoingSucceeded(data, fulfill, first, noLeftovers)
   }
 
   // CHANNEL MANAGEMENT
@@ -107,5 +107,5 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 trait ChannelMasterListener {
   def outgoingFailed(data: OutgoingPaymentSenderData): Unit = none
   // Note that it is theoretically possible for first part to get fulfilled and the rest of the parts to get failed
-  def outgoingSucceeded(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill, isFirst: Boolean, leftoversPresent: Boolean): Unit = none
+  def outgoingSucceeded(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill, isFirst: Boolean, noLeftovers: Boolean): Unit = none
 }

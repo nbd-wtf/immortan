@@ -27,14 +27,14 @@ object FiatRates {
 
   var listeners: Set[FiatRatesListener] = Set.empty
   val subscription: Subscription = retryRepeatDelayedCall.subscribe(newRates => {
-    val newRatesInfo = RatesInfo(newRates, LNParams.fiatRatesInfo.rates, System.currentTimeMillis)
+    val newRatesInfo = FiatRatesInfo(newRates, LNParams.fiatRatesInfo.rates, System.currentTimeMillis)
     for (lst <- listeners) lst.onFiatRates(newRatesInfo)
     LNParams.fiatRatesInfo = newRatesInfo
   }, none)
 }
 
 trait FiatRatesListener {
-  def onFiatRates(rates: RatesInfo): Unit
+  def onFiatRates(rates: FiatRatesInfo): Unit
 }
 
 case class CoinGeckoItem(value: Double)
@@ -44,7 +44,7 @@ case class BitpayItem(code: String, rate: Double)
 case class Bitpay(data: FiatRates.BitpayItemList)
 case class CoinGecko(rates: FiatRates.CoinGeckoItemMap)
 
-case class RatesInfo(rates: Fiat2Btc, oldRates: Fiat2Btc, stamp: Long) {
+case class FiatRatesInfo(rates: Fiat2Btc, oldRates: Fiat2Btc, stamp: Long) {
   def pctChange(fresh: Double, old: Double): Double = (fresh - old) / old * 100
   def pctDifference(code: String): String = List(rates get code, oldRates get code) match {
     case Some(fresh) :: Some(old) :: Nil if fresh > old => s"<font color=#5B8F36>▲ ${Denomination.formatFiat format pctChange(fresh, old).abs}%</font>"
