@@ -19,7 +19,6 @@ package fr.acinq.eclair.wire
 import scodec.codecs._
 import fr.acinq.eclair._
 import scodec.bits.{BitVector, ByteVector}
-import immortan.{LNParams, RemoteNodeInfo}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering, Protocol, Satoshi}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
@@ -30,7 +29,7 @@ import fr.acinq.eclair.router.Announcements
 import com.google.common.base.Charsets
 import immortan.crypto.Tools
 import java.nio.ByteOrder
-
+import immortan.LNParams
 
 /**
  * Created by PM on 15/11/2016.
@@ -201,10 +200,7 @@ case class Domain(domain: String, port: Int) extends NodeAddress {
 
 case class NodeAnnouncement(signature: ByteVector64,
                             features: Features, timestamp: Long, nodeId: PublicKey, rgbColor: Color, alias: String, addresses: List[NodeAddress],
-                            unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp {
-
-  lazy val remoteNodeInfo: RemoteNodeInfo = RemoteNodeInfo(nodeId, addresses.head, alias)
-}
+                            unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp
 
 object ChannelUpdate {
   final val POSITION1NODE: java.lang.Integer = 1

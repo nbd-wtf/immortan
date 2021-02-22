@@ -3,11 +3,13 @@ package immortan.payment
 import fr.acinq.eclair._
 import immortan.crypto.Tools._
 import immortan.PaymentStatus._
+import scala.concurrent.duration._
 import immortan.payment.PaymentFailure._
 import immortan.payment.OutgoingPaymentMaster._
 import immortan.PaymentStatus.{ABORTED, SUCCEEDED}
 import immortan.crypto.{CanBeRepliedTo, StateMachine}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import immortan.utils.{Denomination, Rx, ThrottledWork}
 import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt}
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import immortan.{ChanAndCommits, Channel, ChannelMaster, LNParams, PathFinder}
@@ -21,9 +23,9 @@ import fr.acinq.eclair.payment.OutgoingPacket
 import java.util.concurrent.Executors
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.crypto.Sphinx
-import immortan.utils.Denomination
 import scala.util.Random.shuffle
 import scala.collection.mutable
+import rx.lang.scala.Observable
 import scodec.bits.ByteVector
 
 // Remote failures
@@ -81,6 +83,7 @@ object OutgoingPaymentMaster {
   val WAITING_FOR_ROUTE = "state-waiting-for-route"
   val CMDChanGotOnline = "cmd-chan-got-online"
   val CMDAskForRoute = "cmd-ask-for-route"
+  val CMDAbort = "cmd-abort"
 }
 
 class OutgoingPaymentMaster(cm: ChannelMaster) extends StateMachine[OutgoingPaymentMasterData] with CanBeRepliedTo { self =>
@@ -204,7 +207,7 @@ class OutgoingPaymentMaster(cm: ChannelMaster) extends StateMachine[OutgoingPaym
     // This gets supposedly used capacities of external channels in a routing graph
     // we need this to exclude channels which definitely can't route a given amount right now
     val accumulator = mutable.Map.empty[DescAndCapacity, MilliSatoshi] withDefaultValue 0L.msat
-    val descsAndCaps = data.payments.values.flatMap(_.data.inFlights).flatMap(_.route.routedPerChannelHop)
+    val descsAndCaps = data.payments.values.flatMap(_.data.inFlightParts).flatMap(_.route.routedPerChannelHop)
     descsAndCaps.foreach { case (amount, chanHop) => accumulator(chanHop.edge.toDescAndCapacity) += amount }
     accumulator
   }
@@ -220,7 +223,7 @@ sealed trait PartStatus { me =>
 
 case class InFlightInfo(cmd: CMD_ADD_HTLC, route: Route)
 
-case class WaitForBetterConditions(onionKey: PrivateKey, amount: MilliSatoshi) extends PartStatus
+case class WaitForChanOnline(onionKey: PrivateKey, amount: MilliSatoshi) extends PartStatus
 
 case class WaitForRouteOrInFlight(onionKey: PrivateKey, amount: MilliSatoshi, cnc: ChanAndCommits, flight: Option[InFlightInfo] = None, localFailed: List[Channel] = Nil, remoteAttempts: Int = 0) extends PartStatus {
   def oneMoreRemoteAttempt(cnc1: ChanAndCommits): WaitForRouteOrInFlight = copy(flight = None, remoteAttempts = remoteAttempts + 1, cnc = cnc1)
@@ -235,13 +238,14 @@ case class OutgoingPaymentSenderData(cmd: SendMultiPart, parts: Map[ByteVector, 
   def withLocalFailure(reason: String, amount: MilliSatoshi): OutgoingPaymentSenderData = copy(failures = LocalFailure(reason, amount) +: failures)
   def withoutPartId(partId: ByteVector): OutgoingPaymentSenderData = copy(parts = parts - partId)
 
-  def inFlights: Iterable[InFlightInfo] = parts.values flatMap { case wait: WaitForRouteOrInFlight => wait.flight case _ => None }
-  def successfulUpdates: Iterable[ChannelUpdateExt] = inFlights.flatMap(_.route.routedPerChannelHop).toMap.values.map(_.edge.updExt)
-  def closestCltvExpiry: InFlightInfo = inFlights.minBy(_.route.weight.cltv)
-  def totalFee: MilliSatoshi = inFlights.map(_.route.fee).sum
+  lazy val waitOnlineParts: Map[ByteVector, PartStatus] = parts.filter { case (_, _: WaitForChanOnline) => true case _ => false }
+  lazy val inFlightParts: Iterable[InFlightInfo] = parts.values.flatMap { case wait: WaitForRouteOrInFlight => wait.flight case _ => None }
+  lazy val successfulUpdates: Iterable[ChannelUpdateExt] = inFlightParts.flatMap(_.route.routedPerChannelHop).toMap.values.map(_.edge.updExt)
+  lazy val closestCltvExpiry: Option[CltvExpiryDelta] = inFlightParts.map(_.route.weight.cltv).toList.sorted.headOption
+  lazy val totalFee: MilliSatoshi = inFlightParts.map(_.route.fee).sum
 
   def usedRoutesAsString(denom: Denomination): String =
-    inFlights.map(_.route asString denom).mkString("\n\n")
+    inFlightParts.map(_.route asString denom).mkString("\n\n")
 
   def failuresAsString(denom: Denomination): String = {
     val failByAmount: Map[String, Failures] = failures.groupBy {
@@ -258,14 +262,22 @@ case class OutgoingPaymentSenderData(cmd: SendMultiPart, parts: Map[ByteVector, 
 class OutgoingPaymentSender(val paymentType: PaymentType, cm: ChannelMaster) extends StateMachine[OutgoingPaymentSenderData] { self =>
   become(OutgoingPaymentSenderData(SendMultiPart(paymentType, LNParams.routerConf, invalidPubKey), Map.empty), INIT)
 
+  val delayedCMDWorker: ThrottledWork[String, Any] = new ThrottledWork[String, Any] {
+    def work(cmd: String): Observable[Null] = Rx.ioQueue.delay(30.seconds)
+    def process(cmd: String, res: Any): Unit = self doProcess cmd
+    def error(canNotHappen: Throwable): Unit = none
+  }
+
   def doProcess(msg: Any): Unit = (msg, state) match {
     case (CMDException(_, cmd: CMD_ADD_HTLC), ABORTED) => self abortAndNotify data.withoutPartId(cmd.partId)
+
     case (remoteReject: RemoteReject, ABORTED) => self abortAndNotify data.withoutPartId(remoteReject.ourAdd.partId)
+
     case (remoteReject: RemoteReject, INIT) => self abortAndNotify data.withLocalFailure(NOT_RETRYING_NO_DETAILS, remoteReject.ourAdd.amountMsat)
 
-    case (cmd: SendMultiPart, INIT | ABORTED) =>
-      val nowSendable = cm.opm.rightNowSendable(cmd.allowedChans, cmd.routerConf)
-      assignToChans(nowSendable, OutgoingPaymentSenderData(cmd, Map.empty), cmd.totalAmount)
+    case (cmd: SendMultiPart, INIT | ABORTED) => assignToChans(cm.opm.rightNowSendable(cmd.allowedChans, cmd.routerConf), OutgoingPaymentSenderData(cmd, Map.empty), cmd.totalAmount)
+
+    case (CMDAbort, INIT | PENDING) if data.waitOnlineParts.nonEmpty => self abortAndNotify data.copy(parts = data.parts -- data.waitOnlineParts.keySet)
 
     case (fulfill: RemoteFulfill, INIT | PENDING | ABORTED) =>
       // First idempotent successful event, fired once with get a first preimage
@@ -277,7 +289,7 @@ class OutgoingPaymentSender(val paymentType: PaymentType, cm: ChannelMaster) ext
       cm.events.outgoingSucceeded(data, fulfill, isFirst = false, noLeftoversInChans)
 
     case (CMDChanGotOnline, PENDING) =>
-      data.parts.values.collectFirst { case wait: WaitForBetterConditions =>
+      data.parts.values.collectFirst { case wait: WaitForChanOnline =>
         val nowSendable = cm.opm.rightNowSendable(data.cmd.allowedChans, data.cmd.routerConf)
         assignToChans(nowSendable, data.withoutPartId(wait.partId), wait.amount)
       }
@@ -451,14 +463,19 @@ class OutgoingPaymentSender(val paymentType: PaymentType, cm: ChannelMaster) ext
         val rightNowSendable = cm.opm.rightNowSendable(data.cmd.allowedChans, data.cmd.routerConf).values.sum
 
         if (inPrincipleSendable - rightNowSendable >= leftover) {
-          // Amount has not been fully split, but it is still possible to split it once some channel becomes OPEN
-          become(data1.copy(parts = data1.parts + WaitForBetterConditions(randomKey, amount).tuple), PENDING)
+          // Amount has not been fully split, but it is possible to split it once some chan becomes OPEN
+          become(data1.copy(parts = data1.parts + WaitForChanOnline(randomKey, amount).tuple), PENDING)
         } else {
           // A positive leftover is present with no more channels left
           // partId should already have been removed from data at this point
           self abortAndNotify data1.withLocalFailure(NOT_ENOUGH_CAPACITY, amount)
         }
     }
+
+    // It may happen that some chans are to stay offline indefinitely, related parts will then await indefinitely
+    // set a timer to abort a payment in case if we still have awaiting parts after some reasonable amount of time
+    // note that timer gets reset each time this method gets called
+    delayedCMDWorker.replaceWork(CMDAbort)
   }
 
   // Turn "in-flight" into "waiting for route" and expect for subsequent `CMDAskForRoute`
@@ -471,7 +488,7 @@ class OutgoingPaymentSender(val paymentType: PaymentType, cm: ChannelMaster) ext
 
   def abortAndNotify(data1: OutgoingPaymentSenderData): Unit = {
     // Outgoing payment is failed only when nothing is left in both channels and FSM
-    if (data1.inFlights.isEmpty && noLeftoversInChans) cm.events.outgoingFailed(data1)
+    if (data1.inFlightParts.isEmpty && noLeftoversInChans) cm.events.outgoingFailed(data1)
     become(data1, ABORTED)
   }
 }

@@ -106,5 +106,6 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
 trait ChannelMasterListener {
   def outgoingFailed(data: OutgoingPaymentSenderData): Unit = none
+  // Note that it is theoretically possible for first part to get fulfilled and the rest of the parts to get failed
   def outgoingSucceeded(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill, isFirst: Boolean, leftoversPresent: Boolean): Unit = none
 }
