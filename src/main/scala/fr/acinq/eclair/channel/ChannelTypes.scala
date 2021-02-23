@@ -69,6 +69,7 @@ case class CMD_ADD_HTLC(paymentType: PaymentType, firstAmount: MilliSatoshi, clt
   final val partId: ByteVector = packetAndSecrets.packet.publicKey
 }
 
+final case class CMD_UPDATE_FEE(feeratePerKw: FeeratePerKw) extends Command
 case class CMD_HOSTED_STATE_OVERRIDE(so: StateOverride) extends Command
 case class HC_CMD_RESIZE(delta: Satoshi) extends Command
 case object CMD_SOCKET_OFFLINE extends Command

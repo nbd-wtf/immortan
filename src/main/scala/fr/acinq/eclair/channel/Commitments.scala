@@ -334,6 +334,20 @@ object NormalCommits {
     }
   }
 
+  def sendFee(commitments: NormalCommits, cmd: CMD_UPDATE_FEE): Option[(NormalCommits, UpdateFee)] = {
+    // let's compute the current commitment *as seen by them* with this change taken into account
+    val fee = UpdateFee(commitments.channelId, cmd.feeratePerKw)
+    // update_fee replace each other, so we can remove previous ones
+    val commitments1 = commitments.modify(_.localChanges.proposed).using(_.filter { case _: UpdateFee => false case _ => true } :+ fee)
+    val reduced = CommitmentSpec.reduce(commitments1.remoteCommit.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
+
+    // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
+    // we look from remote's point of view, so if local is funder remote doesn't pay the fees
+    val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced, commitments.channelVersion.commitmentFormat)
+    val missing = reduced.toRemote.truncateToSatoshi - commitments1.remoteParams.channelReserve - fees
+    if (missing < 0.sat) None else Some(commitments1, fee)
+  }
+
   def receiveFee(commitments: NormalCommits, fee: UpdateFee, feeConf: OnChainFeeConf): NormalCommits = {
     if (commitments.localParams.isFunder) {
       throw FundeeCannotSendUpdateFee(commitments.channelId)
