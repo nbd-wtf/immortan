@@ -84,7 +84,6 @@ abstract class ChannelHosted extends Channel { me =>
 
       case (hc: HostedCommits, add: UpdateAddHtlc, OPEN) =>
         BECOME(hc.receiveAdd(add), OPEN)
-        events.addReceived(add)
 
       // Relaxed constraints for receiveng preimages over HCs
       case (hc: HostedCommits, msg: UpdateFulfillHtlc, OPEN | SUSPENDED) =>

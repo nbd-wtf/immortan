@@ -44,21 +44,13 @@ object ChannelMaster {
 }
 
 abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val pf: PathFinder) extends ChannelListener { me =>
-  val opm = new OutgoingPaymentMaster(me)
-  pf.listeners += opm
-
   val sockBrandingBridge: ConnectionListener
   val sockChannelBridge: ConnectionListener
+  val opm: OutgoingPaymentMaster
 
-  var all: List[Channel] = chanBag.all.map {
-    case data: HasNormalCommitments => ChannelNormal.make(Set(me), data, LNParams.chainWallet, chanBag)
-    case data: HostedCommits => ChannelHosted.make(Set(me), data, chanBag)
-    case _ => throw new RuntimeException
-  }
-
-  var paymentListeners: Set[ChannelMasterListener] = Set.empty
-
-  val connectionListeners: Set[ConnectionListener] = Set(sockBrandingBridge, sockChannelBridge)
+  val connectionListeners = Set(sockBrandingBridge, sockChannelBridge)
+  var paymentListeners = Set.empty[ChannelMasterListener]
+  var all = List.empty[Channel]
 
   // CHANNEL MANAGEMENT
 
@@ -112,8 +104,6 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
   override def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = rejects.foreach(opm.process)
 
   override def fulfillReceived(fulfill: RemoteFulfill): Unit = opm process fulfill
-
-  override def addReceived(remoteAdd: UpdateAddHtlc): Unit = none
 }
 
 trait ChannelMasterListener {

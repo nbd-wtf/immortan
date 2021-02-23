@@ -256,7 +256,6 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
       case (norm: DATA_NORMAL, add: UpdateAddHtlc, OPEN) =>
         val commits1 = NormalCommits.receiveAdd(norm.commitments, add, LNParams.onChainFeeConf)
         BECOME(norm.copy(commitments = commits1), OPEN)
-        events.addReceived(add)
 
 
       case (norm: DATA_NORMAL, msg: UpdateFulfillHtlc, OPEN) =>

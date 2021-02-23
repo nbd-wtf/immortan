@@ -3,8 +3,8 @@ package immortan
 import immortan.crypto.Tools._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteReject}
-import fr.acinq.eclair.wire.{LightningMessage, UpdateAddHtlc}
 import scala.concurrent.ExecutionContextExecutor
+import fr.acinq.eclair.wire.LightningMessage
 import immortan.Channel.channelContext
 import java.util.concurrent.Executors
 import immortan.crypto.StateMachine
@@ -26,6 +26,12 @@ object Channel {
 
   // Single stacking thread for all channels, must be used when asking channels for pending payments to avoid race conditions
   implicit val channelContext: ExecutionContextExecutor = scala.concurrent.ExecutionContext fromExecutor Executors.newSingleThreadExecutor
+
+  def load(bag: ChannelBag, cm: ChannelMaster): List[Channel] = bag.all.map {
+    case data: HasNormalCommitments => ChannelNormal.make(Set(cm), data, LNParams.chainWallet, bag)
+    case data: HostedCommits => ChannelHosted.make(Set(cm), data, bag)
+    case _ => throw new RuntimeException
+  }
 
   def chanAndCommitsOpt(chan: Channel): Option[ChanAndCommits] = chan.data match {
     case commits: HasNormalCommitments => ChanAndCommits(chan, commits.commitments).toSome
@@ -82,7 +88,6 @@ trait Channel extends StateMachine[ChannelData] { me =>
     override def onBecome: PartialFunction[ChannelListener.Transition, Unit] = { case transition => for (lst <- listeners if lst.onBecome isDefinedAt transition) lst onBecome transition }
     override def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = for (lst <- listeners) lst.stateUpdated(rejects)
     override def fulfillReceived(fulfill: RemoteFulfill): Unit = for (lst <- listeners) lst.fulfillReceived(fulfill)
-    override def addReceived(remoteAdd: UpdateAddHtlc): Unit = for (lst <- listeners) lst.addReceived(remoteAdd)
   }
 
   class Receiver extends Actor {
@@ -102,7 +107,6 @@ trait ChannelListener {
   def onBecome: PartialFunction[ChannelListener.Transition, Unit] = none
   def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = none
   def fulfillReceived(fulfill: RemoteFulfill): Unit = none
-  def addReceived(remoteAdd: UpdateAddHtlc): Unit = none
 }
 
 case class ChanAndCommits(chan: Channel, commits: Commitments)

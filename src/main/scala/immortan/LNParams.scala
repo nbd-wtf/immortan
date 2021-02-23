@@ -20,9 +20,9 @@ import fr.acinq.eclair.transactions.{DirectedHtlc, Transactions}
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import fr.acinq.eclair.channel.{LocalParams, NormalCommits, PersistentChannelData}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
-import immortan.LNParams.AdaptiveRelayFees.ChannelId2RoutingParams
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
+import immortan.LNParams.ChannelId2RoutingParams
 import fr.acinq.eclair.router.ChannelUpdateExt
 import fr.acinq.eclair.payment.PaymentRequest
 import org.bitcoinj.core.NetworkParameters
@@ -36,6 +36,8 @@ import akka.util.Timeout
 
 
 object LNParams {
+  type ChannelId2RoutingParams = Map[ByteVector32, RelayFeeParams]
+
   val blocksPerDay: Int = 144 // On average we can expect this many blocks per day
   val cltvRejectThreshold: Int = 144 // Reject incoming payment if CLTV expiry is closer than this to current chain tip when HTLC arrives
   val incomingPaymentCltvExpiry: Int = 144 + 72 // Ask payer to set final CLTV expiry to payer's current chain tip + this many blocks
@@ -111,7 +113,7 @@ object LNParams {
   var chainWallet: WalletExt = _
   var syncParams: SyncParams = _
   var fiatRatesInfo: FiatRatesInfo = _
-  var defRoutingParams: RoutingParams = _
+  var relayFeesEstimator: RelayFeesEstimator = _
 
   var routerConf: RouterConf =
     RouterConf(searchMaxFeeBase = MilliSatoshi(25000L),
@@ -158,32 +160,6 @@ object LNParams {
     new BitgoFeeProvider(chainHash, 15.seconds),
     new EarnDotComFeeProvider(15.seconds)
   )
-
-  object AdaptiveRelayFees {
-    type ChannelId2RoutingParams = Map[ByteVector32, RoutingParams]
-    var history: List[ChannelId2RoutingParams] = List(updatedFees)
-    var listeners: List[AdaptiveRelayFeesListener] = List.empty
-    Observable.interval(1.minute).foreach(_ => update)
-
-    def update: Unit = {
-      history = updatedFees :: history take 2
-      val List(latestFees, previousFees) = history
-      val changes = (latestFees.toSet diff previousFees.toSet).toMap
-      if (changes.nonEmpty) for (lst <- listeners) lst.onRoutingFeesUpdated(changes)
-    }
-
-    // Check if any history item contains acceptable fees to account for peer proposing a payment before getting our update
-    def isRelayFeeAcceptable(amountToForward: MilliSatoshi, proposedRelayFee: MilliSatoshi, channelId: ByteVector32): Boolean =
-      history.flatMap(_ get channelId).exists(_.currentRelayFee(amountToForward) <= proposedRelayFee)
-
-    def updatedFees: ChannelId2RoutingParams = cm.all.flatMap(Channel.chanAndCommitsOpt).map(_.commits).map { cs =>
-      val ppm = adjustedProportionalMillionths(defRoutingParams.feeProportionalMillionths, cs.availableBalanceForSend, cs.availableBalanceForReceive)
-      cs.channelId -> RoutingParams(defRoutingParams.cltvExpiryDelta, defRoutingParams.htlcMinimumMsat, defRoutingParams.feeBaseMsat, ppm.toLong)
-    }.toMap withDefaultValue defRoutingParams
-
-    def adjustedProportionalMillionths(base: Long, ourBalance: MilliSatoshi, theirBalance: MilliSatoshi): Double =
-      base / math.pow(ourBalance.truncateToSatoshi.toLong / theirBalance.truncateToSatoshi.toLong, 0.2)
-  }
 
   def createWallet(addresses: Set[ElectrumServerAddress], walletDb: WalletDb, seed: ByteVector): WalletExt = {
     val clientPool = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(blockCount, addresses)), "pool", SupervisorStrategy.Resume))
@@ -290,10 +266,44 @@ case class SwapInStateExt(state: SwapInState, nodeId: PublicKey)
 
 case class PaymentRequestExt(pr: PaymentRequest, raw: String)
 
-// Routing params and listener
+// Relay fees and listener
 
-case class RoutingParams(cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long) {
+trait RelayFeesEstimator {
+  def isRelayFeeAcceptable(amountToForward: MilliSatoshi, proposedRelayFee: MilliSatoshi, channelId: ByteVector32): Boolean
+}
+
+case class RelayFeeParams(cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long) extends RelayFeesEstimator {
+  override def isRelayFeeAcceptable(amountToForward: MilliSatoshi, proposedRelayFee: MilliSatoshi, channelId: ByteVector32): Boolean = currentRelayFee(amountToForward) <= proposedRelayFee
   def currentRelayFee(amountToForward: MilliSatoshi): MilliSatoshi = nodeFee(feeBaseMsat, feeProportionalMillionths, amountToForward)
+}
+
+class AdaptiveRelayFees(cm: ChannelMaster, default: RelayFeeParams) extends RelayFeesEstimator {
+  var listeners: List[AdaptiveRelayFeesListener] = List.empty
+  var history: List[ChannelId2RoutingParams] = List.empty
+
+  def init: Unit = {
+    Observable.interval(1.minute).foreach(update)
+    history = List(updatedFees)
+  }
+
+  def update(stamp: Long): Unit = {
+    history = updatedFees :: history take 2
+    val List(latestFees, previousFees) = history
+    val changes = (latestFees.toSet diff previousFees.toSet).toMap
+    if (changes.nonEmpty) for (lst <- listeners) lst.onRoutingFeesUpdated(changes)
+  }
+
+  // Check if any history item contains acceptable fees to account for peer proposing a payment before getting our update
+  override def isRelayFeeAcceptable(amountToForward: MilliSatoshi, proposedRelayFee: MilliSatoshi, channelId: ByteVector32): Boolean =
+    history.flatMap(_ get channelId).exists(_.currentRelayFee(amountToForward) <= proposedRelayFee)
+
+  def updatedFees: ChannelId2RoutingParams = cm.all.flatMap(Channel.chanAndCommitsOpt).map(_.commits).map { cs =>
+    val ppm = adjustedProportionalMillionths(default.feeProportionalMillionths, cs.availableBalanceForSend, cs.availableBalanceForReceive)
+    cs.channelId -> RelayFeeParams(default.cltvExpiryDelta, default.htlcMinimumMsat, default.feeBaseMsat, ppm.toLong)
+  }.toMap withDefaultValue default
+
+  def adjustedProportionalMillionths(base: Long, ourBalance: MilliSatoshi, theirBalance: MilliSatoshi): Double =
+    base / math.pow(ourBalance.truncateToSatoshi.toLong / theirBalance.truncateToSatoshi.toLong, 0.2)
 }
 
 class AdaptiveRelayFeesListener {
