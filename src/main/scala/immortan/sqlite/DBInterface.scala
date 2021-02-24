@@ -2,7 +2,7 @@ package immortan.sqlite
 
 
 trait DBInterface {
-  def txWrap(run: => Unit): Unit
+  def txWrap[T](run: => T): T
 
   def change(sql: String, params: Object*): Unit
 

@@ -91,12 +91,12 @@ case class UpdateAddHtlc(channelId: ByteVector32,
                          id: Long, amountMsat: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onionRoutingPacket: OnionRoutingPacket,
                          tlvStream: TlvStream.GenericTlvStream = TlvStream.empty) extends HtlcMessage with HasChannelId with UpdateMessage {
 
-  final val partId: ByteVector = onionRoutingPacket.publicKey
+  final val partId: ByteVector = onionRoutingPacket.publicKey // May not be unique, its advantage is that we can know partId before id is known for outgoing payments
 
-  lazy val encryptedTypeOpt: Option[PaymentTypeTlv.EncryptedType] = tlvStream.get[PaymentTypeTlv.EncryptedType]
+  final val uniquePartId: ByteVector = partId :+ id.toByte // Although should not, peer technically can send many payments with identical onion keys, adding an id guarantees uniqueness
 
   // Important: LNParams.format must be defined
-  lazy val paymentType: PaymentType = encryptedTypeOpt.map { case PaymentTypeTlv.EncryptedType(cipherData) =>
+  lazy val paymentType: PaymentType = tlvStream.get[PaymentTypeTlv.EncryptedType].map { case PaymentTypeTlv.EncryptedType(cipherData) =>
     val plainDataTry = Tools.chaChaDecrypt(LNParams.format.keys.paymentTypeEncryptionKey(paymentHash), cipherData)
     val plainTypeTry = plainDataTry.map(plainData => uint32.decode(plainData.toBitVector).require.value)
     PaymentType(paymentHash, plainTypeTry getOrElse PaymentTypeTlv.UNDEFINED)
@@ -157,14 +157,11 @@ object NodeAddress {
     else if (host.endsWith(onionSuffix) && host.length == V3Len + onionSuffix.length) Tor3(host.dropRight(onionSuffix.length), port)
     else orElse(host, port)
 
-  def resolveIp(host: String, port: Int): NodeAddress = {
-    // Tries to resolve an IP from domain if given, should not be used on main thread
-    // the rationale is that user may get a node address with domain instead of IP
+  def resolveIp(host: String, port: Int): NodeAddress =
     InetAddress getByName host match {
       case inetV4Address: Inet4Address => IPv4(inetV4Address, port)
       case inetV6Address: Inet6Address => IPv6(inetV6Address, port)
     }
-  }
 
   def unresolved(port: Int, host: Int*): NodeAddress =
     InetAddress getByAddress host.toArray.map(_.toByte) match {
@@ -216,10 +213,7 @@ case class ChannelUpdate(signature: ByteVector64, chainHash: ByteVector32, short
                          channelFlags: Byte, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long,
                          htlcMaximumMsat: Option[MilliSatoshi], unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp with HasChainHash {
 
-  lazy val position: java.lang.Integer = {
-    val isNode1: Boolean = Announcements.isNode1(channelFlags)
-    if (isNode1) ChannelUpdate.POSITION1NODE else ChannelUpdate.POSITION2NODE
-  }
+  lazy val position: java.lang.Integer = if (Announcements isNode1 channelFlags) ChannelUpdate.POSITION1NODE else ChannelUpdate.POSITION2NODE
 
   lazy val core: UpdateCore = UpdateCore(position, shortChannelId, feeBaseMsat, feeProportionalMillionths, cltvExpiryDelta, htlcMaximumMsat)
 
@@ -248,6 +242,7 @@ case class ReplyChannelRange(chainHash: ByteVector32, firstBlockNum: Long,
                              tlvStream: TlvStream[ReplyChannelRangeTlv] = TlvStream.empty) extends RoutingMessage {
 
   val timestamps: ReplyChannelRangeTlv.EncodedTimestamps = tlvStream.get[ReplyChannelRangeTlv.EncodedTimestamps].get
+
   val checksums: ReplyChannelRangeTlv.EncodedChecksums = tlvStream.get[ReplyChannelRangeTlv.EncodedChecksums].get
 }
 

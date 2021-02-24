@@ -23,12 +23,11 @@ object ChannelMaster {
 
   val initResolveMemo: LoadingCache[UpdateAddHtlcExt, IncomingResolution] = memoize(initResolve)
 
-  def initResolve(payment: UpdateAddHtlcExt): IncomingResolution =
-    IncomingPacket.decrypt(payment.theirAdd, payment.remoteInfo.nodeSpecificPrivKey) match {
-      case Left(_: BadOnion) => fallbackResolve(LNParams.format.keys.fakeInvoiceKey(payment.theirAdd.paymentHash), payment.theirAdd)
-      case Left(failure) => CMD_FAIL_HTLC(Right(failure), payment.remoteInfo.nodeSpecificPrivKey, payment.theirAdd.id)
-      case Right(packet: IncomingPacket) => defineResolution(packet)
-    }
+  def initResolve(payment: UpdateAddHtlcExt): IncomingResolution = IncomingPacket.decrypt(payment.theirAdd, payment.remoteInfo.nodeSpecificPrivKey) match {
+    case Left(_: BadOnion) => fallbackResolve(LNParams.format.keys.fakeInvoiceKey(payment.theirAdd.paymentHash), payment.theirAdd)
+    case Left(failure) => CMD_FAIL_HTLC(Right(failure), payment.remoteInfo.nodeSpecificPrivKey, payment.theirAdd.id)
+    case Right(packet: IncomingPacket) => defineResolution(packet)
+  }
 
   def fallbackResolve(secret: PrivateKey, theirAdd: UpdateAddHtlc): IncomingResolution = IncomingPacket.decrypt(theirAdd, secret) match {
     case Left(failure: BadOnion) => CMD_FAIL_MALFORMED_HTLC(failure.onionHash, failure.code, theirAdd.id)
