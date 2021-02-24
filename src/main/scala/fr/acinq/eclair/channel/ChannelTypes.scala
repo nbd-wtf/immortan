@@ -34,24 +34,23 @@ import fr.acinq.eclair.payment.IncomingPacket
 import immortan.crypto.Tools
 
 // Fatal by deafult
-class ChannelException(val channelId: ByteVector32) extends RuntimeException
-case class FeerateTooSmall(override val channelId: ByteVector32, remoteFeeratePerKw: FeeratePerKw) extends ChannelException(channelId)
-case class DustLimitTooSmall(override val channelId: ByteVector32, dustLimit: Satoshi, min: Satoshi) extends ChannelException(channelId)
-case class DustLimitTooLarge(override val channelId: ByteVector32, dustLimit: Satoshi, max: Satoshi) extends ChannelException(channelId)
-case class InvalidMaxAcceptedHtlcs(override val channelId: ByteVector32, maxAcceptedHtlcs: Int, max: Int) extends ChannelException(channelId)
-case class InvalidChainHash(override val channelId: ByteVector32, local: ByteVector32, remote: ByteVector32) extends ChannelException(channelId)
-case class InvalidPushAmount(override val channelId: ByteVector32, pushAmount: MilliSatoshi, max: MilliSatoshi) extends ChannelException(channelId)
-case class ToSelfDelayTooHigh(override val channelId: ByteVector32, toSelfDelay: CltvExpiryDelta, max: CltvExpiryDelta) extends ChannelException(channelId)
-case class InvalidFundingAmount(override val channelId: ByteVector32, fundingAmount: Satoshi, min: Satoshi, max: Satoshi) extends ChannelException(channelId)
-case class DustLimitAboveOurChannelReserve(override val channelId: ByteVector32, dustLimit: Satoshi, channelReserve: Satoshi) extends ChannelException(channelId)
-case class ChannelReserveBelowOurDustLimit(override val channelId: ByteVector32, channelReserve: Satoshi, dustLimit: Satoshi) extends ChannelException(channelId)
-case class ChannelReserveNotMet(override val channelId: ByteVector32, toLocal: MilliSatoshi, toRemote: MilliSatoshi, reserve: Satoshi) extends ChannelException(channelId)
-case class FeerateTooDifferent(override val channelId: ByteVector32, localFeeratePerKw: FeeratePerKw, remoteFeeratePerKw: FeeratePerKw) extends ChannelException(channelId)
-case class ChannelReserveTooHigh(override val channelId: ByteVector32, channelReserve: Satoshi, reserveToFundingRatio: Double, maxReserveToFundingRatio: Double) extends ChannelException(channelId)
+case class FeerateTooSmall(channelId: ByteVector32, remoteFeeratePerKw: FeeratePerKw) extends RuntimeException
+case class DustLimitTooSmall(channelId: ByteVector32, dustLimit: Satoshi, min: Satoshi) extends RuntimeException
+case class DustLimitTooLarge(channelId: ByteVector32, dustLimit: Satoshi, max: Satoshi) extends RuntimeException
+case class InvalidMaxAcceptedHtlcs(channelId: ByteVector32, maxAcceptedHtlcs: Int, max: Int) extends RuntimeException
+case class InvalidChainHash(channelId: ByteVector32, local: ByteVector32, remote: ByteVector32) extends RuntimeException
+case class InvalidPushAmount(channelId: ByteVector32, pushAmount: MilliSatoshi, max: MilliSatoshi) extends RuntimeException
+case class ToSelfDelayTooHigh(channelId: ByteVector32, toSelfDelay: CltvExpiryDelta, max: CltvExpiryDelta) extends RuntimeException
+case class InvalidFundingAmount(channelId: ByteVector32, fundingAmount: Satoshi, min: Satoshi, max: Satoshi) extends RuntimeException
+case class DustLimitAboveOurChannelReserve(channelId: ByteVector32, dustLimit: Satoshi, channelReserve: Satoshi) extends RuntimeException
+case class ChannelReserveBelowOurDustLimit(channelId: ByteVector32, channelReserve: Satoshi, dustLimit: Satoshi) extends RuntimeException
+case class ChannelReserveNotMet(channelId: ByteVector32, toLocal: MilliSatoshi, toRemote: MilliSatoshi, reserve: Satoshi) extends RuntimeException
+case class FeerateTooDifferent(channelId: ByteVector32, localFeeratePerKw: FeeratePerKw, remoteFeeratePerKw: FeeratePerKw) extends RuntimeException
+case class ChannelReserveTooHigh(channelId: ByteVector32, channelReserve: Satoshi, reserveToFundingRatio: Double, maxReserveToFundingRatio: Double) extends RuntimeException
 
 // Non-fatal by default
-case class ChannelUnavailable(override val channelId: ByteVector32) extends ChannelException(channelId)
-case class CMDException(error: ChannelException, cmd: Command) extends ChannelException(error.channelId)
+case class ChannelUnavailable(channelId: ByteVector32) extends RuntimeException
+case class CMDException(error: RuntimeException, cmd: Command) extends RuntimeException
 
 
 case class INPUT_INIT_FUNDER(remoteInfo: RemoteNodeInfo, temporaryChannelId: ByteVector32, fundingAmount: Satoshi, pushAmount: MilliSatoshi,

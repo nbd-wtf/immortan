@@ -95,13 +95,13 @@ abstract class ChannelHosted extends Channel { me =>
 
       case (hc: HostedCommits, fail: UpdateFailHtlc, OPEN) =>
         val isNotResolvedYet = hc.allOutgoing.exists(ourOutgoingAdd => fail.id == ourOutgoingAdd.id)
-        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(fail), OPEN) else throw new ChannelException(hc.channelId)
+        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(fail), OPEN) else throw new RuntimeException
 
 
       case (hc: HostedCommits, malform: UpdateFailMalformedHtlc, OPEN) =>
+        require(0 == (malform.failureCode & FailureMessageCodecs.BADONION), "wrong bad onion code")
         val isNotResolvedYet = hc.allOutgoing.exists(ourOutgoingAdd => malform.id == ourOutgoingAdd.id)
-        if (malform.failureCode.&(FailureMessageCodecs.BADONION) == 0) throw new ChannelException(hc.channelId)
-        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(malform), OPEN) else throw new ChannelException(hc.channelId)
+        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(malform), OPEN) else throw new RuntimeException
 
 
       case (hc: HostedCommits, CMD_SIGN, OPEN) if hc.nextLocalUpdates.nonEmpty || hc.resizeProposal.isDefined =>

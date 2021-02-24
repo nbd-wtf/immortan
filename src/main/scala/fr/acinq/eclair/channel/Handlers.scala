@@ -125,7 +125,7 @@ trait Handlers { me: ChannelNormal =>
           StoreBecomeSend(DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish), CLOSING, error)
         } else {
           // they lied! the last per_commitment_secret they claimed to have received from us is invalid
-          throw new ChannelException(d.channelId)
+          throw new RuntimeException
         }
       case ChannelReestablish(_, nextLocalCommitmentNumber, _, _, _) if !Helpers.checkRemoteCommit(d, nextLocalCommitmentNumber) =>
         // if next_local_commit_number is more than one more our remote commitment index, it means that either we are using an outdated commitment, or they are lying
@@ -182,7 +182,7 @@ trait Handlers { me: ChannelNormal =>
         val localNextPerCommitmentPoint = commitments1.remoteInfo.commitmentPoint(commitments1.channelKeyPath, d.commitments.localCommit.index + 1)
         val revocation = RevokeAndAck(channelId = commitments1.channelId, perCommitmentSecret = localPerCommitmentSecret, nextPerCommitmentPoint = localNextPerCommitmentPoint)
         sendQueue = sendQueue :+ revocation
-      } else throw new ChannelException(d.channelId)
+      } else throw new RuntimeException
     }
 
     // re-sending sig/rev (in the right order)
@@ -207,7 +207,7 @@ trait Handlers { me: ChannelNormal =>
       case Right(_) if commitments1.remoteCommit.index + 1 == channelReestablish.nextLocalCommitmentNumber =>
         // there wasn't any sig in-flight when the disconnection occurred
         resendRevocation
-      case _ => throw new ChannelException(d.channelId)
+      case _ => throw new RuntimeException
     }
 
     (commitments1, sendQueue)
@@ -230,11 +230,11 @@ trait Handlers { me: ChannelNormal =>
     //        there are no htlcs                => go to NEGOTIATING
 
     if (!Closing.isValidFinalScriptPubkey(remote.scriptPubKey)) {
-      throw new ChannelException(d.channelId)
+      throw new RuntimeException
     } else if (NormalCommits.remoteHasUnsignedOutgoingHtlcs(d.commitments)) {
-      throw new ChannelException(d.channelId)
+      throw new RuntimeException
     } else if (NormalCommits.remoteHasUnsignedOutgoingUpdateFee(d.commitments)) {
-      throw new ChannelException(d.channelId)
+      throw new RuntimeException
     } else if (NormalCommits.localHasUnsignedOutgoingHtlcs(d.commitments)) { // do we have unsigned outgoing htlcs?
       require(d.localShutdown.isEmpty, "can't have pending unsigned outgoing htlcs after having sent Shutdown")
       // are we in the middle of a signature?

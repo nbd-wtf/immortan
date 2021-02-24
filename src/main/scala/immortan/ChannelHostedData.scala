@@ -57,30 +57,25 @@ case class HostedCommits(remoteInfo: RemoteNodeInfo, lastCrossSignedState: LastC
   def addRemoteProposal(update: UpdateMessage): HostedCommits = copy(nextRemoteUpdates = nextRemoteUpdates :+ update)
   def isResizingSupported: Boolean = lastCrossSignedState.initHostedChannel.version == HostedChannelVersion.RESIZABLE
 
-  def sendFail(cmd: CMD_FAIL_HTLC): (HostedCommits, UpdateFailHtlc) =
-    unProcessedIncoming.find(updateAddHtlcExt => cmd.id == updateAddHtlcExt.theirAdd.id) match {
-      case None => throw new ChannelException(channelId)
-      case Some(data) =>
-        val fail = OutgoingPacket.buildHtlcFailure(cmd, data.theirAdd)
-        (addLocalProposal(fail), fail)
-    }
+  def sendFail(cmd: CMD_FAIL_HTLC): (HostedCommits, UpdateFailHtlc) = {
+    val theirAddExt = unProcessedIncoming.find(ext => cmd.id == ext.theirAdd.id)
+    val fail = OutgoingPacket.buildHtlcFailure(cmd, theirAddExt.get.theirAdd)
+    (addLocalProposal(fail), fail)
+  }
 
   def sendMalformed(cmd: CMD_FAIL_MALFORMED_HTLC): (HostedCommits, UpdateFailMalformedHtlc) = {
     val isNotProcessedYet = unProcessedIncoming.exists(updateAddHtlcExt => cmd.id == updateAddHtlcExt.theirAdd.id)
     val ourFailMalformMsg = UpdateFailMalformedHtlc(channelId, cmd.id, cmd.onionHash, cmd.failureCode)
-
-    if (cmd.failureCode.&(FailureMessageCodecs.BADONION) == 0) throw new ChannelException(channelId)
+    if (cmd.failureCode.&(FailureMessageCodecs.BADONION) == 0) throw new RuntimeException
     else if (isNotProcessedYet) (addLocalProposal(ourFailMalformMsg), ourFailMalformMsg)
-    else throw new ChannelException(channelId)
+    else throw new RuntimeException
   }
 
   def sendFulfill(cmd: CMD_FULFILL_HTLC): (HostedCommits, UpdateFulfillHtlc) = {
-    val msg = UpdateFulfillHtlc(channelId, cmd.id, paymentPreimage = cmd.preimage)
-    unProcessedIncoming.find(updateAddHtlcExt => cmd.id == updateAddHtlcExt.theirAdd.id) match {
-      case Some(data) if data.theirAdd.paymentHash != cmd.paymentHash => throw new ChannelException(channelId)
-      case None => throw new ChannelException(channelId)
-      case _ => (addLocalProposal(msg), msg)
-    }
+    val theirAdd = unProcessedIncoming.find(ourAddExt => cmd.id == ourAddExt.theirAdd.id).get.theirAdd
+    val ourFulfillMsg = UpdateFulfillHtlc(channelId, cmd.id, paymentPreimage = cmd.preimage)
+    if (theirAdd.paymentHash != cmd.paymentHash) throw new RuntimeException
+    (addLocalProposal(ourFulfillMsg), ourFulfillMsg)
   }
 
   def sendAdd(cmd: CMD_ADD_HTLC): (HostedCommits, UpdateAddHtlc) = {
@@ -88,19 +83,19 @@ case class HostedCommits(remoteInfo: RemoteNodeInfo, lastCrossSignedState: LastC
     val add = UpdateAddHtlc(channelId, nextTotalLocal + 1, cmd.firstAmount, cmd.paymentType.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet, encryptedType)
     val commits1: HostedCommits = addLocalProposal(add)
 
-    if (commits1.nextLocalSpec.outgoingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) throw CMDException(new ChannelException(channelId), cmd)
-    if (commits1.nextLocalSpec.outgoingAdds.foldLeft(0L.msat)(_ + _.amountMsat) > maxInFlight) throw CMDException(new ChannelException(channelId), cmd)
-    if (commits1.nextLocalSpec.toLocal < 0L.msat) throw CMDException(new ChannelException(channelId), cmd)
-    if (cmd.payload.amount < minSendable) throw CMDException(new ChannelException(channelId), cmd)
+    if (commits1.nextLocalSpec.outgoingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) throw CMDException(new RuntimeException, cmd)
+    if (commits1.nextLocalSpec.outgoingAdds.foldLeft(0L.msat)(_ + _.amountMsat) > maxInFlight) throw CMDException(new RuntimeException, cmd)
+    if (commits1.nextLocalSpec.toLocal < 0L.msat) throw CMDException(new RuntimeException, cmd)
+    if (cmd.payload.amount < minSendable) throw CMDException(new RuntimeException, cmd)
     (commits1, add)
   }
 
   def receiveAdd(add: UpdateAddHtlc): HostedCommits = {
     val commits1: HostedCommits = addRemoteProposal(add)
-    if (commits1.nextLocalSpec.incomingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) throw new ChannelException(channelId)
-    if (commits1.nextLocalSpec.incomingAdds.foldLeft(0L.msat)(_ + _.amountMsat) > maxInFlight) throw new ChannelException(channelId)
-    if (commits1.nextLocalSpec.toRemote < 0L.msat) throw new ChannelException(channelId)
-    if (add.id != nextTotalRemote + 1) throw new ChannelException(channelId)
+    if (commits1.nextLocalSpec.incomingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) throw new RuntimeException
+    if (commits1.nextLocalSpec.incomingAdds.foldLeft(0L.msat)(_ + _.amountMsat) > maxInFlight) throw new RuntimeException
+    if (commits1.nextLocalSpec.toRemote < 0L.msat) throw new RuntimeException
+    if (add.id != nextTotalRemote + 1) throw new RuntimeException
     commits1
   }
 
