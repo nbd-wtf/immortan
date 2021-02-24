@@ -121,20 +121,18 @@ trait Handlers { me: ChannelNormal =>
         if (d.commitments.remoteInfo.commitmentSecret(d.commitments.channelKeyPath, nextRemoteRevocationNumber - 1) == yourLastPerCommitmentSecret) {
           // their data checks out, we indeed seem to be using an old revoked commitment, and must absolutely *NOT* publish it, because that would be a cheating attempt and they
           // would punish us by taking all the funds in the channel
-          val exc = PleasePublishYourCommitment(d.channelId)
-          val error = Error(d.channelId, exc.getMessage)
+          val error = Error(d.channelId, "please publish your local commitment")
           StoreBecomeSend(DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish), CLOSING, error)
         } else {
           // they lied! the last per_commitment_secret they claimed to have received from us is invalid
-          throw InvalidRevokedCommitProof(d.channelId, d.commitments.localCommit.index, nextRemoteRevocationNumber, yourLastPerCommitmentSecret)
+          throw new ChannelException(d.channelId)
         }
       case ChannelReestablish(_, nextLocalCommitmentNumber, _, _, _) if !Helpers.checkRemoteCommit(d, nextLocalCommitmentNumber) =>
         // if next_local_commit_number is more than one more our remote commitment index, it means that either we are using an outdated commitment, or they are lying
         // there is no way to make sure that they are saying the truth, the best thing to do is ask them to publish their commitment right now
         // maybe they will publish their commitment, in that case we need to remember their commitment point in order to be able to claim our outputs
         // not that if they don't comply, we could publish our own commitment (it is not stale, otherwise we would be in the case above)
-        val exc = PleasePublishYourCommitment(d.channelId)
-        val error = Error(d.channelId, exc.getMessage)
+        val error = Error(d.channelId, "please publish your local commitment")
         StoreBecomeSend(DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish), CLOSING, error)
       case _ =>
         // normal case, our data is up-to-date
@@ -184,7 +182,7 @@ trait Handlers { me: ChannelNormal =>
         val localNextPerCommitmentPoint = commitments1.remoteInfo.commitmentPoint(commitments1.channelKeyPath, d.commitments.localCommit.index + 1)
         val revocation = RevokeAndAck(channelId = commitments1.channelId, perCommitmentSecret = localPerCommitmentSecret, nextPerCommitmentPoint = localNextPerCommitmentPoint)
         sendQueue = sendQueue :+ revocation
-      } else throw RevocationSyncError(d.channelId)
+      } else throw new ChannelException(d.channelId)
     }
 
     // re-sending sig/rev (in the right order)
@@ -209,7 +207,7 @@ trait Handlers { me: ChannelNormal =>
       case Right(_) if commitments1.remoteCommit.index + 1 == channelReestablish.nextLocalCommitmentNumber =>
         // there wasn't any sig in-flight when the disconnection occurred
         resendRevocation
-      case _ => throw CommitmentSyncError(d.channelId)
+      case _ => throw new ChannelException(d.channelId)
     }
 
     (commitments1, sendQueue)
@@ -232,11 +230,11 @@ trait Handlers { me: ChannelNormal =>
     //        there are no htlcs                => go to NEGOTIATING
 
     if (!Closing.isValidFinalScriptPubkey(remote.scriptPubKey)) {
-      throw InvalidFinalScript(d.channelId)
+      throw new ChannelException(d.channelId)
     } else if (NormalCommits.remoteHasUnsignedOutgoingHtlcs(d.commitments)) {
-      throw CannotCloseWithUnsignedChanges(d.channelId)
+      throw new ChannelException(d.channelId)
     } else if (NormalCommits.remoteHasUnsignedOutgoingUpdateFee(d.commitments)) {
-      throw CannotCloseWithUnsignedChanges(d.channelId)
+      throw new ChannelException(d.channelId)
     } else if (NormalCommits.localHasUnsignedOutgoingHtlcs(d.commitments)) { // do we have unsigned outgoing htlcs?
       require(d.localShutdown.isEmpty, "can't have pending unsigned outgoing htlcs after having sent Shutdown")
       // are we in the middle of a signature?

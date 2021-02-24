@@ -20,13 +20,11 @@ import fr.acinq.eclair.wire._
 import scodec.{Attempt, DecodeResult}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
-import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CannotExtractSharedSecret}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, UInt64}
+import fr.acinq.eclair.channel.CMD_FAIL_HTLC
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.transactions.IncomingHtlc
 import scodec.bits.ByteVector
-
 import scala.reflect.ClassTag
 
 /**
@@ -224,15 +222,14 @@ object OutgoingPacket {
     (firstAmount, firstExpiry, onion)
   }
 
-  def buildHtlcFailure(cmd: CMD_FAIL_HTLC, add: UpdateAddHtlc): Either[CannotExtractSharedSecret, UpdateFailHtlc] = {
-    Sphinx.PaymentPacket.peel(cmd.nodeSecret, add.paymentHash, add.onionRoutingPacket) match {
-      case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) =>
-        val reason = cmd.reason match {
-          case Left(forwarded) => Sphinx.FailurePacket.wrap(forwarded, sharedSecret)
-          case Right(failure) => Sphinx.FailurePacket.create(sharedSecret, failure)
-        }
-        Right(UpdateFailHtlc(add.channelId, cmd.id, reason))
-      case Left(_) => Left(CannotExtractSharedSecret(add.channelId, add))
+  def buildHtlcFailure(cmd: CMD_FAIL_HTLC, add: UpdateAddHtlc): UpdateFailHtlc = {
+    val packet = Sphinx.PaymentPacket.peel(cmd.nodeSecret, add.paymentHash, add.onionRoutingPacket).right.get
+
+    val reason = cmd.reason match {
+      case Left(forwarded) => Sphinx.FailurePacket.wrap(forwarded, packet.sharedSecret)
+      case Right(failure) => Sphinx.FailurePacket.create(packet.sharedSecret, failure)
     }
+
+    UpdateFailHtlc(add.channelId, cmd.id, reason)
   }
 }

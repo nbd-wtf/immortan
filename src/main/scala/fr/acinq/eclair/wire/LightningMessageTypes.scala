@@ -209,15 +209,15 @@ case class UpdateCore(position: java.lang.Integer,
                       shortChannelId: ShortChannelId, feeBase: MilliSatoshi, feeProportionalMillionths: Long,
                       cltvExpiryDelta: CltvExpiryDelta, htlcMaximumMsat: Option[MilliSatoshi] = None)
 
-case class ChannelUpdate(signature: ByteVector64, chainHash: ByteVector32, shortChannelId: ShortChannelId, timestamp: Long, messageFlags: Byte,
-                         channelFlags: Byte, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long,
-                         htlcMaximumMsat: Option[MilliSatoshi], unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp with HasChainHash {
+case class ChannelUpdate(signature: ByteVector64, chainHash: ByteVector32, shortChannelId: ShortChannelId, timestamp: Long, messageFlags: Byte, channelFlags: Byte,
+                         cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, htlcMaximumMsat: Option[MilliSatoshi],
+                         unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp with HasChainHash {
 
   lazy val position: java.lang.Integer = if (Announcements isNode1 channelFlags) ChannelUpdate.POSITION1NODE else ChannelUpdate.POSITION2NODE
 
   lazy val core: UpdateCore = UpdateCore(position, shortChannelId, feeBaseMsat, feeProportionalMillionths, cltvExpiryDelta, htlcMaximumMsat)
 
-  // Reference useless fields to same objects to reduce memory footprint, make sure it does not erase channelUpdateChecksumCodec fields
+  // Point useless fields to same object, db-restored should be the same, make sure it does not erase channelUpdateChecksumCodec fields
 
   def lite: ChannelUpdate = copy(signature = ByteVector64.Zeroes, LNParams.chainHash, unknownFields = ByteVector.empty)
 }

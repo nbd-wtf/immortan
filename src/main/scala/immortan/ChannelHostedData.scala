@@ -57,24 +57,28 @@ case class HostedCommits(remoteInfo: RemoteNodeInfo, lastCrossSignedState: LastC
   def addRemoteProposal(update: UpdateMessage): HostedCommits = copy(nextRemoteUpdates = nextRemoteUpdates :+ update)
   def isResizingSupported: Boolean = lastCrossSignedState.initHostedChannel.version == HostedChannelVersion.RESIZABLE
 
-  def sendFail(cmd: CMD_FAIL_HTLC): (HostedCommits, UpdateFailHtlc) = unProcessedIncoming.find(updateAddHtlcExt => cmd.id == updateAddHtlcExt.theirAdd.id) match {
-    case Some(data) => OutgoingPacket.buildHtlcFailure(cmd, data.theirAdd) match { case Right(fail) => (addLocalProposal(fail), fail) case Left(error) => throw error }
-    case None => throw UnknownHtlcId(channelId, cmd.id)
-  }
+  def sendFail(cmd: CMD_FAIL_HTLC): (HostedCommits, UpdateFailHtlc) =
+    unProcessedIncoming.find(updateAddHtlcExt => cmd.id == updateAddHtlcExt.theirAdd.id) match {
+      case None => throw new ChannelException(channelId)
+      case Some(data) =>
+        val fail = OutgoingPacket.buildHtlcFailure(cmd, data.theirAdd)
+        (addLocalProposal(fail), fail)
+    }
 
   def sendMalformed(cmd: CMD_FAIL_MALFORMED_HTLC): (HostedCommits, UpdateFailMalformedHtlc) = {
     val isNotProcessedYet = unProcessedIncoming.exists(updateAddHtlcExt => cmd.id == updateAddHtlcExt.theirAdd.id)
     val ourFailMalformMsg = UpdateFailMalformedHtlc(channelId, cmd.id, cmd.onionHash, cmd.failureCode)
-    if (cmd.failureCode.&(FailureMessageCodecs.BADONION) == 0) throw InvalidFailureCode(channelId)
+
+    if (cmd.failureCode.&(FailureMessageCodecs.BADONION) == 0) throw new ChannelException(channelId)
     else if (isNotProcessedYet) (addLocalProposal(ourFailMalformMsg), ourFailMalformMsg)
-    else throw UnknownHtlcId(channelId, cmd.id)
+    else throw new ChannelException(channelId)
   }
 
   def sendFulfill(cmd: CMD_FULFILL_HTLC): (HostedCommits, UpdateFulfillHtlc) = {
     val msg = UpdateFulfillHtlc(channelId, cmd.id, paymentPreimage = cmd.preimage)
     unProcessedIncoming.find(updateAddHtlcExt => cmd.id == updateAddHtlcExt.theirAdd.id) match {
-      case Some(data) if data.theirAdd.paymentHash != cmd.paymentHash => throw InvalidHtlcPreimage(channelId, cmd.id)
-      case None => throw UnknownHtlcId(channelId, cmd.id)
+      case Some(data) if data.theirAdd.paymentHash != cmd.paymentHash => throw new ChannelException(channelId)
+      case None => throw new ChannelException(channelId)
       case _ => (addLocalProposal(msg), msg)
     }
   }
@@ -84,19 +88,19 @@ case class HostedCommits(remoteInfo: RemoteNodeInfo, lastCrossSignedState: LastC
     val add = UpdateAddHtlc(channelId, nextTotalLocal + 1, cmd.firstAmount, cmd.paymentType.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet, encryptedType)
     val commits1: HostedCommits = addLocalProposal(add)
 
-    if (commits1.nextLocalSpec.outgoingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) throw CMDException(TooManyAcceptedHtlcs(channelId), cmd)
-    if (commits1.nextLocalSpec.outgoingAdds.foldLeft(0L.msat)(_ + _.amountMsat) > maxInFlight) throw CMDException(HtlcValueTooHighInFlight(channelId), cmd)
-    if (commits1.nextLocalSpec.toLocal < 0L.msat) throw CMDException(InsufficientFunds(channelId), cmd)
-    if (cmd.payload.amount < minSendable) throw CMDException(HtlcValueTooSmall(channelId), cmd)
+    if (commits1.nextLocalSpec.outgoingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) throw CMDException(new ChannelException(channelId), cmd)
+    if (commits1.nextLocalSpec.outgoingAdds.foldLeft(0L.msat)(_ + _.amountMsat) > maxInFlight) throw CMDException(new ChannelException(channelId), cmd)
+    if (commits1.nextLocalSpec.toLocal < 0L.msat) throw CMDException(new ChannelException(channelId), cmd)
+    if (cmd.payload.amount < minSendable) throw CMDException(new ChannelException(channelId), cmd)
     (commits1, add)
   }
 
   def receiveAdd(add: UpdateAddHtlc): HostedCommits = {
     val commits1: HostedCommits = addRemoteProposal(add)
-    if (commits1.nextLocalSpec.incomingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) throw TooManyAcceptedHtlcs(channelId)
-    if (commits1.nextLocalSpec.incomingAdds.foldLeft(0L.msat)(_ + _.amountMsat) > maxInFlight) throw HtlcValueTooHighInFlight(channelId)
-    if (add.id != nextTotalRemote + 1) throw UnexpectedHtlcId(channelId, expected = nextTotalRemote + 1, actual = add.id)
-    if (commits1.nextLocalSpec.toRemote < 0L.msat) throw InsufficientFunds(channelId)
+    if (commits1.nextLocalSpec.incomingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) throw new ChannelException(channelId)
+    if (commits1.nextLocalSpec.incomingAdds.foldLeft(0L.msat)(_ + _.amountMsat) > maxInFlight) throw new ChannelException(channelId)
+    if (commits1.nextLocalSpec.toRemote < 0L.msat) throw new ChannelException(channelId)
+    if (add.id != nextTotalRemote + 1) throw new ChannelException(channelId)
     commits1
   }
 

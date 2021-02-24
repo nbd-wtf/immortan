@@ -44,51 +44,51 @@ object Helpers {
   /**
    * Called by the fundee
    */
-  def validateParamsFundee(features: Features, open: OpenChannel, remoteNodeId: PublicKey): Option[ChannelException] = {
+  def validateParamsFundee(features: Features, open: OpenChannel, remoteNodeId: PublicKey): Unit = {
     // BOLT #2: if the chain_hash value, within the open_channel, message is set to a hash of a chain that is unknown to the receiver:
     // MUST reject the channel.
-    if (LNParams.chainHash != open.chainHash) return Some(InvalidChainHash(open.temporaryChannelId, local = LNParams.chainHash, remote = open.chainHash))
+    if (LNParams.chainHash != open.chainHash) throw InvalidChainHash(open.temporaryChannelId, local = LNParams.chainHash, remote = open.chainHash)
 
-    if (open.fundingSatoshis < LNParams.minFundingSatoshis || open.fundingSatoshis > LNParams.maxFundingSatoshis) return Some(InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, LNParams.minFundingSatoshis, LNParams.maxFundingSatoshis))
+    if (open.fundingSatoshis < LNParams.minFundingSatoshis || open.fundingSatoshis > LNParams.maxFundingSatoshis) throw InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, LNParams.minFundingSatoshis, LNParams.maxFundingSatoshis)
 
     // BOLT #2: Channel funding limits
-    if (open.fundingSatoshis >= LNParams.maxFundingSatoshis && !features.hasFeature(Features.Wumbo)) return Some(InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, LNParams.minFundingSatoshis, LNParams.maxFundingSatoshis))
+    if (open.fundingSatoshis >= LNParams.maxFundingSatoshis && !features.hasFeature(Features.Wumbo)) throw InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, LNParams.minFundingSatoshis, LNParams.maxFundingSatoshis)
 
     // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
-    if (open.pushMsat > open.fundingSatoshis) return Some(InvalidPushAmount(open.temporaryChannelId, open.pushMsat, open.fundingSatoshis.toMilliSatoshi))
+    if (open.pushMsat > open.fundingSatoshis) throw InvalidPushAmount(open.temporaryChannelId, open.pushMsat, open.fundingSatoshis.toMilliSatoshi)
 
     // BOLT #2: The receiving node MUST fail the channel if: to_self_delay is unreasonably large.
-    if (open.toSelfDelay > LNParams.maxToLocalDelay) return Some(ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, LNParams.maxToLocalDelay))
+    if (open.toSelfDelay > LNParams.maxToLocalDelay) throw ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, LNParams.maxToLocalDelay)
 
     // BOLT #2: The receiving node MUST fail the channel if: max_accepted_htlcs is greater than 483.
-    if (open.maxAcceptedHtlcs > LNParams.maxAcceptedHtlcs) return Some(InvalidMaxAcceptedHtlcs(open.temporaryChannelId, open.maxAcceptedHtlcs, LNParams.maxAcceptedHtlcs))
+    if (open.maxAcceptedHtlcs > LNParams.maxAcceptedHtlcs) throw InvalidMaxAcceptedHtlcs(open.temporaryChannelId, open.maxAcceptedHtlcs, LNParams.maxAcceptedHtlcs)
 
     // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing.
-    if (isFeeTooSmall(open.feeratePerKw)) return Some(FeerateTooSmall(open.temporaryChannelId, open.feeratePerKw))
+    if (isFeeTooSmall(open.feeratePerKw)) throw FeerateTooSmall(open.temporaryChannelId, open.feeratePerKw)
 
     // BOLT #2: The receiving node MUST fail the channel if: dust_limit_satoshis is greater than channel_reserve_satoshis.
-    if (open.dustLimitSatoshis > open.channelReserveSatoshis) return Some(DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, open.channelReserveSatoshis))
+    if (open.dustLimitSatoshis > open.channelReserveSatoshis) throw DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, open.channelReserveSatoshis)
 
     // BOLT #2: The receiving node MUST fail the channel if both to_local and to_remote amounts for the initial commitment
     // transaction are less than or equal to channel_reserve_satoshis (see BOLT 3).
     val (toLocalMsat, toRemoteMsat) = (open.pushMsat, open.fundingSatoshis.toMilliSatoshi - open.pushMsat)
     if (toLocalMsat < open.channelReserveSatoshis && toRemoteMsat < open.channelReserveSatoshis) {
-      return Some(ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis))
+      throw ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis)
     }
 
     // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing or unreasonably large.
     val localFeeratePerKw = LNParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = LNParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
-    if (isFeeDiffTooHigh(localFeeratePerKw, open.feeratePerKw, LNParams.onChainFeeConf.maxFeerateMismatchFor(remoteNodeId))) return Some(FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw))
+    if (isFeeDiffTooHigh(localFeeratePerKw, open.feeratePerKw, LNParams.onChainFeeConf.maxFeerateMismatchFor(remoteNodeId))) throw FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw)
     // only enforce dust limit check on mainnet
     if (LNParams.chainHash == Block.LivenetGenesisBlock.hash) {
-      if (open.dustLimitSatoshis < LNParams.minDustLimit) return Some(DustLimitTooSmall(open.temporaryChannelId, open.dustLimitSatoshis, LNParams.minDustLimit))
+      if (open.dustLimitSatoshis < LNParams.minDustLimit) throw DustLimitTooSmall(open.temporaryChannelId, open.dustLimitSatoshis, LNParams.minDustLimit)
     }
 
     // we don't check that the funder's amount for the initial commitment transaction is sufficient for full fee payment
     // now, but it will be done later when we receive `funding_created`
 
     val reserveToFundingRatio = open.channelReserveSatoshis.toLong.toDouble / Math.max(open.fundingSatoshis.toLong, 1)
-    if (reserveToFundingRatio > LNParams.maxReserveToFundingRatio) return Some(ChannelReserveTooHigh(open.temporaryChannelId, open.channelReserveSatoshis, reserveToFundingRatio, LNParams.maxReserveToFundingRatio))
+    if (reserveToFundingRatio > LNParams.maxReserveToFundingRatio) throw ChannelReserveTooHigh(open.temporaryChannelId, open.channelReserveSatoshis, reserveToFundingRatio, LNParams.maxReserveToFundingRatio)
 
     None
   }
@@ -96,30 +96,30 @@ object Helpers {
   /**
    * Called by the funder
    */
-  def validateParamsFunder(open: OpenChannel, accept: AcceptChannel): Option[ChannelException] = {
-    if (accept.maxAcceptedHtlcs > LNParams.maxAcceptedHtlcs) return Some(InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, LNParams.maxAcceptedHtlcs))
+  def validateParamsFunder(open: OpenChannel, accept: AcceptChannel): Unit = {
+    if (accept.maxAcceptedHtlcs > LNParams.maxAcceptedHtlcs) throw InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, LNParams.maxAcceptedHtlcs)
     // only enforce dust limit check on mainnet
     if (LNParams.chainHash == Block.LivenetGenesisBlock.hash) {
-      if (accept.dustLimitSatoshis < LNParams.minDustLimit) return Some(DustLimitTooSmall(accept.temporaryChannelId, accept.dustLimitSatoshis, LNParams.minDustLimit))
+      if (accept.dustLimitSatoshis < LNParams.minDustLimit) throw DustLimitTooSmall(accept.temporaryChannelId, accept.dustLimitSatoshis, LNParams.minDustLimit)
     }
 
     // BOLT #2: The receiving node MUST fail the channel if: dust_limit_satoshis is greater than channel_reserve_satoshis.
-    if (accept.dustLimitSatoshis > accept.channelReserveSatoshis) return Some(DustLimitTooLarge(accept.temporaryChannelId, accept.dustLimitSatoshis, accept.channelReserveSatoshis))
+    if (accept.dustLimitSatoshis > accept.channelReserveSatoshis) throw DustLimitTooLarge(accept.temporaryChannelId, accept.dustLimitSatoshis, accept.channelReserveSatoshis)
 
     // if minimum_depth is unreasonably large:
     // MAY reject the channel.
-    if (accept.toSelfDelay > LNParams.maxToLocalDelay) return Some(ToSelfDelayTooHigh(accept.temporaryChannelId, accept.toSelfDelay, LNParams.maxToLocalDelay))
+    if (accept.toSelfDelay > LNParams.maxToLocalDelay) throw ToSelfDelayTooHigh(accept.temporaryChannelId, accept.toSelfDelay, LNParams.maxToLocalDelay)
 
     // if channel_reserve_satoshis is less than dust_limit_satoshis within the open_channel message:
     //  MUST reject the channel.
-    if (accept.channelReserveSatoshis < open.dustLimitSatoshis) return Some(ChannelReserveBelowOurDustLimit(accept.temporaryChannelId, accept.channelReserveSatoshis, open.dustLimitSatoshis))
+    if (accept.channelReserveSatoshis < open.dustLimitSatoshis) throw ChannelReserveBelowOurDustLimit(accept.temporaryChannelId, accept.channelReserveSatoshis, open.dustLimitSatoshis)
 
     // if channel_reserve_satoshis from the open_channel message is less than dust_limit_satoshis:
     // MUST reject the channel. Other fields have the same requirements as their counterparts in open_channel.
-    if (open.channelReserveSatoshis < accept.dustLimitSatoshis) return Some(DustLimitAboveOurChannelReserve(accept.temporaryChannelId, accept.dustLimitSatoshis, open.channelReserveSatoshis))
+    if (open.channelReserveSatoshis < accept.dustLimitSatoshis) throw DustLimitAboveOurChannelReserve(accept.temporaryChannelId, accept.dustLimitSatoshis, open.channelReserveSatoshis)
 
     val reserveToFundingRatio = accept.channelReserveSatoshis.toLong.toDouble / Math.max(open.fundingSatoshis.toLong, 1)
-    if (reserveToFundingRatio > LNParams.maxReserveToFundingRatio) return Some(ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, LNParams.maxReserveToFundingRatio))
+    if (reserveToFundingRatio > LNParams.maxReserveToFundingRatio) throw ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, LNParams.maxReserveToFundingRatio)
 
     None
   }
@@ -204,9 +204,7 @@ object Helpers {
         val toRemoteMsat = remoteSpec.toLocal
         val fees = commitTxFee(remoteParams.dustLimit, remoteSpec, channelVersion.commitmentFormat)
         val missing = toRemoteMsat.truncateToSatoshi - localParams.channelReserve - fees
-        if (missing < Satoshi(0)) {
-          return Left(CannotAffordFees(temporaryChannelId, missing = -missing, reserve = localParams.channelReserve, fees = fees))
-        }
+        if (missing < 0L.sat) return Left(new ChannelException(temporaryChannelId))
       }
 
       val channelKeyPath = remoteInfo.keyPath(localParams)
@@ -396,13 +394,13 @@ object Helpers {
       import commitments._
       val lastCommitFeeSatoshi = commitments.commitInput.txOut.amount - commitments.localCommit.publishableTxs.commitTx.tx.txOut.map(_.amount).sum
       if (remoteClosingFee > lastCommitFeeSatoshi) {
-        throw InvalidCloseFee(commitments.channelId, remoteClosingFee)
+        throw new ChannelException(commitments.channelId)
       } else {
         val (closingTx, closingSigned) = makeClosingTx(commitments, localScriptPubkey, remoteScriptPubkey, remoteClosingFee)
         val signedClosingTx = Transactions.addSigs(closingTx, commitments.remoteInfo.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
         Transactions.checkSpendable(signedClosingTx) match {
           case Success(_) => signedClosingTx.tx
-          case _ => throw InvalidCloseSignature(commitments.channelId, signedClosingTx.tx)
+          case _ => throw new ChannelException(commitments.channelId)
         }
       }
     }

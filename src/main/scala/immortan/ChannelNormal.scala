@@ -53,11 +53,10 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
 
       case (wait: DATA_WAIT_FOR_ACCEPT_CHANNEL, accept: AcceptChannel, WAIT_FOR_ACCEPT) =>
-        Helpers.validateParamsFunder(wait.lastSent, accept).foreach(exception => throw exception)
-
         val remoteParams = RemoteParams(accept.dustLimitSatoshis, accept.maxHtlcValueInFlightMsat, accept.channelReserveSatoshis, accept.htlcMinimumMsat, accept.toSelfDelay,
           accept.maxAcceptedHtlcs, accept.fundingPubkey, accept.revocationBasepoint, accept.paymentBasepoint, accept.delayedPaymentBasepoint, accept.htlcBasepoint)
 
+        Helpers.validateParamsFunder(wait.lastSent, accept)
         val multisig = Script pay2wsh Scripts.multiSig2of2(wait.lastSent.fundingPubkey, remoteParams.fundingPubKey)
         chainWallet.wallet.makeFundingTx(Script.write(multisig), wait.initFunder.fundingAmount, wait.initFunder.fundingTxFeeratePerKw).foreach(process)
         BECOME(DATA_WAIT_FOR_FUNDING_INTERNAL(wait.initFunder, remoteParams, accept.firstPerCommitmentPoint, wait.lastSent), WAIT_FOR_ACCEPT)
@@ -110,12 +109,11 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
       // FUNDEE FLOW
 
       case (null, init: INPUT_INIT_FUNDEE, null) =>
-        Helpers.validateParamsFundee(LNParams.normInit.features, init.theirOpen, init.remoteInfo.nodeId).foreach(exception => throw exception)
-
         val channelKeyPath = init.remoteInfo.keyPath(init.localParams)
         val localFundingPubKey = init.remoteInfo.fundingPublicKey(init.localParams.fundingKeyPath).publicKey
         val emptyUpfrontShutdown: TlvStream[AcceptChannelTlv] = TlvStream(ChannelTlv UpfrontShutdownScript ByteVector.empty)
 
+        Helpers.validateParamsFundee(LNParams.normInit.features, init.theirOpen, init.remoteInfo.nodeId)
         val basePoint = init.localParams.walletStaticPaymentBasepoint.getOrElse(init.remoteInfo.paymentPoint(channelKeyPath).publicKey)
         val accept = AcceptChannel(init.temporaryChannelId, init.localParams.dustLimit, init.localParams.maxHtlcValueInFlightMsat, init.localParams.channelReserve, init.localParams.htlcMinimum,
           LNParams.minDepthBlocks, init.localParams.toSelfDelay, init.localParams.maxAcceptedHtlcs, localFundingPubKey, init.remoteInfo.revocationPoint(channelKeyPath).publicKey, basePoint,
@@ -199,16 +197,16 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         val isValidFinalScriptPubkey = Helpers.Closing.isValidFinalScriptPubkey(localScriptPubKey)
         val shutdown = Shutdown(norm.channelId, localScriptPubKey)
 
-        if (hasLocalHasUnsignedOutgoingHtlcs) CMDException(CannotCloseWithUnsignedChanges(norm.channelId), cmd)
-        else if (norm.localShutdown.isDefined) CMDException(ClosingAlreadyInProgress(norm.channelId), cmd)
-        else if (!isValidFinalScriptPubkey) CMDException(InvalidFinalScript(norm.channelId), cmd)
+        if (!isValidFinalScriptPubkey) throw CMDException(new ChannelException(norm.channelId), cmd)
+        else if (norm.localShutdown.isDefined) throw CMDException(new ChannelException(norm.channelId), cmd)
+        else if (hasLocalHasUnsignedOutgoingHtlcs) throw CMDException(new ChannelException(norm.channelId), cmd)
         else StoreBecomeSend(norm.copy(localShutdown = shutdown.toSome), state, shutdown)
 
 
       case (norm: DATA_NORMAL, cmd: CMD_ADD_HTLC, state) =>
         if (OPEN != state || norm.localShutdown.isDefined || norm.remoteShutdown.isDefined) throw CMDException(ChannelUnavailable(norm.channelId), cmd)
         val (commits1, updateAddHtlcMsg) = NormalCommits.sendAdd(norm.commitments, cmd, LNParams.blockCount.get, LNParams.onChainFeeConf)
-        BECOME(norm.copy(commitments = commits1), state)
+        BECOME(norm.copy(commitments = commits1), OPEN)
         SEND(updateAddHtlcMsg)
         doProcess(CMD_SIGN)
 
@@ -348,7 +346,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
       case (wait: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT, CMD_SOCKET_ONLINE, SLEEPING) =>
         // There isn't much to do except asking them again to publish their current commitment by sending an error
-        val error = Error(wait.channelId, PleasePublishYourCommitment(wait.channelId).getMessage)
+        val error = Error(wait.channelId, "please publish your local commitment")
         BECOME(wait, CLOSING)
         SEND(error)
 
@@ -361,8 +359,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
 
       case (data1: DATA_CLOSING, _: ChannelReestablish, CLOSING) =>
-        val exception = FundingTxSpent(data1.channelId, data1.commitTxes.head)
-        val error = Error(data1.channelId, exception.getMessage)
+        val error = Error(data1.channelId, s"funding tx has been spent")
         SEND(error)
 
 
