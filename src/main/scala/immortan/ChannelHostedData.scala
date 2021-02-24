@@ -25,14 +25,11 @@ case class HostedCommits(remoteInfo: RemoteNodeInfo, lastCrossSignedState: LastC
 
   val nextLocalSpec: CommitmentSpec = CommitmentSpec.reduce(localSpec, nextLocalUpdates, nextRemoteUpdates)
 
-  val unProcessedIncoming: Set[UpdateAddHtlcExt] = {
-    val unprocessed = localSpec.incomingAdds intersect nextLocalSpec.incomingAdds
-    for (add <- unprocessed) yield UpdateAddHtlcExt(add, remoteInfo)
-  }
+  val channelId: ByteVector32 = Tools.hostedChanId(remoteInfo.nodeSpecificPubKey.value, remoteInfo.nodeId.value)
+
+  val crossSignedIncoming: Set[UpdateAddHtlcExt] = for (add <- localSpec.incomingAdds) yield UpdateAddHtlcExt(add, remoteInfo)
 
   val allOutgoing: Set[UpdateAddHtlc] = localSpec.outgoingAdds ++ nextLocalSpec.outgoingAdds
-
-  val channelId: ByteVector32 = Tools.hostedChanId(remoteInfo.nodeSpecificPubKey.value, remoteInfo.nodeId.value)
 
   val remoteRejects: Seq[RemoteReject] = nextRemoteUpdates.collect {
     case fail: UpdateFailHtlc => RemoteUpdateFail(fail, localSpec.findOutgoingHtlcById(fail.id).get.add)
@@ -58,24 +55,31 @@ case class HostedCommits(remoteInfo: RemoteNodeInfo, lastCrossSignedState: LastC
   def isResizingSupported: Boolean = lastCrossSignedState.initHostedChannel.version == HostedChannelVersion.RESIZABLE
 
   def sendFail(cmd: CMD_FAIL_HTLC): (HostedCommits, UpdateFailHtlc) = {
-    val theirAddExt = unProcessedIncoming.find(ext => cmd.id == ext.theirAdd.id)
-    val fail = OutgoingPacket.buildHtlcFailure(cmd, theirAddExt.get.theirAdd)
-    (addLocalProposal(fail), fail)
+    val isAlreadyProposed = alreadyProposed(nextLocalUpdates, cmd.id)
+    val theirAdd = localSpec.findIncomingHtlcById(cmd.id).get.add
+    val ourFail = OutgoingPacket.buildHtlcFailure(cmd, theirAdd)
+
+    if (isAlreadyProposed) throw CMDException(AlreadyProposed, cmd)
+    (addLocalProposal(ourFail), ourFail)
   }
 
   def sendMalformed(cmd: CMD_FAIL_MALFORMED_HTLC): (HostedCommits, UpdateFailMalformedHtlc) = {
-    val isNotProcessedYet = unProcessedIncoming.exists(updateAddHtlcExt => cmd.id == updateAddHtlcExt.theirAdd.id)
-    val ourFailMalformMsg = UpdateFailMalformedHtlc(channelId, cmd.id, cmd.onionHash, cmd.failureCode)
-    if (cmd.failureCode.&(FailureMessageCodecs.BADONION) == 0) throw new RuntimeException
-    else if (isNotProcessedYet) (addLocalProposal(ourFailMalformMsg), ourFailMalformMsg)
-    else throw new RuntimeException
+    val ourFail = UpdateFailMalformedHtlc(channelId, cmd.id, cmd.onionHash, cmd.failureCode)
+    val isAlreadyProposed = alreadyProposed(nextLocalUpdates, cmd.id)
+
+    require(localSpec.findIncomingHtlcById(cmd.id).isDefined)
+    if (isAlreadyProposed) throw CMDException(AlreadyProposed, cmd)
+    (addLocalProposal(ourFail), ourFail)
   }
 
   def sendFulfill(cmd: CMD_FULFILL_HTLC): (HostedCommits, UpdateFulfillHtlc) = {
-    val theirAdd = unProcessedIncoming.find(ourAddExt => cmd.id == ourAddExt.theirAdd.id).get.theirAdd
-    val ourFulfillMsg = UpdateFulfillHtlc(channelId, cmd.id, paymentPreimage = cmd.preimage)
+    val ourFulfill = UpdateFulfillHtlc(channelId, cmd.id, cmd.preimage)
+    val isAlreadyProposed = alreadyProposed(nextLocalUpdates, cmd.id)
+    val theirAdd = localSpec.findIncomingHtlcById(cmd.id).get.add
+
     if (theirAdd.paymentHash != cmd.paymentHash) throw new RuntimeException
-    (addLocalProposal(ourFulfillMsg), ourFulfillMsg)
+    if (isAlreadyProposed) throw CMDException(AlreadyProposed, cmd)
+    (addLocalProposal(ourFulfill), ourFulfill)
   }
 
   def sendAdd(cmd: CMD_ADD_HTLC): (HostedCommits, UpdateAddHtlc) = {

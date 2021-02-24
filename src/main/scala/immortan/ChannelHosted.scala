@@ -85,6 +85,7 @@ abstract class ChannelHosted extends Channel { me =>
       case (hc: HostedCommits, add: UpdateAddHtlc, OPEN) =>
         BECOME(hc.receiveAdd(add), OPEN)
 
+
       // Relaxed constraints for receiveng preimages over HCs
       case (hc: HostedCommits, msg: UpdateFulfillHtlc, OPEN | SUSPENDED) =>
         val ourAdd = hc.nextLocalSpec.findOutgoingHtlcById(msg.id).get.add
@@ -94,14 +95,14 @@ abstract class ChannelHosted extends Channel { me =>
 
 
       case (hc: HostedCommits, fail: UpdateFailHtlc, OPEN) =>
-        val isNotResolvedYet = hc.allOutgoing.exists(ourOutgoingAdd => fail.id == ourOutgoingAdd.id)
-        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(fail), OPEN) else throw new RuntimeException
+        require(hc.localSpec.findOutgoingHtlcById(fail.id).isDefined)
+        BECOME(hc.addRemoteProposal(fail), OPEN)
 
 
       case (hc: HostedCommits, malform: UpdateFailMalformedHtlc, OPEN) =>
         require(0 == (malform.failureCode & FailureMessageCodecs.BADONION), "wrong bad onion code")
-        val isNotResolvedYet = hc.allOutgoing.exists(ourOutgoingAdd => malform.id == ourOutgoingAdd.id)
-        if (isNotResolvedYet) BECOME(hc.addRemoteProposal(malform), OPEN) else throw new RuntimeException
+        require(hc.localSpec.findOutgoingHtlcById(malform.id).isDefined)
+        BECOME(hc.addRemoteProposal(malform), OPEN)
 
 
       case (hc: HostedCommits, CMD_SIGN, OPEN) if hc.nextLocalUpdates.nonEmpty || hc.resizeProposal.isDefined =>

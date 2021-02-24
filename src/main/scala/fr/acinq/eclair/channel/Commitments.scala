@@ -52,7 +52,6 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: ByteVector32, r
 
 case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long, reSignAsap: Boolean = false)
 
-
 trait Commitments {
   def channelId: ByteVector32
   def remoteInfo: RemoteNodeInfo
@@ -64,8 +63,15 @@ trait Commitments {
   def availableBalanceForReceive: MilliSatoshi
 
   def remoteRejects: Seq[RemoteReject] // Our adds rejected and cross-signed on last state update
-  def unProcessedIncoming: Set[UpdateAddHtlcExt] // Cross-signed MINUS already processed by us
+  def crossSignedIncoming: Set[UpdateAddHtlcExt] // Cross-signed incoming which we can start to process
   def allOutgoing: Set[UpdateAddHtlc] // Cross-signed PLUS new payments offered by us
+
+  def alreadyProposed(changes: List[UpdateMessage], id: Long): Boolean = changes.exists {
+    case existingUpdate: UpdateFailMalformedHtlc => id == existingUpdate.id
+    case existingUpdate: UpdateFulfillHtlc => id == existingUpdate.id
+    case existingUpdate: UpdateFailHtlc => id == existingUpdate.id
+    case _ => false
+  }
 }
 
 case class NormalCommits(channelVersion: ChannelVersion, remoteInfo: RemoteNodeInfo, localParams: LocalParams, remoteParams: RemoteParams,
@@ -82,10 +88,7 @@ case class NormalCommits(channelVersion: ChannelVersion, remoteInfo: RemoteNodeI
 
   val minSendable: MilliSatoshi = remoteParams.htlcMinimum.max(localParams.htlcMinimum)
 
-  val unProcessedIncoming: Set[UpdateAddHtlcExt] = {
-    val reduced = CommitmentSpec.reduce(latestRemoteCommit.spec, remoteChanges.acked, localChanges.proposed)
-    for (add <- localCommit.spec.incomingAdds intersect reduced.outgoingAdds) yield UpdateAddHtlcExt(add, remoteInfo)
-  }
+  val crossSignedIncoming: Set[UpdateAddHtlcExt] = for (add <- localCommit.spec.incomingAdds intersect remoteCommit.spec.outgoingAdds) yield UpdateAddHtlcExt(add, remoteInfo)
 
   val allOutgoing: Set[UpdateAddHtlc] = localCommit.spec.outgoingAdds ++ remoteCommit.spec.incomingAdds ++ localChanges.adds
 
@@ -267,10 +270,13 @@ object NormalCommits {
   }
 
   def sendFulfill(commitments: NormalCommits, cmd: CMD_FULFILL_HTLC): (NormalCommits, UpdateFulfillHtlc) = {
+    val isAlreadyProposed = commitments.alreadyProposed(commitments.localChanges.proposed, cmd.id)
     val theirAdd = commitments.latestRemoteCommit.spec.findOutgoingHtlcById(cmd.id).get.add
-    val fulfill = UpdateFulfillHtlc(commitments.channelId, cmd.id, cmd.preimage)
+    val ourFulfill = UpdateFulfillHtlc(commitments.channelId, cmd.id, cmd.preimage)
+
     if (theirAdd.paymentHash != cmd.paymentHash) throw new RuntimeException
-    (addLocalProposal(commitments, fulfill), fulfill)
+    if (isAlreadyProposed) throw CMDException(AlreadyProposed, cmd)
+    (addLocalProposal(commitments, ourFulfill), ourFulfill)
   }
 
   def receiveFulfill(commitments: NormalCommits, fulfill: UpdateFulfillHtlc): (NormalCommits, UpdateAddHtlc) = {
@@ -280,16 +286,21 @@ object NormalCommits {
   }
 
   def sendFail(commitments: NormalCommits, cmd: CMD_FAIL_HTLC): (NormalCommits, UpdateFailHtlc) = {
+    val isAlreadyProposed = commitments.alreadyProposed(commitments.localChanges.proposed, cmd.id)
     val theirAdd = commitments.latestRemoteCommit.spec.findOutgoingHtlcById(cmd.id).get.add
-    val fail = OutgoingPacket.buildHtlcFailure(cmd, theirAdd)
-    (addLocalProposal(commitments, fail), fail)
+    val ourFail = OutgoingPacket.buildHtlcFailure(cmd, theirAdd)
+
+    if (isAlreadyProposed) throw CMDException(AlreadyProposed, cmd)
+    (addLocalProposal(commitments, ourFail), ourFail)
   }
 
   def sendFailMalformed(commitments: NormalCommits, cmd: CMD_FAIL_MALFORMED_HTLC): (NormalCommits, UpdateFailMalformedHtlc) = {
-    val fail = UpdateFailMalformedHtlc(commitments.channelId, cmd.id, cmd.onionHash, cmd.failureCode)
-    require(0 == (cmd.failureCode & FailureMessageCodecs.BADONION), "wrong bad onion code")
+    val ourFail = UpdateFailMalformedHtlc(commitments.channelId, cmd.id, cmd.onionHash, cmd.failureCode)
+    val isAlreadyProposed = commitments.alreadyProposed(commitments.localChanges.proposed, cmd.id)
+
     require(commitments.latestRemoteCommit.spec.findOutgoingHtlcById(cmd.id).isDefined)
-    (addLocalProposal(commitments, fail), fail)
+    if (isAlreadyProposed) throw CMDException(AlreadyProposed, cmd)
+    (addLocalProposal(commitments, ourFail), ourFail)
   }
 
   def receiveFail(commitments: NormalCommits, fail: UpdateFailHtlc): (NormalCommits, UpdateAddHtlc) = {
