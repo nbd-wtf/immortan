@@ -72,16 +72,18 @@ case class HostedCommits(remoteInfo: RemoteNodeInfo, lastCrossSignedState: LastC
     val isAlreadyProposed = alreadyProposed(nextLocalUpdates, cmd.id)
     val theirAdd = localSpec.findIncomingHtlcById(cmd.id).get.add
 
-    if (theirAdd.paymentHash != cmd.paymentHash) throw new RuntimeException
+    if (theirAdd.paymentHash != cmd.hash) throw new RuntimeException
     if (isAlreadyProposed) throw CMDException(AlreadyProposed, cmd)
     (addLocalProposal(ourFulfill), ourFulfill)
   }
 
-  def sendAdd(cmd: CMD_ADD_HTLC): (HostedCommits, UpdateAddHtlc) = {
+  def sendAdd(cmd: CMD_ADD_HTLC, blockHeight: Long): (HostedCommits, UpdateAddHtlc) = {
     val encryptedType: TlvStream[Tlv] = TlvStream(PaymentTypeTlv.EncryptedType(cmd.encryptedType) :: Nil)
     val add = UpdateAddHtlc(channelId, nextTotalLocal + 1, cmd.firstAmount, cmd.paymentType.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet, encryptedType)
     val commits1: HostedCommits = addLocalProposal(add)
 
+    if (CltvExpiry(blockHeight) >= cmd.cltvExpiry) throw CMDException(new RuntimeException, cmd)
+    if (LNParams.maxCltvExpiryDelta.toCltvExpiry(blockHeight) < cmd.cltvExpiry) throw CMDException(new RuntimeException, cmd)
     if (commits1.nextLocalSpec.outgoingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) throw CMDException(new RuntimeException, cmd)
     if (commits1.nextLocalSpec.outgoingAdds.foldLeft(0L.msat)(_ + _.amountMsat) > maxInFlight) throw CMDException(new RuntimeException, cmd)
     if (commits1.nextLocalSpec.toLocal < 0L.msat) throw CMDException(new RuntimeException, cmd)

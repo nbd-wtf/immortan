@@ -76,12 +76,20 @@ case object BITCOIN_FUNDING_LOST extends BitcoinEvent
 
 sealed trait Command
 sealed trait IncomingResolution
-case class ReasonableResolution(paymentType: PaymentType, packet: IncomingPacket) extends IncomingResolution
-case class CMD_FAIL_HTLC(reason: Either[ByteVector, FailureMessage], nodeSecret: PrivateKey, id: Long) extends Command with IncomingResolution
-case class CMD_FAIL_MALFORMED_HTLC(onionHash: ByteVector32, failureCode: Int, id: Long) extends Command with IncomingResolution
-case class CMD_FULFILL_HTLC(preimage: ByteVector32, id: Long) extends Command with IncomingResolution {
-  lazy val paymentHash: ByteVector32 = Crypto.sha256(preimage)
+
+case class ReasonableTrampoline(packet: IncomingPacket.NodeRelayPacket) extends IncomingResolution {
+  val paymentType: PaymentType = PaymentType(packet.add.paymentHash, PaymentTypeTlv.TRAMPOLINE)
 }
+
+case class ReasonableFinal(packet: IncomingPacket.FinalPacket) extends IncomingResolution {
+  val paymentType: PaymentType = PaymentType(packet.add.paymentHash, PaymentTypeTlv.LOCAL)
+}
+
+case class CMD_FAIL_HTLC(reason: Either[ByteVector, FailureMessage], nodeSecret: PrivateKey, id: Long) extends Command with IncomingResolution
+
+case class CMD_FAIL_MALFORMED_HTLC(onionHash: ByteVector32, failureCode: Int, id: Long) extends Command with IncomingResolution
+
+case class CMD_FULFILL_HTLC(hash: ByteVector32, preimage: ByteVector32, id: Long) extends Command with IncomingResolution
 
 // Important: LNParams.format must be defined
 case class CMD_ADD_HTLC(paymentType: PaymentType, firstAmount: MilliSatoshi, cltvExpiry: CltvExpiry, packetAndSecrets: PacketAndSecrets, payload: FinalPayload) extends Command {

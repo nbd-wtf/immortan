@@ -123,3 +123,7 @@ case class CommitClaimTxDescription(txid: String, nodeId: String, sid: Long) ext
 case class HtlcClaimTxDescription(txid: String, nodeId: String, sid: Long) extends TxDescription
 
 case class PenaltyTxDescription(txid: String, nodeId: String, sid: Long) extends TxDescription
+
+// Composite data
+
+case class PaymentDbInfo(local: Option[PaymentInfo], relayed: Option[RelayedPreimageInfo], paymentHash: ByteVector32)

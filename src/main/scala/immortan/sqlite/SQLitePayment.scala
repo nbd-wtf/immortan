@@ -39,13 +39,14 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
 
   def updStatusIncoming(add: UpdateAddHtlc, status: String): Unit = db.change(PaymentTable.updParamsIncomingSql, status, add.amountMsat.toLong: JLong, System.currentTimeMillis: JLong, add.paymentHash.toHex)
 
-  def replaceOutgoingPayment(nodeId: PublicKey, prex: PaymentRequestExt, description: PaymentDescription, action: Option[PaymentAction],
+  def replaceOutgoingPayment(prex: PaymentRequestExt, description: PaymentDescription, action: Option[PaymentAction],
                              finalAmount: MilliSatoshi, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc, chainFee: MilliSatoshi): Unit =
     db txWrap {
       db.change(PaymentTable.deleteSql, prex.pr.paymentHash.toHex)
-      db.change(PaymentTable.newSql, nodeId.toString, prex.raw, ByteVector32.Zeroes.toHex, PaymentStatus.PENDING, System.currentTimeMillis: JLong, description.toJson.compactPrint,
-        action.map(_.toJson.compactPrint).getOrElse(new String), prex.pr.paymentHash.toHex, 0L: JLong /* RECEIVED = 0 MSAT, OUTGOING */, finalAmount.toLong: JLong /* SENT IS KNOWN */,
-        0L: JLong /* FEE IS UNCERTAIN YET */, balanceSnap.toLong: JLong, fiatRateSnap.toJson.compactPrint, chainFee.toLong: JLong, 0: java.lang.Integer /* INCOMING = 0 */, new String)
+      db.change(PaymentTable.newSql, prex.raw, ByteVector32.Zeroes.toHex, PaymentStatus.PENDING, System.currentTimeMillis: JLong,
+        description.toJson.compactPrint, action.map(_.toJson.compactPrint).getOrElse(new String), prex.pr.paymentHash.toHex, 0L: JLong /* RECEIVED = 0 MSAT, OUTGOING */,
+        finalAmount.toLong: JLong /* SENT IS KNOWN */, 0L: JLong /* FEE IS UNCERTAIN YET */, balanceSnap.toLong: JLong, fiatRateSnap.toJson.compactPrint, chainFee.toLong: JLong,
+        0: java.lang.Integer /* INCOMING = 0 */, new String)
     }
 
   def replaceIncomingPayment(prex: PaymentRequestExt, preimage: ByteVector32, description: PaymentDescription,
@@ -55,9 +56,10 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
       val finalStatus = if (prex.pr.amount.isDefined) PaymentStatus.PENDING else PaymentStatus.HIDDEN
 
       db.change(PaymentTable.deleteSql, prex.pr.paymentHash.toHex)
-      db.change(PaymentTable.newSql, invalidPubKey.toString, prex.raw, preimage.toHex, finalStatus, System.currentTimeMillis: JLong, description.toJson.compactPrint,
-        new String /* NO ACTION */, prex.pr.paymentHash.toHex, finalReceived /* MUST COME FROM PR! IF RECEIVED = 0 MSAT THEN NO AMOUNT */, 0L: JLong /* SENT = 0 MSAT, NOTHING TO SEND */,
-        0L: JLong /* NO FEE FOR INCOMING */, balanceSnap.toLong: JLong, fiatRateSnap.toJson.compactPrint, chainFee.toLong: JLong, 1: java.lang.Integer /* INCOMING = 1 */, new String)
+      db.change(PaymentTable.newSql, prex.raw, preimage.toHex, finalStatus, System.currentTimeMillis: JLong, description.toJson.compactPrint,
+        new String /* NO ACTION */, prex.pr.paymentHash.toHex, finalReceived /* MUST COME FROM PR! IF RECEIVED = 0 MSAT THEN NO AMOUNT */,
+        0L: JLong /* SENT = 0 MSAT, NOTHING TO SEND */, 0L: JLong /* NO FEE FOR INCOMING PAYMENT */, balanceSnap.toLong: JLong,
+        fiatRateSnap.toJson.compactPrint, chainFee.toLong: JLong, 1: java.lang.Integer /* INCOMING = 1 */, new String)
     }
 
   def paidSummary: Try[PaidSummary] = db.select(PaymentTable.selectSummarySql) headTry { rc =>

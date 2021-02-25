@@ -12,6 +12,8 @@ import immortan.ChannelListener.{Malfunction, Transition}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.payment.IncomingPacket
 import com.google.common.cache.LoadingCache
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.payment.PaymentRequest.PaymentHash
 import scodec.bits.ByteVector
 
 
@@ -20,8 +22,6 @@ object ChannelMaster {
     val failure = IncorrectOrUnknownPaymentDetails(add.amountMsat, LNParams.blockCount.get)
     Right(failure)
   }
-
-  val initResolveMemo: LoadingCache[UpdateAddHtlcExt, IncomingResolution] = memoize(initResolve)
 
   def initResolve(payment: UpdateAddHtlcExt): IncomingResolution = IncomingPacket.decrypt(payment.theirAdd, payment.remoteInfo.nodeSpecificPrivKey) match {
     case Left(_: BadOnion) => fallbackResolve(LNParams.format.keys.fakeInvoiceKey(payment.theirAdd.paymentHash), payment.theirAdd)
@@ -35,10 +35,11 @@ object ChannelMaster {
     case Right(packet: IncomingPacket) => defineResolution(secret, packet)
   }
 
-  def defineResolution(secret: PrivateKey, packet: IncomingPacket): IncomingResolution = packet match {
-    case pkt: IncomingPacket.ChannelRelayPacket => CMD_FAIL_HTLC(incorrectDetails(pkt.add), secret, pkt.add.id)
-    case pkt: IncomingPacket.NodeRelayPacket => ReasonableResolution(PaymentType(pkt.add.paymentHash, PaymentTypeTlv.TRAMPOLINE), packet)
-    case pkt: IncomingPacket.FinalPacket => ReasonableResolution(PaymentType(pkt.add.paymentHash, PaymentTypeTlv.LOCAL), packet)
+  def defineResolution(secret: PrivateKey, pkt: IncomingPacket): IncomingResolution = pkt match {
+    case packet: IncomingPacket.ChannelRelayPacket => CMD_FAIL_HTLC(incorrectDetails(packet.add), secret, packet.add.id)
+    case packet: IncomingPacket.NodeRelayPacket if packet.outerPayload.paymentSecret.nonEmpty => ReasonableTrampoline(packet)
+    case packet: IncomingPacket.NodeRelayPacket => CMD_FAIL_HTLC(incorrectDetails(packet.add), secret, packet.add.id)
+    case packet: IncomingPacket.FinalPacket => ReasonableFinal(packet)
   }
 }
 
@@ -51,6 +52,9 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
   var paymentListeners = Set.empty[ChannelMasterListener]
   var all = List.empty[Channel]
 
+  val initResolveMemo: LoadingCache[UpdateAddHtlcExt, IncomingResolution] = memoize(ChannelMaster.initResolve)
+  val getPaymentDbInfoMemo: LoadingCache[ByteVector32, PaymentDbInfo] = memoize(getPaymentDbInfo)
+
   // CHANNEL MANAGEMENT
 
   def initConnect: Unit = all.filter(Channel.isOperationalOrWaiting).flatMap(Channel.chanAndCommitsOpt).map(_.commits).foreach {
@@ -60,12 +64,34 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
   }
 
   def allInChanOutgoingHtlcs: Seq[UpdateAddHtlc] = all.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing)
-
   def allInChanCrossSignedIncomingHtlcs: Seq[UpdateAddHtlcExt] = all.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.crossSignedIncoming)
-
   def fromNode(nodeId: PublicKey): Seq[ChanAndCommits] = all.flatMap(Channel.chanAndCommitsOpt).filter(_.commits.remoteInfo.nodeId == nodeId)
 
   // RECEIVE/SEND UTILITIES
+
+  def getPaymentDbInfo(paymentHash: ByteVector32): PaymentDbInfo = {
+    val inRelayDb = payBag.getRelayedPreimageInfo(paymentHash)
+    val inPaymentDb = payBag.getPaymentInfo(paymentHash)
+    PaymentDbInfo(inPaymentDb, inRelayDb, paymentHash)
+  }
+
+  // Right(preimage) is can be fulfilled, Left(false) is should be failed, Left(true) is keep waiting
+  def decideOnFinal(adds: List[ReasonableFinal], info: PaymentDbInfo): Either[Boolean, ByteVector32] = info match {
+    case _ if adds.exists(_.packet.add.cltvExpiry.toLong < LNParams.blockCount.get + LNParams.cltvRejectThreshold) => Left(false)
+    case PaymentDbInfo(Some(local), _, _) if !adds.flatMap(_.packet.payload.paymentSecret).forall(local.pr.paymentSecret.contains) => Left(false)
+    case PaymentDbInfo(Some(local), _, _) if local.pr.amount.forall(requestedAmount => adds.map(_.packet.payload.totalAmount).min < requestedAmount) => Left(false)
+    case PaymentDbInfo(Some(local), _, _) if adds.map(_.packet.add.amountMsat).sum >= adds.head.packet.payload.totalAmount && local.preimage != ByteVector32.Zeroes => Right(local.preimage)
+    case PaymentDbInfo(_, Some(relayed), _) => Right(relayed.preimage)
+    case info => Left(info.local.isEmpty)
+  }
+
+//  def decideOnTrampoline(adds: List[ReasonableTrampoline] = Nil): Option[Boolean] = {
+//
+//    case _ if adds.exists(_.packet.innerPayload.outgoingCltv) => Some(false)
+//    case _ if adds.exists(_.packet.outerPayload.paymentSecret.isEmpty) => Left(false)
+//    case _ if adds.flatMap(_.packet.outerPayload.paymentSecret).toSet.size > 1 => Left(false)
+//    case _ if adds.map(_.packet.outerPayload.totalAmount).toSet.size > 1 => Left(false)
+//  }
 
   def maxReceivableInfo: Option[CommitsAndMax] = {
     val canReceive = all.filter(Channel.isOperational).flatMap(Channel.chanAndCommitsOpt).filter(_.commits.updateOpt.isDefined).sortBy(_.commits.availableBalanceForReceive)
@@ -75,20 +101,15 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
     if (candidates.isEmpty) None else candidates.maxBy(_.maxReceivable).toSome
   }
 
-  def checkIfSendable(paymentType: PaymentType, amount: MilliSatoshi): Int = {
-    val inRelayDb = payBag.getRelayedPreimageInfo(paymentType.paymentHash)
-    val inPaymentDb = payBag.getPaymentInfo(paymentType.paymentHash)
-
-    opm.data.payments.get(paymentType) match {
-      case Some(senderFSM) if SUCCEEDED == senderFSM.state => PaymentInfo.NOT_SENDABLE_SUCCESS // This payment has just been fulfilled at runtime
-      case Some(senderFSM) if PENDING == senderFSM.state || INIT == senderFSM.state => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is pending in FSM
-      case _ if allInChanOutgoingHtlcs.exists(_.paymentHash == paymentType.paymentHash) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is pending in channels
-      case _ if opm.inPrincipleSendable(all, LNParams.routerConf) < amount => PaymentInfo.NOT_SENDABLE_LOW_BALANCE // Not enough money
-      case _ if inPaymentDb.exists(SUCCEEDED == _.status) => PaymentInfo.NOT_SENDABLE_SUCCESS // Successfully sent a long time ago
-      case _ if inPaymentDb.exists(_.isIncoming) => PaymentInfo.NOT_SENDABLE_INCOMING // Incoming payment with this hash exists
-      case _ if inRelayDb.isDefined => PaymentInfo.NOT_SENDABLE_RELAYED // Related preimage has been relayed
-      case _ => PaymentInfo.SENDABLE // Has never been sent or ABORTED by now
-    }
+  def checkIfSendable(paymentType: PaymentType, amount: MilliSatoshi): Int = getPaymentDbInfoMemo(paymentType.paymentHash) match {
+    case _ if opm.data.payments.get(paymentType).exists(fsm => SUCCEEDED == fsm.state) => PaymentInfo.NOT_SENDABLE_SUCCESS // This payment has just been fulfilled at runtime
+    case _ if opm.data.payments.get(paymentType).exists(fsm => PENDING == fsm.state || INIT == fsm.state) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is pending in FSM
+    case _ if allInChanOutgoingHtlcs.exists(_.paymentHash == paymentType.paymentHash) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is still pending in channels
+    case _ if opm.inPrincipleSendable(all, LNParams.routerConf) < amount => PaymentInfo.NOT_SENDABLE_LOW_BALANCE // We don't have enough money to send this one
+    case info if info.local.exists(SUCCEEDED == _.status) => PaymentInfo.NOT_SENDABLE_SUCCESS // Successfully sent or received a long time ago
+    case info if info.local.exists(_.isIncoming) => PaymentInfo.NOT_SENDABLE_INCOMING // Incoming payment with this hash exists
+    case info if info.relayed.isDefined => PaymentInfo.NOT_SENDABLE_RELAYED // Related preimage has been relayed
+    case _ => PaymentInfo.SENDABLE // Has never been sent or ABORTED by now
   }
 
   // These are executed in Channel context
