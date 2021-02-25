@@ -256,10 +256,13 @@ abstract class ChannelHosted extends Channel { me =>
         case None => localSuspend(hc, ERR_HOSTED_WRONG_REMOTE_SIG)
       }
     } else {
-      // Send an unconditional reply state update
+      val lastRemoteRejects: Seq[RemoteReject] = hc.nextRemoteUpdates.collect {
+        case fail: UpdateFailHtlc => RemoteUpdateFail(fail, hc.localSpec.findOutgoingHtlcById(fail.id).get.add)
+        case malform: UpdateFailMalformedHtlc => RemoteUpdateMalform(malform, hc.localSpec.findOutgoingHtlcById(malform.id).get.add)
+      }
+
       StoreBecomeSend(hc1, OPEN, lcss1.stateUpdate)
-      // Another update once we have anything to resolve
-      events.stateUpdated(hc.remoteRejects)
+      events.stateUpdated(lastRemoteRejects)
     }
   }
 }

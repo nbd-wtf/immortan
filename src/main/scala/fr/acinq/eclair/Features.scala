@@ -177,9 +177,9 @@ object Features {
     val mandatory = 32772
   }
 
-  case object PrivateRouting extends Feature {
+  case object PrivateTrampoline extends Feature {
     override def isDesired: Boolean = true
-    val name = "Private channel routing"
+    val name = "Private trampoline routing"
     val mandatory = 32774
   }
 
@@ -188,8 +188,8 @@ object Features {
     BasicMultiPartPayment,
     OptionDataLossProtect,
     VariableLengthOnion,
+    PrivateTrampoline,
     StaticRemoteKey,
-    PrivateRouting,
     HostedChannels,
     AnchorOutputs,
     ChainSwap,

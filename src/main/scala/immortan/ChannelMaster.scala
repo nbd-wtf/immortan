@@ -26,18 +26,18 @@ object ChannelMaster {
   def initResolve(payment: UpdateAddHtlcExt): IncomingResolution = IncomingPacket.decrypt(payment.theirAdd, payment.remoteInfo.nodeSpecificPrivKey) match {
     case Left(_: BadOnion) => fallbackResolve(LNParams.format.keys.fakeInvoiceKey(payment.theirAdd.paymentHash), payment.theirAdd)
     case Left(failure) => CMD_FAIL_HTLC(Right(failure), payment.remoteInfo.nodeSpecificPrivKey, payment.theirAdd.id)
-    case Right(packet: IncomingPacket) => defineResolution(packet)
+    case Right(packet: IncomingPacket) => defineResolution(payment.remoteInfo.nodeSpecificPrivKey, packet)
   }
 
   def fallbackResolve(secret: PrivateKey, theirAdd: UpdateAddHtlc): IncomingResolution = IncomingPacket.decrypt(theirAdd, secret) match {
     case Left(failure: BadOnion) => CMD_FAIL_MALFORMED_HTLC(failure.onionHash, failure.code, theirAdd.id)
     case Left(failure) => CMD_FAIL_HTLC(Right(failure), secret, theirAdd.id)
-    case Right(packet: IncomingPacket) => defineResolution(packet)
+    case Right(packet: IncomingPacket) => defineResolution(secret, packet)
   }
 
-  def defineResolution(packet: IncomingPacket): ReasonableResolution = packet match {
-    case pkt: IncomingPacket.ChannelRelayPacket => ReasonableResolution(PaymentType(pkt.add.paymentHash, PaymentTypeTlv.CHANNEL_ROUTED), packet)
-    case pkt: IncomingPacket.NodeRelayPacket => ReasonableResolution(PaymentType(pkt.add.paymentHash, PaymentTypeTlv.NODE_ROUTED), packet)
+  def defineResolution(secret: PrivateKey, packet: IncomingPacket): IncomingResolution = packet match {
+    case pkt: IncomingPacket.ChannelRelayPacket => CMD_FAIL_HTLC(incorrectDetails(pkt.add), secret, pkt.add.id)
+    case pkt: IncomingPacket.NodeRelayPacket => ReasonableResolution(PaymentType(pkt.add.paymentHash, PaymentTypeTlv.TRAMPOLINE), packet)
     case pkt: IncomingPacket.FinalPacket => ReasonableResolution(PaymentType(pkt.add.paymentHash, PaymentTypeTlv.LOCAL), packet)
   }
 }
@@ -61,7 +61,7 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
   def allInChanOutgoingHtlcs: Seq[UpdateAddHtlc] = all.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing)
 
-  def allUnProcessedIncomingHtlcs: Seq[UpdateAddHtlcExt] = all.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.crossSignedIncoming)
+  def allInChanCrossSignedIncomingHtlcs: Seq[UpdateAddHtlcExt] = all.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.crossSignedIncoming)
 
   def fromNode(nodeId: PublicKey): Seq[ChanAndCommits] = all.flatMap(Channel.chanAndCommitsOpt).filter(_.commits.remoteInfo.nodeId == nodeId)
 

@@ -15,9 +15,8 @@ sealed trait PaymentTypeTlv extends Tlv
 
 object PaymentTypeTlv {
   final val UNDEFINED = 0L
-  final val CHANNEL_ROUTED = 1L
-  final val NODE_ROUTED = 2L
-  final val LOCAL = 3L
+  final val TRAMPOLINE = 1L
+  final val LOCAL = 2L
 
   case class EncryptedType(data: ByteVector) extends PaymentTypeTlv
 

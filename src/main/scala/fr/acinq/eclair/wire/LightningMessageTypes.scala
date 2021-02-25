@@ -93,8 +93,6 @@ case class UpdateAddHtlc(channelId: ByteVector32,
 
   final val partId: ByteVector = onionRoutingPacket.publicKey // May not be unique, its advantage is that we can know partId before id is known for outgoing payments
 
-  final val uniquePartId: ByteVector = partId :+ id.toByte // Although should not, peer technically can send many payments with identical onion keys, adding an id guarantees uniqueness
-
   // Important: LNParams.format must be defined
   lazy val paymentType: PaymentType = tlvStream.get[PaymentTypeTlv.EncryptedType].map { case PaymentTypeTlv.EncryptedType(cipherData) =>
     val plainDataTry = Tools.chaChaDecrypt(LNParams.format.keys.paymentTypeEncryptionKey(paymentHash), cipherData)
@@ -327,12 +325,6 @@ case class ResizeChannel(newCapacity: Satoshi, clientSig: ByteVector64 = ByteVec
 case class QueryPublicHostedChannels(chainHash: ByteVector32) extends RoutingMessage with HasChainHash
 
 case class ReplyPublicHostedChannelsEnd(chainHash: ByteVector32) extends RoutingMessage with HasChainHash
-
-// Private routing
-
-case class RoutableChannel(remoteNodeId: PublicKey, remoteUpdate: ChannelUpdate, cltvExpiryDelta: CltvExpiryDelta,
-                           htlcMinimumMsat: MilliSatoshi, htlcMaximumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long,
-                           remoteBitcoinKey: PublicKey, localBitcoinKey: PublicKey, localBitcoinSignature: ByteVector64) extends RoutingMessage
 
 // Swap In/Out
 

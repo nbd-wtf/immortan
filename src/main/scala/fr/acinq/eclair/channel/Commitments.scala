@@ -62,7 +62,6 @@ trait Commitments {
   def availableBalanceForSend: MilliSatoshi
   def availableBalanceForReceive: MilliSatoshi
 
-  def remoteRejects: Seq[RemoteReject] // Our adds rejected and cross-signed on last state update
   def crossSignedIncoming: Set[UpdateAddHtlcExt] // Cross-signed incoming which we can start to process
   def allOutgoing: Set[UpdateAddHtlc] // Cross-signed PLUS new payments offered by us
 
@@ -91,11 +90,6 @@ case class NormalCommits(channelVersion: ChannelVersion, remoteInfo: RemoteNodeI
   val crossSignedIncoming: Set[UpdateAddHtlcExt] = for (add <- localCommit.spec.incomingAdds intersect remoteCommit.spec.outgoingAdds) yield UpdateAddHtlcExt(add, remoteInfo)
 
   val allOutgoing: Set[UpdateAddHtlc] = localCommit.spec.outgoingAdds ++ remoteCommit.spec.incomingAdds ++ localChanges.adds
-
-  val remoteRejects: Seq[RemoteReject] = remoteChanges.signed.collect {
-    case fail: UpdateFailHtlc => RemoteUpdateFail(fail, remoteCommit.spec.findIncomingHtlcById(fail.id).get.add)
-    case malform: UpdateFailMalformedHtlc => RemoteUpdateMalform(malform, remoteCommit.spec.findIncomingHtlcById(malform.id).get.add)
-  }
 
   val availableBalanceForSend: MilliSatoshi = {
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation

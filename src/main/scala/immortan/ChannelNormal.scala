@@ -7,10 +7,10 @@ import immortan.crypto.Tools._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.blockchain._
 import com.softwaremill.quicklens._
+import fr.acinq.eclair.transactions._
 
 import scala.util.{Success, Try}
 import akka.actor.{ActorRef, Props}
-import fr.acinq.eclair.transactions.{RemoteFulfill, Scripts, Transactions}
 import fr.acinq.bitcoin.{ByteVector32, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.transactions.Transactions.TxOwner
 import fr.acinq.eclair.router.Announcements
@@ -281,8 +281,13 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
       case (norm: DATA_NORMAL, revocation: RevokeAndAck, OPEN) =>
         val commits1 = NormalCommits.receiveRevocation(norm.commitments, revocation)
+        val lastRemoteRejects: Seq[RemoteReject] = norm.commitments.remoteChanges.signed.collect {
+          case fail: UpdateFailHtlc => RemoteUpdateFail(fail, norm.commitments.remoteCommit.spec.findIncomingHtlcById(fail.id).get.add)
+          case malform: UpdateFailMalformedHtlc => RemoteUpdateMalform(malform, norm.commitments.remoteCommit.spec.findIncomingHtlcById(malform.id).get.add)
+        }
+
         StoreBecomeSend(norm.copy(commitments = commits1), OPEN)
-        events.stateUpdated(norm.commitments.remoteRejects)
+        events.stateUpdated(lastRemoteRejects)
 
 
       case (norm: DATA_NORMAL, remoteFee: UpdateFee, OPEN) =>

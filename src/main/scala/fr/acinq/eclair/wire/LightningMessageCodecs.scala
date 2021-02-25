@@ -497,25 +497,7 @@ object SwapCodecs {
   final val SWAP_OUT_TRANSACTION_DENIED_MESSAGE_TAG = 55019
 }
 
-object PrivateRoutingCodecs {
-  val routableChannelCodec = {
-    ("remoteNodeId" | publicKey) ::
-      ("remoteUpdate" | LightningMessageCodecs.channelUpdateCodec) ::
-      ("cltvExpiryDelta" | cltvExpiryDelta) ::
-      ("htlcMinimumMsat" | millisatoshi) ::
-      ("htlcMaximumMsat" | millisatoshi) ::
-      ("feeBaseMsat" | millisatoshi32) ::
-      ("feeProportionalMillionths" | uint32) ::
-      ("remoteBitcoinKey" | publicKey) ::
-      ("localBitcoinKey" | publicKey) ::
-      ("localBitcoinSignature" | bytes64)
-  }.as[RoutableChannel]
-
-  final val ROUTABLE_CHANNEL_TAG = 55009
-}
-
 object ExtMessageMapping {
-  import PrivateRoutingCodecs._
   import HostedMessagesCodecs._
   import SwapCodecs._
 
@@ -553,7 +535,6 @@ object ExtMessageMapping {
     case SWAP_OUT_TRANSACTION_REQUEST_MESSAGE_TAG => swapOutTransactionRequestCodec.decode(msg.data).require.value
     case SWAP_OUT_TRANSACTION_RESPONSE_MESSAGE_TAG => swapOutTransactionResponseCodec.decode(msg.data).require.value
     case SWAP_OUT_TRANSACTION_DENIED_MESSAGE_TAG => swapOutTransactionDeniedCodec.decode(msg.data).require.value
-    case ROUTABLE_CHANNEL_TAG => routableChannelCodec.decode(msg.data).require.value
     case _ => throw new RuntimeException
   }
 
@@ -582,7 +563,6 @@ object ExtMessageMapping {
     case msg: SwapOutTransactionRequest => UnknownMessage(SWAP_OUT_TRANSACTION_REQUEST_MESSAGE_TAG, swapOutTransactionRequestCodec.encode(msg).require)
     case msg: SwapOutTransactionResponse => UnknownMessage(SWAP_OUT_TRANSACTION_RESPONSE_MESSAGE_TAG, swapOutTransactionResponseCodec.encode(msg).require)
     case msg: SwapOutTransactionDenied => UnknownMessage(SWAP_OUT_TRANSACTION_DENIED_MESSAGE_TAG, swapOutTransactionDeniedCodec.encode(msg).require)
-    case msg: RoutableChannel => UnknownMessage(ROUTABLE_CHANNEL_TAG, routableChannelCodec.encode(msg).require)
     case _ => msg
   }
 
