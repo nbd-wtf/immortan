@@ -56,7 +56,9 @@ case class RemoteFailure(packet: Sphinx.DecryptedFailurePacket, route: Route) ex
 // Master commands and data
 
 case class SplitIntoHalves(amount: MilliSatoshi)
+
 case class NodeFailed(failedNodeId: PublicKey, increment: Int)
+
 case class ChannelFailed(failedDescAndCap: DescAndCapacity, increment: Int)
 
 case class SendMultiPart(paymentType: PaymentType, routerConf: RouterConf, targetNodeId: PublicKey, totalAmount: MilliSatoshi = 0L.msat,
@@ -173,14 +175,14 @@ class OutgoingPaymentMaster(cm: ChannelMaster) extends StateMachine[OutgoingPaym
     sender doProcess msg
   }
 
-  def inPrincipleSendable(chans: Seq[Channel] = Nil, conf: RouterConf): MilliSatoshi =
+  def inPrincipleSendable(chans: Iterable[Channel] = Nil, conf: RouterConf): MilliSatoshi =
     getSendable(chans.filter(Channel.isOperational), conf).values.sum
 
-  def rightNowSendable(chans: Seq[Channel] = Nil, conf: RouterConf): mutable.Map[ChanAndCommits, MilliSatoshi] =
+  def rightNowSendable(chans: Iterable[Channel] = Nil, conf: RouterConf): mutable.Map[ChanAndCommits, MilliSatoshi] =
     getSendable(chans.filter(Channel.isOperationalAndOpen), conf)
 
   // What can be sent through given channels with waiting parts taken into account
-  private def getSendable(chans: Seq[Channel] = Nil, routerConf: RouterConf): mutable.Map[ChanAndCommits, MilliSatoshi] = {
+  private def getSendable(chans: Iterable[Channel] = Nil, routerConf: RouterConf): mutable.Map[ChanAndCommits, MilliSatoshi] = {
     val finals: mutable.Map[ChanAndCommits, MilliSatoshi] = mutable.Map.empty[ChanAndCommits, MilliSatoshi] withDefaultValue 0L.msat
     val waits: mutable.Map[ByteVector32, PartIdToAmount] = mutable.Map.empty[ByteVector32, PartIdToAmount] withDefaultValue Map.empty
     // Wait part may have no route yet (but we expect a route to arrive) or it may be sent to channel but not processed by channel yet
@@ -421,7 +423,7 @@ class OutgoingPaymentSender(val paymentType: PaymentType, cm: ChannelMaster) ext
     case _ =>
   }
 
-  def noLeftoversInChans: Boolean = cm.allInChanOutgoingHtlcs.forall(_.paymentType != paymentType)
+  def noLeftoversInChans: Boolean = cm.allInChannelOutgoing.forall(_.paymentType != paymentType)
 
   def canBeSplit(totalAmount: MilliSatoshi): Boolean = totalAmount / 2 > data.cmd.routerConf.mppMinPartAmount
 

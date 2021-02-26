@@ -77,7 +77,7 @@ case class NormalCommits(channelVersion: ChannelVersion, remoteInfo: RemoteNodeI
                          channelFlags: Byte, localCommit: LocalCommit, remoteCommit: RemoteCommit, localChanges: LocalChanges, remoteChanges: RemoteChanges,
                          localNextHtlcId: Long, remoteNextHtlcId: Long, remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey], commitInput: InputInfo,
                          remotePerCommitmentSecrets: ShaChain, updateOpt: Option[ChannelUpdate], channelId: ByteVector32,
-                         startedAt: Long = System.currentTimeMillis) extends Commitments {
+                         startedAt: Long = System.currentTimeMillis) extends Commitments { me =>
 
   val latestRemoteCommit: RemoteCommit = remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit)
 
@@ -87,7 +87,7 @@ case class NormalCommits(channelVersion: ChannelVersion, remoteInfo: RemoteNodeI
 
   val minSendable: MilliSatoshi = remoteParams.htlcMinimum.max(localParams.htlcMinimum)
 
-  val crossSignedIncoming: Set[UpdateAddHtlcExt] = for (add <- localCommit.spec.incomingAdds intersect remoteCommit.spec.outgoingAdds) yield UpdateAddHtlcExt(add, remoteInfo)
+  val crossSignedIncoming: Set[UpdateAddHtlcExt] = for (theirAdd <- localCommit.spec.incomingAdds intersect remoteCommit.spec.outgoingAdds) yield UpdateAddHtlcExt(theirAdd, remoteInfo)
 
   val allOutgoing: Set[UpdateAddHtlc] = localCommit.spec.outgoingAdds ++ remoteCommit.spec.incomingAdds ++ localChanges.adds
 
@@ -264,11 +264,10 @@ object NormalCommits {
   }
 
   def sendFulfill(commitments: NormalCommits, cmd: CMD_FULFILL_HTLC): (NormalCommits, UpdateFulfillHtlc) = {
-    val isAlreadyProposed = commitments.alreadyProposed(commitments.localChanges.proposed, cmd.id)
-    val theirAdd = commitments.latestRemoteCommit.spec.findOutgoingHtlcById(cmd.id).get.add
-    val ourFulfill = UpdateFulfillHtlc(commitments.channelId, cmd.id, cmd.preimage)
+    val isAlreadyProposed = commitments.alreadyProposed(commitments.localChanges.proposed, cmd.theirAdd.id)
+    val ourFulfill = UpdateFulfillHtlc(commitments.channelId, cmd.theirAdd.id, cmd.preimage)
 
-    if (theirAdd.paymentHash != cmd.hash) throw new RuntimeException
+    require(commitments.latestRemoteCommit.spec.findOutgoingHtlcById(cmd.theirAdd.id).isDefined)
     if (isAlreadyProposed) throw CMDException(AlreadyProposed, cmd)
     (addLocalProposal(commitments, ourFulfill), ourFulfill)
   }
@@ -280,19 +279,19 @@ object NormalCommits {
   }
 
   def sendFail(commitments: NormalCommits, cmd: CMD_FAIL_HTLC): (NormalCommits, UpdateFailHtlc) = {
-    val isAlreadyProposed = commitments.alreadyProposed(commitments.localChanges.proposed, cmd.id)
-    val theirAdd = commitments.latestRemoteCommit.spec.findOutgoingHtlcById(cmd.id).get.add
-    val ourFail = OutgoingPacket.buildHtlcFailure(cmd, theirAdd)
+    val isAlreadyProposed = commitments.alreadyProposed(commitments.localChanges.proposed, cmd.theirAdd.id)
+    val ourFail = OutgoingPacket.buildHtlcFailure(cmd, cmd.theirAdd)
 
+    require(commitments.latestRemoteCommit.spec.findOutgoingHtlcById(cmd.theirAdd.id).isDefined)
     if (isAlreadyProposed) throw CMDException(AlreadyProposed, cmd)
     (addLocalProposal(commitments, ourFail), ourFail)
   }
 
   def sendFailMalformed(commitments: NormalCommits, cmd: CMD_FAIL_MALFORMED_HTLC): (NormalCommits, UpdateFailMalformedHtlc) = {
-    val ourFail = UpdateFailMalformedHtlc(commitments.channelId, cmd.id, cmd.onionHash, cmd.failureCode)
-    val isAlreadyProposed = commitments.alreadyProposed(commitments.localChanges.proposed, cmd.id)
+    val ourFail = UpdateFailMalformedHtlc(commitments.channelId, cmd.theirAdd.id, cmd.onionHash, cmd.failureCode)
+    val isAlreadyProposed = commitments.alreadyProposed(commitments.localChanges.proposed, cmd.theirAdd.id)
 
-    require(commitments.latestRemoteCommit.spec.findOutgoingHtlcById(cmd.id).isDefined)
+    require(commitments.latestRemoteCommit.spec.findOutgoingHtlcById(cmd.theirAdd.id).isDefined)
     if (isAlreadyProposed) throw CMDException(AlreadyProposed, cmd)
     (addLocalProposal(commitments, ourFail), ourFail)
   }

@@ -230,6 +230,6 @@ object OutgoingPacket {
       case Right(failure) => Sphinx.FailurePacket.create(packet.sharedSecret, failure)
     }
 
-    UpdateFailHtlc(add.channelId, cmd.id, reason)
+    UpdateFailHtlc(add.channelId, cmd.theirAdd.id, reason)
   }
 }
