@@ -78,14 +78,14 @@ sealed trait Command
 
 sealed trait IncomingResolution
 
-sealed trait PartialResolution extends IncomingResolution { val paymentType: PaymentType }
+sealed trait PartialResolution extends IncomingResolution { val fullTag: FullPaymentTag }
 
 case class ReasonableTrampoline(packet: IncomingPacket.NodeRelayPacket) extends PartialResolution {
-  val paymentType: PaymentType = PaymentType(packet.add.paymentHash, PaymentTypeTlv.TRAMPOLINE)
+  val fullTag: FullPaymentTag = FullPaymentTag(packet.outerPayload.paymentSecret.get, packet.add.paymentHash)
 }
 
 case class ReasonableFinal(packet: IncomingPacket.FinalPacket) extends PartialResolution {
-  val paymentType: PaymentType = PaymentType(packet.add.paymentHash, PaymentTypeTlv.LOCAL)
+  val fullTag: FullPaymentTag = FullPaymentTag(packet.payload.paymentSecret.get, packet.add.paymentHash)
 }
 
 sealed trait FinalResolution extends IncomingResolution { val theirAdd: UpdateAddHtlc }
@@ -96,10 +96,17 @@ case class CMD_FAIL_MALFORMED_HTLC(onionHash: ByteVector32, failureCode: Int, th
 
 case class CMD_FULFILL_HTLC(preimage: ByteVector32, theirAdd: UpdateAddHtlc) extends Command with FinalResolution
 
-// Important: LNParams.format must be defined
-case class CMD_ADD_HTLC(paymentType: PaymentType, firstAmount: MilliSatoshi, cltvExpiry: CltvExpiry, packetAndSecrets: PacketAndSecrets, payload: FinalPayload) extends Command {
-  lazy val encryptedType: ByteVector = Tools.chaChaEncrypt(LNParams.format.keys.paymentTypeEncryptionKey(paymentType.paymentHash), randomBytes(12), uint32.encode(paymentType.tag).require.toByteVector)
+case class CMD_ADD_HTLC(fullTag: FullPaymentTag, firstAmount: MilliSatoshi, cltvExpiry: CltvExpiry,
+                        packetAndSecrets: PacketAndSecrets, payload: FinalPayload) extends Command {
+
   final val partId: ByteVector = packetAndSecrets.packet.publicKey
+
+  lazy val encryptedTag: ByteVector = {
+    // Important: LNParams.format must be defined
+    val key = LNParams.format.keys.paymentTagEncryptionKey(fullTag.paymentHash)
+    val cipherBytes = PaymentTagTlv.fullPaymentTagCodec.encode(fullTag).require.toByteVector
+    Tools.chaChaEncrypt(key, randomBytes(12), cipherBytes)
+  }
 }
 
 final case class CMD_UPDATE_FEE(feeratePerKw: FeeratePerKw) extends Command

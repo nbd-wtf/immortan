@@ -187,8 +187,8 @@ object NormalCommits {
     if (isTooHigh) throw CMDException(new RuntimeException, cmd)
 
     // let's compute the current commitment *as seen by them* with this change taken into account
-    val encryptedType: TlvStream[Tlv] = TlvStream(PaymentTypeTlv.EncryptedType(cmd.encryptedType) :: Nil)
-    val add = UpdateAddHtlc(commitments.channelId, commitments.localNextHtlcId, cmd.firstAmount, cmd.paymentType.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet, encryptedType)
+    val encryptedTag: TlvStream[Tlv] = TlvStream(PaymentTagTlv.EncryptedPaymentTag(cmd.encryptedTag) :: Nil)
+    val add = UpdateAddHtlc(commitments.channelId, commitments.localNextHtlcId, cmd.firstAmount, cmd.fullTag.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet, encryptedTag)
     val commitments1 = addLocalProposal(commitments, add).copy(localNextHtlcId = commitments.localNextHtlcId + 1)
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
     val reduced = CommitmentSpec.reduce(commitments1.latestRemoteCommit.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)

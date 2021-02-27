@@ -43,7 +43,7 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
                              finalAmount: MilliSatoshi, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc, chainFee: MilliSatoshi): Unit =
     db txWrap {
       db.change(PaymentTable.deleteSql, prex.pr.paymentHash.toHex)
-      db.change(PaymentTable.newSql, prex.raw, ByteVector32.Zeroes.toHex, PaymentStatus.PENDING, System.currentTimeMillis: JLong,
+      db.change(PaymentTable.newSql, prex.raw, ChannelMaster.NO_PREIMAGE.toHex, PaymentStatus.PENDING, System.currentTimeMillis: JLong,
         description.toJson.compactPrint, action.map(_.toJson.compactPrint).getOrElse(new String), prex.pr.paymentHash.toHex, 0L: JLong /* RECEIVED = 0 MSAT, OUTGOING */,
         finalAmount.toLong: JLong /* SENT IS KNOWN */, 0L: JLong /* FEE IS UNCERTAIN YET */, balanceSnap.toLong: JLong, fiatRateSnap.toJson.compactPrint, chainFee.toLong: JLong,
         0: java.lang.Integer /* INCOMING = 0 */, new String)

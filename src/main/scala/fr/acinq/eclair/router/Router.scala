@@ -79,7 +79,7 @@ object Router {
     def getMaxFee(amount: MilliSatoshi): MilliSatoshi = maxFeeBase.max(amount * maxFeePct)
   }
 
-  case class RouteRequest(paymentType: PaymentType, partId: ByteVector, source: PublicKey,
+  case class RouteRequest(fullTag: FullPaymentTag, partId: ByteVector, source: PublicKey,
                           target: PublicKey, amount: MilliSatoshi, localEdge: GraphEdge, routeParams: RouteParams,
                           ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[ChannelDesc] = Set.empty)
 
@@ -101,11 +101,11 @@ object Router {
     require(hops.nonEmpty, "Route cannot be empty")
   }
 
-  sealed trait RouteResponse { def paymentType: PaymentType }
+  sealed trait RouteResponse { def fullTag: FullPaymentTag }
 
-  case class RouteFound(route: Route, paymentType: PaymentType, partId: ByteVector) extends RouteResponse
+  case class RouteFound(route: Route, fullTag: FullPaymentTag, partId: ByteVector) extends RouteResponse
 
-  case class NoRouteAvailable(paymentType: PaymentType, partId: ByteVector) extends RouteResponse
+  case class NoRouteAvailable(fullTag: FullPaymentTag, partId: ByteVector) extends RouteResponse
 
   case class Data(channels: Map[ShortChannelId, PublicChannel], hostedChannels: Map[ShortChannelId, PublicChannel], extraEdges: Map[ShortChannelId, GraphEdge], graph: DirectedGraph)
 

@@ -15,7 +15,7 @@ import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt}
 import immortan.{ChanAndCommits, Channel, ChannelMaster, LNParams, PathFinder}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DescAndCapacity, GraphEdge}
 import fr.acinq.eclair.channel.{CMDException, CMD_ADD_HTLC, ChannelUnavailable}
-import fr.acinq.eclair.wire.{GenericTlv, Node, Onion, OnionTlv, PaymentTimeout, PaymentType, Update}
+import fr.acinq.eclair.wire.{GenericTlv, Node, Onion, OnionTlv, PaymentTimeout, FullPaymentTag, Update}
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteReject, RemoteUpdateFail, RemoteUpdateMalform}
 import fr.acinq.eclair.crypto.Sphinx.PacketAndSecrets
 import fr.acinq.eclair.payment.OutgoingPacket
@@ -61,11 +61,12 @@ case class NodeFailed(failedNodeId: PublicKey, increment: Int)
 
 case class ChannelFailed(failedDescAndCap: DescAndCapacity, increment: Int)
 
-case class SendMultiPart(paymentType: PaymentType, routerConf: RouterConf, targetNodeId: PublicKey, totalAmount: MilliSatoshi = 0L.msat,
+// Tag contains a PaymentSecret taken from upstream (for routed payments), it is required to group payments with same hash
+case class SendMultiPart(fullTag: FullPaymentTag, routerConf: RouterConf, targetNodeId: PublicKey, totalAmount: MilliSatoshi = 0L.msat,
                          paymentSecret: ByteVector32 = ByteVector32.Zeroes, targetExpiry: CltvExpiry = CltvExpiry(0), allowedChans: Seq[Channel] = Nil,
                          assistedEdges: Set[GraphEdge] = Set.empty, onionTlvs: Seq[OnionTlv] = Nil, userCustomTlvs: Seq[GenericTlv] = Nil)
 
-case class OutgoingPaymentMasterData(payments: Map[PaymentType, OutgoingPaymentSender],
+case class OutgoingPaymentMasterData(payments: Map[FullPaymentTag, OutgoingPaymentSender],
                                      chanFailedAtAmount: Map[ChannelDesc, MilliSatoshi] = Map.empty withDefaultValue Long.MaxValue.msat,
                                      nodeFailedWithUnknownUpdateTimes: Map[PublicKey, Int] = Map.empty withDefaultValue 0,
                                      chanFailedTimes: Map[ChannelDesc, Int] = Map.empty withDefaultValue 0) {
@@ -98,7 +99,7 @@ class OutgoingPaymentMaster(cm: ChannelMaster) extends StateMachine[OutgoingPaym
 
       // They may provide a hint to our nodeSpecificPubKey, but it's harmless
       for (assistedEdge <- cmd.assistedEdges) cm.pf process assistedEdge
-      relayOrCreateSender(cmd.paymentType, cmd)
+      relayOrCreateSender(cmd.fullTag, cmd)
       self process CMDAskForRoute
 
     case (CMDChanGotOnline, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
@@ -130,7 +131,7 @@ class OutgoingPaymentMaster(cm: ChannelMaster) extends StateMachine[OutgoingPaym
       become(data, EXPECTING_PAYMENTS)
 
     case (response: RouteResponse, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
-      data.payments.get(response.paymentType).foreach(_ doProcess response)
+      data.payments.get(response.fullTag).foreach(_ doProcess response)
       // Switch state to allow new route requests to come through
       become(data, EXPECTING_PAYMENTS)
       self process CMDAskForRoute
@@ -148,15 +149,15 @@ class OutgoingPaymentMaster(cm: ChannelMaster) extends StateMachine[OutgoingPaym
       become(data.copy(nodeFailedWithUnknownUpdateTimes = atTimes1), state)
 
     case (exception @ CMDException(_, cmd: CMD_ADD_HTLC), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
-      data.payments.get(cmd.paymentType).foreach(_ doProcess exception)
+      data.payments.get(cmd.fullTag).foreach(_ doProcess exception)
       self process CMDAskForRoute
 
     case (fulfill: RemoteFulfill, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
-      relayOrCreateSender(fulfill.ourAdd.paymentType, fulfill)
+      relayOrCreateSender(fulfill.ourAdd.fullTag, fulfill)
       self process CMDAskForRoute
 
     case (reject: RemoteReject, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
-      relayOrCreateSender(reject.ourAdd.paymentType, reject)
+      relayOrCreateSender(reject.ourAdd.fullTag, reject)
       self process CMDAskForRoute
 
     case _ =>
@@ -164,13 +165,13 @@ class OutgoingPaymentMaster(cm: ChannelMaster) extends StateMachine[OutgoingPaym
 
   // Utils
 
-  private def relayOrCreateSender(paymentType: PaymentType, msg: Any): Unit = data.payments.get(paymentType) match {
-    case None => withSender(new OutgoingPaymentSender(paymentType, cm), msg) // Restart with leftovers in channels
+  private def relayOrCreateSender(fullTag: FullPaymentTag, msg: Any): Unit = data.payments.get(fullTag) match {
+    case None => withSender(new OutgoingPaymentSender(fullTag, cm), msg) // Restart with leftovers in channels
     case Some(sender) => sender doProcess msg // Normal case, sender FSM is present
   }
 
   private def withSender(sender: OutgoingPaymentSender, msg: Any): Unit = {
-    val payments1 = data.payments.updated(sender.paymentType, sender)
+    val payments1 = data.payments.updated(sender.fullTag, sender)
     become(data.copy(payments = payments1), state)
     sender doProcess msg
   }
@@ -258,8 +259,8 @@ case class OutgoingPaymentSenderData(cmd: SendMultiPart, parts: Map[ByteVector, 
   }
 }
 
-class OutgoingPaymentSender(val paymentType: PaymentType, cm: ChannelMaster) extends StateMachine[OutgoingPaymentSenderData] { self =>
-  become(OutgoingPaymentSenderData(SendMultiPart(paymentType, LNParams.routerConf, invalidPubKey), Map.empty), INIT)
+class OutgoingPaymentSender(val fullTag: FullPaymentTag, cm: ChannelMaster) extends StateMachine[OutgoingPaymentSenderData] { self =>
+  become(OutgoingPaymentSenderData(SendMultiPart(fullTag, LNParams.routerConf, invalidPubKey), Map.empty), INIT)
 
   val delayedCMDWorker: ThrottledWork[String, Any] = new ThrottledWork[String, Any] {
     def work(cmd: String): Observable[Null] = Rx.ioQueue.delay(30.seconds)
@@ -297,7 +298,7 @@ class OutgoingPaymentSender(val paymentType: PaymentType, cm: ChannelMaster) ext
       data.parts.values.collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isEmpty =>
         val fakeLocalEdge = mkFakeLocalEdge(from = LNParams.format.keys.ourNodePubKey, toPeer = wait.cnc.commits.remoteInfo.nodeId)
         val params = RouteParams(data.cmd.routerConf.searchMaxFeeBase, data.cmd.routerConf.searchMaxFeePct, data.cmd.routerConf.firstPassMaxRouteLength, data.cmd.routerConf.firstPassMaxCltv)
-        cm.opm process RouteRequest(paymentType, partId = wait.partId, LNParams.format.keys.ourNodePubKey, data.cmd.targetNodeId, wait.amount, fakeLocalEdge, params)
+        cm.opm process RouteRequest(fullTag, partId = wait.partId, LNParams.format.keys.ourNodePubKey, data.cmd.targetNodeId, wait.amount, fakeLocalEdge, params)
       }
 
     case (fail: NoRouteAvailable, PENDING) =>
@@ -314,8 +315,8 @@ class OutgoingPaymentSender(val paymentType: PaymentType, cm: ChannelMaster) ext
     case (found: RouteFound, PENDING) =>
       data.parts.values.collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isEmpty && wait.partId == found.partId =>
         val finalPayload = Onion.createMultiPartPayload(wait.amount, data.cmd.totalAmount, data.cmd.targetExpiry, data.cmd.paymentSecret, data.cmd.onionTlvs, data.cmd.userCustomTlvs)
-        val (firstAmount, firstExpiry, onion) = OutgoingPacket.buildPacket(Sphinx.PaymentPacket)(wait.onionKey, paymentType.paymentHash, found.route.hops, finalPayload)
-        val cmdAdd = CMD_ADD_HTLC(paymentType, firstAmount, firstExpiry, PacketAndSecrets(onion.packet, onion.sharedSecrets), finalPayload)
+        val (firstAmount, firstExpiry, onion) = OutgoingPacket.buildPacket(Sphinx.PaymentPacket)(wait.onionKey, fullTag.paymentHash, found.route.hops, finalPayload)
+        val cmdAdd = CMD_ADD_HTLC(fullTag, firstAmount, firstExpiry, PacketAndSecrets(onion.packet, onion.sharedSecrets), finalPayload)
         become(data.copy(parts = data.parts + wait.copy(flight = InFlightInfo(cmdAdd, found.route).toSome).tuple), PENDING)
         wait.cnc.chan process cmdAdd
       }
@@ -423,7 +424,7 @@ class OutgoingPaymentSender(val paymentType: PaymentType, cm: ChannelMaster) ext
     case _ =>
   }
 
-  def noLeftoversInChans: Boolean = cm.allInChannelOutgoing.forall(_.paymentType != paymentType)
+  def noLeftoversInChans: Boolean = cm.allInChannelOutgoing.forall(_.fullTag != fullTag)
 
   def canBeSplit(totalAmount: MilliSatoshi): Boolean = totalAmount / 2 > data.cmd.routerConf.mppMinPartAmount
 

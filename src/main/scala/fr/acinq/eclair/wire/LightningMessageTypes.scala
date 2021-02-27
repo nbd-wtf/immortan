@@ -16,20 +16,21 @@
 
 package fr.acinq.eclair.wire
 
-import scodec.codecs._
 import fr.acinq.eclair._
 import scodec.bits.{BitVector, ByteVector}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering, Protocol, Satoshi}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
 import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
+
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.router.Announcements
 import com.google.common.base.Charsets
 import immortan.crypto.Tools
 import java.nio.ByteOrder
-import immortan.LNParams
+
+import immortan.{ChannelMaster, LNParams}
 
 /**
  * Created by PM on 15/11/2016.
@@ -87,18 +88,21 @@ case class Shutdown(channelId: ByteVector32, scriptPubKey: ByteVector) extends C
 
 case class ClosingSigned(channelId: ByteVector32, feeSatoshis: Satoshi, signature: ByteVector64) extends ChannelMessage with HasChannelId
 
-case class UpdateAddHtlc(channelId: ByteVector32,
-                         id: Long, amountMsat: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onionRoutingPacket: OnionRoutingPacket,
+case class UpdateAddHtlc(channelId: ByteVector32, id: Long,
+                         amountMsat: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onionRoutingPacket: OnionRoutingPacket,
                          tlvStream: TlvStream.GenericTlvStream = TlvStream.empty) extends HtlcMessage with HasChannelId with UpdateMessage {
 
-  final val partId: ByteVector = onionRoutingPacket.publicKey // May not be unique, its advantage is that we can know partId before id is known for outgoing payments
-
   // Important: LNParams.format must be defined
-  lazy val paymentType: PaymentType = tlvStream.get[PaymentTypeTlv.EncryptedType].map { case PaymentTypeTlv.EncryptedType(cipherData) =>
-    val plainDataTry = Tools.chaChaDecrypt(LNParams.format.keys.paymentTypeEncryptionKey(paymentHash), cipherData)
-    val plainTypeTry = plainDataTry.map(plainData => uint32.decode(plainData.toBitVector).require.value)
-    PaymentType(paymentHash, plainTypeTry getOrElse PaymentTypeTlv.UNDEFINED)
-  } getOrElse PaymentType(paymentHash, PaymentTypeTlv.UNDEFINED)
+  private[this] lazy val fullPaymentTagOpt: Option[FullPaymentTag] = for {
+    PaymentTagTlv.EncryptedPaymentTag(ciperBytes) <- tlvStream.get[PaymentTagTlv.EncryptedPaymentTag]
+    plainBytes <- Tools.chaChaDecrypt(LNParams.format.keys.paymentTagEncryptionKey(paymentHash), ciperBytes).toOption
+    res <- PaymentTagTlv.fullPaymentTagCodec.decode(plainBytes.toBitVector).toOption
+  } yield res.value
+
+  // This is relevant for outgoing payments, NO_SECRET is synonimous to locally initiated payment
+  lazy val fullTag: FullPaymentTag = fullPaymentTagOpt getOrElse FullPaymentTag(ChannelMaster.NO_SECRET, paymentHash)
+
+  final val partId: ByteVector = onionRoutingPacket.publicKey
 }
 
 case class UpdateFulfillHtlc(channelId: ByteVector32, id: Long, paymentPreimage: ByteVector32) extends HtlcMessage with HasChannelId with UpdateMessage {

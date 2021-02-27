@@ -61,7 +61,7 @@ object TlvStream {
 
   def apply[T <: Tlv](records: T*): TlvStream[T] = TlvStream(records, Nil)
 
-  final val keySendTag = 5482373484L
+  final val paymentTag = 4127926135L
 
-  final val paymentTypeTag = 4127926135L
+  final val keySend = 5482373484L
 }

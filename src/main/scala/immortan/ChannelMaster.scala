@@ -21,6 +21,10 @@ object ChannelMaster {
   type OutgoingAdds = Iterable[UpdateAddHtlc]
   type PartialResolutions = Iterable[PartialResolution]
 
+  final val NO_SECRET = ByteVector32.Zeroes
+
+  final val NO_PREIMAGE = ByteVector32.One
+
   def incorrectDetails(add: UpdateAddHtlc): Either[ByteVector, FailureMessage] = {
     val failure = IncorrectOrUnknownPaymentDetails(add.amountMsat, LNParams.blockCount.get)
     Right(failure)
@@ -39,16 +43,18 @@ object ChannelMaster {
     case Right(packet: IncomingPacket) => defineResolution(secret, packet)
   }
 
+  // Make sure incoming payment secret is always present
   def defineResolution(secret: PrivateKey, pkt: IncomingPacket): IncomingResolution = pkt match {
     case packet: IncomingPacket.ChannelRelayPacket => CMD_FAIL_HTLC(incorrectDetails(packet.add), secret, packet.add)
-    case packet: IncomingPacket.NodeRelayPacket if packet.outerPayload.paymentSecret.nonEmpty => ReasonableTrampoline(packet)
+    case packet: IncomingPacket.NodeRelayPacket if packet.outerPayload.paymentSecret.exists(_ != NO_SECRET) => ReasonableTrampoline(packet)
+    case packet: IncomingPacket.FinalPacket if packet.payload.paymentSecret.exists(_ != NO_SECRET) => ReasonableFinal(packet)
     case packet: IncomingPacket.NodeRelayPacket => CMD_FAIL_HTLC(incorrectDetails(packet.add), secret, packet.add)
-    case packet: IncomingPacket.FinalPacket => ReasonableFinal(packet)
+    case packet: IncomingPacket.FinalPacket => CMD_FAIL_HTLC(incorrectDetails(packet.add), secret, packet.add)
   }
 }
 
-case class InFlightPayments(out: Map[PaymentType, OutgoingAdds], in: Map[PaymentType, PartialResolutions] = Map.empty) {
-  val allTypes: Set[PaymentType] = out.keySet ++ in.keySet
+case class InFlightPayments(out: Map[FullPaymentTag, OutgoingAdds], in: Map[FullPaymentTag, PartialResolutions] = Map.empty) {
+  val allTypes: Set[FullPaymentTag] = out.keySet ++ in.keySet
 }
 
 abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val pf: PathFinder) extends ChannelListener { me =>
@@ -90,11 +96,11 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
     if (candidates.isEmpty) None else candidates.maxBy(_.maxReceivable).toSome
   }
 
-  def checkIfSendable(paymentType: PaymentType, amount: MilliSatoshi): Int = getPaymentDbInfoMemo(paymentType.paymentHash) match {
-    case _ if opm.data.payments.get(paymentType).exists(fsm => PENDING == fsm.state || INIT == fsm.state) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is pending in FSM
-    case _ if opm.data.payments.get(paymentType).exists(fsm => SUCCEEDED == fsm.state) => PaymentInfo.NOT_SENDABLE_SUCCESS // This payment has just been fulfilled at runtime
-    case _ if allInChannelOutgoing.exists(_.paymentHash == paymentType.paymentHash) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is still pending in channels
-    case _ if opm.inPrincipleSendable(all.values, LNParams.routerConf) < amount => PaymentInfo.NOT_SENDABLE_LOW_BALANCE // We don't have enough money to send this one
+  def checkIfSendable(fullTag: FullPaymentTag, amount: MilliSatoshi): Int = getPaymentDbInfoMemo(fullTag.paymentHash) match {
+    case _ if opm.data.payments.get(fullTag).exists(fsm => PENDING == fsm.state || INIT == fsm.state) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is pending in FSM
+    case _ if opm.data.payments.get(fullTag).exists(fsm => SUCCEEDED == fsm.state) => PaymentInfo.NOT_SENDABLE_SUCCESS // This payment has just been fulfilled at runtime
+    case _ if allInChannelOutgoing.exists(_.paymentHash == fullTag.paymentHash) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is still pending in channels
+    case _ if opm.inPrincipleSendable(all.values, LNParams.routerConf) < amount => PaymentInfo.NOT_SENDABLE_LOW_FUNDS // We don't have enough money to send this one
     case info if info.local.exists(SUCCEEDED == _.status) => PaymentInfo.NOT_SENDABLE_SUCCESS // Successfully sent or received a long time ago
     case info if info.local.exists(_.isIncoming) => PaymentInfo.NOT_SENDABLE_INCOMING // Incoming payment with this hash exists
     case info if info.relayed.isDefined => PaymentInfo.NOT_SENDABLE_RELAYED // Related preimage has been relayed
@@ -110,8 +116,8 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
   override def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = {
     val allIncomingResolves = all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.crossSignedIncoming).map(initResolveMemo.get)
     allIncomingResolves.foreach { case finalResolve: FinalResolution => all(finalResolve.theirAdd.channelId) process finalResolve case _ => }
-    val partialIncoming = allIncomingResolves.collect { case resolve: PartialResolution => resolve }.groupBy(_.paymentType)
-    val bag = InFlightPayments(out = allInChannelOutgoing.groupBy(_.paymentType), partialIncoming)
+    val partialIncoming = allIncomingResolves.collect { case resolve: PartialResolution => resolve }.groupBy(_.fullTag)
+    val bag = InFlightPayments(out = allInChannelOutgoing.groupBy(_.fullTag), partialIncoming)
   }
 
   override def fulfillReceived(fulfill: RemoteFulfill): Unit = opm process fulfill

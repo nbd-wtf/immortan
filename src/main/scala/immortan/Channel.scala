@@ -7,6 +7,7 @@ import scala.concurrent.ExecutionContextExecutor
 import fr.acinq.eclair.wire.LightningMessage
 import immortan.Channel.channelContext
 import java.util.concurrent.Executors
+import fr.acinq.bitcoin.ByteVector32
 import immortan.crypto.StateMachine
 import fr.acinq.eclair.MilliSatoshi
 import immortan.crypto.Tools.none
@@ -27,11 +28,11 @@ object Channel {
   // Single stacking thread for all channels, must be used when asking channels for pending payments to avoid race conditions
   implicit val channelContext: ExecutionContextExecutor = scala.concurrent.ExecutionContext fromExecutor Executors.newSingleThreadExecutor
 
-  def load(bag: ChannelBag, cm: ChannelMaster): List[Channel] = bag.all.map {
-    case data: HasNormalCommitments => ChannelNormal.make(Set(cm), data, LNParams.chainWallet, bag)
-    case data: HostedCommits => ChannelHosted.make(Set(cm), data, bag)
+  def load(listeners: Set[ChannelListener], bag: ChannelBag): Map[ByteVector32, Channel] = bag.all.map {
+    case data: HasNormalCommitments => data.channelId -> ChannelNormal.make(listeners, data, LNParams.chainWallet, bag)
+    case data: HostedCommits => data.channelId -> ChannelHosted.make(listeners, data, bag)
     case _ => throw new RuntimeException
-  }
+  }.toMap
 
   def chanAndCommitsOpt(chan: Channel): Option[ChanAndCommits] = chan.data match {
     case commits: HasNormalCommitments => ChanAndCommits(chan, commits.commitments).toSome

@@ -33,8 +33,8 @@ import immortan.LNParams
 object RouteCalculation {
   def handleRouteRequest(graph: DirectedGraph, r: RouteRequest): RouteResponse =
     findRouteInternal(graph, r.source, r.target, r.amount, r.ignoreChannels, r.ignoreNodes, r.routeParams) match {
-      case Some(searchResult) => RouteFound(Route(searchResult.path.map(ChannelHop), searchResult.weight), r.paymentType, r.partId)
-      case _ => NoRouteAvailable(r.paymentType, r.partId)
+      case Some(searchResult) => RouteFound(Route(searchResult.path.map(ChannelHop), searchResult.weight), r.fullTag, r.partId)
+      case _ => NoRouteAvailable(r.fullTag, r.partId)
     }
 
   def makeExtraEdges(assistedRoutes: List[ExtraHops], target: PublicKey): Set[GraphEdge] = {

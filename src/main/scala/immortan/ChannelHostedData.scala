@@ -77,8 +77,8 @@ case class HostedCommits(remoteInfo: RemoteNodeInfo, lastCrossSignedState: LastC
   }
 
   def sendAdd(cmd: CMD_ADD_HTLC, blockHeight: Long): (HostedCommits, UpdateAddHtlc) = {
-    val encryptedType: TlvStream[Tlv] = TlvStream(PaymentTypeTlv.EncryptedType(cmd.encryptedType) :: Nil)
-    val add = UpdateAddHtlc(channelId, nextTotalLocal + 1, cmd.firstAmount, cmd.paymentType.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet, encryptedType)
+    val encryptedTag: TlvStream[Tlv] = TlvStream(PaymentTagTlv.EncryptedPaymentTag(cmd.encryptedTag) :: Nil)
+    val add = UpdateAddHtlc(channelId, nextTotalLocal + 1, cmd.firstAmount, cmd.fullTag.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet, encryptedTag)
     val commits1: HostedCommits = addLocalProposal(add)
 
     if (CltvExpiry(blockHeight) >= cmd.cltvExpiry) throw CMDException(new RuntimeException, cmd)

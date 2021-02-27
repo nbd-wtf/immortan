@@ -9,20 +9,22 @@ import fr.acinq.eclair.UInt64
 import scodec.bits.ByteVector
 
 
-case class PaymentType(paymentHash: ByteVector32, tag: Long)
+case class FullPaymentTag(paymentSecret: ByteVector32, paymentHash: ByteVector32)
 
-sealed trait PaymentTypeTlv extends Tlv
+object PaymentTagTlv {
+  case class EncryptedPaymentTag(data: ByteVector) extends Tlv
 
-object PaymentTypeTlv {
-  final val UNDEFINED = 0L
-  final val TRAMPOLINE = 1L
-  final val LOCAL = 2L
+  val encryptedTagCodec: Codec[EncryptedPaymentTag] = {
+    varsizebinarydata withContext "data"
+  }.as[EncryptedPaymentTag]
 
-  case class EncryptedType(data: ByteVector) extends PaymentTypeTlv
+  val fullPaymentTagCodec: Codec[FullPaymentTag] = {
+    (bytes32 withContext "paymentSecret") ::
+      (bytes32 withContext "paymentHash")
+  }.as[FullPaymentTag]
 
   val codec: Codec[TlvStream.GenericTlvStream] = {
-    val encryptedTypeCodec: Codec[EncryptedType] = Codec(varsizebinarydata withContext "data").as[EncryptedType]
-    val discriminatorCodec: DiscriminatorCodec[Tlv, UInt64] = discriminated.by(varint).typecase(UInt64(TlvStream.paymentTypeTag), encryptedTypeCodec)
+    val discriminatorCodec: DiscriminatorCodec[Tlv, UInt64] = discriminated.by(varint).typecase(UInt64(TlvStream.paymentTag), encryptedTagCodec)
     val prefixedTlvCodec: Codec[TlvStream.GenericTlvStream] = variableSizeBytesLong(value = TlvCodecs.tlvStream(discriminatorCodec), size = varintoverflow)
 
     fallback(provide(TlvStream.empty[Tlv]), prefixedTlvCodec).narrow(f = {

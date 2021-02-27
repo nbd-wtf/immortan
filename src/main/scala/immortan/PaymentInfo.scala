@@ -14,7 +14,7 @@ import scala.util.Try
 
 object PaymentInfo {
   final val SENDABLE = 0
-  final val NOT_SENDABLE_LOW_BALANCE = 1
+  final val NOT_SENDABLE_LOW_FUNDS = 1
   final val NOT_SENDABLE_IN_FLIGHT = 2
   final val NOT_SENDABLE_INCOMING = 3
   final val NOT_SENDABLE_RELAYED = 4
