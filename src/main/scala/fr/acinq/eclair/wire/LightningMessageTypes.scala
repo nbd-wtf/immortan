@@ -17,20 +17,18 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.eclair._
+import immortan.{ChannelMaster, LNParams}
 import scodec.bits.{BitVector, ByteVector}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering, Protocol, Satoshi}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
 import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
-
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.router.Announcements
 import com.google.common.base.Charsets
 import immortan.crypto.Tools
 import java.nio.ByteOrder
-
-import immortan.{ChannelMaster, LNParams}
 
 /**
  * Created by PM on 15/11/2016.
@@ -93,14 +91,14 @@ case class UpdateAddHtlc(channelId: ByteVector32, id: Long,
                          tlvStream: TlvStream.GenericTlvStream = TlvStream.empty) extends HtlcMessage with HasChannelId with UpdateMessage {
 
   // Important: LNParams.format must be defined
-  private[this] lazy val fullPaymentTagOpt: Option[FullPaymentTag] = for {
-    PaymentTagTlv.EncryptedPaymentTag(ciperBytes) <- tlvStream.get[PaymentTagTlv.EncryptedPaymentTag]
-    plainBytes <- Tools.chaChaDecrypt(LNParams.format.keys.paymentTagEncryptionKey(paymentHash), ciperBytes).toOption
-    res <- PaymentTagTlv.fullPaymentTagCodec.decode(plainBytes.toBitVector).toOption
-  } yield res.value
+  private[this] lazy val fullTagOpt: Option[FullPaymentTag] = for {
+    PaymentTagTlv.EncPaymentSecret(ciperBytes) <- tlvStream.get[PaymentTagTlv.EncPaymentSecret]
+    plainBytes <- Tools.chaChaDecrypt(LNParams.format.keys.paymentTagEncKey(paymentHash), ciperBytes).toOption
+    res <- CommonCodecs.bytes32.decode(plainBytes.toBitVector).toOption
+  } yield FullPaymentTag(res.value, paymentHash)
 
   // This is relevant for outgoing payments, NO_SECRET is synonimous to locally initiated payment
-  lazy val fullTag: FullPaymentTag = fullPaymentTagOpt getOrElse FullPaymentTag(ChannelMaster.NO_SECRET, paymentHash)
+  lazy val fullTag: FullPaymentTag = fullTagOpt getOrElse FullPaymentTag(ChannelMaster.NO_SECRET, paymentHash)
 
   final val partId: ByteVector = onionRoutingPacket.publicKey
 }

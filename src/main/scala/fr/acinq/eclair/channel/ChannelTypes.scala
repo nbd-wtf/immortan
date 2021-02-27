@@ -101,11 +101,11 @@ case class CMD_ADD_HTLC(fullTag: FullPaymentTag, firstAmount: MilliSatoshi, cltv
 
   final val partId: ByteVector = packetAndSecrets.packet.publicKey
 
-  lazy val encryptedTag: ByteVector = {
+  lazy val encSecret: ByteVector = {
     // Important: LNParams.format must be defined
-    val key = LNParams.format.keys.paymentTagEncryptionKey(fullTag.paymentHash)
-    val cipherBytes = PaymentTagTlv.fullPaymentTagCodec.encode(fullTag).require.toByteVector
-    Tools.chaChaEncrypt(key, randomBytes(12), cipherBytes)
+    val encryptionKey = LNParams.format.keys.paymentTagEncKey(fullTag.paymentHash)
+    val cipherBytes = CommonCodecs.bytes32.encode(fullTag.paymentSecret).require.toByteVector
+    Tools.chaChaEncrypt(encryptionKey, randomBytes(12), cipherBytes)
   }
 }
 
