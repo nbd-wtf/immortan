@@ -37,11 +37,12 @@ object ChannelMaster {
       case Right(packet: IncomingPacket) => defineResolution(ext.remoteInfo.nodeSpecificPrivKey, packet)
     }
 
-  def fallbackResolve(secret: PrivateKey, theirAdd: UpdateAddHtlc): IncomingResolution = IncomingPacket.decrypt(theirAdd, secret) match {
-    case Left(failure: BadOnion) => CMD_FAIL_MALFORMED_HTLC(failure.onionHash, failure.code, theirAdd)
-    case Left(onionFailure) => CMD_FAIL_HTLC(Right(onionFailure), secret, theirAdd)
-    case Right(packet: IncomingPacket) => defineResolution(secret, packet)
-  }
+  def fallbackResolve(secret: PrivateKey, theirAdd: UpdateAddHtlc): IncomingResolution =
+    IncomingPacket.decrypt(theirAdd, secret) match {
+      case Left(failure: BadOnion) => CMD_FAIL_MALFORMED_HTLC(failure.onionHash, failure.code, theirAdd)
+      case Left(onionFailure) => CMD_FAIL_HTLC(Right(onionFailure), secret, theirAdd)
+      case Right(packet: IncomingPacket) => defineResolution(secret, packet)
+    }
 
   // Make sure incoming payment secret is always present
   def defineResolution(secret: PrivateKey, pkt: IncomingPacket): IncomingResolution = pkt match {
@@ -100,7 +101,7 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
     case _ if opm.data.payments.get(fullTag).exists(fsm => PENDING == fsm.state || INIT == fsm.state) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is pending in FSM
     case _ if opm.data.payments.get(fullTag).exists(fsm => SUCCEEDED == fsm.state) => PaymentInfo.NOT_SENDABLE_SUCCESS // This payment has just been fulfilled at runtime
     case _ if allInChannelOutgoing.exists(_.paymentHash == fullTag.paymentHash) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is still pending in channels
-    case _ if opm.inPrincipleSendable(all.values, LNParams.routerConf) < amount => PaymentInfo.NOT_SENDABLE_LOW_FUNDS // We don't have enough money to send this one
+    case _ if opm.inPrincipleSendable(all.values, LNParams.routerConf) < amount => PaymentInfo.NOT_SENDABLE_LOW_FUNDS // We don't have enough money
     case info if info.local.exists(SUCCEEDED == _.status) => PaymentInfo.NOT_SENDABLE_SUCCESS // Successfully sent or received a long time ago
     case info if info.local.exists(_.isIncoming) => PaymentInfo.NOT_SENDABLE_INCOMING // Incoming payment with this hash exists
     case info if info.relayed.isDefined => PaymentInfo.NOT_SENDABLE_RELAYED // Related preimage has been relayed
@@ -111,7 +112,7 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
   override def onException: PartialFunction[Malfunction, Unit] = { case (_, commandError: CMDException) => opm process commandError }
 
-  override def onBecome: PartialFunction[Transition, Unit] = { case (_, _, _: Commitments, SLEEPING | SUSPENDED, OPEN) => opm process OutgoingPaymentMaster.CMDChanGotOnline }
+  override def onBecome: PartialFunction[Transition, Unit] = { case (_, _, _, SLEEPING | SUSPENDED, OPEN) => opm process OutgoingPaymentMaster.CMDChanGotOnline }
 
   override def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = {
     val allIncomingResolves = all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.crossSignedIncoming).map(initResolveMemo.get)

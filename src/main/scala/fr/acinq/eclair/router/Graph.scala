@@ -221,7 +221,7 @@ object Graph {
    * @return the new amount updated with the necessary fees for this edge
    */
   private def addEdgeFees(edge: GraphEdge, amountToForward: MilliSatoshi): MilliSatoshi = {
-    if (edgeHasZeroFee(edge)) amountToForward + nodeFee(baseFee = 1.msat, proportionalFee = 0, amountToForward)
+    if (edgeHasZeroFee(edge)) amountToForward + nodeFee(baseFee = 1.msat, proportionalRatio = 0, amountToForward)
     else amountToForward + nodeFee(edge.updExt.update.feeBaseMsat, edge.updExt.update.feeProportionalMillionths, amountToForward)
   }
 

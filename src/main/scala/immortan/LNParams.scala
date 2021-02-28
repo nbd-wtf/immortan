@@ -310,7 +310,7 @@ object ChannelBag {
 }
 
 trait ChannelBag {
-  def all: List[PersistentChannelData]
+  def all: Iterable[PersistentChannelData]
   def hide(commitments: NormalCommits): Unit
   def delete(commitments: HostedCommits): Unit
   def put(data: PersistentChannelData): PersistentChannelData

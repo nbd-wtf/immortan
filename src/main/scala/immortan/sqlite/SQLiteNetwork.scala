@@ -52,7 +52,7 @@ class SQLiteNetwork(val db: DBInterface, updateTable: ChannelUpdateTable, announ
   }
 
   def listChannelUpdates: Iterable[ChannelUpdateExt] =
-    db select updateTable.selectAllSql iterable { rc =>
+    db.select(updateTable.selectAllSql).iterable { rc =>
       val cltvExpiryDelta = CltvExpiryDelta(rc int updateTable.cltvExpiryDelta)
       val htlcMinimumMsat = MilliSatoshi(rc long updateTable.minMsat)
       val htlcMaximumMsat = MilliSatoshi(rc long updateTable.maxMsat)
@@ -72,7 +72,7 @@ class SQLiteNetwork(val db: DBInterface, updateTable: ChannelUpdateTable, announ
   def getRoutingData: Map[ShortChannelId, PublicChannel] = {
     val shortId2Updates = listChannelUpdates.groupBy(_.update.shortChannelId)
 
-    val tuples = listChannelAnnouncements flatMap { ann =>
+    val tuples = listChannelAnnouncements.flatMap { ann =>
       shortId2Updates get ann.shortChannelId collectFirst {
         case List(u1, u2) if ChannelUpdate.POSITION1NODE == u1.update.position => ann.shortChannelId -> PublicChannel(Some(u1), Some(u2), ann)
         case List(u2, u1) if ChannelUpdate.POSITION2NODE == u2.update.position => ann.shortChannelId -> PublicChannel(Some(u1), Some(u2), ann)

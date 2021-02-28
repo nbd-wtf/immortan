@@ -17,8 +17,8 @@ class SQLiteChannel(db: DBInterface) extends ChannelBag {
     data
   }
 
-  override def all: List[PersistentChannelData] =
-    db.select(ChannelTable.selectAllSql).iterable(_ byteVec ChannelTable.data).toList
+  override def all: Iterable[PersistentChannelData] =
+    db.select(ChannelTable.selectAllSql).iterable(_ byteVec ChannelTable.data)
       .map(bits => ChannelCodecs.persistentDataCodec.decode(bits.toBitVector).require.value)
 
   override def delete(commitments: HostedCommits): Unit = db.change(ChannelTable.killSql, commitments.channelId.toHex)
@@ -28,7 +28,7 @@ class SQLiteChannel(db: DBInterface) extends ChannelBag {
   // HTLC infos
 
   override def htlcInfos(commitNumer: Long): Iterable[ChannelBag.Hash160AndCltv] =
-    db.select(HtlcInfoTable.selectAllSql, commitNumer.toString) iterable { rc =>
+    db.select(HtlcInfoTable.selectAllSql, commitNumer.toString).iterable { rc =>
       val cltvExpiry = CltvExpiry(rc int HtlcInfoTable.cltvExpiry)
       val hash160 = rc byteVec HtlcInfoTable.paymentHash160
       ChannelBag.Hash160AndCltv(hash160, cltvExpiry)

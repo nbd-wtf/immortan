@@ -97,7 +97,7 @@ case class UpdateAddHtlc(channelId: ByteVector32, id: Long,
     res <- CommonCodecs.bytes32.decode(plainBytes.toBitVector).toOption
   } yield FullPaymentTag(res.value, paymentHash)
 
-  // This is relevant for outgoing payments, NO_SECRET is synonimous to locally initiated payment
+  // This is relevant for outgoing payments, NO_SECRET is synonimous to locally initiated outgoing payment
   lazy val fullTag: FullPaymentTag = fullTagOpt getOrElse FullPaymentTag(ChannelMaster.NO_SECRET, paymentHash)
 
   final val partId: ByteVector = onionRoutingPacket.publicKey
@@ -375,3 +375,13 @@ object SwapOutTransactionDenied {
 }
 
 case class SwapOutTransactionDenied(btcAddress: String, reason: Long) extends SwapOut with ChainSwapMessage
+
+// Trampoline status
+
+sealed trait TrampolineStatus extends LightningMessage
+
+case object TramploneOff extends TrampolineStatus
+
+case class TrampolineOn(htlcMinimumMsat: MilliSatoshi, htlcMaximumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi,
+                        feeProportionalMillionths: Long, exponent: Double, logExponent: Double,
+                        cltvExpiryDelta: CltvExpiryDelta) extends TrampolineStatus

@@ -113,13 +113,18 @@ package object eclair {
 
   def isPay2PubkeyHash(address: String): Boolean = address.startsWith("1") || address.startsWith("m") || address.startsWith("n")
 
-  /**
-   * @param baseFee         fixed fee
-   * @param proportionalFee proportional fee (millionths)
-   * @param paymentAmount   payment amount in millisatoshi
-   * @return the fee that a node should be paid to forward an HTLC of 'paymentAmount' millisatoshis
-   */
-  def nodeFee(baseFee: MilliSatoshi, proportionalFee: Long, paymentAmount: MilliSatoshi): MilliSatoshi = baseFee + (paymentAmount * proportionalFee) / 1000000
+  def proportionalFee(proportionalFee: Long, paymentAmount: MilliSatoshi): MilliSatoshi = (paymentAmount * proportionalFee) / 1000000
+
+  def nodeFee(baseFee: MilliSatoshi, proportionalRatio: Long, paymentAmount: MilliSatoshi): MilliSatoshi = baseFee + proportionalFee(proportionalRatio, paymentAmount)
+
+  // proportional^(exponent = 0.99) + ln(proportional)^(logExponent = 3.8) is about linear
+  // proportional^(exponent = 0.97) + ln(proportional)^(logExponent = 3.9) gives moderate discounts
+  // proportional^(exponent = 0.30) + ln(proportional)^(logExponent = 4.0) gives large discounts for large amounts
+  // proportional^(exponent = 0) + ln(proportional)^(logExponent = 0) gives base + 2 msat, independent of payment amount
+  def trampolineFee(proportional: Long, baseFee: MilliSatoshi, exponent: Double, logExponent: Double): MilliSatoshi = {
+    val nonLinearFeeMsat = math.pow(proportional, exponent) + math.pow(math.log(proportional), logExponent)
+    baseFee + MilliSatoshi(nonLinearFeeMsat.toLong)
+  }
 
   /**
    * @param address   base58 of bech32 address

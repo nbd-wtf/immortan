@@ -497,7 +497,23 @@ object SwapCodecs {
   final val SWAP_OUT_TRANSACTION_DENIED_MESSAGE_TAG = 55019
 }
 
+object TrampolineStatusCodecs {
+  val trampolineOnCodec = {
+    (millisatoshi withContext "htlcMinimumMsat") ::
+      (millisatoshi withContext "htlcMaximumMsat") ::
+      (millisatoshi withContext "feeBaseMsat") ::
+      (uint32 withContext "feeProportionalMillionths") ::
+      (double withContext "exponent") ::
+      (double withContext "logExponent") ::
+      (cltvExpiryDelta withContext "cltvExpiryDelta")
+  }.as[TrampolineOn]
+
+  final val TRAMPOLINE_STATUS_ON_TAG = 44789
+  final val TRAMPOLINE_STATUS_OFF_TAG = 44787
+}
+
 object ExtMessageMapping {
+  import TrampolineStatusCodecs._
   import HostedMessagesCodecs._
   import SwapCodecs._
 
@@ -535,6 +551,9 @@ object ExtMessageMapping {
     case SWAP_OUT_TRANSACTION_REQUEST_MESSAGE_TAG => swapOutTransactionRequestCodec.decode(msg.data).require.value
     case SWAP_OUT_TRANSACTION_RESPONSE_MESSAGE_TAG => swapOutTransactionResponseCodec.decode(msg.data).require.value
     case SWAP_OUT_TRANSACTION_DENIED_MESSAGE_TAG => swapOutTransactionDeniedCodec.decode(msg.data).require.value
+
+    case TRAMPOLINE_STATUS_OFF_TAG => provide(TramploneOff).decode(msg.data).require.value
+    case TRAMPOLINE_STATUS_ON_TAG => trampolineOnCodec.decode(msg.data).require.value
     case _ => throw new RuntimeException
   }
 
@@ -563,6 +582,9 @@ object ExtMessageMapping {
     case msg: SwapOutTransactionRequest => UnknownMessage(SWAP_OUT_TRANSACTION_REQUEST_MESSAGE_TAG, swapOutTransactionRequestCodec.encode(msg).require)
     case msg: SwapOutTransactionResponse => UnknownMessage(SWAP_OUT_TRANSACTION_RESPONSE_MESSAGE_TAG, swapOutTransactionResponseCodec.encode(msg).require)
     case msg: SwapOutTransactionDenied => UnknownMessage(SWAP_OUT_TRANSACTION_DENIED_MESSAGE_TAG, swapOutTransactionDeniedCodec.encode(msg).require)
+
+    case TramploneOff => UnknownMessage(TRAMPOLINE_STATUS_OFF_TAG, provide(TramploneOff).encode(TramploneOff).require)
+    case msg: TrampolineOn => UnknownMessage(TRAMPOLINE_STATUS_ON_TAG, trampolineOnCodec.encode(msg).require)
     case _ => msg
   }
 
