@@ -552,7 +552,7 @@ object ExtMessageMapping {
     case SWAP_OUT_TRANSACTION_RESPONSE_MESSAGE_TAG => swapOutTransactionResponseCodec.decode(msg.data).require.value
     case SWAP_OUT_TRANSACTION_DENIED_MESSAGE_TAG => swapOutTransactionDeniedCodec.decode(msg.data).require.value
 
-    case TRAMPOLINE_STATUS_OFF_TAG => provide(TramploneOff).decode(msg.data).require.value
+    case TRAMPOLINE_STATUS_OFF_TAG => provide(TrampolineOff).decode(msg.data).require.value
     case TRAMPOLINE_STATUS_ON_TAG => trampolineOnCodec.decode(msg.data).require.value
     case _ => throw new RuntimeException
   }
@@ -583,7 +583,7 @@ object ExtMessageMapping {
     case msg: SwapOutTransactionResponse => UnknownMessage(SWAP_OUT_TRANSACTION_RESPONSE_MESSAGE_TAG, swapOutTransactionResponseCodec.encode(msg).require)
     case msg: SwapOutTransactionDenied => UnknownMessage(SWAP_OUT_TRANSACTION_DENIED_MESSAGE_TAG, swapOutTransactionDeniedCodec.encode(msg).require)
 
-    case TramploneOff => UnknownMessage(TRAMPOLINE_STATUS_OFF_TAG, provide(TramploneOff).encode(TramploneOff).require)
+    case TrampolineOff => UnknownMessage(TRAMPOLINE_STATUS_OFF_TAG, provide(TrampolineOff).encode(TrampolineOff).require)
     case msg: TrampolineOn => UnknownMessage(TRAMPOLINE_STATUS_ON_TAG, trampolineOnCodec.encode(msg).require)
     case _ => msg
   }

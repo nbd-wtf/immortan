@@ -380,7 +380,7 @@ case class SwapOutTransactionDenied(btcAddress: String, reason: Long) extends Sw
 
 sealed trait TrampolineStatus extends LightningMessage
 
-case object TramploneOff extends TrampolineStatus
+case object TrampolineOff extends TrampolineStatus
 
 case class TrampolineOn(htlcMinimumMsat: MilliSatoshi, htlcMaximumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi,
                         feeProportionalMillionths: Long, exponent: Double, logExponent: Double,
