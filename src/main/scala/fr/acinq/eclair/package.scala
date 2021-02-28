@@ -117,7 +117,7 @@ package object eclair {
 
   def nodeFee(baseFee: MilliSatoshi, proportionalRatio: Long, paymentAmount: MilliSatoshi): MilliSatoshi = baseFee + proportionalFee(proportionalRatio, paymentAmount)
 
-  // proportional^(exponent = 0.99) + ln(proportional)^(logExponent = 3.8) is about linear
+  // proportional^(exponent = 1) + ln(proportional)^(logExponent = 0) is linear
   // proportional^(exponent = 0.97) + ln(proportional)^(logExponent = 3.9) gives moderate discounts
   // proportional^(exponent = 0.30) + ln(proportional)^(logExponent = 4.0) gives large discounts for large amounts
   // proportional^(exponent = 0) + ln(proportional)^(logExponent = 0) gives base + 2 msat, independent of payment amount

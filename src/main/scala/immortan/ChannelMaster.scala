@@ -55,7 +55,8 @@ object ChannelMaster {
 }
 
 case class InFlightPayments(out: Map[FullPaymentTag, OutgoingAdds], in: Map[FullPaymentTag, PartialResolutions] = Map.empty) {
-  val allTypes: Set[FullPaymentTag] = out.keySet ++ in.keySet
+  // Incoming HTLC tag is extracted from onion, corresponsing outgoing HTLC tag is stored in TLV, this way in/out can be linked
+  val allTags: Set[FullPaymentTag] = out.keySet ++ in.keySet
 }
 
 abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val pf: PathFinder) extends ChannelListener { me =>
@@ -72,13 +73,14 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
   // CHANNEL MANAGEMENT
 
-  def initConnect: Unit = all.values.filter(Channel.isOperationalOrWaiting).flatMap(Channel.chanAndCommitsOpt).map(_.commits).foreach {
-    case cs: NormalCommits => CommsTower.listen(connectionListeners, cs.remoteInfo.nodeSpecificPair, cs.remoteInfo, LNParams.normInit)
-    case cs: HostedCommits => CommsTower.listen(connectionListeners, cs.remoteInfo.nodeSpecificPair, cs.remoteInfo, LNParams.hcInit)
-    case _ => throw new RuntimeException
-  }
+  def initConnect: Unit =
+    all.values.filter(Channel.isOperationalOrWaiting).flatMap(Channel.chanAndCommitsOpt).map(_.commits).foreach {
+      case cs: NormalCommits => CommsTower.listen(connectionListeners, cs.remoteInfo.nodeSpecificPair, cs.remoteInfo, LNParams.normInit)
+      case cs: HostedCommits => CommsTower.listen(connectionListeners, cs.remoteInfo.nodeSpecificPair, cs.remoteInfo, LNParams.hcInit)
+      case _ => throw new RuntimeException
+    }
 
-  def allInChannelOutgoing: Iterable[UpdateAddHtlc] = all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing)
+  def allInChannelOutgoing: Map[FullPaymentTag, OutgoingAdds] = all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).groupBy(_.fullTag)
   def fromNode(nodeId: PublicKey): Iterable[ChanAndCommits] = all.values.flatMap(Channel.chanAndCommitsOpt).filter(_.commits.remoteInfo.nodeId == nodeId)
 
   // RECEIVE/SEND UTILITIES
@@ -97,16 +99,17 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
     if (candidates.isEmpty) None else candidates.maxBy(_.maxReceivable).toSome
   }
 
-  def checkIfSendable(fullTag: FullPaymentTag, amount: MilliSatoshi): Int = getPaymentDbInfoMemo(fullTag.paymentHash) match {
-    case _ if opm.data.payments.get(fullTag).exists(fsm => PENDING == fsm.state || INIT == fsm.state) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is pending in FSM
-    case _ if opm.data.payments.get(fullTag).exists(fsm => SUCCEEDED == fsm.state) => PaymentInfo.NOT_SENDABLE_SUCCESS // This payment has just been fulfilled at runtime
-    case _ if allInChannelOutgoing.exists(_.paymentHash == fullTag.paymentHash) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is still pending in channels
-    case _ if opm.inPrincipleSendable(all.values, LNParams.routerConf) < amount => PaymentInfo.NOT_SENDABLE_LOW_FUNDS // We don't have enough money
-    case info if info.local.exists(SUCCEEDED == _.status) => PaymentInfo.NOT_SENDABLE_SUCCESS // Successfully sent or received a long time ago
-    case info if info.local.exists(_.isIncoming) => PaymentInfo.NOT_SENDABLE_INCOMING // Incoming payment with this hash exists
-    case info if info.relayed.isDefined => PaymentInfo.NOT_SENDABLE_RELAYED // Related preimage has been relayed
-    case _ => PaymentInfo.SENDABLE // Has never been sent or ABORTED by now
-  }
+  def checkIfSendable(fullTag: FullPaymentTag, amount: MilliSatoshi): Int =
+    getPaymentDbInfoMemo(fullTag.paymentHash) match {
+      case _ if allInChannelOutgoing.contains(fullTag) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment type is still pending in channels (routing and sending at once is OK)
+      case _ if opm.data.payments.get(fullTag).exists(fsm => PENDING == fsm.state || INIT == fsm.state) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is pending in FSM
+      case _ if opm.data.payments.get(fullTag).exists(fsm => SUCCEEDED == fsm.state) => PaymentInfo.NOT_SENDABLE_SUCCESS // This payment has just been fulfilled at runtime
+      case _ if opm.inPrincipleSendable(all.values, LNParams.routerConf) < amount => PaymentInfo.NOT_SENDABLE_LOW_FUNDS // We don't have enough money
+      case info if info.local.exists(SUCCEEDED == _.status) => PaymentInfo.NOT_SENDABLE_SUCCESS // Successfully sent or received a long time ago
+      case info if info.local.exists(_.isIncoming) => PaymentInfo.NOT_SENDABLE_INCOMING // Incoming payment with this hash exists
+      case info if info.relayed.isDefined => PaymentInfo.NOT_SENDABLE_RELAYED // Related preimage has been relayed
+      case _ => PaymentInfo.SENDABLE // Has never been sent or ABORTED by now
+    }
 
   // These are executed in Channel context
 
@@ -116,9 +119,9 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
   override def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = {
     val allIncomingResolves = all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.crossSignedIncoming).map(initResolveMemo.get)
-    allIncomingResolves.foreach { case finalResolve: FinalResolution => all(finalResolve.theirAdd.channelId) process finalResolve case _ => }
+    allIncomingResolves.foreach { case resolve: FinalResolution => all(resolve.theirAdd.channelId) process resolve case _ => }
     val partialIncoming = allIncomingResolves.collect { case resolve: PartialResolution => resolve }.groupBy(_.fullTag)
-    val bag = InFlightPayments(out = allInChannelOutgoing.groupBy(_.fullTag), partialIncoming)
+    val bag = InFlightPayments(allInChannelOutgoing, partialIncoming)
   }
 
   override def fulfillReceived(fulfill: RemoteFulfill): Unit = opm process fulfill
@@ -127,5 +130,7 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 trait ChannelMasterListener {
   def outgoingFailed(data: OutgoingPaymentSenderData): Unit = none
   // Note that it is theoretically possible for first part to get fulfilled and the rest of the parts to get failed
-  def outgoingSucceeded(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill, isFirst: Boolean, noLeftovers: Boolean): Unit = none
+  def outgoingSucceeded(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill, isFirst: Boolean): Unit = none
+  // This one is called after preimage has been revealed and no more outgoing payment parts are left
+  def outgoingFinalized(data: OutgoingPaymentSenderData): Unit = none
 }

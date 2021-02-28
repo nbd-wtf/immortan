@@ -30,7 +30,7 @@ import scodec.bits.ByteVector
 
 object PaymentFailure {
   type Failures = List[PaymentFailure]
-  final val NOT_ENOUGH_CAPACITY = "not-enough-capacity"
+  final val NOT_ENOUGH_FUNDS = "not-enough-funds"
   final val RUN_OUT_OF_RETRY_ATTEMPTS = "run-out-of-retry-attempts"
   final val PEER_COULD_NOT_PARSE_ONION = "peer-could-not-parse-onion"
   final val NOT_RETRYING_NO_DETAILS = "not-retrying-no-details"
@@ -93,7 +93,7 @@ class OutgoingPaymentMaster(cm: ChannelMaster) extends StateMachine[OutgoingPaym
 
   def doProcess(change: Any): Unit = (change, state) match {
     case (cmd: SendMultiPart, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
-      // Before going further, maybe reduce previous failure times to give failing channels a chance
+      // Before going any further, maybe reduce previous failure times to give failing channels a chance
       val noPendingPayments = data.payments.values.forall(fsm => SUCCEEDED == fsm.state || ABORTED == fsm.state)
       if (noPendingPayments) become(data.withFailuresReduced, state)
 
@@ -183,6 +183,7 @@ class OutgoingPaymentMaster(cm: ChannelMaster) extends StateMachine[OutgoingPaym
     getSendable(chans.filter(Channel.isOperationalAndOpen), conf)
 
   // What can be sent through given channels with waiting parts taken into account
+  // this method takes into account that some waiting parts may not have reached a channel yet
   private def getSendable(chans: Iterable[Channel] = Nil, routerConf: RouterConf): mutable.Map[ChanAndCommits, MilliSatoshi] = {
     val finals: mutable.Map[ChanAndCommits, MilliSatoshi] = mutable.Map.empty[ChanAndCommits, MilliSatoshi] withDefaultValue 0L.msat
     val waits: mutable.Map[ByteVector32, PartIdToAmount] = mutable.Map.empty[ByteVector32, PartIdToAmount] withDefaultValue Map.empty
@@ -280,13 +281,13 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, cm: ChannelMaster) exte
     case (CMDAbort, INIT | PENDING) if data.waitOnlineParts.nonEmpty => self abortAndNotify data.copy(parts = data.parts -- data.waitOnlineParts.keySet)
 
     case (fulfill: RemoteFulfill, INIT | PENDING | ABORTED) =>
-      // First idempotent successful event, fired once with get a first preimage, but not subsequent ones
-      for (lst <- cm.paymentListeners) lst.outgoingSucceeded(data, fulfill, isFirst = true, noLeftoversInChans)
+      for (lst <- cm.paymentListeners) lst.outgoingSucceeded(data, fulfill, isFirst = true)
+      if (noLeftoversInChans) for (lst <- cm.paymentListeners) lst.outgoingFinalized(data)
       become(data, SUCCEEDED)
 
     case (fulfill: RemoteFulfill, SUCCEEDED) =>
-      // Subsequent series of events which fire as rest of parts get fulfilled, but not on first one
-      for (lst <- cm.paymentListeners) lst.outgoingSucceeded(data, fulfill, isFirst = false, noLeftoversInChans)
+      for (lst <- cm.paymentListeners) lst.outgoingSucceeded(data, fulfill, isFirst = false)
+      if (noLeftoversInChans) for (lst <- cm.paymentListeners) lst.outgoingFinalized(data)
 
     case (CMDChanGotOnline, PENDING) =>
       data.parts.values.collectFirst { case wait: WaitForChanOnline =>
@@ -296,9 +297,9 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, cm: ChannelMaster) exte
 
     case (CMDAskForRoute, PENDING) =>
       data.parts.values.collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isEmpty =>
-        val fakeLocalEdge = mkFakeLocalEdge(from = LNParams.format.keys.ourNodePubKey, toPeer = wait.cnc.commits.remoteInfo.nodeId)
+        val fakeLocalEdge = mkFakeLocalEdge(LNParams.format.keys.ourNodePubKey, wait.cnc.commits.remoteInfo.nodeId)
         val params = RouteParams(data.cmd.routerConf.searchMaxFeeBase, data.cmd.routerConf.searchMaxFeePct, data.cmd.routerConf.firstPassMaxRouteLength, data.cmd.routerConf.firstPassMaxCltv)
-        cm.opm process RouteRequest(fullTag, partId = wait.partId, LNParams.format.keys.ourNodePubKey, data.cmd.targetNodeId, wait.amount, fakeLocalEdge, params)
+        cm.opm process RouteRequest(fullTag, wait.partId, LNParams.format.keys.ourNodePubKey, data.cmd.targetNodeId, wait.amount, fakeLocalEdge, params)
       }
 
     case (fail: NoRouteAvailable, PENDING) =>
@@ -424,7 +425,7 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, cm: ChannelMaster) exte
     case _ =>
   }
 
-  def noLeftoversInChans: Boolean = cm.allInChannelOutgoing.forall(_.fullTag != fullTag)
+  def noLeftoversInChans: Boolean = !cm.allInChannelOutgoing.contains(fullTag)
 
   def canBeSplit(totalAmount: MilliSatoshi): Boolean = totalAmount / 2 > data.cmd.routerConf.mppMinPartAmount
 
@@ -468,7 +469,7 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, cm: ChannelMaster) exte
         } else {
           // A positive leftover is present with no more channels left
           // partId should already have been removed from data at this point
-          self abortAndNotify data1.withLocalFailure(NOT_ENOUGH_CAPACITY, amount)
+          self abortAndNotify data1.withLocalFailure(NOT_ENOUGH_FUNDS, amount)
         }
     }
 
