@@ -4,9 +4,9 @@ import immortan._
 import spray.json._
 import fr.acinq.eclair._
 import immortan.utils.ImplicitJsonFormats._
-import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFulfillHtlc}
-import java.lang.{Long => JLong}
 
+import java.lang.{Long => JLong}
+import fr.acinq.eclair.wire.UpdateFulfillHtlc
 import immortan.PaymentInfo.RevealedParts
 import fr.acinq.bitcoin.Crypto.PublicKey
 import immortan.crypto.Tools.Fiat2Btc
@@ -49,7 +49,7 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
     db txWrap {
       db.change(PaymentTable.deleteSql, prex.pr.paymentHash.toHex)
       db.change(PaymentTable.newSql, prex.raw, ChannelMaster.NO_PREIMAGE.toHex, PaymentStatus.PENDING, System.currentTimeMillis: JLong, description.toJson.compactPrint,
-        action.map(_.toJson.compactPrint).getOrElse(new String), prex.pr.paymentHash.toHex, 0L: JLong /* RECEIVED = 0 MSAT, OUTGOING */, finalAmount.toLong: JLong /* SENT IS KNOWN */,
+        action.map(_.toJson.compactPrint).getOrElse(new String), prex.pr.paymentHash.toHex, 0L: JLong /* RECEIVED = 0 MSAT */, finalAmount.toLong: JLong /* SENT IS KNOWN */,
         0L: JLong /* FEE IS UNCERTAIN YET */, balanceSnap.toLong: JLong, fiatRateSnap.toJson.compactPrint, chainFee.toLong: JLong, 0: java.lang.Integer /* INCOMING = 0 */,
         List.empty[RevealedPart].toJson.compactPrint /* NO REVELAED PARTS FOR OUTGOING */)
     }
@@ -59,16 +59,16 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
     db txWrap {
       db.change(PaymentTable.deleteSql, prex.pr.paymentHash.toHex)
       db.change(PaymentTable.newSql, prex.raw, preimage.toHex, PaymentStatus.PENDING, System.currentTimeMillis: JLong, description.toJson.compactPrint,
-        new String /* NO ACTION */, prex.pr.paymentHash.toHex, prex.pr.amount.getOrElse(0L.msat).toLong: JLong /* MUST COME FROM PR! IF RECEIVED = 0 MSAT THEN NO AMOUNT */,
-        0L: JLong /* SENT = 0 MSAT, NOTHING TO SEND */, 0L: JLong /* NO FEE FOR INCOMING PAYMENT */, balanceSnap.toLong: JLong, fiatRateSnap.toJson.compactPrint, chainFee.toLong: JLong,
-        1: java.lang.Integer /* INCOMING = 1 */, List.empty[RevealedPart].toJson.compactPrint /* NO REVELAED PARTS YET */)
+        new String /* NO ACTION */, prex.pr.paymentHash.toHex, prex.pr.amount.getOrElse(0L.msat).toLong: JLong /* MUST COME FROM PR! NO AMOUNT IF RECEIVED = 0 */,
+        0L: JLong /* SENT = 0 MSAT, NOTHING TO SEND */, 0L: JLong /* NO FEE FOR INCOMING PAYMENT */, balanceSnap.toLong: JLong, fiatRateSnap.toJson.compactPrint,
+        chainFee.toLong: JLong, 1: java.lang.Integer /* INCOMING = 1 */, List.empty[RevealedPart].toJson.compactPrint /* NO REVELAED PARTS YET */)
     }
 
-  def paidSummary: Try[PaidSummary] = db.select(PaymentTable.selectSummarySql) headTry { rc =>
+  def paidSummary: Try[PaidSummary] = db.select(PaymentTable.selectSummarySql).headTry { rc =>
     PaidSummary(fees = MilliSatoshi(rc long 0), received = MilliSatoshi(rc long 1), sent = MilliSatoshi(rc long 2), count = rc long 3)
   }
 
-  def relayedSummary: Try[RelayedSummary] = db.select(RelayPreimageTable.selectSummarySql) headTry { rc =>
+  def relayedSummary: Try[RelayedSummary] = db.select(RelayPreimageTable.selectSummarySql).headTry { rc =>
     RelayedSummary(relayed = MilliSatoshi(rc long 0), earned = MilliSatoshi(rc long 1), count = rc long 2)
   }
 

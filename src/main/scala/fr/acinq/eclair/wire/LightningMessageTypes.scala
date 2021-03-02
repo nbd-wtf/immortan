@@ -91,13 +91,12 @@ case class UpdateAddHtlc(channelId: ByteVector32, id: Long,
                          amountMsat: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onionRoutingPacket: OnionRoutingPacket,
                          tlvStream: TlvStream.GenericTlvStream = TlvStream.empty) extends HtlcMessage with HasChannelId with UpdateMessage {
 
-  // Important: LNParams.format must be defined
   def incorrectDetails: FailureMessage = IncorrectOrUnknownPaymentDetails(amountMsat, LNParams.blockCount.get)
 
   // Important: LNParams.format must be defined
   private[this] lazy val fullTagOpt: Option[FullPaymentTag] = for {
-    ciperBytes <- tlvStream.get[PaymentTagTlv.EncryptedPaymentSecret]
-    plainBytes <- Tools.chaChaDecrypt(LNParams.format.keys.paymentTagEncKey(paymentHash), ciperBytes.data).toOption
+    cipherBytes <- tlvStream.get[PaymentTagTlv.EncryptedPaymentSecret]
+    plainBytes <- Tools.chaChaDecrypt(LNParams.format.keys.paymentTagEncKey(paymentHash), cipherBytes.data).toOption
     DecodeResult(ShortPaymentTag(secret, tag), _) <- PaymentTagTlv.shortPaymentTagCodec.decode(plainBytes.toBitVector).toOption
   } yield FullPaymentTag(paymentHash, secret, tag)
 
@@ -200,8 +199,8 @@ case class Domain(domain: String, port: Int) extends NodeAddress {
   override def toString: String = s"$domain:$port"
 }
 
-case class NodeAnnouncement(signature: ByteVector64,
-                            features: Features, timestamp: Long, nodeId: PublicKey, rgbColor: Color, alias: String, addresses: List[NodeAddress],
+case class NodeAnnouncement(signature: ByteVector64, features: Features,
+                            timestamp: Long, nodeId: PublicKey, rgbColor: Color, alias: String, addresses: List[NodeAddress],
                             unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp
 
 object ChannelUpdate {
@@ -223,7 +222,6 @@ case class ChannelUpdate(signature: ByteVector64, chainHash: ByteVector32, short
   lazy val core: UpdateCore = UpdateCore(position, shortChannelId, feeBaseMsat, feeProportionalMillionths, cltvExpiryDelta, htlcMaximumMsat)
 
   // Point useless fields to same object, db-restored should be the same, make sure it does not erase channelUpdateChecksumCodec fields
-
   def lite: ChannelUpdate = copy(signature = ByteVector64.Zeroes, LNParams.chainHash, unknownFields = ByteVector.empty)
 }
 
@@ -247,7 +245,6 @@ case class ReplyChannelRange(chainHash: ByteVector32, firstBlockNum: Long,
                              tlvStream: TlvStream[ReplyChannelRangeTlv] = TlvStream.empty) extends RoutingMessage {
 
   val timestamps: ReplyChannelRangeTlv.EncodedTimestamps = tlvStream.get[ReplyChannelRangeTlv.EncodedTimestamps].get
-
   val checksums: ReplyChannelRangeTlv.EncodedChecksums = tlvStream.get[ReplyChannelRangeTlv.EncodedChecksums].get
 }
 

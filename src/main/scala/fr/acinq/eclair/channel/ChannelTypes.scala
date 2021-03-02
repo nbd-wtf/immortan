@@ -20,6 +20,7 @@ import scodec.bits._
 import fr.acinq.eclair._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.wire._
+import com.softwaremill.quicklens._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import immortan.{LNParams, RemoteNodeInfo, RevealedPart}
@@ -106,7 +107,7 @@ case class CMD_FULFILL_HTLC(preimage: ByteVector32, theirAdd: UpdateAddHtlc) ext
 case class CMD_ADD_HTLC(fullTag: FullPaymentTag, firstAmount: MilliSatoshi, cltvExpiry: CltvExpiry, packetAndSecrets: PacketAndSecrets, payload: FinalPayload) extends Command {
   final val partId: ByteVector = packetAndSecrets.packet.publicKey
 
-  lazy val encSecret: ByteVector = {
+  lazy val encryptedTag: ByteVector = {
     // Important: LNParams.format must be defined
     val shortTag = ShortPaymentTag(fullTag.paymentSecret, fullTag.tag)
     val plainBytes = PaymentTagTlv.shortPaymentTagCodec.encode(shortTag).require.toByteVector
@@ -132,7 +133,8 @@ trait PersistentChannelData extends ChannelData {
   def channelId: ByteVector32
 }
 
-sealed trait HasNormalCommitments extends PersistentChannelData {
+sealed trait HasNormalCommitments extends PersistentChannelData { me =>
+  def withoutUpdate: HasNormalCommitments = me.modify(_.commitments.updateOpt).setTo(None)
   override def channelId: ByteVector32 = commitments.channelId
   def commitments: NormalCommits
 }
@@ -199,13 +201,11 @@ final case class DATA_CLOSING(commitments: NormalCommits, fundingTx: Option[Tran
 
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: NormalCommits, remoteChannelReestablish: ChannelReestablish) extends ChannelData with HasNormalCommitments
 
-final case class LocalParams(fundingKeyPath: DeterministicWallet.KeyPath, dustLimit: Satoshi, maxHtlcValueInFlightMsat: UInt64,
-                             channelReserve: Satoshi, htlcMinimum: MilliSatoshi, toSelfDelay: CltvExpiryDelta, maxAcceptedHtlcs: Int,
-                             isFunder: Boolean, defaultFinalScriptPubKey: ByteVector, walletStaticPaymentBasepoint: Option[PublicKey] = None)
+final case class LocalParams(fundingKeyPath: DeterministicWallet.KeyPath, dustLimit: Satoshi, maxHtlcValueInFlightMsat: UInt64, channelReserve: Satoshi, htlcMinimum: MilliSatoshi,
+                             toSelfDelay: CltvExpiryDelta, maxAcceptedHtlcs: Int, isFunder: Boolean, defaultFinalScriptPubKey: ByteVector, walletStaticPaymentBasepoint: Option[PublicKey] = None)
 
-final case class RemoteParams(dustLimit: Satoshi, maxHtlcValueInFlightMsat: UInt64, channelReserve: Satoshi, htlcMinimum: MilliSatoshi,
-                              toSelfDelay: CltvExpiryDelta, maxAcceptedHtlcs: Int, fundingPubKey: PublicKey, revocationBasepoint: PublicKey,
-                              paymentBasepoint: PublicKey, delayedPaymentBasepoint: PublicKey, htlcBasepoint: PublicKey)
+final case class RemoteParams(dustLimit: Satoshi, maxHtlcValueInFlightMsat: UInt64, channelReserve: Satoshi, htlcMinimum: MilliSatoshi, toSelfDelay: CltvExpiryDelta, maxAcceptedHtlcs: Int,
+                              fundingPubKey: PublicKey, revocationBasepoint: PublicKey, paymentBasepoint: PublicKey, delayedPaymentBasepoint: PublicKey, htlcBasepoint: PublicKey)
 
 object ChannelFlags {
   val AnnounceChannel: Byte = 0x01.toByte
