@@ -361,5 +361,7 @@ abstract class PHCSyncMaster(extraNodes: Set[RemoteNodeInfo], routerData: Data) 
       val pure = CompleteHostedRoutingData(d1.announces.values.toSet, d1.updates)
       become(null, SHUT_DOWN)
       onSyncComplete(pure)
+
+    case _ =>
   }
 }

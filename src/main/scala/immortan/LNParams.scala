@@ -26,6 +26,7 @@ import fr.acinq.eclair.router.ChannelUpdateExt
 import fr.acinq.eclair.payment.PaymentRequest
 import org.bitcoinj.core.NetworkParameters
 import immortan.SyncMaster.ShortChanIdSet
+import immortan.PaymentInfo.RevealedParts
 import fr.acinq.eclair.crypto.Generators
 import immortan.crypto.Noise.KeyPair
 import java.io.ByteArrayInputStream
@@ -301,8 +302,8 @@ trait PaymentBag {
                              balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc, chainFee: MilliSatoshi): Unit
 
   // These MUST be the only two methods capable of updating payment state to SUCCEEDED
+  def updOkIncoming(revealedParts: RevealedParts, paymentHash: ByteVector32): Unit
   def updOkOutgoing(upd: UpdateFulfillHtlc, fee: MilliSatoshi): Unit
-  def updStatusIncoming(add: UpdateAddHtlc, status: String): Unit
 }
 
 object ChannelBag {

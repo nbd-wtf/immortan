@@ -93,22 +93,31 @@ object Scripts {
       0
     }
 
-  /**
-   * @return the number of confirmations of the tx parent before which it can be published
-   */
-  def csvTimeout(tx: Transaction): Long = {
-    def sequenceToBlockHeight(sequence: Long): Long = {
-      if ((sequence & TxIn.SEQUENCE_LOCKTIME_DISABLE_FLAG) != 0) 0
-      else {
-        require((sequence & TxIn.SEQUENCE_LOCKTIME_TYPE_FLAG) == 0, "CSV timeout must use block heights, not block times")
-        sequence & TxIn.SEQUENCE_LOCKTIME_MASK
-      }
-    }
-
-    if (tx.version < 2) {
+  private def sequenceToBlockHeight(sequence: Long): Long = {
+    if ((sequence & TxIn.SEQUENCE_LOCKTIME_DISABLE_FLAG) != 0) {
       0
     } else {
-      tx.txIn.map(_.sequence).map(sequenceToBlockHeight).max
+      require((sequence & TxIn.SEQUENCE_LOCKTIME_TYPE_FLAG) == 0, "CSV timeout must use block heights, not block times")
+      sequence & TxIn.SEQUENCE_LOCKTIME_MASK
+    }
+  }
+
+  /**
+   * @return the number of confirmations of each parent before which the given transaction can be published.
+   */
+  def csvTimeouts(tx: Transaction): Map[ByteVector32, Long] = {
+    if (tx.version < 2) {
+      Map.empty
+    } else {
+      tx.txIn.foldLeft(Map.empty[ByteVector32, Long]) { case (current, txIn) =>
+        val csvTimeout = sequenceToBlockHeight(txIn.sequence)
+        if (csvTimeout > 0) {
+          val maxCsvTimeout = math.max(csvTimeout, current.getOrElse(txIn.outPoint.txid, 0L))
+          current + (txIn.outPoint.txid -> maxCsvTimeout)
+        } else {
+          current
+        }
+      }
     }
   }
 
@@ -116,11 +125,11 @@ object Scripts {
     // @formatter:off
     OP_IF ::
       OP_PUSHDATA(revocationPubkey) ::
-    OP_ELSE ::
+      OP_ELSE ::
       encodeNumber(toSelfDelay.toInt) :: OP_CHECKSEQUENCEVERIFY :: OP_DROP ::
       OP_PUSHDATA(localDelayedPaymentPubkey) ::
-    OP_ENDIF ::
-    OP_CHECKSIG :: Nil
+      OP_ENDIF ::
+      OP_CHECKSIG :: Nil
     // @formatter:on
   }
 
@@ -158,9 +167,9 @@ object Scripts {
   def anchor(fundingPubkey: PublicKey): Seq[ScriptElt] = {
     // @formatter:off
     OP_PUSHDATA(fundingPubkey) :: OP_CHECKSIG :: OP_IFDUP ::
-    OP_NOTIF ::
+      OP_NOTIF ::
       OP_16 :: OP_CHECKSEQUENCEVERIFY ::
-    OP_ENDIF :: Nil
+      OP_ENDIF :: Nil
     // @formatter:on
   }
 
@@ -182,23 +191,23 @@ object Scripts {
     // @formatter:off
     // To you with revocation key
     OP_DUP :: OP_HASH160 :: OP_PUSHDATA(revocationPubKey.hash160) :: OP_EQUAL ::
-    OP_IF ::
-        OP_CHECKSIG ::
-    OP_ELSE ::
-        OP_PUSHDATA(remoteHtlcPubkey) :: OP_SWAP  :: OP_SIZE :: encodeNumber(32) :: OP_EQUAL ::
-        OP_NOTIF ::
-            // To me via HTLC-timeout transaction (timelocked).
-            OP_DROP :: OP_2 :: OP_SWAP :: OP_PUSHDATA(localHtlcPubkey) :: OP_2 :: OP_CHECKMULTISIG ::
-        OP_ELSE ::
-            OP_HASH160 :: OP_PUSHDATA(paymentHash) :: OP_EQUALVERIFY ::
-            OP_CHECKSIG ::
-        OP_ENDIF ::
-    (if (addCsvDelay) {
+      OP_IF ::
+      OP_CHECKSIG ::
+      OP_ELSE ::
+      OP_PUSHDATA(remoteHtlcPubkey) :: OP_SWAP  :: OP_SIZE :: encodeNumber(32) :: OP_EQUAL ::
+      OP_NOTIF ::
+      // To me via HTLC-timeout transaction (timelocked).
+      OP_DROP :: OP_2 :: OP_SWAP :: OP_PUSHDATA(localHtlcPubkey) :: OP_2 :: OP_CHECKMULTISIG ::
+      OP_ELSE ::
+      OP_HASH160 :: OP_PUSHDATA(paymentHash) :: OP_EQUALVERIFY ::
+      OP_CHECKSIG ::
+      OP_ENDIF ::
+      (if (addCsvDelay) {
         OP_1 :: OP_CHECKSEQUENCEVERIFY :: OP_DROP ::
-    OP_ENDIF :: Nil
-    } else {
-    OP_ENDIF :: Nil
-    })
+          OP_ENDIF :: Nil
+      } else {
+        OP_ENDIF :: Nil
+      })
     // @formatter:on
   }
 
@@ -233,25 +242,25 @@ object Scripts {
     // @formatter:off
     // To you with revocation key
     OP_DUP :: OP_HASH160 :: OP_PUSHDATA(revocationPubKey.hash160) :: OP_EQUAL ::
-    OP_IF ::
-        OP_CHECKSIG ::
-    OP_ELSE ::
-        OP_PUSHDATA(remoteHtlcPubkey) :: OP_SWAP :: OP_SIZE :: encodeNumber(32) :: OP_EQUAL ::
-        OP_IF ::
-            // To me via HTLC-success transaction.
-            OP_HASH160 :: OP_PUSHDATA(paymentHash) :: OP_EQUALVERIFY ::
-            OP_2 :: OP_SWAP :: OP_PUSHDATA(localHtlcPubkey) :: OP_2 :: OP_CHECKMULTISIG ::
-        OP_ELSE ::
-            // To you after timeout.
-            OP_DROP :: encodeNumber(lockTime.toLong) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP ::
-            OP_CHECKSIG ::
-        OP_ENDIF ::
-    (if (addCsvDelay) {
+      OP_IF ::
+      OP_CHECKSIG ::
+      OP_ELSE ::
+      OP_PUSHDATA(remoteHtlcPubkey) :: OP_SWAP :: OP_SIZE :: encodeNumber(32) :: OP_EQUAL ::
+      OP_IF ::
+      // To me via HTLC-success transaction.
+      OP_HASH160 :: OP_PUSHDATA(paymentHash) :: OP_EQUALVERIFY ::
+      OP_2 :: OP_SWAP :: OP_PUSHDATA(localHtlcPubkey) :: OP_2 :: OP_CHECKMULTISIG ::
+      OP_ELSE ::
+      // To you after timeout.
+      OP_DROP :: encodeNumber(lockTime.toLong) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP ::
+      OP_CHECKSIG ::
+      OP_ENDIF ::
+      (if (addCsvDelay) {
         OP_1 :: OP_CHECKSEQUENCEVERIFY :: OP_DROP ::
-    OP_ENDIF :: Nil
-    } else {
-    OP_ENDIF :: Nil
-    })
+          OP_ENDIF :: Nil
+      } else {
+        OP_ENDIF :: Nil
+      })
     // @formatter:on
   }
 

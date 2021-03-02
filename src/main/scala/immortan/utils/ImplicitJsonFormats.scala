@@ -5,9 +5,10 @@ import spray.json._
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.WalletReady
 import immortan.utils.FiatRates.{BitpayItemList, CoinGeckoItemMap}
+import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import immortan.crypto.Tools.Fiat2Btc
-import fr.acinq.bitcoin.Satoshi
+import fr.acinq.eclair.MilliSatoshi
 import scodec.bits.BitVector
 
 
@@ -31,6 +32,11 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
   }
 
   implicit val publicKeyFmt: JsonFormat[PublicKey] = sCodecJsonFmt(publicKey)
+
+  implicit val milliSatoshiFmt: JsonFormat[MilliSatoshi] = sCodecJsonFmt(millisatoshi)
+
+  implicit val byteVector32Fmt: JsonFormat[ByteVector32] = sCodecJsonFmt(bytes32)
+
   implicit val satoshiFmt: JsonFormat[Satoshi] = sCodecJsonFmt(satoshi)
 
   // Tx description
@@ -72,10 +78,11 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
 
   // Last seen ready event
 
-  implicit val walletReadyFmt: JsonFormat[WalletReady] = jsonFormat[Satoshi, Satoshi, Long, Long,
-    WalletReady](WalletReady.apply, "confirmedBalance", "unconfirmedBalance", "height", "timestamp")
+  implicit val walletReadyFmt: JsonFormat[WalletReady] = jsonFormat[Satoshi, Satoshi, Long, Long, WalletReady](WalletReady.apply, "confirmedBalance", "unconfirmedBalance", "height", "timestamp")
 
   // Payment description
+
+  implicit val revealedPartFmt: JsonFormat[RevealedPart] = jsonFormat[ByteVector32, Long, MilliSatoshi, RevealedPart](RevealedPart.apply, "chanId", "paymentId", "amount")
 
   implicit object PaymentDescriptionFmt extends JsonFormat[PaymentDescription] {
     def write(internal: PaymentDescription): JsValue = internal match {
@@ -126,7 +133,9 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
   }
 
   implicit val aesActionFmt: JsonFormat[AESAction] = taggedJsonFmt(jsonFormat[Option[String], String, String, String, AESAction](AESAction.apply, "domain", "description", "ciphertext", "iv"), tag = "aes")
+
   implicit val messageActionFmt: JsonFormat[MessageAction] = taggedJsonFmt(jsonFormat[Option[String], String, MessageAction](MessageAction.apply, "domain", "message"), tag = "message")
+
   implicit val urlActionFmt: JsonFormat[UrlAction] = taggedJsonFmt(jsonFormat[Option[String], String, String, UrlAction](UrlAction.apply, "domain", "description", "url"), tag = "url")
 
   // LNURL
@@ -162,9 +171,14 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
   // Fiat feerates
 
   implicit val fiatRatesInfoFmt: JsonFormat[FiatRatesInfo] = jsonFormat[Fiat2Btc, Fiat2Btc, Long, FiatRatesInfo](FiatRatesInfo.apply, "rates", "oldRates", "stamp")
+
   implicit val blockchainInfoItemFmt: JsonFormat[BlockchainInfoItem] = jsonFormat[Double, BlockchainInfoItem](BlockchainInfoItem.apply, "last")
+
   implicit val bitpayItemFmt: JsonFormat[BitpayItem] = jsonFormat[String, Double, BitpayItem](BitpayItem.apply, "code", "rate")
+
   implicit val coinGeckoItemFmt: JsonFormat[CoinGeckoItem] = jsonFormat[Double, CoinGeckoItem](CoinGeckoItem.apply, "value")
+
   implicit val coinGeckoFmt: JsonFormat[CoinGecko] = jsonFormat[CoinGeckoItemMap, CoinGecko](CoinGecko.apply, "rates")
+
   implicit val bitpayFmt: JsonFormat[Bitpay] = jsonFormat[BitpayItemList, Bitpay](Bitpay.apply, "data")
 }

@@ -75,6 +75,8 @@ abstract class AccountExistenceCheck(format: StorageFormat, chainHash: ByteVecto
       become(CheckData(remoteInfos, remoteInfos.map(_ -> false).toMap, remoteInfos.size * 4), OPERATIONAL)
       for (info <- remoteInfos) CommsTower.listen(Set(accountCheckListener), info.nodeSpecificPair, info, init)
       Rx.ioQueue.delay(30.seconds).foreach(_ => me doSearch true)
+
+    case _ =>
   }
 
   private def doSearch(force: Boolean): Unit =

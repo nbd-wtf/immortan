@@ -17,13 +17,12 @@
 package fr.acinq.eclair.channel
 
 import scodec.bits._
-import scodec.codecs._
 import fr.acinq.eclair._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import immortan.{LNParams, RemoteNodeInfo}
+import immortan.{LNParams, RemoteNodeInfo, RevealedPart}
 import scodec.bits.{BitVector, ByteVector}
 
 import fr.acinq.eclair.crypto.Sphinx.PacketAndSecrets
@@ -32,6 +31,7 @@ import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.wire.Onion.FinalPayload
 import fr.acinq.eclair.payment.IncomingPacket
 import immortan.crypto.Tools
+
 
 // Fatal by deafult
 case class FeerateTooSmall(channelId: ByteVector32, remoteFeeratePerKw: FeeratePerKw) extends RuntimeException
@@ -78,14 +78,21 @@ sealed trait Command
 
 sealed trait IncomingResolution
 
-sealed trait PartialResolution extends IncomingResolution { val fullTag: FullPaymentTag }
-
-case class ReasonableTrampoline(packet: IncomingPacket.NodeRelayPacket) extends PartialResolution {
-  val fullTag: FullPaymentTag = FullPaymentTag(packet.outerPayload.paymentSecret.get, packet.add.paymentHash)
+sealed trait UndeterminedResolution extends IncomingResolution {
+  val fullTag: FullPaymentTag
+  val secret: PrivateKey
 }
 
-case class ReasonableFinal(packet: IncomingPacket.FinalPacket) extends PartialResolution {
-  val fullTag: FullPaymentTag = FullPaymentTag(packet.payload.paymentSecret.get, packet.add.paymentHash)
+case class ReasonableTrampoline(packet: IncomingPacket.NodeRelayPacket, secret: PrivateKey) extends UndeterminedResolution {
+  val fullTag: FullPaymentTag = FullPaymentTag(packet.outerPayload.paymentSecret.get, packet.add.paymentHash, PaymentTagTlv.TRAMPLOINE)
+}
+
+case class ReasonableLocal(packet: IncomingPacket.FinalPacket, secret: PrivateKey) extends UndeterminedResolution {
+  val fullTag: FullPaymentTag = FullPaymentTag(packet.payload.paymentSecret.get, packet.add.paymentHash, PaymentTagTlv.LOCAL)
+  val revealedPart: RevealedPart = RevealedPart(packet.add.channelId, packet.add.id, packet.add.amountMsat)
+
+  def failCommand(failure: FailureMessage): FinalResolution = CMD_FAIL_HTLC(Right(failure), secret, packet.add)
+  def fulfillCommand(preimage: ByteVector32): FinalResolution = CMD_FULFILL_HTLC(preimage, packet.add)
 }
 
 sealed trait FinalResolution extends IncomingResolution { val theirAdd: UpdateAddHtlc }
@@ -96,16 +103,14 @@ case class CMD_FAIL_MALFORMED_HTLC(onionHash: ByteVector32, failureCode: Int, th
 
 case class CMD_FULFILL_HTLC(preimage: ByteVector32, theirAdd: UpdateAddHtlc) extends Command with FinalResolution
 
-case class CMD_ADD_HTLC(fullTag: FullPaymentTag, firstAmount: MilliSatoshi, cltvExpiry: CltvExpiry,
-                        packetAndSecrets: PacketAndSecrets, payload: FinalPayload) extends Command {
-
+case class CMD_ADD_HTLC(fullTag: FullPaymentTag, firstAmount: MilliSatoshi, cltvExpiry: CltvExpiry, packetAndSecrets: PacketAndSecrets, payload: FinalPayload) extends Command {
   final val partId: ByteVector = packetAndSecrets.packet.publicKey
 
   lazy val encSecret: ByteVector = {
     // Important: LNParams.format must be defined
-    val encryptionKey = LNParams.format.keys.paymentTagEncKey(fullTag.paymentHash)
-    val cipherBytes = CommonCodecs.bytes32.encode(fullTag.paymentSecret).require.toByteVector
-    Tools.chaChaEncrypt(encryptionKey, randomBytes(12), cipherBytes)
+    val shortTag = ShortPaymentTag(fullTag.paymentSecret, fullTag.tag)
+    val plainBytes = PaymentTagTlv.shortPaymentTagCodec.encode(shortTag).require.toByteVector
+    Tools.chaChaEncrypt(LNParams.format.keys.paymentTagEncKey(fullTag.paymentHash), randomBytes(12), plainBytes)
   }
 }
 

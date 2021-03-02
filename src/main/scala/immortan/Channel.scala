@@ -2,13 +2,13 @@ package immortan
 
 import immortan.crypto.Tools._
 import fr.acinq.eclair.channel._
+import immortan.crypto.{CanBeRepliedTo, StateMachine}
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteReject}
 import scala.concurrent.ExecutionContextExecutor
 import fr.acinq.eclair.wire.LightningMessage
 import immortan.Channel.channelContext
 import java.util.concurrent.Executors
 import fr.acinq.bitcoin.ByteVector32
-import immortan.crypto.StateMachine
 import fr.acinq.eclair.MilliSatoshi
 import immortan.crypto.Tools.none
 import scala.concurrent.Future
@@ -57,8 +57,8 @@ object Channel {
   def isOperationalAndOpen(chan: Channel): Boolean = isOperational(chan) && OPEN == chan.state
 }
 
-trait Channel extends StateMachine[ChannelData] { me =>
-  def process(change: Any): Unit = Future(me doProcess change) onComplete {
+trait Channel extends StateMachine[ChannelData] with CanBeRepliedTo { me =>
+  def process(changeMsg: Any): Unit = Future(me doProcess changeMsg).onComplete {
     case Failure(reason) => events.onException(me -> reason)
     case _ => // Do nothing
   }

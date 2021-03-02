@@ -594,10 +594,10 @@ object Helpers {
      *
      * @return a [[RevokedCommitPublished]] object containing penalty transactions if the tx is a revoked commitment
      */
-    def claimRevokedRemoteCommitTxOutputs(commitments: NormalCommits, tx: Transaction, db: ChannelBag, feeEstimator: FeeEstimator, feeTargets: FeeTargets): Option[RevokedCommitPublished] = {
-      require(tx.txIn.size == 1, "commitment tx should have 1 input")
+    def claimRevokedRemoteCommitTxOutputs(commitments: NormalCommits, commitTx: Transaction, db: ChannelBag, feeEstimator: FeeEstimator, feeTargets: FeeTargets): Option[RevokedCommitPublished] = {
+      require(commitTx.txIn.size == 1, "commitment tx should have 1 input")
       val channelKeyPath = commitments.remoteInfo.keyPath(commitments.localParams)
-      val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn.head.sequence, tx.lockTime)
+      val obscuredTxNumber = Transactions.decodeTxNumber(commitTx.txIn.head.sequence, commitTx.lockTime)
       val localPaymentPoint = commitments.localParams.walletStaticPaymentBasepoint.getOrElse(commitments.remoteInfo.paymentPoint(channelKeyPath).publicKey)
       // this tx has been published by remote, so we need to invert local/remote params
       val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !commitments.localParams.isFunder, commitments.remoteParams.paymentBasepoint, localPaymentPoint)
@@ -622,13 +622,13 @@ object Helpers {
             case v if v.paysDirectlyToWallet =>
               None
             case v if v.hasAnchorOutputs => generateTx("claim-remote-delayed-output") {
-              Transactions.makeClaimRemoteDelayedOutputTx(tx, commitments.localParams.dustLimit, localPaymentPoint, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain).right.map(claimMain => {
+              Transactions.makeClaimRemoteDelayedOutputTx(commitTx, commitments.localParams.dustLimit, localPaymentPoint, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain).right.map(claimMain => {
                 val sig = commitments.remoteInfo.sign(claimMain, commitments.remoteInfo.paymentPoint(channelKeyPath), TxOwner.Local, commitments.channelVersion.commitmentFormat)
                 Transactions.addSigs(claimMain, sig)
               })
             }
             case _ => generateTx("claim-p2wpkh-output") {
-              Transactions.makeClaimP2WPKHOutputTx(tx, commitments.localParams.dustLimit, localPaymentPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain).right.map(claimMain => {
+              Transactions.makeClaimP2WPKHOutputTx(commitTx, commitments.localParams.dustLimit, localPaymentPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain).right.map(claimMain => {
                 val sig = commitments.remoteInfo.sign(claimMain, commitments.remoteInfo.paymentPoint(channelKeyPath), remotePerCommitmentPoint, TxOwner.Local, commitments.channelVersion.commitmentFormat)
                 Transactions.addSigs(claimMain, localPaymentPubkey, sig)
               })
@@ -637,7 +637,7 @@ object Helpers {
 
           // then we punish them by stealing their main output
           val mainPenaltyTx = generateTx("main-penalty") {
-            Transactions.makeMainPenaltyTx(tx, commitments.localParams.dustLimit, remoteRevocationPubkey, commitments.localParams.defaultFinalScriptPubKey, commitments.localParams.toSelfDelay, remoteDelayedPaymentPubkey, feeratePerKwPenalty).right.map(txinfo => {
+            Transactions.makeMainPenaltyTx(commitTx, commitments.localParams.dustLimit, remoteRevocationPubkey, commitments.localParams.defaultFinalScriptPubKey, commitments.localParams.toSelfDelay, remoteDelayedPaymentPubkey, feeratePerKwPenalty).right.map(txinfo => {
               val sig = commitments.remoteInfo.sign(txinfo, commitments.remoteInfo.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitments.channelVersion.commitmentFormat)
               Transactions.addSigs(txinfo, sig)
             })
@@ -653,10 +653,10 @@ object Helpers {
             .toMap
 
           // and finally we steal the htlc outputs
-          val htlcPenaltyTxs = tx.txOut.zipWithIndex.collect { case (txOut, outputIndex) if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
+          val htlcPenaltyTxs = commitTx.txOut.zipWithIndex.collect { case (txOut, outputIndex) if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
             val htlcRedeemScript = htlcsRedeemScripts(txOut.publicKeyScript)
             generateTx("htlc-penalty") {
-              Transactions.makeHtlcPenaltyTx(tx, outputIndex, htlcRedeemScript, commitments.localParams.dustLimit, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwPenalty).right.map(htlcPenalty => {
+              Transactions.makeHtlcPenaltyTx(commitTx, outputIndex, htlcRedeemScript, commitments.localParams.dustLimit, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwPenalty).right.map(htlcPenalty => {
                 val sig = commitments.remoteInfo.sign(htlcPenalty, commitments.remoteInfo.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitments.channelVersion.commitmentFormat)
                 Transactions.addSigs(htlcPenalty, sig, remoteRevocationPubkey)
               })
@@ -664,7 +664,7 @@ object Helpers {
           }.toList.flatten
 
           RevokedCommitPublished(
-            commitTx = tx,
+            commitTx = commitTx,
             claimMainOutputTx = mainTx.map(_.tx),
             mainPenaltyTx = mainPenaltyTx.map(_.tx),
             htlcPenaltyTxs = htlcPenaltyTxs.map(_.tx),
@@ -858,9 +858,10 @@ object Helpers {
       val remoteCommit = d.commitments.remoteCommit
       val nextRemoteCommit_opt = d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit)
       if (localCommit.publishableTxs.commitTx.tx.txid == tx.txid) {
-        // our commit got confirmed, so any htlc that we signed but they didn't sign will never reach the chain
+        // our commit got confirmed, so any htlc that is in their commitment but not in ours will never reach the chain
+        val htlcsInRemoteCommit = remoteCommit.spec.htlcs ++ nextRemoteCommit_opt.map(_.spec.htlcs).getOrElse(Set.empty)
         // NB: from the p.o.v of remote, their incoming htlcs are our outgoing htlcs
-        d.commitments.latestRemoteCommit.spec.htlcs.collect(incoming) -- localCommit.spec.htlcs.collect(outgoing)
+        htlcsInRemoteCommit.collect(incoming) -- localCommit.spec.htlcs.collect(outgoing)
       } else if (remoteCommit.txid == tx.txid) {
         // their commit got confirmed
         nextRemoteCommit_opt match {
@@ -1018,79 +1019,14 @@ object Helpers {
     }
 
     /**
-     * This helper function tells if the utxo consumed by the given transaction has already been irrevocably spent (possibly by this very transaction)
+     * This helper function tells if some of the utxos consumed by the given transaction have already been irrevocably spent (possibly by this very transaction).
      *
      * It can be useful to:
      *   - not attempt to publish this tx when we know this will fail
      *   - not watch for confirmations if we know the tx is already confirmed
      *   - not watch the corresponding utxo when we already know the final spending tx
-     *
-     * @param tx               a tx with only one input
-     * @param irrevocablySpent a map of known spent outpoints
-     * @return true if we know for sure that the utxos consumed by the tx have already irrevocably been spent, false otherwise
      */
-    def inputsAlreadySpent(tx: Transaction, irrevocablySpent: Map[OutPoint, ByteVector32]): Boolean = {
-      require(tx.txIn.size == 1, "only tx with one input is supported")
-      val outPoint = tx.txIn.head.outPoint
-      irrevocablySpent.contains(outPoint)
-    }
-
-    /**
-     * This helper function returns the fee paid by the given transaction.
-     *
-     * It relies on the current channel data to find the parent tx and compute the fee, and also provides a description.
-     *
-     * @param tx a tx for which we want to compute the fee
-     * @param d  current channel data
-     * @return if the parent tx is found, a tuple (fee, description)
-     */
-    def networkFeePaid(tx: Transaction, d: DATA_CLOSING): Option[(Satoshi, String)] = {
-      // only funder pays the fee
-      if (d.commitments.localParams.isFunder) {
-        // we build a map with all known txes (that's not particularly efficient, but it doesn't really matter)
-        val txes: Map[ByteVector32, (Transaction, String)] = (
-          d.mutualClosePublished.map(_ -> "mutual") ++
-            d.localCommitPublished.map(_.commitTx).map(_ -> "local-commit").toSeq ++
-            d.localCommitPublished.flatMap(_.claimMainDelayedOutputTx).map(_ -> "local-main-delayed") ++
-            d.localCommitPublished.toSeq.flatMap(_.htlcSuccessTxs).map(_ -> "local-htlc-success") ++
-            d.localCommitPublished.toSeq.flatMap(_.htlcTimeoutTxs).map(_ -> "local-htlc-timeout") ++
-            d.localCommitPublished.toSeq.flatMap(_.claimHtlcDelayedTxs).map(_ -> "local-htlc-delayed") ++
-            d.remoteCommitPublished.map(_.commitTx).map(_ -> "remote-commit") ++
-            d.remoteCommitPublished.toSeq.flatMap(_.claimMainOutputTx).map(_ -> "remote-main") ++
-            d.remoteCommitPublished.toSeq.flatMap(_.claimHtlcSuccessTxs).map(_ -> "remote-htlc-success") ++
-            d.remoteCommitPublished.toSeq.flatMap(_.claimHtlcTimeoutTxs).map(_ -> "remote-htlc-timeout") ++
-            d.nextRemoteCommitPublished.map(_.commitTx).map(_ -> "remote-commit") ++
-            d.nextRemoteCommitPublished.toSeq.flatMap(_.claimMainOutputTx).map(_ -> "remote-main") ++
-            d.nextRemoteCommitPublished.toSeq.flatMap(_.claimHtlcSuccessTxs).map(_ -> "remote-htlc-success") ++
-            d.nextRemoteCommitPublished.toSeq.flatMap(_.claimHtlcTimeoutTxs).map(_ -> "remote-htlc-timeout") ++
-            d.revokedCommitPublished.map(_.commitTx).map(_ -> "revoked-commit") ++
-            d.revokedCommitPublished.flatMap(_.claimMainOutputTx).map(_ -> "revoked-main") ++
-            d.revokedCommitPublished.flatMap(_.mainPenaltyTx).map(_ -> "revoked-main-penalty") ++
-            d.revokedCommitPublished.flatMap(_.htlcPenaltyTxs).map(_ -> "revoked-htlc-penalty") ++
-            d.revokedCommitPublished.flatMap(_.claimHtlcDelayedPenaltyTxs).map(_ -> "revoked-htlc-penalty-delayed")
-          )
-          .map { case (tx, desc) => tx.txid -> (tx, desc) } // will allow easy lookup of parent transaction
-          .toMap
-
-        def fee(child: Transaction): Option[Satoshi] = {
-          require(child.txIn.size == 1, "transaction must have exactly one input")
-          val outPoint = child.txIn.head.outPoint
-          val parentTxOut_opt = if (outPoint == d.commitments.commitInput.outPoint) {
-            Some(d.commitments.commitInput.txOut)
-          }
-          else {
-            txes.get(outPoint.txid) map { case (parent, _) => parent.txOut(outPoint.index.toInt) }
-          }
-          parentTxOut_opt map (parentTxOut => parentTxOut.amount - child.txOut.map(_.amount).sum)
-        }
-
-        txes.get(tx.txid) flatMap {
-          case (_, desc) => fee(tx).map(_ -> desc)
-        }
-      } else {
-        None
-      }
-    }
+    def inputsAlreadySpent(tx: Transaction, irrevocablySpent: Map[OutPoint, ByteVector32]): Boolean =
+      tx.txIn.exists(txIn => irrevocablySpent.contains(txIn.outPoint))
   }
-
 }

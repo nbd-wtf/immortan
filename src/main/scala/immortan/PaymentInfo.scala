@@ -5,6 +5,7 @@ import immortan.crypto.Tools.{Bytes, Fiat2Btc}
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 import fr.acinq.eclair.payment.PaymentRequest
+import immortan.PaymentInfo.RevealedParts
 import fr.acinq.bitcoin.Crypto.PublicKey
 import scodec.bits.ByteVector
 import immortan.utils.uri.Uri
@@ -13,12 +14,13 @@ import scala.util.Try
 
 
 object PaymentInfo {
-  final val SENDABLE = 0
+  type RevealedParts = Iterable[RevealedPart]
   final val NOT_SENDABLE_LOW_FUNDS = 1
   final val NOT_SENDABLE_IN_FLIGHT = 2
   final val NOT_SENDABLE_INCOMING = 3
   final val NOT_SENDABLE_RELAYED = 4
   final val NOT_SENDABLE_SUCCESS = 5
+  final val SENDABLE = 0
 }
 
 object PaymentStatus {
@@ -26,21 +28,27 @@ object PaymentStatus {
   final val PENDING = "state-pending"
   final val ABORTED = "state-aborted"
   final val SUCCEEDED = "state-succeeded"
-  // Not used in ChannelMaster, only in db
-  final val HIDDEN = "state-hidden"
 }
 
-case class PaymentInfo(prString: String, preimageString: String, status: String, stamp: Long, descriptionString: String,
-                       actionString: String, paymentHashString: String, received: MilliSatoshi, sent: MilliSatoshi,
-                       fee: MilliSatoshi, balanceSnapshot: MilliSatoshi, fiatRatesString: String,
-                       chainFee: MilliSatoshi, incoming: Long) {
+case class PaymentDbInfo(localOpt: Option[PaymentInfo], relayedOpt: Option[RelayedPreimageInfo], paymentHash: ByteVector32)
+
+// A collection of incoming parts for which we have revealed our preimage
+case class RevealedPart(chanId: ByteVector32, paymentId: Long, amount: MilliSatoshi)
+
+case class PaymentInfo(prString: String, preimageString: String, status: String, stamp: Long, descriptionString: String, actionString: String,
+                       paymentHashString: String, received: MilliSatoshi, sent: MilliSatoshi, fee: MilliSatoshi, balanceSnapshot: MilliSatoshi,
+                       fiatRatesString: String, chainFee: MilliSatoshi, revealedPartsString: String, incoming: Long) {
 
   def isIncoming: Boolean = 1 == incoming
+
   lazy val pr: PaymentRequest = PaymentRequest.read(prString)
+  lazy val amountOrMin: MilliSatoshi = pr.amount.getOrElse(LNParams.minPayment)
+
   lazy val preimage: ByteVector32 = ByteVector32(ByteVector fromValidHex preimageString)
   lazy val paymentHash: ByteVector32 = ByteVector32(ByteVector fromValidHex paymentHashString)
 
   lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
+  lazy val revealedParts: Set[RevealedPart] = to[RevealedParts](revealedPartsString).toSet
   lazy val description: PaymentDescription = to[PaymentDescription](descriptionString)
   lazy val action: PaymentAction = to[PaymentAction](actionString)
 }
@@ -82,9 +90,7 @@ case class SwapOutDescription(invoiceText: String, btcAddress: String, chainFee:
 
 // Relayed preimages
 
-case class RelayedPreimageInfo(paymentHashString: String, preimageString: String, fromNodeIdString: String,
-                               relayed: MilliSatoshi, earned: MilliSatoshi, stamp: Long) {
-
+case class RelayedPreimageInfo(paymentHashString: String, preimageString: String, fromNodeIdString: String, relayed: MilliSatoshi, earned: MilliSatoshi, stamp: Long) {
   lazy val fromNodeIdTry: Try[PublicKey] = Try(ByteVector fromValidHex fromNodeIdString).map(PublicKey.apply)
   lazy val paymentHash: ByteVector32 = ByteVector32(ByteVector fromValidHex paymentHashString)
   lazy val preimage: ByteVector32 = ByteVector32(ByteVector fromValidHex preimageString)
@@ -93,8 +99,8 @@ case class RelayedPreimageInfo(paymentHashString: String, preimageString: String
 // Tx descriptions
 
 case class TxInfo(txidString: String, depth: Long, receivedMsat: MilliSatoshi, sentMsat: MilliSatoshi, feeMsat: MilliSatoshi,
-                  seenAt: Long, completedAt: Long, descriptionString: String, balanceSnapshot: MilliSatoshi,
-                  fiatRatesString: String, incoming: Long, doubleSpent: Long) {
+                  seenAt: Long, completedAt: Long, descriptionString: String, balanceSnapshot: MilliSatoshi, fiatRatesString: String,
+                  incoming: Long, doubleSpent: Long) {
 
   def isIncoming: Boolean = 1L == incoming
   def isDoubleSpent: Boolean = 1L == doubleSpent
@@ -123,7 +129,3 @@ case class CommitClaimTxDescription(txid: String, nodeId: String, sid: Long) ext
 case class HtlcClaimTxDescription(txid: String, nodeId: String, sid: Long) extends TxDescription
 
 case class PenaltyTxDescription(txid: String, nodeId: String, sid: Long) extends TxDescription
-
-// Composite data
-
-case class PaymentDbInfo(local: Option[PaymentInfo], relayed: Option[RelayedPreimageInfo], paymentHash: ByteVector32)

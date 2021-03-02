@@ -92,14 +92,14 @@ class OutgoingPaymentMaster(cm: ChannelMaster) extends StateMachine[OutgoingPaym
   become(OutgoingPaymentMasterData(payments = Map.empty), EXPECTING_PAYMENTS)
 
   def doProcess(change: Any): Unit = (change, state) match {
-    case (cmd: SendMultiPart, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
-      // Before going any further, maybe reduce previous failure times to give failing channels a chance
+    case (sendMultiPart: SendMultiPart, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
+      // Before going any firther maybe reduce failure times to give failing previously channels a chance
       val noPendingPayments = data.payments.values.forall(fsm => SUCCEEDED == fsm.state || ABORTED == fsm.state)
       if (noPendingPayments) become(data.withFailuresReduced, state)
 
-      // They may provide a hint to our nodeSpecificPubKey, but it's harmless
-      for (assistedEdge <- cmd.assistedEdges) cm.pf process assistedEdge
-      relayOrCreateSender(cmd.fullTag, cmd)
+      val sender = data.payments.getOrElse(sendMultiPart.fullTag, self withSender sendMultiPart.fullTag)
+      for (assistedEdge <- sendMultiPart.assistedEdges) cm.pf process assistedEdge
+      sender doProcess sendMultiPart
       self process CMDAskForRoute
 
     case (CMDChanGotOnline, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
@@ -120,9 +120,8 @@ class OutgoingPaymentMaster(cm: ChannelMaster) extends StateMachine[OutgoingPaym
       val ignoreChansCanNotHandle = currentUsedCapacities.collect { case (DescAndCapacity(desc, capacity), used) if used + req.amount >= capacity - req.amount / 32 => desc }
       val ignoreChansFailedAtAmount = data.chanFailedAtAmount.collect { case (desc, failedAt) if failedAt - currentUsedDescs(desc) - req.amount / 8 <= req.amount => desc }
       val ignoreNodes = data.nodeFailedWithUnknownUpdateTimes.collect { case (nodeId, failTimes) if failTimes >= LNParams.routerConf.maxStrangeNodeFailures => nodeId }
-      val ignoreChans = ignoreChansFailedTimes.toSet ++ ignoreChansCanNotHandle ++ ignoreChansFailedAtAmount
-      val request1 = req.copy(ignoreNodes = ignoreNodes.toSet, ignoreChannels = ignoreChans)
-      cm.pf process Tuple2(self, request1)
+      val req1 = req.copy(ignoreNodes = ignoreNodes.toSet, ignoreChannels = ignoreChansFailedTimes.toSet ++ ignoreChansCanNotHandle ++ ignoreChansFailedAtAmount)
+      cm.pf process Tuple2(self, req1)
       become(data, WAITING_FOR_ROUTE)
 
     case (PathFinder.NotifyRejected, WAITING_FOR_ROUTE) =>
@@ -148,16 +147,20 @@ class OutgoingPaymentMaster(cm: ChannelMaster) extends StateMachine[OutgoingPaym
       val atTimes1 = data.nodeFailedWithUnknownUpdateTimes.updated(nodeId, newNodeFailedTimes)
       become(data.copy(nodeFailedWithUnknownUpdateTimes = atTimes1), state)
 
+    // Following messages expect that target FSM is always present
+    // this won't be the case with failed/fulfilled leftovers in channels on app restart
+    // so it has to be made sure that all relevalnt FSMs are re-initialized on each startup
+
     case (exception @ CMDException(_, cmd: CMD_ADD_HTLC), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
       data.payments.get(cmd.fullTag).foreach(_ doProcess exception)
       self process CMDAskForRoute
 
     case (fulfill: RemoteFulfill, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
-      relayOrCreateSender(fulfill.ourAdd.fullTag, fulfill)
+      data.payments.get(fulfill.ourAdd.fullTag).foreach(_ doProcess fulfill)
       self process CMDAskForRoute
 
     case (reject: RemoteReject, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
-      relayOrCreateSender(reject.ourAdd.fullTag, reject)
+      data.payments.get(reject.ourAdd.fullTag).foreach(_ doProcess reject)
       self process CMDAskForRoute
 
     case _ =>
@@ -165,15 +168,11 @@ class OutgoingPaymentMaster(cm: ChannelMaster) extends StateMachine[OutgoingPaym
 
   // Utils
 
-  private def relayOrCreateSender(fullTag: FullPaymentTag, msg: Any): Unit = data.payments.get(fullTag) match {
-    case None => withSender(new OutgoingPaymentSender(fullTag, cm), msg) // Restart with leftovers in channels
-    case Some(sender) => sender doProcess msg // Normal case, sender FSM is present
-  }
-
-  private def withSender(sender: OutgoingPaymentSender, msg: Any): Unit = {
-    val payments1 = data.payments.updated(sender.fullTag, sender)
-    become(data.copy(payments = payments1), state)
-    sender doProcess msg
+  def withSender(fullTag: FullPaymentTag): OutgoingPaymentSender = {
+    val newOutgoingPaymentSender = new OutgoingPaymentSender(fullTag, cm)
+    val data1 = data.payments.updated(fullTag, newOutgoingPaymentSender)
+    become(data.copy(payments = data1), state)
+    newOutgoingPaymentSender
   }
 
   def inPrincipleSendable(chans: Iterable[Channel] = Nil, conf: RouterConf): MilliSatoshi =
@@ -271,13 +270,9 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, cm: ChannelMaster) exte
 
   def doProcess(msg: Any): Unit = (msg, state) match {
     case (CMDException(_, cmd: CMD_ADD_HTLC), ABORTED) => self abortAndNotify data.withoutPartId(cmd.partId)
-
     case (remoteReject: RemoteReject, ABORTED) => self abortAndNotify data.withoutPartId(remoteReject.ourAdd.partId)
-
     case (remoteReject: RemoteReject, INIT) => self abortAndNotify data.withLocalFailure(NOT_RETRYING_NO_DETAILS, remoteReject.ourAdd.amountMsat)
-
     case (cmd: SendMultiPart, INIT | ABORTED) => assignToChans(cm.opm.rightNowSendable(cmd.allowedChans, cmd.routerConf), OutgoingPaymentSenderData(cmd, Map.empty), cmd.totalAmount)
-
     case (CMDAbort, INIT | PENDING) if data.waitOnlineParts.nonEmpty => self abortAndNotify data.copy(parts = data.parts -- data.waitOnlineParts.keySet)
 
     case (fulfill: RemoteFulfill, INIT | PENDING | ABORTED) =>

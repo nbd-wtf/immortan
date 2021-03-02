@@ -10,51 +10,55 @@ import fr.acinq.eclair.channel._
 import immortan.payment.{OutgoingPaymentMaster, OutgoingPaymentSenderData}
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteReject}
 import immortan.ChannelListener.{Malfunction, Transition}
-import com.google.common.cache.LoadingCache
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.payment.IncomingPacket
+import com.google.common.cache.LoadingCache
+import fr.acinq.bitcoin.ByteVector32
+import immortan.crypto.{CanBeRepliedTo, StateMachine}
 import scodec.bits.ByteVector
 
 
-object ChannelMaster {
+object ChannelMaster { me =>
   type OutgoingAdds = Iterable[UpdateAddHtlc]
-  type PartialResolutions = Iterable[PartialResolution]
+  type UndeterminedResolutions = Iterable[UndeterminedResolution]
+  type ReasonableTrampolines = Iterable[ReasonableTrampoline]
+  type ReasonableLocals = Iterable[ReasonableLocal]
+
+  final val NO_CHANNEL =
+    new StateMachine[ChannelData] with CanBeRepliedTo {
+      // It's possible that user removes an HC from system at runtime
+      // or that peer sends a message targeted to non-exiting loca channel
+      def process(change: Any): Unit = doProcess(change)
+      def doProcess(change: Any): Unit = none
+    }
 
   final val NO_SECRET = ByteVector32.Zeroes
 
   final val NO_PREIMAGE = ByteVector32.One
 
-  def incorrectDetails(add: UpdateAddHtlc): Either[ByteVector, FailureMessage] = {
-    val failure = IncorrectOrUnknownPaymentDetails(add.amountMsat, LNParams.blockCount.get)
-    Right(failure)
+  def initResolve(ext: UpdateAddHtlcExt): IncomingResolution = IncomingPacket.decrypt(ext.theirAdd, ext.remoteInfo.nodeSpecificPrivKey) match {
+    case Left(_: BadOnion) => fallbackResolve(secret = LNParams.format.keys.fakeInvoiceKey(ext.theirAdd.paymentHash), ext.theirAdd)
+    case Left(onionFailure) => CMD_FAIL_HTLC(Right(onionFailure), ext.remoteInfo.nodeSpecificPrivKey, ext.theirAdd)
+    case Right(packet: IncomingPacket) => defineResolution(ext.remoteInfo.nodeSpecificPrivKey, packet)
   }
 
-  def initResolve(ext: UpdateAddHtlcExt): IncomingResolution =
-    IncomingPacket.decrypt(ext.theirAdd, ext.remoteInfo.nodeSpecificPrivKey) match {
-      case Left(_: BadOnion) => fallbackResolve(LNParams.format.keys.fakeInvoiceKey(ext.theirAdd.paymentHash), ext.theirAdd)
-      case Left(onionFailure) => CMD_FAIL_HTLC(Right(onionFailure), ext.remoteInfo.nodeSpecificPrivKey, ext.theirAdd)
-      case Right(packet: IncomingPacket) => defineResolution(ext.remoteInfo.nodeSpecificPrivKey, packet)
-    }
-
-  def fallbackResolve(secret: PrivateKey, theirAdd: UpdateAddHtlc): IncomingResolution =
-    IncomingPacket.decrypt(theirAdd, secret) match {
-      case Left(failure: BadOnion) => CMD_FAIL_MALFORMED_HTLC(failure.onionHash, failure.code, theirAdd)
-      case Left(onionFailure) => CMD_FAIL_HTLC(Right(onionFailure), secret, theirAdd)
-      case Right(packet: IncomingPacket) => defineResolution(secret, packet)
-    }
+  def fallbackResolve(secret: PrivateKey, theirAdd: UpdateAddHtlc): IncomingResolution = IncomingPacket.decrypt(theirAdd, secret) match {
+    case Left(failure: BadOnion) => CMD_FAIL_MALFORMED_HTLC(failure.onionHash, failureCode = failure.code, theirAdd)
+    case Left(onionFailure) => CMD_FAIL_HTLC(Right(onionFailure), secret, theirAdd)
+    case Right(packet: IncomingPacket) => defineResolution(secret, packet)
+  }
 
   // Make sure incoming payment secret is always present
   def defineResolution(secret: PrivateKey, pkt: IncomingPacket): IncomingResolution = pkt match {
-    case packet: IncomingPacket.ChannelRelayPacket => CMD_FAIL_HTLC(incorrectDetails(packet.add), secret, packet.add)
-    case packet: IncomingPacket.NodeRelayPacket if packet.outerPayload.paymentSecret.exists(_ != NO_SECRET) => ReasonableTrampoline(packet)
-    case packet: IncomingPacket.FinalPacket if packet.payload.paymentSecret.exists(_ != NO_SECRET) => ReasonableFinal(packet)
-    case packet: IncomingPacket.NodeRelayPacket => CMD_FAIL_HTLC(incorrectDetails(packet.add), secret, packet.add)
-    case packet: IncomingPacket.FinalPacket => CMD_FAIL_HTLC(incorrectDetails(packet.add), secret, packet.add)
+    case packet: IncomingPacket.FinalPacket if packet.payload.paymentSecret.exists(_ != NO_SECRET) => ReasonableLocal(packet, secret)
+    case packet: IncomingPacket.NodeRelayPacket if packet.outerPayload.paymentSecret.exists(_ != NO_SECRET) => ReasonableTrampoline(packet, secret)
+    case packet: IncomingPacket.ChannelRelayPacket => CMD_FAIL_HTLC(Right(packet.add.incorrectDetails), secret, packet.add)
+    case packet: IncomingPacket.NodeRelayPacket => CMD_FAIL_HTLC(Right(packet.add.incorrectDetails), secret, packet.add)
+    case packet: IncomingPacket.FinalPacket => CMD_FAIL_HTLC(Right(packet.add.incorrectDetails), secret, packet.add)
   }
 }
 
-case class InFlightPayments(out: Map[FullPaymentTag, OutgoingAdds], in: Map[FullPaymentTag, PartialResolutions] = Map.empty) {
+case class InFlightPayments(out: Map[FullPaymentTag, OutgoingAdds], in: Map[FullPaymentTag, UndeterminedResolutions] = Map.empty) {
   // Incoming HTLC tag is extracted from onion, corresponsing outgoing HTLC tag is stored in TLV, this way in/out can be linked
   val allTags: Set[FullPaymentTag] = out.keySet ++ in.keySet
 }
@@ -82,6 +86,7 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
   def allInChannelOutgoing: Map[FullPaymentTag, OutgoingAdds] = all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).groupBy(_.fullTag)
   def fromNode(nodeId: PublicKey): Iterable[ChanAndCommits] = all.values.flatMap(Channel.chanAndCommitsOpt).filter(_.commits.remoteInfo.nodeId == nodeId)
+  def sendTo(change: Any, chanId: ByteVector32): Unit = all.getOrElse(chanId, NO_CHANNEL) process change
 
   // RECEIVE/SEND UTILITIES
 
@@ -105,9 +110,9 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
       case _ if opm.data.payments.get(fullTag).exists(fsm => PENDING == fsm.state || INIT == fsm.state) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is pending in FSM
       case _ if opm.data.payments.get(fullTag).exists(fsm => SUCCEEDED == fsm.state) => PaymentInfo.NOT_SENDABLE_SUCCESS // This payment has just been fulfilled at runtime
       case _ if opm.inPrincipleSendable(all.values, LNParams.routerConf) < amount => PaymentInfo.NOT_SENDABLE_LOW_FUNDS // We don't have enough money
-      case info if info.local.exists(SUCCEEDED == _.status) => PaymentInfo.NOT_SENDABLE_SUCCESS // Successfully sent or received a long time ago
-      case info if info.local.exists(_.isIncoming) => PaymentInfo.NOT_SENDABLE_INCOMING // Incoming payment with this hash exists
-      case info if info.relayed.isDefined => PaymentInfo.NOT_SENDABLE_RELAYED // Related preimage has been relayed
+      case info if info.localOpt.exists(SUCCEEDED == _.status) => PaymentInfo.NOT_SENDABLE_SUCCESS // Successfully sent or received a long time ago
+      case info if info.localOpt.exists(_.isIncoming) => PaymentInfo.NOT_SENDABLE_INCOMING // Incoming payment with this hash exists
+      case info if info.relayedOpt.isDefined => PaymentInfo.NOT_SENDABLE_RELAYED // Related preimage has been relayed
       case _ => PaymentInfo.SENDABLE // Has never been sent or ABORTED by now
     }
 
@@ -119,8 +124,8 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
   override def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = {
     val allIncomingResolves = all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.crossSignedIncoming).map(initResolveMemo.get)
-    allIncomingResolves.foreach { case resolve: FinalResolution => all(resolve.theirAdd.channelId) process resolve case _ => }
-    val partialIncoming = allIncomingResolves.collect { case resolve: PartialResolution => resolve }.groupBy(_.fullTag)
+    allIncomingResolves.foreach { case finalResolve: FinalResolution => sendTo(finalResolve, finalResolve.theirAdd.channelId) case _ => }
+    val partialIncoming = allIncomingResolves.collect { case resolve: UndeterminedResolution => resolve }.groupBy(_.fullTag)
     val bag = InFlightPayments(allInChannelOutgoing, partialIncoming)
   }
 
