@@ -18,7 +18,7 @@ import com.google.common.cache.LoadingCache
 import fr.acinq.bitcoin.ByteVector32
 
 
-object ChannelMaster { me =>
+object ChannelMaster {
   type OutgoingAdds = Iterable[UpdateAddHtlc]
   type UndeterminedResolutions = Iterable[UndeterminedResolution]
   type ReasonableTrampolines = Iterable[ReasonableTrampoline]
@@ -27,7 +27,7 @@ object ChannelMaster { me =>
   final val NO_CHANNEL =
     new StateMachine[ChannelData] with CanBeRepliedTo {
       // It's possible that user removes an HC from system at runtime
-      // or that peer sends a message targeted to non-exiting loca channel
+      // or that peer sends a message targeted to non-exiting local channel
       def process(change: Any): Unit = doProcess(change)
       def doProcess(change: Any): Unit = none
     }

@@ -78,13 +78,13 @@ abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaste
   }
 
   def becomeRejected(data1: IncomingRejected, adds: Iterable[ReasonableLocal] = None): Unit = {
-    // Fail provided parts and retain a failure message to maybe re-fail using the same error
+    // Fail parts and retain a failure message to maybe re-fail using the same error
     become(data1, REJECTED)
     reject(data1, adds)
   }
 
   def becomeAllRevealed(info: PaymentInfo, adds: Iterable[ReasonableLocal] = None): Unit = {
-    // Fulfill provided pending incoming payments and snapshot them to maybe re-fulfill later
+    // Fulfill pending incoming payments and snapshot them to maybe re-fulfill later
     cm.payBag.updOkIncoming(adds.map(_.revealedPart), fullTag.paymentHash)
     cm.getPaymentDbInfoMemo.invalidate(fullTag.paymentHash)
     become(IncomingRevealed(info), REVEALED)

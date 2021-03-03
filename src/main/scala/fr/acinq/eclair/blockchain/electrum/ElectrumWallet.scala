@@ -910,7 +910,7 @@ object ElectrumWallet {
      *         is used to estimate the weight of the signed transaction
      */
     def addUtxosWithDummySig(tx: Transaction, utxos: Seq[Utxo]): Transaction =
-      tx.copy(txIn = utxos.map { case utxo =>
+      tx.copy(txIn = utxos.map { utxo =>
         // we use dummy signature here, because the result is only used to estimate fees
         val sig = ByteVector.fill(71)(1)
         val sigScript = Script.write(OP_PUSHDATA(Script.write(Script.pay2wpkh(utxo.key.publicKey))) :: Nil)
@@ -1022,7 +1022,7 @@ object ElectrumWallet {
       // reorg-proof out of the box), we need to update the history  right away if we want to be able to build chained
       // unconfirmed transactions. A few seconds later electrum will notify us and the entry will be overwritten.
       // Note that we need to take into account both inputs and outputs, because there may be change.
-      val history1 = (tx.txIn.filter(isMine).map(extractPubKeySpentFrom).flatten.map(computeScriptHashFromPublicKey) ++ tx.txOut.filter(isMine).map(_.publicKeyScript).map(computeScriptHash))
+      val history1 = (tx.txIn.filter(isMine).flatMap(extractPubKeySpentFrom).map(computeScriptHashFromPublicKey) ++ tx.txOut.filter(isMine).map(_.publicKeyScript).map(computeScriptHash))
         .foldLeft(this.history) {
           case (history, scriptHash) =>
             val entry = history.get(scriptHash) match {

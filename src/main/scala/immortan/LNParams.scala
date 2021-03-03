@@ -18,7 +18,7 @@ import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import fr.acinq.eclair.transactions.{DirectedHtlc, Transactions}
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
-import fr.acinq.eclair.channel.{Commitments, LocalParams, NormalCommits, PersistentChannelData}
+import fr.acinq.eclair.channel.{LocalParams, NormalCommits, PersistentChannelData}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
@@ -64,44 +64,35 @@ object LNParams {
   private[this] val networks: InitTlv = InitTlv.Networks(chainHash :: Nil)
   private[this] val tlvStream: TlvStream[InitTlv] = TlvStream(networks)
 
-  val normInit: Init = {
-    val features = Set.empty +
-      ActivatedFeature(ChannelRangeQueries, FeatureSupport.Optional) +
-      ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Optional) +
-      ActivatedFeature(OptionDataLossProtect, FeatureSupport.Optional) +
-      ActivatedFeature(BasicMultiPartPayment, FeatureSupport.Optional) +
-      ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional) +
-      ActivatedFeature(PrivateTrampoline, FeatureSupport.Optional) +
-      ActivatedFeature(AnchorOutputs, FeatureSupport.Optional) +
-      ActivatedFeature(PaymentSecret, FeatureSupport.Optional) +
-      ActivatedFeature(ChainSwap, FeatureSupport.Optional) +
-      ActivatedFeature(Wumbo, FeatureSupport.Optional)
+  val normInit: Init = Init(Features(
+    (ChannelRangeQueries, FeatureSupport.Optional),
+    (ChannelRangeQueriesExtended, FeatureSupport.Optional),
+    (OptionDataLossProtect, FeatureSupport.Optional),
+    (BasicMultiPartPayment, FeatureSupport.Optional),
+    (VariableLengthOnion, FeatureSupport.Optional),
+    (TrampolineRouting, FeatureSupport.Optional),
+    (AnchorOutputs, FeatureSupport.Optional),
+    (PaymentSecret, FeatureSupport.Optional),
+    (ChainSwap, FeatureSupport.Optional),
+    (Wumbo, FeatureSupport.Optional)
+  ), tlvStream)
 
-    Init(Features(features), tlvStream)
-  }
+  val phcSyncInit: Init = Init(Features(
+    (ChannelRangeQueries, FeatureSupport.Optional),
+    (ChannelRangeQueriesExtended, FeatureSupport.Optional),
+    (HostedChannels, FeatureSupport.Optional)
+  ), tlvStream)
 
-  val phcSyncInit: Init = {
-    val features = Set.empty +
-      ActivatedFeature(ChannelRangeQueries, FeatureSupport.Optional) +
-      ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Optional) +
-      ActivatedFeature(HostedChannels, FeatureSupport.Optional)
-
-    Init(Features(features), tlvStream)
-  }
-
-  val hcInit: Init = {
-    val features = Set.empty +
-      ActivatedFeature(ChannelRangeQueries, FeatureSupport.Optional) +
-      ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Optional) +
-      ActivatedFeature(BasicMultiPartPayment, FeatureSupport.Optional) +
-      ActivatedFeature(VariableLengthOnion, FeatureSupport.Optional) +
-      ActivatedFeature(PrivateTrampoline, FeatureSupport.Optional) +
-      ActivatedFeature(HostedChannels, FeatureSupport.Optional) +
-      ActivatedFeature(PaymentSecret, FeatureSupport.Optional) +
-      ActivatedFeature(ChainSwap, FeatureSupport.Optional)
-
-    Init(Features(features), tlvStream)
-  }
+  val hcInit: Init = Init(Features(
+    (ChannelRangeQueries, FeatureSupport.Optional),
+    (ChannelRangeQueriesExtended, FeatureSupport.Optional),
+    (BasicMultiPartPayment, FeatureSupport.Optional),
+    (VariableLengthOnion, FeatureSupport.Optional),
+    (TrampolineRouting, FeatureSupport.Optional),
+    (HostedChannels, FeatureSupport.Optional),
+    (PaymentSecret, FeatureSupport.Optional),
+    (ChainSwap, FeatureSupport.Optional)
+  ), tlvStream)
 
   // Variables to be assigned at runtime
 
