@@ -50,7 +50,6 @@ case class FeerateTooDifferent(channelId: ByteVector32, localFeeratePerKw: Feera
 case class ChannelReserveTooHigh(channelId: ByteVector32, channelReserve: Satoshi, reserveToFundingRatio: Double, maxReserveToFundingRatio: Double) extends RuntimeException
 
 // Non-fatal by default
-case object AlreadyProposed extends RuntimeException
 case class ChannelUnavailable(channelId: ByteVector32) extends RuntimeException
 case class CMDException(error: RuntimeException, cmd: Command) extends RuntimeException
 

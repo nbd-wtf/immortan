@@ -89,6 +89,7 @@ trait Channel extends StateMachine[ChannelData] with CanBeRepliedTo { me =>
     override def onBecome: PartialFunction[ChannelListener.Transition, Unit] = { case transition => for (lst <- listeners if lst.onBecome isDefinedAt transition) lst onBecome transition }
     override def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = for (lst <- listeners) lst.stateUpdated(rejects)
     override def fulfillReceived(fulfill: RemoteFulfill): Unit = for (lst <- listeners) lst.fulfillReceived(fulfill)
+    override def addReceived(add: UpdateAddHtlcExt): Unit = for (lst <- listeners) lst.addReceived(add)
   }
 
   class Receiver extends Actor {
@@ -108,6 +109,7 @@ trait ChannelListener {
   def onBecome: PartialFunction[ChannelListener.Transition, Unit] = none
   def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = none
   def fulfillReceived(fulfill: RemoteFulfill): Unit = none
+  def addReceived(add: UpdateAddHtlcExt): Unit = none
 }
 
 case class ChanAndCommits(chan: Channel, commits: Commitments)

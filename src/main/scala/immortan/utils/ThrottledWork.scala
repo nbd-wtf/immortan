@@ -26,7 +26,7 @@ abstract class ThrottledWork[T, V] {
   }
 
   def replaceWork(data: T): Unit = if (subscription.isEmpty) {
-    // Previous work has already finished or was interrupted or has never started
+    // Previous work has already finished or was interrupted or has never benn started
     val newSubscription = work(data).subscribe(res => doProcess(data, res), error)
     subscription = Some(newSubscription)
   } else {

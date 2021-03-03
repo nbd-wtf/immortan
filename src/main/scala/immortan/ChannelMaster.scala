@@ -130,6 +130,8 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
   }
 
   override def fulfillReceived(fulfill: RemoteFulfill): Unit = opm process fulfill
+
+  override def addReceived(add: UpdateAddHtlcExt): Unit = ???
 }
 
 trait ChannelMasterListener {

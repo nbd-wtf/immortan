@@ -2,6 +2,8 @@ package immortan.crypto
 
 import fr.acinq.eclair._
 import fr.acinq.bitcoin._
+import scala.concurrent.duration._
+import immortan.utils.{Rx, ThrottledWork}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, ShortChannelId}
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
@@ -14,7 +16,9 @@ import immortan.crypto.Noise.KeyPair
 import java.util.concurrent.TimeUnit
 import java.io.ByteArrayInputStream
 import language.implicitConversions
+import immortan.crypto.Tools.none
 import scala.collection.mutable
+import rx.lang.scala.Observable
 import scodec.bits.ByteVector
 import java.nio.ByteOrder
 import scala.util.Try
@@ -104,4 +108,10 @@ abstract class StateMachine[T] {
   def doProcess(change: Any): Unit
   var state: String = _
   var data: T = _
+
+  lazy val delayedCMDWorker: ThrottledWork[String, Any] = new ThrottledWork[String, Any] {
+    def work(cmd: String): Observable[Null] = Rx.ioQueue.delay(60.seconds)
+    def process(cmd: String, res: Any): Unit = doProcess(cmd)
+    def error(canNotHappen: Throwable): Unit = none
+  }
 }

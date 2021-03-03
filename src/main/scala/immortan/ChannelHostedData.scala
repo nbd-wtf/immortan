@@ -6,7 +6,6 @@ import fr.acinq.eclair.channel._
 import com.softwaremill.quicklens._
 import fr.acinq.eclair.transactions._
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
-import fr.acinq.eclair.payment.OutgoingPacket
 import scodec.bits.ByteVector
 import immortan.crypto.Tools
 
@@ -48,33 +47,7 @@ case class HostedCommits(remoteInfo: RemoteNodeInfo, lastCrossSignedState: LastC
   def addLocalProposal(update: UpdateMessage): HostedCommits = copy(nextLocalUpdates = nextLocalUpdates :+ update)
   def addRemoteProposal(update: UpdateMessage): HostedCommits = copy(nextRemoteUpdates = nextRemoteUpdates :+ update)
   def isResizingSupported: Boolean = lastCrossSignedState.initHostedChannel.version == HostedChannelVersion.RESIZABLE
-
-  def sendFail(cmd: CMD_FAIL_HTLC): (HostedCommits, UpdateFailHtlc) = {
-    val isAlreadyProposed = alreadyProposed(nextLocalUpdates, cmd.theirAdd.id)
-    val ourFail = OutgoingPacket.buildHtlcFailure(cmd, cmd.theirAdd)
-
-    require(localSpec.findIncomingHtlcById(cmd.theirAdd.id).isDefined)
-    if (isAlreadyProposed) throw CMDException(AlreadyProposed, cmd)
-    (addLocalProposal(ourFail), ourFail)
-  }
-
-  def sendMalformed(cmd: CMD_FAIL_MALFORMED_HTLC): (HostedCommits, UpdateFailMalformedHtlc) = {
-    val ourFail = UpdateFailMalformedHtlc(channelId, cmd.theirAdd.id, cmd.onionHash, cmd.failureCode)
-    val isAlreadyProposed = alreadyProposed(nextLocalUpdates, cmd.theirAdd.id)
-
-    require(localSpec.findIncomingHtlcById(cmd.theirAdd.id).isDefined)
-    if (isAlreadyProposed) throw CMDException(AlreadyProposed, cmd)
-    (addLocalProposal(ourFail), ourFail)
-  }
-
-  def sendFulfill(cmd: CMD_FULFILL_HTLC): (HostedCommits, UpdateFulfillHtlc) = {
-    val ourFulfill = UpdateFulfillHtlc(channelId, cmd.theirAdd.id, cmd.preimage)
-    val isAlreadyProposed = alreadyProposed(nextLocalUpdates, cmd.theirAdd.id)
-
-    require(localSpec.findIncomingHtlcById(cmd.theirAdd.id).isDefined)
-    if (isAlreadyProposed) throw CMDException(AlreadyProposed, cmd)
-    (addLocalProposal(ourFulfill), ourFulfill)
-  }
+  def alreadyReplied(id: Long): Boolean = nextLocalSpec.findIncomingHtlcById(id).isEmpty
 
   def sendAdd(cmd: CMD_ADD_HTLC, blockHeight: Long): (HostedCommits, UpdateAddHtlc) = {
     val encryptedTag: TlvStream[Tlv] = TlvStream(PaymentTagTlv.EncryptedPaymentSecret(cmd.encryptedTag) :: Nil)

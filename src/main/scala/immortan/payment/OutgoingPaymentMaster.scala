@@ -3,14 +3,12 @@ package immortan.payment
 import fr.acinq.eclair._
 import immortan.crypto.Tools._
 import immortan.PaymentStatus._
-import scala.concurrent.duration._
 import fr.acinq.eclair.router.Router._
 import immortan.payment.PaymentFailure._
 import immortan.payment.OutgoingPaymentMaster._
 import immortan.PaymentStatus.{ABORTED, SUCCEEDED}
 import immortan.crypto.{CanBeRepliedTo, StateMachine}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import immortan.utils.{Denomination, Rx, ThrottledWork}
 import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt}
 import immortan.{ChanAndCommits, Channel, ChannelMaster, LNParams, PathFinder}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DescAndCapacity, GraphEdge}
@@ -21,9 +19,9 @@ import fr.acinq.eclair.crypto.Sphinx.PacketAndSecrets
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.crypto.Sphinx
+import immortan.utils.Denomination
 import scala.util.Random.shuffle
 import scala.collection.mutable
-import rx.lang.scala.Observable
 import scodec.bits.ByteVector
 
 // Remote failures
@@ -238,7 +236,6 @@ case class OutgoingPaymentSenderData(cmd: SendMultiPart, parts: Map[ByteVector, 
   def withLocalFailure(reason: String, amount: MilliSatoshi): OutgoingPaymentSenderData = copy(failures = LocalFailure(reason, amount) +: failures)
   def withoutPartId(partId: ByteVector): OutgoingPaymentSenderData = copy(parts = parts - partId)
 
-  lazy val waitOnlineParts: Map[ByteVector, PartStatus] = parts.filter { case (_, _: WaitForChanOnline) => true case _ => false }
   lazy val inFlightParts: Iterable[InFlightInfo] = parts.values.flatMap { case wait: WaitForRouteOrInFlight => wait.flight case _ => None }
   lazy val successfulUpdates: Iterable[ChannelUpdateExt] = inFlightParts.flatMap(_.route.routedPerChannelHop).toMap.values.map(_.edge.updExt)
   lazy val closestCltvExpiry: Option[CltvExpiryDelta] = inFlightParts.map(_.route.weight.cltv).toList.sorted.headOption
@@ -262,18 +259,13 @@ case class OutgoingPaymentSenderData(cmd: SendMultiPart, parts: Map[ByteVector, 
 class OutgoingPaymentSender(val fullTag: FullPaymentTag, cm: ChannelMaster) extends StateMachine[OutgoingPaymentSenderData] { self =>
   become(OutgoingPaymentSenderData(SendMultiPart(fullTag, LNParams.routerConf, invalidPubKey), Map.empty), INIT)
 
-  val delayedCMDWorker: ThrottledWork[String, Any] = new ThrottledWork[String, Any] {
-    def work(cmd: String): Observable[Null] = Rx.ioQueue.delay(30.seconds)
-    def process(cmd: String, res: Any): Unit = self doProcess cmd
-    def error(canNotHappen: Throwable): Unit = none
-  }
-
   def doProcess(msg: Any): Unit = (msg, state) match {
     case (CMDException(_, cmd: CMD_ADD_HTLC), ABORTED) => self abortAndNotify data.withoutPartId(cmd.partId)
     case (remoteReject: RemoteReject, ABORTED) => self abortAndNotify data.withoutPartId(remoteReject.ourAdd.partId)
     case (remoteReject: RemoteReject, INIT) => self abortAndNotify data.withLocalFailure(NOT_RETRYING_NO_DETAILS, remoteReject.ourAdd.amountMsat)
     case (cmd: SendMultiPart, INIT | ABORTED) => assignToChans(cm.opm.rightNowSendable(cmd.allowedChans, cmd.routerConf), OutgoingPaymentSenderData(cmd, Map.empty), cmd.totalAmount)
-    case (CMDAbort, INIT | PENDING) if data.waitOnlineParts.nonEmpty => self abortAndNotify data.copy(parts = data.parts -- data.waitOnlineParts.keySet)
+    // In case if some parts get through we'll eventaully get a remote timeout, but if all parts are still waiting after some reasonable time then we need to fail locally
+    case (CMDAbort, INIT | PENDING) if data.inFlightParts.isEmpty => self abortAndNotify data.copy(parts = Map.empty)
 
     case (fulfill: RemoteFulfill, INIT | PENDING | ABORTED) =>
       for (lst <- cm.paymentListeners) lst.outgoingSucceeded(data, fulfill, isFirst = true)
@@ -468,8 +460,8 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, cm: ChannelMaster) exte
         }
     }
 
-    // It may happen that some chans are to stay offline indefinitely, related parts will then await indefinitely
-    // set a timer to abort a payment in case if we still have awaiting parts after some reasonable amount of time
+    // It may happen that all chans are to stay offline indefinitely, payment parts will then await indefinitely
+    // so set a timer to abort a payment in case if we have no in-flight parts after some reasonable amount of time
     // note that timer gets reset each time this method gets called
     delayedCMDWorker.replaceWork(CMDAbort)
   }

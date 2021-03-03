@@ -222,14 +222,14 @@ object OutgoingPacket {
     (firstAmount, firstExpiry, onion)
   }
 
-  def buildHtlcFailure(cmd: CMD_FAIL_HTLC, add: UpdateAddHtlc): UpdateFailHtlc = {
-    val packet = Sphinx.PaymentPacket.peel(cmd.nodeSecret, add.paymentHash, add.onionRoutingPacket).right.get
+  def buildHtlcFailure(cmd: CMD_FAIL_HTLC, theirAdd: UpdateAddHtlc): UpdateFailHtlc = {
+    val packet = Sphinx.PaymentPacket.peel(cmd.nodeSecret, theirAdd.paymentHash, theirAdd.onionRoutingPacket).right.get
 
     val reason = cmd.reason match {
       case Left(forwarded) => Sphinx.FailurePacket.wrap(forwarded, packet.sharedSecret)
       case Right(failure) => Sphinx.FailurePacket.create(packet.sharedSecret, failure)
     }
 
-    UpdateFailHtlc(add.channelId, cmd.theirAdd.id, reason)
+    UpdateFailHtlc(theirAdd.channelId, cmd.theirAdd.id, reason)
   }
 }

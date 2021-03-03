@@ -231,11 +231,11 @@ trait Handlers { me: ChannelNormal =>
 
     if (!Closing.isValidFinalScriptPubkey(remote.scriptPubKey)) {
       throw new RuntimeException
-    } else if (NormalCommits.remoteHasUnsignedOutgoingHtlcs(d.commitments)) {
+    } else if (d.commitments.remoteHasUnsignedOutgoingHtlcs) {
       throw new RuntimeException
-    } else if (NormalCommits.remoteHasUnsignedOutgoingUpdateFee(d.commitments)) {
+    } else if (d.commitments.remoteHasUnsignedOutgoingUpdateFee) {
       throw new RuntimeException
-    } else if (NormalCommits.localHasUnsignedOutgoingHtlcs(d.commitments)) { // do we have unsigned outgoing htlcs?
+    } else if (d.commitments.localHasUnsignedOutgoingHtlcs) { // do we have unsigned outgoing htlcs?
       require(d.localShutdown.isEmpty, "can't have pending unsigned outgoing htlcs after having sent Shutdown")
       // are we in the middle of a signature?
       d.commitments.remoteNextCommitInfo match {

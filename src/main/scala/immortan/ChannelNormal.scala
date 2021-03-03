@@ -13,6 +13,7 @@ import scala.util.{Success, Try}
 import akka.actor.{ActorRef, Props}
 import fr.acinq.bitcoin.{ByteVector32, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.transactions.Transactions.TxOwner
+import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.eclair.crypto.ShaChain
@@ -193,8 +194,8 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
       // We may schedule shutdown while channel is offline
       case (norm: DATA_NORMAL, cmd: CMD_CLOSE, OPEN | SLEEPING) =>
         val localScriptPubKey = cmd.scriptPubKey.getOrElse(norm.commitments.localParams.defaultFinalScriptPubKey)
-        val hasLocalHasUnsignedOutgoingHtlcs = NormalCommits.localHasUnsignedOutgoingHtlcs(norm.commitments)
         val isValidFinalScriptPubkey = Helpers.Closing.isValidFinalScriptPubkey(localScriptPubKey)
+        val hasLocalHasUnsignedOutgoingHtlcs = norm.commitments.localHasUnsignedOutgoingHtlcs
         val shutdown = Shutdown(norm.channelId, localScriptPubKey)
 
         if (!isValidFinalScriptPubkey) throw CMDException(new RuntimeException, cmd)
@@ -205,7 +206,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
       case (norm: DATA_NORMAL, cmd: CMD_ADD_HTLC, state) =>
         if (OPEN != state || norm.localShutdown.isDefined || norm.remoteShutdown.isDefined) throw CMDException(ChannelUnavailable(norm.channelId), cmd)
-        val (commits1, updateAddHtlcMsg) = NormalCommits.sendAdd(norm.commitments, cmd, LNParams.blockCount.get, LNParams.onChainFeeConf)
+        val (commits1, updateAddHtlcMsg) = norm.commitments.sendAdd(cmd, LNParams.blockCount.get, LNParams.onChainFeeConf)
         BECOME(norm.copy(commitments = commits1), OPEN)
         SEND(updateAddHtlcMsg)
         doProcess(CMD_SIGN)
@@ -215,29 +216,32 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         throw CMDException(ChannelUnavailable(some.channelId), cmd)
 
 
-      case (norm: DATA_NORMAL, cmd: CMD_FULFILL_HTLC, OPEN) =>
-        val (commits1, fulfill) = NormalCommits.sendFulfill(norm.commitments, cmd)
+      case (norm: DATA_NORMAL, cmd: CMD_FULFILL_HTLC, OPEN) if !norm.commitments.alreadyReplied(cmd.theirAdd.id) =>
+        val msg = UpdateFulfillHtlc(norm.channelId, cmd.theirAdd.id, cmd.preimage)
+        val commits1 = norm.commitments.addLocalProposal(msg)
         BECOME(norm.copy(commitments = commits1), OPEN)
-        SEND(fulfill)
+        SEND(msg)
 
 
-      case (norm: DATA_NORMAL, cmd: CMD_FAIL_HTLC, OPEN) =>
-        val (commits1, fail) = NormalCommits.sendFail(norm.commitments, cmd)
+      case (norm: DATA_NORMAL, cmd: CMD_FAIL_HTLC, OPEN) if !norm.commitments.alreadyReplied(cmd.theirAdd.id) =>
+        val msg = OutgoingPacket.buildHtlcFailure(cmd, theirAdd = cmd.theirAdd)
+        val commits1 = norm.commitments.addLocalProposal(msg)
         BECOME(norm.copy(commitments = commits1), OPEN)
-        SEND(fail)
+        SEND(msg)
 
 
-      case (norm: DATA_NORMAL, cmd: CMD_FAIL_MALFORMED_HTLC, OPEN) =>
-        val (commits1, malformed) = NormalCommits.sendFailMalformed(norm.commitments, cmd)
+      case (norm: DATA_NORMAL, cmd: CMD_FAIL_MALFORMED_HTLC, OPEN) if !norm.commitments.alreadyReplied(cmd.theirAdd.id) =>
+        val msg = UpdateFailMalformedHtlc(norm.channelId, cmd.theirAdd.id, cmd.onionHash, cmd.failureCode)
+        val commits1 = norm.commitments.addLocalProposal(msg)
         BECOME(norm.copy(commitments = commits1), OPEN)
-        SEND(malformed)
+        SEND(msg)
 
 
       case (norm: DATA_NORMAL, CMD_SIGN, OPEN)
         // We have something to sign and remote unused pubKey, don't forget to store revoked HTLC data
-        if NormalCommits.localHasChanges(norm.commitments) && norm.commitments.remoteNextCommitInfo.isRight =>
+        if norm.commitments.localHasChanges && norm.commitments.remoteNextCommitInfo.isRight =>
 
-        val (commits1, commitSigMessage, nextRemoteCommit) = NormalCommits.sendCommit(norm.commitments)
+        val (commits1, commitSigMessage, nextRemoteCommit) = norm.commitments.sendCommit
         val out = Transactions.trimOfferedHtlcs(norm.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, norm.commitments.channelVersion.commitmentFormat)
         val in = Transactions.trimReceivedHtlcs(norm.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, norm.commitments.channelVersion.commitmentFormat)
         StoreBecomeSend(norm.copy(commitments = commits1), OPEN, commitSigMessage)
@@ -245,42 +249,44 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
 
       case (norm: DATA_NORMAL, CMD_SIGN, OPEN)
-        // We have nothing to sign so check for valid shutdown state, only consider this if we have nothing in-flight
-        if norm.remoteShutdown.isDefined && !NormalCommits.localHasUnsignedOutgoingHtlcs(norm.commitments) =>
+        // We have nothing to sign so check for valid shutdown state, only consider when we have nothing in-flight
+        if norm.remoteShutdown.isDefined && !norm.commitments.localHasUnsignedOutgoingHtlcs =>
         val (data1, replies) = maybeStartNegotiations(norm, norm.remoteShutdown.get)
         StoreBecomeSend(data1, OPEN, replies:_*)
 
 
       case (norm: DATA_NORMAL, add: UpdateAddHtlc, OPEN) =>
-        val commits1 = NormalCommits.receiveAdd(norm.commitments, add, LNParams.onChainFeeConf)
+        val commits1 = norm.commitments.receiveAdd(add, LNParams.onChainFeeConf)
+        val theirAdd = UpdateAddHtlcExt(add, norm.commitments.remoteInfo)
         BECOME(norm.copy(commitments = commits1), OPEN)
+        events.addReceived(theirAdd)
 
 
       case (norm: DATA_NORMAL, msg: UpdateFulfillHtlc, OPEN) =>
-        val (commits1, ourAdd) = NormalCommits.receiveFulfill(norm.commitments, msg)
+        val (commits1, ourAdd) = norm.commitments.receiveFulfill(msg)
         val fulfill = RemoteFulfill(msg.paymentPreimage, ourAdd)
         BECOME(norm.copy(commitments = commits1), OPEN)
         events.fulfillReceived(fulfill)
 
 
       case (norm: DATA_NORMAL, fail: UpdateFailHtlc, OPEN) =>
-        val (commits1, _) = NormalCommits.receiveFail(norm.commitments, fail)
+        val (commits1, _) = norm.commitments.receiveFail(fail)
         BECOME(norm.copy(commitments = commits1), OPEN)
 
 
       case (norm: DATA_NORMAL, malformed: UpdateFailMalformedHtlc, OPEN) =>
-        val (commits1, _) = NormalCommits.receiveFailMalformed(norm.commitments, malformed)
+        val (commits1, _) = norm.commitments.receiveFailMalformed(malformed)
         BECOME(norm.copy(commitments = commits1), OPEN)
 
 
       case (norm: DATA_NORMAL, commitSig: CommitSig, OPEN) =>
-        val (commits1, revocation) = NormalCommits.receiveCommit(norm.commitments, commitSig)
+        val (commits1, revocation) = norm.commitments.receiveCommit(commitSig)
         StoreBecomeSend(norm.copy(commitments = commits1), OPEN, revocation)
         doProcess(CMD_SIGN)
 
 
       case (norm: DATA_NORMAL, revocation: RevokeAndAck, OPEN) =>
-        val commits1 = NormalCommits.receiveRevocation(norm.commitments, revocation)
+        val commits1 = norm.commitments.receiveRevocation(revocation)
         val lastRemoteRejects: Seq[RemoteReject] = norm.commitments.remoteChanges.signed.collect {
           case fail: UpdateFailHtlc => RemoteUpdateFail(fail, norm.commitments.remoteCommit.spec.findIncomingHtlcById(fail.id).get.add)
           case malform: UpdateFailMalformedHtlc => RemoteUpdateMalform(malform, norm.commitments.remoteCommit.spec.findIncomingHtlcById(malform.id).get.add)
@@ -291,7 +297,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
 
       case (norm: DATA_NORMAL, remoteFee: UpdateFee, OPEN) =>
-        val commits1 = NormalCommits.receiveFee(norm.commitments, remoteFee, LNParams.onChainFeeConf)
+        val commits1 = norm.commitments.receiveFee(remoteFee, LNParams.onChainFeeConf)
         BECOME(norm.copy(commitments = commits1), OPEN)
 
 

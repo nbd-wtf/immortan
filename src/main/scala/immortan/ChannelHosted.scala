@@ -8,6 +8,7 @@ import immortan.crypto.Tools._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.bitcoin.ByteVector64
 import fr.acinq.bitcoin.SatoshiLong
 import scodec.bits.ByteVector
@@ -83,7 +84,9 @@ abstract class ChannelHosted extends Channel { me =>
       // CHANNEL IS ESTABLISHED
 
       case (hc: HostedCommits, add: UpdateAddHtlc, OPEN) =>
+        val theirAdd = UpdateAddHtlcExt(add, hc.remoteInfo)
         BECOME(hc.receiveAdd(add), OPEN)
+        events.addReceived(theirAdd)
 
 
       // Relaxed constraints for receiveng preimages over HCs
@@ -123,19 +126,19 @@ abstract class ChannelHosted extends Channel { me =>
         doProcess(CMD_SIGN)
 
 
-      case (hc: HostedCommits, cmd: CMD_FULFILL_HTLC, OPEN) =>
-        val (commits1, fulfill) = hc.sendFulfill(cmd)
-        StoreBecomeSend(commits1, OPEN, fulfill)
+      case (hc: HostedCommits, cmd: CMD_FULFILL_HTLC, OPEN) if !hc.alreadyReplied(cmd.theirAdd.id) =>
+        val msg = UpdateFulfillHtlc(hc.channelId, cmd.theirAdd.id, cmd.preimage)
+        StoreBecomeSend(hc.addLocalProposal(msg), OPEN, msg)
 
 
-      case (hc: HostedCommits, cmd: CMD_FAIL_HTLC, OPEN) =>
-        val (commits1, fail) = hc.sendFail(cmd)
-        StoreBecomeSend(commits1, OPEN, fail)
+      case (hc: HostedCommits, cmd: CMD_FAIL_HTLC, OPEN) if !hc.alreadyReplied(cmd.theirAdd.id) =>
+        val msg = OutgoingPacket.buildHtlcFailure(cmd, theirAdd = cmd.theirAdd)
+        StoreBecomeSend(hc.addLocalProposal(msg), OPEN, msg)
 
 
-      case (hc: HostedCommits, cmd: CMD_FAIL_MALFORMED_HTLC, OPEN) =>
-        val (commits1, malformed) = hc.sendMalformed(cmd)
-        StoreBecomeSend(commits1, OPEN, malformed)
+      case (hc: HostedCommits, cmd: CMD_FAIL_MALFORMED_HTLC, OPEN) if !hc.alreadyReplied(cmd.theirAdd.id) =>
+        val msg = UpdateFailMalformedHtlc(hc.channelId, cmd.theirAdd.id, cmd.onionHash, cmd.failureCode)
+        StoreBecomeSend(hc.addLocalProposal(msg), OPEN, msg)
 
 
       case (hc: HostedCommits, CMD_SOCKET_ONLINE, SLEEPING | SUSPENDED) =>
