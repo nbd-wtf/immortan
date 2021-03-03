@@ -1,19 +1,18 @@
-package immortan.payment
+package immortan.fsm
 
+import immortan._
 import fr.acinq.eclair._
+import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
 import immortan.PaymentStatus._
+import immortan.fsm.PaymentFailure._
 import fr.acinq.eclair.router.Router._
-import immortan.payment.PaymentFailure._
-import immortan.payment.OutgoingPaymentMaster._
-import immortan.PaymentStatus.{ABORTED, SUCCEEDED}
+import immortan.fsm.OutgoingPaymentMaster._
 import immortan.crypto.{CanBeRepliedTo, StateMachine}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt}
-import immortan.{ChanAndCommits, Channel, ChannelMaster, LNParams, PathFinder}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DescAndCapacity, GraphEdge}
 import fr.acinq.eclair.channel.{CMDException, CMD_ADD_HTLC, ChannelUnavailable}
-import fr.acinq.eclair.wire.{GenericTlv, Node, Onion, OnionTlv, PaymentTimeout, FullPaymentTag, Update}
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteReject, RemoteUpdateFail, RemoteUpdateMalform}
 import fr.acinq.eclair.crypto.Sphinx.PacketAndSecrets
 import fr.acinq.eclair.payment.OutgoingPacket

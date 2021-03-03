@@ -1,10 +1,10 @@
-package immortan.payment
+package immortan.fsm
 
 import immortan._
 import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
 import fr.acinq.eclair.channel._
-import immortan.payment.IncomingPaymentReceiver._
+import immortan.fsm.IncomingPaymentReceiver._
 import immortan.ChannelMaster.ReasonableLocals
 import immortan.crypto.StateMachine
 
@@ -70,9 +70,7 @@ abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaste
 
   def accumulatedEnough(adds: Iterable[ReasonableLocal] = Nil): Boolean = adds.nonEmpty && adds.map(_.packet.add.amountMsat).sum >= adds.head.packet.payload.totalAmount
 
-  def fulfill(info: PaymentInfo, adds: Iterable[ReasonableLocal] = None): Unit = {
-    for (local <- adds) cm.sendTo(local.fulfillCommand(info.preimage), local.packet.add.channelId)
-  }
+  def fulfill(info: PaymentInfo, adds: Iterable[ReasonableLocal] = None): Unit = for (local <- adds) cm.sendTo(local.fulfillCommand(info.preimage), local.packet.add.channelId)
 
   def reject(data1: IncomingRejected, adds: Iterable[ReasonableLocal] = None): Unit = data1.commonFailure match {
     case None => for (local <- adds) cm.sendTo(local.failCommand(local.packet.add.incorrectDetails), local.packet.add.channelId)

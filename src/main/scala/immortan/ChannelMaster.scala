@@ -7,15 +7,15 @@ import immortan.crypto.Tools._
 import immortan.PaymentStatus._
 import immortan.ChannelMaster._
 import fr.acinq.eclair.channel._
-import immortan.payment.{OutgoingPaymentMaster, OutgoingPaymentSenderData}
+
+import immortan.fsm.{OutgoingPaymentMaster, OutgoingPaymentSenderData}
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteReject}
 import immortan.ChannelListener.{Malfunction, Transition}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import immortan.crypto.{CanBeRepliedTo, StateMachine}
 import fr.acinq.eclair.payment.IncomingPacket
 import com.google.common.cache.LoadingCache
 import fr.acinq.bitcoin.ByteVector32
-import immortan.crypto.{CanBeRepliedTo, StateMachine}
-import scodec.bits.ByteVector
 
 
 object ChannelMaster { me =>
