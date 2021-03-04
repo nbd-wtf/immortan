@@ -12,7 +12,7 @@ import immortan.crypto.{CanBeRepliedTo, StateMachine}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DescAndCapacity, GraphEdge}
-import fr.acinq.eclair.channel.{CMDException, CMD_ADD_HTLC, ChannelUnavailable}
+import fr.acinq.eclair.channel.{CMDException, CMD_ADD_HTLC, InPrincipleNotSendable}
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteReject, RemoteUpdateFail, RemoteUpdateMalform}
 import fr.acinq.eclair.crypto.Sphinx.PacketAndSecrets
 import fr.acinq.eclair.payment.OutgoingPacket
@@ -326,12 +326,11 @@ class OutgoingPaymentSender(fullTag: FullPaymentTag, opm: OutgoingPaymentMaster)
     case (CMDException(reason, cmd: CMD_ADD_HTLC), PENDING) =>
       data.parts.values.collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isDefined && wait.partId == cmd.partId =>
         val singleCapableCncCandidates = opm.rightNowSendable(data.cmd.allowedChans diff wait.localFailedChans, data.cmd.routerConf)
-        val otherCncsAvailableForSplitByNow = opm.rightNowSendable(data.cmd.allowedChans, data.cmd.routerConf)
 
-        (singleCapableCncCandidates.collectFirst { case (cnc, chanSendable) if chanSendable >= wait.amount => cnc }, reason) match {
-          case (Some(anotherCapableCnc), _) => become(data.copy(parts = data.parts + wait.oneMoreLocalAttempt(anotherCapableCnc).tuple), PENDING)
-          case (None, _: ChannelUnavailable) => assignToChans(otherCncsAvailableForSplitByNow, data.withoutPartId(wait.partId), wait.amount)
-          case (None, _) => self abortAndNotify data.withoutPartId(wait.partId).withLocalFailure(RUN_OUT_OF_RETRY_ATTEMPTS, wait.amount)
+        singleCapableCncCandidates.collectFirst { case (cnc, chanSendable) if chanSendable >= wait.amount => cnc } match {
+          case _ if InPrincipleNotSendable == reason => self abortAndNotify data.withoutPartId(wait.partId).withLocalFailure(RUN_OUT_OF_RETRY_ATTEMPTS, wait.amount)
+          case None => assignToChans(opm.rightNowSendable(data.cmd.allowedChans, data.cmd.routerConf), data.withoutPartId(wait.partId), wait.amount)
+          case Some(anotherCapableCnc) => become(data.copy(parts = data.parts + wait.oneMoreLocalAttempt(anotherCapableCnc).tuple), PENDING)
         }
       }
 

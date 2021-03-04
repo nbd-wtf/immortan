@@ -205,15 +205,15 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
 
       case (norm: DATA_NORMAL, cmd: CMD_ADD_HTLC, state) =>
-        if (OPEN != state || norm.localShutdown.isDefined || norm.remoteShutdown.isDefined) throw CMDException(ChannelUnavailable(norm.channelId), cmd)
+        if (OPEN != state || norm.localShutdown.isDefined || norm.remoteShutdown.isDefined) throw CMDException(new RuntimeException, cmd)
         val (commits1, updateAddHtlcMsg) = norm.commitments.sendAdd(cmd, LNParams.blockCount.get, LNParams.onChainFeeConf)
         BECOME(norm.copy(commitments = commits1), OPEN)
         SEND(updateAddHtlcMsg)
         doProcess(CMD_SIGN)
 
 
-      case (some: HasNormalCommitments, cmd: CMD_ADD_HTLC, _) =>
-        throw CMDException(ChannelUnavailable(some.channelId), cmd)
+      case (_: HasNormalCommitments, cmd: CMD_ADD_HTLC, _) =>
+        throw CMDException(new RuntimeException, cmd)
 
 
       case (norm: DATA_NORMAL, cmd: CMD_FULFILL_HTLC, OPEN) if !norm.commitments.alreadyReplied(cmd.theirAdd.id) =>

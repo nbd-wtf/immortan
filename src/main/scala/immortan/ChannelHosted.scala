@@ -120,7 +120,7 @@ abstract class ChannelHosted extends Channel { me =>
 
 
       case (hc: HostedCommits, cmd: CMD_ADD_HTLC, state) =>
-        if (OPEN != state) throw CMDException(ChannelUnavailable(hc.channelId), cmd)
+        if (OPEN != state) throw CMDException(new RuntimeException, cmd)
         val (commits1, updateAddHtlcMsg) = hc.sendAdd(cmd, LNParams.blockCount.get)
         StoreBecomeSend(commits1, OPEN, updateAddHtlcMsg)
         doProcess(CMD_SIGN)
