@@ -90,8 +90,7 @@ case class SwapOutDescription(invoiceText: String, btcAddress: String, chainFee:
 
 // Relayed preimages
 
-case class RelayedPreimageInfo(paymentHashString: String, preimageString: String, fromNodeIdString: String, relayed: MilliSatoshi, earned: MilliSatoshi, stamp: Long) {
-  lazy val fromNodeIdTry: Try[PublicKey] = Try(ByteVector fromValidHex fromNodeIdString).map(PublicKey.apply)
+case class RelayedPreimageInfo(paymentHashString: String, preimageString: String, relayed: MilliSatoshi, earned: MilliSatoshi, stamp: Long) {
   lazy val paymentHash: ByteVector32 = ByteVector32(ByteVector fromValidHex paymentHashString)
   lazy val preimage: ByteVector32 = ByteVector32(ByteVector fromValidHex preimageString)
 }

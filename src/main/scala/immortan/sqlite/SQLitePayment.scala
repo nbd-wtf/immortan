@@ -8,7 +8,6 @@ import immortan.utils.ImplicitJsonFormats._
 import java.lang.{Long => JLong}
 import fr.acinq.eclair.wire.UpdateFulfillHtlc
 import immortan.PaymentInfo.RevealedParts
-import fr.acinq.bitcoin.Crypto.PublicKey
 import immortan.crypto.Tools.Fiat2Btc
 import fr.acinq.bitcoin.ByteVector32
 import scala.util.Try
@@ -33,8 +32,8 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
 
   def abortOutgoing(paymentHash: ByteVector32): Unit = db.change(PaymentTable.updStatusSql, PaymentStatus.ABORTED, paymentHash.toHex)
 
-  def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32, stamp: Long, fromNodeIdOpt: Option[PublicKey], relayed: MilliSatoshi, earned: MilliSatoshi): Unit =
-    db.change(RelayPreimageTable.newSql, paymentHash.toHex, preimage.toHex, stamp: JLong, relayed.toLong: JLong, earned.toLong: JLong, fromNodeIdOpt.map(_.toString) getOrElse new String)
+  def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32, stamp: Long, relayed: MilliSatoshi, earned: MilliSatoshi): Unit =
+    db.change(RelayPreimageTable.newSql, paymentHash.toHex, preimage.toHex, stamp: JLong, relayed.toLong: JLong, earned.toLong: JLong)
 
   def updOkOutgoing(upd: UpdateFulfillHtlc, fee: MilliSatoshi): Unit =
     db.change(PaymentTable.updOkOutgoingSql, upd.paymentPreimage.toHex,
@@ -82,6 +81,6 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
 
   def toRelayedPreimageInfo(rc: RichCursor): RelayedPreimageInfo =
     RelayedPreimageInfo(paymentHashString = rc string RelayPreimageTable.hash, preimageString = rc string RelayPreimageTable.preimage,
-      fromNodeIdString = rc string RelayPreimageTable.fromNodeId, relayed = MilliSatoshi(rc long RelayPreimageTable.relayed),
-      earned = MilliSatoshi(rc long RelayPreimageTable.earned), stamp = rc long RelayPreimageTable.stamp)
+      relayed = MilliSatoshi(rc long RelayPreimageTable.relayed), earned = MilliSatoshi(rc long RelayPreimageTable.earned),
+      stamp = rc long RelayPreimageTable.stamp)
 }

@@ -43,23 +43,18 @@ object HtlcInfoTable extends Table {
 }
 
 object RelayPreimageTable extends Table {
-  val (table, hash, preimage, stamp, fromNodeId, relayed, earned) = ("relaypreimage", "hash", "preimage", "stamp", "fromnode", "relayed", "earned")
-  val newSql = s"INSERT OR IGNORE INTO $table ($hash, $preimage, $stamp, $fromNodeId, $relayed, $earned) VALUES (?, ?, ?, ?, ?, ?)"
+  val (table, hash, preimage, stamp, relayed, earned) = ("relaypreimage", "hash", "preimage", "stamp", "relayed", "earned")
+  val newSql = s"INSERT OR IGNORE INTO $table ($hash, $preimage, $stamp, $relayed, $earned) VALUES (?, ?, ?, ?, ?)"
   val selectSummarySql = s"SELECT SUM($relayed), SUM($earned), COUNT($id) FROM $table"
   val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 5"
   val selectByHashSql = s"SELECT * FROM $table WHERE $hash = ?"
 
-  def createStatements: Seq[String] = {
-    val createTable = s"""CREATE TABLE IF NOT EXISTS $table(
+  def createStatements: Seq[String] =
+    s"""CREATE TABLE IF NOT EXISTS $table(
       $id INTEGER PRIMARY KEY AUTOINCREMENT, $hash TEXT NOT NULL UNIQUE,
-      $preimage TEXT NOT NULL, $stamp INTEGER NOT NULL, $fromNodeId TEXT NOT NULL,
-      $relayed INTEGER NOT NULL, $earned INTEGER NOT NULL
-    )"""
-
-    // NodeId index can be used in future to efficiently group relays to peer
-    val addIndex1 = s"CREATE INDEX IF NOT EXISTS idx1$table ON $table ($fromNodeId)"
-    createTable :: addIndex1 :: Nil
-  }
+      $preimage TEXT NOT NULL, $stamp INTEGER NOT NULL, $relayed INTEGER NOT NULL,
+      $earned INTEGER NOT NULL
+    )""" :: Nil
 }
 
 abstract class ChannelAnnouncementTable(val table: String) extends Table {
