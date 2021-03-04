@@ -8,13 +8,13 @@ import immortan.PaymentStatus._
 import immortan.ChannelMaster._
 import fr.acinq.eclair.channel._
 
-import immortan.fsm.{OutgoingPaymentMaster, OutgoingPaymentSenderData}
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteReject}
 import immortan.ChannelListener.{Malfunction, Transition}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import immortan.crypto.{CanBeRepliedTo, StateMachine}
 import fr.acinq.eclair.payment.IncomingPacket
 import com.google.common.cache.LoadingCache
+import immortan.fsm.OutgoingPaymentMaster
 import fr.acinq.bitcoin.ByteVector32
 
 
@@ -72,7 +72,6 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
   val opm: OutgoingPaymentMaster
 
   val connectionListeners = Set(sockBrandingBridge, sockChannelBridge)
-  var paymentListeners = Set.empty[ChannelMasterListener]
   var all = Map.empty[ByteVector32, Channel]
 
   // CHANNEL MANAGEMENT
@@ -132,12 +131,4 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
   override def fulfillReceived(fulfill: RemoteFulfill): Unit = opm process fulfill
 
   override def addReceived(add: UpdateAddHtlcExt): Unit = ???
-}
-
-trait ChannelMasterListener {
-  def outgoingFailed(data: OutgoingPaymentSenderData): Unit = none
-  // Note that it is theoretically possible for first part to get fulfilled and the rest of the parts to get failed
-  def outgoingSucceeded(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill, isFirst: Boolean): Unit = none
-  // This one is called after preimage has been revealed and no more outgoing payment parts are left
-  def outgoingFinalized(data: OutgoingPaymentSenderData): Unit = none
 }
