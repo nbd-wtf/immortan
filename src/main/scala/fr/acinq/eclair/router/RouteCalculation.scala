@@ -56,28 +56,24 @@ object RouteCalculation {
 
   val ROUTE_MAX_LENGTH: Int = 20
 
-  val DEFAULT_ROUTE_MAX_CLTV: CltvExpiryDelta = CltvExpiryDelta(2016)
-
   @tailrec
   private def findRouteInternal(g: DirectedGraph, localNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi,
                                 ignoredEdges: Set[ChannelDesc] = Set.empty, ignoredVertices: Set[PublicKey] = Set.empty,
                                 routeParams: RouteParams): Option[Graph.WeightedPath] = {
 
-    val maxFee: MilliSatoshi = routeParams.getMaxFee(amount)
-
-    def feeOk(fee: MilliSatoshi): Boolean = fee <= maxFee
-
-    def lengthOk(length: Int): Boolean = length <= routeParams.routeMaxLength && length <= ROUTE_MAX_LENGTH
+    def feeOk(fee: MilliSatoshi): Boolean = fee <= routeParams.feeReserve
 
     def cltvOk(cltv: CltvExpiryDelta): Boolean = cltv <= routeParams.routeMaxCltv
 
-    val boundaries: RichWeight => Boolean = weight => feeOk(weight.costs.head - amount) && lengthOk(weight.length) && cltvOk(weight.cltv)
+    def lengthOk(length: Int): Boolean = length <= routeParams.routeMaxLength && length <= ROUTE_MAX_LENGTH
+
+    val boundaries: RichWeight => Boolean = weight => feeOk(weight.costs.head - amount) && cltvOk(weight.cltv) && lengthOk(weight.length)
 
     val res = Graph.bestPath(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, boundaries)
 
     if (res.isEmpty && routeParams.routeMaxLength < ROUTE_MAX_LENGTH) {
-      // if route not found within the constraints we relax and repeat the search
-      val relaxedRouteParams = routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV)
+      // if route not found we relax initial constraints and repeat the search
+      val relaxedRouteParams = routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH)
       findRouteInternal(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, relaxedRouteParams)
     } else {
       res

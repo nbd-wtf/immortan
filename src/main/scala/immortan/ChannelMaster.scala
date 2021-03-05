@@ -96,24 +96,22 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
   }
 
   def maxReceivableInfo: Option[CommitsAndMax] = {
-    val canReceive = all.values.filter(Channel.isOperational).flatMap(Channel.chanAndCommitsOpt).filter(_.commits.updateOpt.isDefined).toList.sortBy(_.commits.availableBalanceForReceive)
+    val canReceive = all.values.filter(Channel.isOperational).flatMap(Channel.chanAndCommitsOpt).filter(_.commits.updateOpt.isDefined).toList.sortBy(_.commits.availableForReceive)
     // Example: (5, 50, 60, 100) -> (50, 60, 100), receivable = 50*3 = 150 (the idea is for smallest remaining operational channel to be able to handle an evenly split amount)
-    val withoutSmall = canReceive.dropWhile(_.commits.availableBalanceForReceive * canReceive.size < canReceive.last.commits.availableBalanceForReceive).takeRight(4)
-    val candidates = for (cs <- withoutSmall.indices map withoutSmall.drop) yield CommitsAndMax(cs, cs.head.commits.availableBalanceForReceive * cs.size)
+    val withoutSmall = canReceive.dropWhile(_.commits.availableForReceive * canReceive.size < canReceive.last.commits.availableForReceive).takeRight(4)
+    val candidates = for (cs <- withoutSmall.indices map withoutSmall.drop) yield CommitsAndMax(cs, cs.head.commits.availableForReceive * cs.size)
     if (candidates.isEmpty) None else candidates.maxBy(_.maxReceivable).toSome
   }
 
-  def checkIfSendable(fullTag: FullPaymentTag, amount: MilliSatoshi): Int =
-    getPaymentDbInfoMemo(fullTag.paymentHash) match {
-      case _ if allInChannelOutgoing.contains(fullTag) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment type is still pending in channels (routing and sending at once is OK)
-      case _ if opm.data.payments.get(fullTag).exists(fsm => PENDING == fsm.state || INIT == fsm.state) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is pending in FSM
-      case _ if opm.data.payments.get(fullTag).exists(fsm => SUCCEEDED == fsm.state) => PaymentInfo.NOT_SENDABLE_SUCCESS // This payment has just been fulfilled at runtime
-      case _ if opm.inPrincipleSendable(all.values, LNParams.routerConf) < amount => PaymentInfo.NOT_SENDABLE_LOW_FUNDS // We don't have enough money
-      case info if info.localOpt.exists(SUCCEEDED == _.status) => PaymentInfo.NOT_SENDABLE_SUCCESS // Successfully sent or received a long time ago
-      case info if info.localOpt.exists(_.isIncoming) => PaymentInfo.NOT_SENDABLE_INCOMING // Incoming payment with this hash exists
-      case info if info.relayedOpt.isDefined => PaymentInfo.NOT_SENDABLE_RELAYED // Related preimage has been relayed
-      case _ => PaymentInfo.SENDABLE // Has never been sent or ABORTED by now
-    }
+  def checkIfSendable(tag: FullPaymentTag, fee: MilliSatoshi, amount: MilliSatoshi): Int = getPaymentDbInfoMemo(tag.paymentHash) match {
+    case _ if opm.getSendable(all.values.filter(Channel.isOperational), maxFee = fee).values.sum < amount => PaymentInfo.NOT_SENDABLE_LOW_FUNDS // Not enough balance
+    case _ if opm.data.payments.get(tag).exists(fsm => PENDING == fsm.state || INIT == fsm.state) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is pending in FSM
+    case _ if opm.data.payments.get(tag).exists(fsm => SUCCEEDED == fsm.state) => PaymentInfo.NOT_SENDABLE_SUCCESS // This payment has just been fulfilled at runtime
+    case info if info.localOpt.exists(SUCCEEDED == _.status) => PaymentInfo.NOT_SENDABLE_SUCCESS // Successfully sent or received a long time ago
+    case info if info.localOpt.exists(_.isIncoming) => PaymentInfo.NOT_SENDABLE_INCOMING // Incoming payment with this hash exists
+    case info if info.relayedOpt.isDefined => PaymentInfo.NOT_SENDABLE_RELAYED // Related preimage has been relayed
+    case _ => PaymentInfo.SENDABLE // Has never been sent or ABORTED by now
+  }
 
   // These are executed in Channel context
 

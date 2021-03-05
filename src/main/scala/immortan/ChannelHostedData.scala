@@ -26,17 +26,17 @@ case class HostedCommits(remoteInfo: RemoteNodeInfo, lastCrossSignedState: LastC
 
   val channelId: ByteVector32 = Tools.hostedChanId(remoteInfo.nodeSpecificPubKey.value, remoteInfo.nodeId.value)
 
-  val crossSignedIncoming: Set[UpdateAddHtlcExt] = for (theirAdd <- localSpec.incomingAdds) yield UpdateAddHtlcExt(theirAdd, remoteInfo)
-
   val allOutgoing: Set[UpdateAddHtlc] = localSpec.outgoingAdds ++ nextLocalSpec.outgoingAdds
 
-  val maxInFlight: MilliSatoshi = lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat.toMilliSatoshi
+  val crossSignedIncoming: Set[UpdateAddHtlcExt] = for (theirAdd <- localSpec.incomingAdds) yield UpdateAddHtlcExt(theirAdd, remoteInfo)
+
+  val inFlightLeft: MilliSatoshi = lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat.toMilliSatoshi - allOutgoing.foldLeft(0L.msat)(_ + _.amountMsat)
 
   val minSendable: MilliSatoshi = lastCrossSignedState.initHostedChannel.htlcMinimumMsat
 
-  val availableBalanceForReceive: MilliSatoshi = nextLocalSpec.toRemote
+  val availableForReceive: MilliSatoshi = nextLocalSpec.toRemote
 
-  val availableBalanceForSend: MilliSatoshi = nextLocalSpec.toLocal
+  val availableForSend: MilliSatoshi = nextLocalSpec.toLocal
 
   def nextLocalUnsignedLCSS(blockDay: Long): LastCrossSignedState =
     LastCrossSignedState(lastCrossSignedState.isHost, lastCrossSignedState.refundScriptPubKey, lastCrossSignedState.initHostedChannel,
@@ -58,15 +58,14 @@ case class HostedCommits(remoteInfo: RemoteNodeInfo, lastCrossSignedState: LastC
     if (CltvExpiry(blockHeight) >= cmd.cltvExpiry) throw CMDException(InPrincipleNotSendable, cmd)
     if (LNParams.maxCltvExpiryDelta.toCltvExpiry(blockHeight) < cmd.cltvExpiry) throw CMDException(InPrincipleNotSendable, cmd)
     if (commits1.nextLocalSpec.outgoingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) throw CMDException(new RuntimeException, cmd)
-    if (commits1.nextLocalSpec.outgoingAdds.foldLeft(0L.msat)(_ + _.amountMsat) > maxInFlight) throw CMDException(new RuntimeException, cmd)
     if (commits1.nextLocalSpec.toLocal < 0L.msat) throw CMDException(new RuntimeException, cmd)
+    if (commits1.inFlightLeft < 0L.msat) throw CMDException(new RuntimeException, cmd)
     (commits1, add)
   }
 
   def receiveAdd(add: UpdateAddHtlc): HostedCommits = {
     val commits1: HostedCommits = addRemoteProposal(add)
     if (commits1.nextLocalSpec.incomingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) throw new RuntimeException
-    if (commits1.nextLocalSpec.incomingAdds.foldLeft(0L.msat)(_ + _.amountMsat) > maxInFlight) throw new RuntimeException
     if (commits1.nextLocalSpec.toRemote < 0L.msat) throw new RuntimeException
     if (add.id != nextTotalRemote + 1) throw new RuntimeException
     commits1

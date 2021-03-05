@@ -58,6 +58,7 @@ object LNParams {
   val jParams: NetworkParameters = org.bitcoinj.params.MainNetParams.get
   val chainHash: ByteVector32 = Block.LivenetGenesisBlock.hash
   val reserveToFundingRatio = 0.0025 // %
+  val offChainFeeRatio = 0.01 // %
 
   // Init messages + features
 
@@ -103,10 +104,9 @@ object LNParams {
   var fiatRatesInfo: FiatRatesInfo = _
 
   var routerConf: RouterConf =
-    RouterConf(searchMaxFeeBase = MilliSatoshi(25000L),
-      searchMaxFeePct = 0.01, firstPassMaxCltv = CltvExpiryDelta(1008),
-      firstPassMaxRouteLength = 6, mppMinPartAmount = MilliSatoshi(30000000L),
-      maxRemoteAttempts = 12, maxChannelFailures = 12, maxStrangeNodeFailures = 12)
+    RouterConf(maxCltv = CltvExpiryDelta(1008), routeHopDistance = 6,
+      mppMinPartAmount = MilliSatoshi(30000000L), maxRemoteAttempts = 12,
+      maxChannelFailures = 12, maxStrangeNodeFailures = 12)
 
   // Chain feerate utils
 

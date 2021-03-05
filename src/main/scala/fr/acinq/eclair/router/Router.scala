@@ -27,15 +27,13 @@ import scodec.bits.ByteVector
 
 case class ChannelUpdateExt(update: ChannelUpdate, crc32: Long, score: Long, useHeuristics: Boolean) {
   def withNewUpdate(cu: ChannelUpdate): ChannelUpdateExt = copy(crc32 = Sync.getChecksum(cu), update = cu)
-  lazy val capacity: MilliSatoshi = update.htlcMaximumMsat.get // All updates MUST have htlcMaximumMsat
+  lazy val capacity: MilliSatoshi = update.htlcMaximumMsat.get
 }
 
 object Router {
-  case class RouterConf(searchMaxFeeBase: MilliSatoshi, searchMaxFeePct: Double, firstPassMaxRouteLength: Int,
-                        firstPassMaxCltv: CltvExpiryDelta, mppMinPartAmount: MilliSatoshi, maxChannelFailures: Int,
-                        maxStrangeNodeFailures: Int, maxRemoteAttempts: Int)
-
   case class ChannelDesc(shortChannelId: ShortChannelId, from: PublicKey, to: PublicKey)
+
+  case class RouterConf(routeHopDistance: Int, maxCltv: CltvExpiryDelta, mppMinPartAmount: MilliSatoshi, maxChannelFailures: Int, maxStrangeNodeFailures: Int, maxRemoteAttempts: Int)
 
   case class PublicChannel(update1Opt: Option[ChannelUpdateExt], update2Opt: Option[ChannelUpdateExt], ann: ChannelAnnouncement) {
     def getChannelUpdateSameSideAs(cu: ChannelUpdate): Option[ChannelUpdateExt] = if (cu.position == ChannelUpdate.POSITION1NODE) update1Opt else update2Opt
@@ -75,9 +73,7 @@ object Router {
     override def fee(amount: MilliSatoshi): MilliSatoshi = fee
   }
 
-  case class RouteParams(maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: CltvExpiryDelta) {
-    def getMaxFee(amount: MilliSatoshi): MilliSatoshi = maxFeeBase.max(amount * maxFeePct)
-  }
+  case class RouteParams(feeReserve: MilliSatoshi, routeMaxLength: Int, routeMaxCltv: CltvExpiryDelta)
 
   case class RouteRequest(fullTag: FullPaymentTag, partId: ByteVector, source: PublicKey,
                           target: PublicKey, amount: MilliSatoshi, localEdge: GraphEdge, routeParams: RouteParams,
@@ -96,7 +92,7 @@ object Router {
 
     def getEdgeForNode(nodeId: PublicKey): Option[GraphEdge] = routedPerChannelHop.collectFirst { case (_, chanHop: ChannelHop) if nodeId == chanHop.nodeId => chanHop.edge }
 
-    def asString(denom: Denomination): String = routedPerHop.collect { case (amt, hop) => hop.asString(denom asString amt).trim }.mkString("me -> peer ", " -> ", s" -> receiver, route fee: ${denom asString fee}")
+    def asString(denom: Denomination): String = routedPerHop.collect { case (amt, hop) => hop.asString(denom asString amt).trim }.mkString("me -> peer ", " -> ", s" -> payee, route fee: ${denom asString fee}")
 
     require(hops.nonEmpty, "Route cannot be empty")
   }

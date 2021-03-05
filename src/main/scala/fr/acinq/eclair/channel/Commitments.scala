@@ -56,13 +56,13 @@ trait Commitments {
   def remoteInfo: RemoteNodeInfo
   def updateOpt: Option[ChannelUpdate]
 
-  def maxInFlight: MilliSatoshi
   def minSendable: MilliSatoshi
-  def availableBalanceForSend: MilliSatoshi
-  def availableBalanceForReceive: MilliSatoshi
+  def availableForSend: MilliSatoshi
+  def availableForReceive: MilliSatoshi
 
   def crossSignedIncoming: Set[UpdateAddHtlcExt] // Cross-signed incoming which we can start to process
-  def allOutgoing: Set[UpdateAddHtlc] // Cross-signed PLUS new payments offered by us
+  def allOutgoing: Set[UpdateAddHtlc] // Cross-signed PLUS not yet signed payments offered by us
+  def inFlightLeft: MilliSatoshi // max-in-flight MINUS sum(current-in-flight)
 }
 
 case class NormalCommits(channelVersion: ChannelVersion, remoteInfo: RemoteNodeInfo, localParams: LocalParams, remoteParams: RemoteParams,
@@ -75,15 +75,15 @@ case class NormalCommits(channelVersion: ChannelVersion, remoteInfo: RemoteNodeI
 
   val channelKeyPath: DeterministicWallet.KeyPath = remoteInfo.keyPath(localParams)
 
-  val maxInFlight: MilliSatoshi = remoteParams.maxHtlcValueInFlightMsat.toMilliSatoshi
-
   val minSendable: MilliSatoshi = remoteParams.htlcMinimum.max(localParams.htlcMinimum)
-
-  val crossSignedIncoming: Set[UpdateAddHtlcExt] = for (theirAdd <- remoteCommit.spec.outgoingAdds) yield UpdateAddHtlcExt(theirAdd, remoteInfo)
 
   val allOutgoing: Set[UpdateAddHtlc] = localCommit.spec.outgoingAdds ++ remoteCommit.spec.incomingAdds ++ localChanges.adds
 
-  val availableBalanceForSend: MilliSatoshi = {
+  val crossSignedIncoming: Set[UpdateAddHtlcExt] = for (theirAdd <- remoteCommit.spec.outgoingAdds) yield UpdateAddHtlcExt(theirAdd, remoteInfo)
+
+  val inFlightLeft: MilliSatoshi = remoteParams.maxHtlcValueInFlightMsat.toMilliSatoshi - allOutgoing.foldLeft(0L.msat)(_ + _.amountMsat)
+
+  val availableForSend: MilliSatoshi = {
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
     val reduced = CommitmentSpec.reduce(latestRemoteCommit.spec, remoteChanges.acked, localChanges.proposed)
     val balanceNoFees = (reduced.toRemote - remoteParams.channelReserve).max(0.msat)
@@ -111,7 +111,7 @@ case class NormalCommits(channelVersion: ChannelVersion, remoteInfo: RemoteNodeI
     }
   }
 
-  val availableBalanceForReceive: MilliSatoshi = {
+  val availableForReceive: MilliSatoshi = {
     val reduced = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
     val balanceNoFees = (reduced.toRemote - localParams.channelReserve).max(0.msat)
     if (localParams.isFunder) {
@@ -222,10 +222,8 @@ case class NormalCommits(channelVersion: ChannelVersion, remoteInfo: RemoteNodeI
       }
     }
 
-    // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since outgoingHtlcs is a Set).
-    val htlcValueInFlight = outgoingHtlcs.foldLeft(0L.msat) { case (accumulator, outAdd) => accumulator + outAdd.amountMsat }
     if (outgoingHtlcs.size > commitments1.remoteParams.maxAcceptedHtlcs) throw CMDException(new RuntimeException, cmd)
-    if (commitments1.maxInFlight < htlcValueInFlight) throw CMDException(new RuntimeException, cmd)
+    if (commitments1.inFlightLeft < 0L.msat) throw CMDException(new RuntimeException, cmd)
     (commitments1, add)
   }
 

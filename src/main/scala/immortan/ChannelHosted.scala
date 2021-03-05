@@ -119,11 +119,20 @@ abstract class ChannelHosted extends Channel { me =>
         attemptStateUpdate(remoteSU, hc)
 
 
-      case (hc: HostedCommits, cmd: CMD_ADD_HTLC, state) =>
-        if (OPEN != state) throw CMDException(new RuntimeException, cmd)
-        val (commits1, updateAddHtlcMsg) = hc.sendAdd(cmd, LNParams.blockCount.get)
-        StoreBecomeSend(commits1, OPEN, updateAddHtlcMsg)
+      case (hc: HostedCommits, cmd: CMD_ADD_HTLC, OPEN) =>
+        val (hc1, updateAddHtlcMsg) = hc.sendAdd(cmd, LNParams.blockCount.get)
+        StoreBecomeSend(hc1, OPEN, updateAddHtlcMsg)
         doProcess(CMD_SIGN)
+
+
+      case (_: HostedCommits, cmd: CMD_ADD_HTLC, SLEEPING) =>
+        // Instruct payment master to not omit this channel yet
+        throw CMDException(ChannelUnavailable, cmd)
+
+
+      case (_: HostedCommits, cmd: CMD_ADD_HTLC, _) =>
+        // Instruct payment master to omit this channel
+        throw CMDException(new RuntimeException, cmd)
 
 
       case (hc: HostedCommits, cmd: CMD_FULFILL_HTLC, OPEN) if !hc.alreadyReplied(cmd.theirAdd.id) =>

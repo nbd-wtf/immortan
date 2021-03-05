@@ -204,15 +204,20 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         else StoreBecomeSend(norm.copy(localShutdown = shutdown.toSome), state, shutdown)
 
 
-      case (norm: DATA_NORMAL, cmd: CMD_ADD_HTLC, state) =>
-        if (OPEN != state || norm.localShutdown.isDefined || norm.remoteShutdown.isDefined) throw CMDException(new RuntimeException, cmd)
+      case (norm: DATA_NORMAL, cmd: CMD_ADD_HTLC, OPEN) if norm.localShutdown.isEmpty && norm.remoteShutdown.isEmpty =>
         val (commits1, updateAddHtlcMsg) = norm.commitments.sendAdd(cmd, LNParams.blockCount.get, LNParams.onChainFeeConf)
         BECOME(norm.copy(commitments = commits1), OPEN)
         SEND(updateAddHtlcMsg)
         doProcess(CMD_SIGN)
 
 
-      case (_: HasNormalCommitments, cmd: CMD_ADD_HTLC, _) =>
+      case (_: DATA_NORMAL, cmd: CMD_ADD_HTLC, SLEEPING) =>
+        // Instruct payment master to not omit this channel yet
+        throw CMDException(ChannelUnavailable, cmd)
+
+
+      case (_, cmd: CMD_ADD_HTLC, _) =>
+        // Instruct payment master to omit this channel
         throw CMDException(new RuntimeException, cmd)
 
 
