@@ -120,14 +120,14 @@ abstract class ChannelHosted extends Channel { me =>
 
 
       case (hc: HostedCommits, cmd: CMD_ADD_HTLC, OPEN) =>
-        val (hc1, updateAddHtlcMsg) = hc.sendAdd(cmd, LNParams.blockCount.get)
-        StoreBecomeSend(hc1, OPEN, updateAddHtlcMsg)
+        val (hc1, msg) = hc.sendAdd(cmd, LNParams.blockCount.get)
+        StoreBecomeSend(hc1, OPEN, msg)
         doProcess(CMD_SIGN)
 
 
       case (_: HostedCommits, cmd: CMD_ADD_HTLC, SLEEPING) =>
         // Instruct payment master to not omit this channel yet
-        throw CMDException(ChannelUnavailable, cmd)
+        throw CMDException(ChannelOffline, cmd)
 
 
       case (_: HostedCommits, cmd: CMD_ADD_HTLC, _) =>

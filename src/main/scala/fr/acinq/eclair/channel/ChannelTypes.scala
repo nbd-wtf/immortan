@@ -23,7 +23,7 @@ import fr.acinq.eclair.wire._
 import com.softwaremill.quicklens._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import immortan.{LNParams, RemoteNodeInfo, RevealedPart}
+import immortan.{LNParams, RemoteNodeInfo}
 import scodec.bits.{BitVector, ByteVector}
 
 import fr.acinq.eclair.crypto.Sphinx.PacketAndSecrets
@@ -50,7 +50,7 @@ case class FeerateTooDifferent(channelId: ByteVector32, localFeeratePerKw: Feera
 case class ChannelReserveTooHigh(channelId: ByteVector32, channelReserve: Satoshi, reserveToFundingRatio: Double, maxReserveToFundingRatio: Double) extends RuntimeException
 
 // Non-fatal by default
-case object ChannelUnavailable extends RuntimeException
+case object ChannelOffline extends RuntimeException
 case object InPrincipleNotSendable extends RuntimeException
 case class CMDException(error: RuntimeException, cmd: Command) extends RuntimeException
 
@@ -90,8 +90,6 @@ case class ReasonableTrampoline(packet: IncomingPacket.NodeRelayPacket, secret: 
 
 case class ReasonableLocal(packet: IncomingPacket.FinalPacket, secret: PrivateKey) extends UndeterminedResolution {
   val fullTag: FullPaymentTag = FullPaymentTag(packet.payload.paymentSecret.get, packet.add.paymentHash, PaymentTagTlv.LOCAL)
-  val revealedPart: RevealedPart = RevealedPart(packet.add.channelId, packet.add.id, packet.add.amountMsat)
-
   def failCommand(failure: FailureMessage): FinalResolution = CMD_FAIL_HTLC(Right(failure), secret, packet.add)
   def fulfillCommand(preimage: ByteVector32): FinalResolution = CMD_FULFILL_HTLC(preimage, packet.add)
 }

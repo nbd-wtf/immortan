@@ -36,9 +36,9 @@ abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaste
     case (inFlight: InFlightPayments, null, PROCESSING) =>
       val adds = inFlight.in(fullTag).asInstanceOf[ReasonableLocals]
       cm.getPaymentDbInfoMemo.get(fullTag.paymentHash).localOpt match {
-        case Some(local) if local.isIncoming && PaymentStatus.SUCCEEDED == local.status => becomeSomeRevealed(local, adds)
+        case Some(local) if local.isIncoming && PaymentStatus.SUCCEEDED == local.status => becomeFulfilled(local, adds)
         case Some(local) if adds.exists(_.packet.payload.totalAmount < local.amountOrMin) => becomeRejected(IncomingRejected(None), adds)
-        case Some(local) if local.isIncoming && accumulatedEnough(adds) => becomeAllRevealed(local, adds)
+        case Some(local) if local.isIncoming && accumulatedEnough(adds) => becomeFulfilled(local, adds)
         case _ if adds.exists(tooFewBlocksUntilExpiry) => becomeRejected(IncomingRejected(None), adds)
         case None => becomeRejected(IncomingRejected(None), adds)
         case _ => // Do nothing
@@ -54,9 +54,9 @@ abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaste
       cm.stateUpdated(Nil)
 
     case (inFlight: InFlightPayments, revealed: IncomingRevealed, REVEALED) =>
-      // Re-fulfill leftovers for which we have revealed a preimage, fail the rest
+      // Re-fulfill all subsequent leftovers forever and consider them donations
       val adds = inFlight.in(fullTag).asInstanceOf[ReasonableLocals]
-      becomeSomeRevealed(revealed.info, adds)
+      fulfill(revealed.info, adds)
 
     case (inFlight: InFlightPayments, rejected: IncomingRejected, REJECTED) =>
       // Keep failing leftovers and any new parts with original failure
@@ -70,7 +70,9 @@ abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaste
 
   def accumulatedEnough(adds: Iterable[ReasonableLocal] = Nil): Boolean = adds.nonEmpty && adds.map(_.packet.add.amountMsat).sum >= adds.head.packet.payload.totalAmount
 
-  def fulfill(info: PaymentInfo, adds: Iterable[ReasonableLocal] = None): Unit = for (local <- adds) cm.sendTo(local.fulfillCommand(info.preimage), local.packet.add.channelId)
+  def fulfill(info: PaymentInfo, adds: Iterable[ReasonableLocal] = None): Unit = {
+    for (local <- adds) cm.sendTo(local.fulfillCommand(info.preimage), local.packet.add.channelId)
+  }
 
   def reject(data1: IncomingRejected, adds: Iterable[ReasonableLocal] = None): Unit = data1.commonFailure match {
     case None => for (local <- adds) cm.sendTo(local.failCommand(local.packet.add.incorrectDetails), local.packet.add.channelId)
@@ -83,21 +85,11 @@ abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaste
     reject(data1, adds)
   }
 
-  def becomeAllRevealed(info: PaymentInfo, adds: Iterable[ReasonableLocal] = None): Unit = {
-    // Fulfill pending incoming payments and snapshot them to maybe re-fulfill later
-    cm.payBag.updOkIncoming(adds.map(_.revealedPart), fullTag.paymentHash)
+  def becomeFulfilled(info: PaymentInfo, adds: Iterable[ReasonableLocal] = None): Unit = {
+    cm.payBag.updOkIncoming(adds.map(_.packet.add.amountMsat).sum, fullTag.paymentHash)
     cm.getPaymentDbInfoMemo.invalidate(fullTag.paymentHash)
     become(IncomingRevealed(info), REVEALED)
     incomingRevealed(fullTag)
     fulfill(info, adds)
-  }
-
-  def becomeSomeRevealed(info: PaymentInfo, adds: Iterable[ReasonableLocal] = None): Unit = {
-    // For example, we could have some incoming payment in offline channel which would have to be fulfilled once it becomes online
-    // at the same time we could get new parts from malicious sender who is reusing an invoice and not going to pay the whole amount
-    val (good, bad) = adds.partition(add => info.revealedParts contains add.revealedPart)
-    become(IncomingRevealed(info), REVEALED)
-    reject(IncomingRejected(None), bad)
-    fulfill(info, good)
   }
 }

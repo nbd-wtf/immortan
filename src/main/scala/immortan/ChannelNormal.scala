@@ -213,7 +213,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
       case (_: DATA_NORMAL, cmd: CMD_ADD_HTLC, SLEEPING) =>
         // Instruct payment master to not omit this channel yet
-        throw CMDException(ChannelUnavailable, cmd)
+        throw CMDException(ChannelOffline, cmd)
 
 
       case (_, cmd: CMD_ADD_HTLC, _) =>

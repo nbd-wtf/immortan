@@ -3,9 +3,9 @@ package immortan.utils
 import immortan._
 import spray.json._
 import fr.acinq.eclair.wire.CommonCodecs._
-import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.WalletReady
-import immortan.utils.FiatRates.{BitpayItemList, CoinGeckoItemMap}
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
+import immortan.utils.FiatRates.{BitpayItemList, CoinGeckoItemMap}
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.WalletReady
 import fr.acinq.bitcoin.Crypto.PublicKey
 import immortan.crypto.Tools.Fiat2Btc
 import fr.acinq.eclair.MilliSatoshi
@@ -81,8 +81,6 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
   implicit val walletReadyFmt: JsonFormat[WalletReady] = jsonFormat[Satoshi, Satoshi, Long, Long, WalletReady](WalletReady.apply, "confirmedBalance", "unconfirmedBalance", "height", "timestamp")
 
   // Payment description
-
-  implicit val revealedPartFmt: JsonFormat[RevealedPart] = jsonFormat[ByteVector32, Long, MilliSatoshi, RevealedPart](RevealedPart.apply, "chanId", "paymentId", "amount")
 
   implicit object PaymentDescriptionFmt extends JsonFormat[PaymentDescription] {
     def write(internal: PaymentDescription): JsValue = internal match {

@@ -5,16 +5,13 @@ import immortan.crypto.Tools.{Bytes, Fiat2Btc}
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 import fr.acinq.eclair.payment.PaymentRequest
-import immortan.PaymentInfo.RevealedParts
 import fr.acinq.bitcoin.Crypto.PublicKey
 import scodec.bits.ByteVector
 import immortan.utils.uri.Uri
 import immortan.utils.LNUrl
-import scala.util.Try
 
 
 object PaymentInfo {
-  type RevealedParts = Iterable[RevealedPart]
   final val NOT_SENDABLE_LOW_FUNDS = 1
   final val NOT_SENDABLE_IN_FLIGHT = 2
   final val NOT_SENDABLE_INCOMING = 3
@@ -32,24 +29,17 @@ object PaymentStatus {
 
 case class PaymentDbInfo(localOpt: Option[PaymentInfo], relayedOpt: Option[RelayedPreimageInfo], paymentHash: ByteVector32)
 
-// A collection of incoming parts for which we have revealed our preimage
-case class RevealedPart(chanId: ByteVector32, paymentId: Long, amount: MilliSatoshi)
-
 case class PaymentInfo(prString: String, preimageString: String, status: String, stamp: Long, descriptionString: String, actionString: String,
                        paymentHashString: String, received: MilliSatoshi, sent: MilliSatoshi, fee: MilliSatoshi, balanceSnapshot: MilliSatoshi,
-                       fiatRatesString: String, chainFee: MilliSatoshi, revealedPartsString: String, incoming: Long) {
+                       fiatRatesString: String, chainFee: MilliSatoshi, incoming: Long) {
 
   def isIncoming: Boolean = 1 == incoming
-
   lazy val pr: PaymentRequest = PaymentRequest.read(prString)
   lazy val amountOrMin: MilliSatoshi = pr.amount.getOrElse(LNParams.minPayment)
-
   lazy val preimage: ByteVector32 = ByteVector32(ByteVector fromValidHex preimageString)
   lazy val paymentHash: ByteVector32 = ByteVector32(ByteVector fromValidHex paymentHashString)
-
-  lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
-  lazy val revealedParts: Set[RevealedPart] = to[RevealedParts](revealedPartsString).toSet
   lazy val description: PaymentDescription = to[PaymentDescription](descriptionString)
+  lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
   lazy val action: PaymentAction = to[PaymentAction](actionString)
 }
 

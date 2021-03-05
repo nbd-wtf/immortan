@@ -7,7 +7,6 @@ import immortan.utils.ImplicitJsonFormats._
 
 import java.lang.{Long => JLong}
 import fr.acinq.eclair.wire.UpdateFulfillHtlc
-import immortan.PaymentInfo.RevealedParts
 import immortan.crypto.Tools.Fiat2Btc
 import fr.acinq.bitcoin.ByteVector32
 import scala.util.Try
@@ -35,13 +34,9 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
   def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32, stamp: Long, relayed: MilliSatoshi, earned: MilliSatoshi): Unit =
     db.change(RelayPreimageTable.newSql, paymentHash.toHex, preimage.toHex, stamp: JLong, relayed.toLong: JLong, earned.toLong: JLong)
 
-  def updOkOutgoing(upd: UpdateFulfillHtlc, fee: MilliSatoshi): Unit =
-    db.change(PaymentTable.updOkOutgoingSql, upd.paymentPreimage.toHex,
-      fee.toLong: JLong, upd.paymentHash.toHex)
+  def updOkOutgoing(upd: UpdateFulfillHtlc, fee: MilliSatoshi): Unit = db.change(PaymentTable.updOkOutgoingSql, upd.paymentPreimage.toHex, fee.toLong: JLong, upd.paymentHash.toHex)
 
-  def updOkIncoming(revealedParts: RevealedParts, paymentHash: ByteVector32): Unit =
-    db.change(PaymentTable.updOkIncomingSql, revealedParts.map(_.amount).sum.toLong: JLong,
-      System.currentTimeMillis: JLong, revealedParts.toJson.compactPrint, paymentHash.toHex)
+  def updOkIncoming(receivedAmount: MilliSatoshi, paymentHash: ByteVector32): Unit = db.change(PaymentTable.updOkIncomingSql, receivedAmount.toLong: JLong, System.currentTimeMillis: JLong, paymentHash.toHex)
 
   def replaceOutgoingPayment(prex: PaymentRequestExt, description: PaymentDescription, action: Option[PaymentAction],
                              finalAmount: MilliSatoshi, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc, chainFee: MilliSatoshi): Unit =
@@ -49,8 +44,7 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
       db.change(PaymentTable.deleteSql, prex.pr.paymentHash.toHex)
       db.change(PaymentTable.newSql, prex.raw, ChannelMaster.NO_PREIMAGE.toHex, PaymentStatus.PENDING, System.currentTimeMillis: JLong, description.toJson.compactPrint,
         action.map(_.toJson.compactPrint).getOrElse(new String), prex.pr.paymentHash.toHex, 0L: JLong /* RECEIVED = 0 MSAT */, finalAmount.toLong: JLong /* SENT IS KNOWN */,
-        0L: JLong /* FEE IS UNCERTAIN YET */, balanceSnap.toLong: JLong, fiatRateSnap.toJson.compactPrint, chainFee.toLong: JLong, 0: java.lang.Integer /* INCOMING = 0 */,
-        List.empty[RevealedPart].toJson.compactPrint /* NO REVELAED PARTS FOR OUTGOING */)
+        0L: JLong /* FEE IS UNCERTAIN YET */, balanceSnap.toLong: JLong, fiatRateSnap.toJson.compactPrint, chainFee.toLong: JLong, 0: java.lang.Integer /* INCOMING = 0 */)
     }
 
   def replaceIncomingPayment(prex: PaymentRequestExt, preimage: ByteVector32, description: PaymentDescription,
@@ -60,7 +54,7 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
       db.change(PaymentTable.newSql, prex.raw, preimage.toHex, PaymentStatus.PENDING, System.currentTimeMillis: JLong, description.toJson.compactPrint,
         new String /* NO ACTION */, prex.pr.paymentHash.toHex, prex.pr.amount.getOrElse(0L.msat).toLong: JLong /* MUST COME FROM PR! NO AMOUNT IF RECEIVED = 0 */,
         0L: JLong /* SENT = 0 MSAT, NOTHING TO SEND */, 0L: JLong /* NO FEE FOR INCOMING PAYMENT */, balanceSnap.toLong: JLong, fiatRateSnap.toJson.compactPrint,
-        chainFee.toLong: JLong, 1: java.lang.Integer /* INCOMING = 1 */, List.empty[RevealedPart].toJson.compactPrint /* NO REVELAED PARTS YET */)
+        chainFee.toLong: JLong, 1: java.lang.Integer /* INCOMING = 1 */)
     }
 
   def paidSummary: Try[PaidSummary] = db.select(PaymentTable.selectSummarySql).headTry { rc =>
@@ -76,8 +70,7 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
       status = rc string PaymentTable.status, stamp = rc long PaymentTable.stamp, descriptionString = rc string PaymentTable.description,
       actionString = rc string PaymentTable.action, paymentHashString = rc string PaymentTable.hash, received = MilliSatoshi(rc long PaymentTable.receivedMsat),
       sent = MilliSatoshi(rc long PaymentTable.sentMsat), fee = MilliSatoshi(rc long PaymentTable.feeMsat), balanceSnapshot = MilliSatoshi(rc long PaymentTable.balanceMsat),
-      fiatRatesString = rc string PaymentTable.fiatRates, chainFee = MilliSatoshi(rc long PaymentTable.chainFee), revealedPartsString = rc string PaymentTable.revealedParts,
-      incoming = rc long PaymentTable.incoming)
+      fiatRatesString = rc string PaymentTable.fiatRates, chainFee = MilliSatoshi(rc long PaymentTable.chainFee), incoming = rc long PaymentTable.incoming)
 
   def toRelayedPreimageInfo(rc: RichCursor): RelayedPreimageInfo =
     RelayedPreimageInfo(paymentHashString = rc string RelayPreimageTable.hash, preimageString = rc string RelayPreimageTable.preimage,
