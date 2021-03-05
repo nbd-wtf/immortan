@@ -31,8 +31,8 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
 
   def abortOutgoing(paymentHash: ByteVector32): Unit = db.change(PaymentTable.updStatusSql, PaymentStatus.ABORTED, paymentHash.toHex)
 
-  def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32, stamp: Long, relayed: MilliSatoshi, earned: MilliSatoshi): Unit =
-    db.change(RelayPreimageTable.newSql, paymentHash.toHex, preimage.toHex, stamp: JLong, relayed.toLong: JLong, earned.toLong: JLong)
+  def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32, stamp: Long, relayed: MilliSatoshi, earned: MilliSatoshi, fast: Long): Unit =
+    db.change(RelayPreimageTable.newSql, paymentHash.toHex, preimage.toHex, stamp: JLong, relayed.toLong: JLong, earned.toLong: JLong, fast: JLong)
 
   def updOkOutgoing(upd: UpdateFulfillHtlc, fee: MilliSatoshi): Unit = db.change(PaymentTable.updOkOutgoingSql, upd.paymentPreimage.toHex, fee.toLong: JLong, upd.paymentHash.toHex)
 
@@ -75,5 +75,5 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
   def toRelayedPreimageInfo(rc: RichCursor): RelayedPreimageInfo =
     RelayedPreimageInfo(paymentHashString = rc string RelayPreimageTable.hash, preimageString = rc string RelayPreimageTable.preimage,
       relayed = MilliSatoshi(rc long RelayPreimageTable.relayed), earned = MilliSatoshi(rc long RelayPreimageTable.earned),
-      stamp = rc long RelayPreimageTable.stamp)
+      stamp = rc long RelayPreimageTable.stamp, fast = rc long RelayPreimageTable.fast)
 }

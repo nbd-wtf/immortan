@@ -33,7 +33,7 @@ case class PaymentInfo(prString: String, preimageString: String, status: String,
                        paymentHashString: String, received: MilliSatoshi, sent: MilliSatoshi, fee: MilliSatoshi, balanceSnapshot: MilliSatoshi,
                        fiatRatesString: String, chainFee: MilliSatoshi, incoming: Long) {
 
-  def isIncoming: Boolean = 1 == incoming
+  val isIncoming: Boolean = 1 == incoming
   lazy val pr: PaymentRequest = PaymentRequest.read(prString)
   lazy val amountOrMin: MilliSatoshi = pr.amount.getOrElse(LNParams.minPayment)
   lazy val preimage: ByteVector32 = ByteVector32(ByteVector fromValidHex preimageString)
@@ -80,9 +80,10 @@ case class SwapOutDescription(invoiceText: String, btcAddress: String, chainFee:
 
 // Relayed preimages
 
-case class RelayedPreimageInfo(paymentHashString: String, preimageString: String, relayed: MilliSatoshi, earned: MilliSatoshi, stamp: Long) {
+case class RelayedPreimageInfo(paymentHashString: String, preimageString: String, relayed: MilliSatoshi, earned: MilliSatoshi, stamp: Long, fast: Long) {
   lazy val paymentHash: ByteVector32 = ByteVector32(ByteVector fromValidHex paymentHashString)
   lazy val preimage: ByteVector32 = ByteVector32(ByteVector fromValidHex preimageString)
+  val isFast: Boolean = fast == 1L
 }
 
 // Tx descriptions
@@ -91,10 +92,9 @@ case class TxInfo(txidString: String, depth: Long, receivedMsat: MilliSatoshi, s
                   seenAt: Long, completedAt: Long, descriptionString: String, balanceSnapshot: MilliSatoshi, fiatRatesString: String,
                   incoming: Long, doubleSpent: Long) {
 
-  def isIncoming: Boolean = 1L == incoming
-  def isDoubleSpent: Boolean = 1L == doubleSpent
-  def isConfirmed: Boolean = depth >= LNParams.minDepthBlocks
-
+  val isIncoming: Boolean = 1L == incoming
+  val isDoubleSpent: Boolean = 1L == doubleSpent
+  val isConfirmed: Boolean = depth >= LNParams.minDepthBlocks
   lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
   lazy val description: TxDescription = to[TxDescription](descriptionString)
   lazy val txid: ByteVector32 = ByteVector32(ByteVector fromValidHex txidString)

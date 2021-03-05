@@ -43,18 +43,22 @@ object HtlcInfoTable extends Table {
 }
 
 object RelayPreimageTable extends Table {
-  val (table, hash, preimage, stamp, relayed, earned) = ("relaypreimage", "hash", "preimage", "stamp", "relayed", "earned")
-  val newSql = s"INSERT OR IGNORE INTO $table ($hash, $preimage, $stamp, $relayed, $earned) VALUES (?, ?, ?, ?, ?)"
+  val (table, hash, preimage, stamp, relayed, earned, fast) = ("relaypreimage", "hash", "preimage", "stamp", "relayed", "earned", "fast")
+  val newSql = s"INSERT INTO $table ($hash, $preimage, $stamp, $relayed, $earned, $fast) VALUES (?, ?, ?, ?, ?, ?)"
   val selectSummarySql = s"SELECT SUM($relayed), SUM($earned), COUNT($id) FROM $table"
   val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 5"
   val selectByHashSql = s"SELECT * FROM $table WHERE $hash = ?"
 
-  def createStatements: Seq[String] =
-    s"""CREATE TABLE IF NOT EXISTS $table(
-      $id INTEGER PRIMARY KEY AUTOINCREMENT, $hash TEXT NOT NULL UNIQUE,
-      $preimage TEXT NOT NULL, $stamp INTEGER NOT NULL, $relayed INTEGER NOT NULL,
-      $earned INTEGER NOT NULL
-    )""" :: Nil
+  def createStatements: Seq[String] = {
+    val createTable = s"""CREATE TABLE IF NOT EXISTS $table(
+      $id INTEGER PRIMARY KEY AUTOINCREMENT, $hash TEXT NOT NULL, $preimage TEXT NOT NULL,
+      $stamp INTEGER NOT NULL, $relayed INTEGER NOT NULL, $earned INTEGER NOT NULL,
+      $fast INTEGER NOT NULL
+    )"""
+
+    val addIndex1 = s"CREATE INDEX IF NOT EXISTS idx1$table ON $table ($hash)"
+    createTable :: addIndex1 :: Nil
+  }
 }
 
 abstract class ChannelAnnouncementTable(val table: String) extends Table {

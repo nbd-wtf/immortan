@@ -18,11 +18,11 @@ object TrampolinePaymentRelayer {
   }
 
   def computeRouteParams(params: TrampolineOn, fee: MilliSatoshi, amountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): RouteParams =
-    RouteParams(feeReserve = amountIn - amountOut - fee, LNParams.routerConf.routeHopDistance, expiryIn - expiryOut - params.cltvExpiryDelta)
+    RouteParams(feeReserve = amountIn - amountOut - fee, routeMaxLength = LNParams.routerConf.routeHopDistance, routeMaxCltv = expiryIn - expiryOut - params.cltvExpiryDelta)
 
   def translateError(failures: Seq[PaymentFailure], nextPayload: Onion.NodeRelayPayload): FailureMessage = {
     val localNoRoutesFoundError = failures.collectFirst { case local: LocalFailure if local.status == PaymentFailure.NO_ROUTES_FOUND => TrampolineFeeInsufficient }
     val nextTrampolineOrRecipientFailure = failures.collectFirst { case remote: RemoteFailure if remote.packet.originNode == nextPayload.outgoingNodeId => remote.packet.failureMessage }
-    localNoRoutesFoundError.orElse(nextTrampolineOrRecipientFailure) getOrElse TemporaryNodeFailure
+    localNoRoutesFoundError orElse nextTrampolineOrRecipientFailure getOrElse TemporaryNodeFailure
   }
 }
