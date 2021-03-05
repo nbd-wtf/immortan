@@ -101,6 +101,7 @@ object LNParams {
   var chainWallet: WalletExt = _
   var syncParams: SyncParams = _
   var fiatRatesInfo: FiatRatesInfo = _
+  var trampoline: TrampolineOn = _
 
   var routerConf: RouterConf =
     RouterConf(maxCltv = CltvExpiryDelta(1008), routeHopDistance = 6,

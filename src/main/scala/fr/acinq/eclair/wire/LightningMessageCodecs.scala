@@ -499,8 +499,8 @@ object SwapCodecs {
 
 object TrampolineStatusCodecs {
   val trampolineOnCodec = {
-    (millisatoshi withContext "htlcMinimumMsat") ::
-      (millisatoshi withContext "htlcMaximumMsat") ::
+    (millisatoshi withContext "minimumMsat") ::
+      (millisatoshi withContext "maximumMsat") ::
       (millisatoshi withContext "feeBaseMsat") ::
       (uint32 withContext "feeProportionalMillionths") ::
       (double withContext "exponent") ::
