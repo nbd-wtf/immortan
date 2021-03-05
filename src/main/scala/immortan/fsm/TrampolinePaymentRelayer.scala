@@ -8,6 +8,12 @@ import immortan.LNParams
 
 
 object TrampolinePaymentRelayer {
+  final val RESOLVING = "relayer-resolving"
+  final val FINALIZING = "relayer-finalizing"
+  final val RECEIVING = "relayer-receiving"
+  final val SENDING = "relayer-sending"
+  final val CMDAbort = "cmd-abort"
+
   def getRelayFeeOrReject(params: TrampolineOn, upstream: TrampolineAdds, payloadOut: Onion.NodeRelayPayload): Either[FailureMessage, MilliSatoshi] = {
     val fee = trampolineFee(proportionalFee(params.feeProportionalMillionths, upstream.amountIn).toLong, params.feeBaseMsat, params.exponent, params.logExponent)
     if (upstream.expiryIn - payloadOut.outgoingCltv < params.cltvExpiryDelta) Left(TrampolineExpiryTooSoon)

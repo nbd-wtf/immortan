@@ -10,10 +10,10 @@ import immortan.crypto.StateMachine
 
 
 object IncomingPaymentReceiver {
-  val PROCESSING = "receiver-processing"
-  val REJECTED = "receiver-rejected"
-  val REVEALED = "receiver-revealed"
-  val CMDAbort = "cmd-abort"
+  final val PROCESSING = "receiver-processing"
+  final val REJECTED = "receiver-rejected"
+  final val REVEALED = "receiver-revealed"
+  final val CMDAbort = "cmd-abort"
 }
 
 trait IncomingPaymentReceiverData

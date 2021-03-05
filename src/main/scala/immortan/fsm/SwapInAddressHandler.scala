@@ -13,10 +13,10 @@ import immortan.utils.Rx
 
 
 object SwapInAddressHandler {
-  val WAITING_FIRST_RESPONSE = "address-state-waiting-first-response"
-  val WAITING_REST_OF_RESPONSES = "address-state-waiting-rest-of-responses"
-  val FINALIZED = "address-state-finalized"
-  val CMDCancel = "address-cmd-cancel"
+  final val WAITING_FIRST_RESPONSE = "address-state-waiting-first-response"
+  final val WAITING_REST_OF_RESPONSES = "address-state-waiting-rest-of-responses"
+  final val FINALIZED = "address-state-finalized"
+  final val CMDCancel = "address-cmd-cancel"
 
   case class NoSwapInSupport(worker: CommsTower.Worker)
   case class YesSwapInSupport(worker: CommsTower.Worker, msg: SwapIn)

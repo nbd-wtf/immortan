@@ -14,10 +14,10 @@ import immortan.utils.Rx
 
 
 object SwapOutFeeratesHandler {
-  val WAITING_FIRST_RESPONSE = "feerates-state-waiting-first-response"
-  val WAITING_REST_OF_RESPONSES = "feerates-state-waiting-rest-of-responses"
-  val FINALIZED = "feerates-state-finalized"
-  val CMDCancel = "feerates-cmd-cancel"
+  final val WAITING_FIRST_RESPONSE = "feerates-state-waiting-first-response"
+  final val WAITING_REST_OF_RESPONSES = "feerates-state-waiting-rest-of-responses"
+  final val FINALIZED = "feerates-state-finalized"
+  final val CMDCancel = "feerates-cmd-cancel"
 
   case class NoSwapOutSupport(worker: CommsTower.Worker)
   case class YesSwapOutSupport(worker: CommsTower.Worker, msg: SwapOut)

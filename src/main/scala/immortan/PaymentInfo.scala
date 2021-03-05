@@ -88,8 +88,9 @@ case class RelayedPreimageInfo(paymentHashString: String, preimageString: String
 
 // Tx descriptions
 
-case class TxInfo(txidString: String, depth: Long, receivedMsat: MilliSatoshi, sentMsat: MilliSatoshi, feeMsat: MilliSatoshi,
-                  seenAt: Long, completedAt: Long, descriptionString: String, balanceSnapshot: MilliSatoshi, fiatRatesString: String,
+case class TxInfo(txidString: String, depth: Long, receivedMsat: MilliSatoshi, sentMsat: MilliSatoshi,
+                  feeMsat: MilliSatoshi, seenAt: Long, completedAt: Long, descriptionString: String,
+                  balanceSnapshot: MilliSatoshi, fiatRatesString: String,
                   incoming: Long, doubleSpent: Long) {
 
   val isIncoming: Boolean = 1L == incoming

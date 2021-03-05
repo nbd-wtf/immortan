@@ -17,13 +17,13 @@ import akka.actor.Actor
 
 
 object Channel {
-  val WAIT_FOR_INIT = "WAIT-FOR-INIT"
-  val WAIT_FOR_ACCEPT = "WAIT-FOR-ACCEPT"
-  val WAIT_FUNDING_DONE = "WAIT-FUNDING-DONE"
-  val SUSPENDED = "SUSPENDED"
-  val SLEEPING = "SLEEPING"
-  val CLOSING = "CLOSING"
-  val OPEN = "OPEN"
+  final val WAIT_FOR_INIT = "WAIT-FOR-INIT"
+  final val WAIT_FOR_ACCEPT = "WAIT-FOR-ACCEPT"
+  final val WAIT_FUNDING_DONE = "WAIT-FUNDING-DONE"
+  final val SUSPENDED = "SUSPENDED"
+  final val SLEEPING = "SLEEPING"
+  final val CLOSING = "CLOSING"
+  final val OPEN = "OPEN"
 
   // Single stacking thread for all channels, must be used when asking channels for pending payments to avoid race conditions
   implicit val channelContext: ExecutionContextExecutor = scala.concurrent.ExecutionContext fromExecutor Executors.newSingleThreadExecutor

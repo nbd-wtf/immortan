@@ -104,7 +104,7 @@ object LNParams {
   var trampoline: TrampolineOn = _
 
   var routerConf: RouterConf =
-    RouterConf(maxCltv = CltvExpiryDelta(1008), routeHopDistance = 6,
+    RouterConf(maxCltv = CltvExpiryDelta(2016), routeHopDistance = 6,
       mppMinPartAmount = MilliSatoshi(30000000L), maxRemoteAttempts = 12,
       maxChannelFailures = 12, maxStrangeNodeFailures = 12)
 

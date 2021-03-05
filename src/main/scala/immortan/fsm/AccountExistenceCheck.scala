@@ -12,9 +12,9 @@ import immortan.utils.Rx
 
 
 object AccountExistenceCheck {
-  val OPERATIONAL = "existance-state-operational"
-  val FINALIZED = "existance-state-finalized"
-  val CMDCancel = "existance-cmd-cancel"
+  final val OPERATIONAL = "existance-state-operational"
+  final val FINALIZED = "existance-state-finalized"
+  final val CMDCancel = "existance-cmd-cancel"
 
   case class PeerDisconnected(worker: CommsTower.Worker)
   case class PeerResponse(msg: HostedChannelMessage, worker: CommsTower.Worker)

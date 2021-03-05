@@ -78,11 +78,11 @@ case class OutgoingPaymentMasterData(payments: Map[FullPaymentTag, OutgoingPayme
 
 object OutgoingPaymentMaster {
   type PartIdToAmount = Map[ByteVector, MilliSatoshi]
-  val EXPECTING_PAYMENTS = "state-expecting-payments"
-  val WAITING_FOR_ROUTE = "state-waiting-for-route"
-  val CMDChanGotOnline = "cmd-chan-got-online"
-  val CMDAskForRoute = "cmd-ask-for-route"
-  val CMDAbort = "cmd-abort"
+  final val EXPECTING_PAYMENTS = "state-expecting-payments"
+  final val WAITING_FOR_ROUTE = "state-waiting-for-route"
+  final val CMDChanGotOnline = "cmd-chan-got-online"
+  final val CMDAskForRoute = "cmd-ask-for-route"
+  final val CMDAbort = "cmd-abort"
 }
 
 class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[OutgoingPaymentMasterData] with CanBeRepliedTo { self =>
