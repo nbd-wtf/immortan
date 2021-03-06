@@ -56,7 +56,7 @@ abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaste
       val adds = inFlight.in(fullTag).asInstanceOf[ReasonableLocals]
       cm.getPaymentDbInfoMemo.get(fullTag.paymentHash).localOpt match {
         case Some(alreadyRevealed) if alreadyRevealed.isIncoming && PaymentStatus.SUCCEEDED == alreadyRevealed.status => becomeRevealed(alreadyRevealed, adds)
-        case Some(collectedSomething) if collectedSomething.isIncoming && collectedSomething.pr.amount.isEmpty && adds.nonEmpty => becomeRevealed(collectedSomething, adds)
+        case Some(collectedSomething) if collectedSomething.isIncoming && collectedSomething.pr.amount.isEmpty && gotEnough(adds) => becomeRevealed(collectedSomething, adds)
         case Some(covered) if covered.isIncoming && covered.pr.amount.isDefined && askCovered(adds, covered) => becomeRevealed(covered, adds)
         case _ => becomeRejected(IncomingRejected(PaymentTimeout.toSome), adds)
       }
@@ -74,7 +74,7 @@ abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaste
 
   // Utils
 
-  def tooFewBlocksUntilExpiry(add: ReasonableLocal): Boolean = add.packet.add.cltvExpiry.toLong < LNParams.blockCount.get + LNParams.cltvRejectThreshold
+  def gotEnough(adds: Iterable[ReasonableLocal] = Nil): Boolean = adds.nonEmpty && adds.map(_.packet.add.amountMsat).sum >= adds.head.packet.payload.totalAmount
 
   def askCovered(adds: Iterable[ReasonableLocal], info: PaymentInfo): Boolean = adds.map(_.packet.add.amountMsat).sum >= info.amountOrMin
 
