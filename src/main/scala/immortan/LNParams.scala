@@ -6,7 +6,6 @@ import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
 import com.softwaremill.sttp._
 import fr.acinq.eclair.Features._
-
 import scala.concurrent.duration._
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.blockchain.electrum._
@@ -14,17 +13,16 @@ import fr.acinq.bitcoin.DeterministicWallet._
 import scodec.bits.{ByteVector, HexStringSyntax}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import immortan.utils.{FiatRatesInfo, WalletEventsCatcher}
-
 import scala.concurrent.{ExecutionContextExecutor, Future}
 import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
-
 import fr.acinq.eclair.transactions.{DirectedHtlc, Transactions}
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import fr.acinq.eclair.channel.{LocalParams, NormalCommits, PersistentChannelData}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
+import fr.acinq.eclair.blockchain.CurrentFeerates
 import fr.acinq.eclair.router.ChannelUpdateExt
 import fr.acinq.eclair.payment.PaymentRequest
 import org.bitcoinj.core.NetworkParameters
@@ -33,9 +31,7 @@ import fr.acinq.eclair.crypto.Generators
 import immortan.crypto.Noise.KeyPair
 import java.io.ByteArrayInputStream
 import java.nio.ByteOrder
-
 import akka.util.Timeout
-import fr.acinq.eclair.blockchain.CurrentFeerates
 
 
 object LNParams {

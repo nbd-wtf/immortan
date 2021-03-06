@@ -11,9 +11,10 @@ import immortan.crypto.StateMachine
 
 object IncomingPaymentReceiver {
   final val PROCESSING = "receiver-processing"
+  final val DECIDING = "receiver-deciding"
   final val REJECTED = "receiver-rejected"
   final val REVEALED = "receiver-revealed"
-  final val CMDAbort = "cmd-abort"
+  final val CMDTimeout = "cmd-timeout"
 }
 
 trait IncomingPaymentReceiverData
@@ -24,8 +25,8 @@ abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaste
   def incomingFinalized(fullTag: FullPaymentTag) // Called when we receive a bag of cross-signed incoming payments which has no related incoming HTLCs
   def incomingRevealed(fullTag: FullPaymentTag) // Called when preimage is revealed for the first time (incoming MPP leftovers may be present)
 
-  // Start abort timeout right away
-  delayedCMDWorker.replaceWork(CMDAbort)
+  // Start timeout countdown right away
+  delayedCMDWorker.replaceWork(CMDTimeout)
   become(null, PROCESSING)
 
   def doProcess(msg: Any): Unit = (msg, data, state) match {
@@ -36,22 +37,29 @@ abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaste
     case (inFlight: InFlightPayments, null, PROCESSING) =>
       val adds = inFlight.in(fullTag).asInstanceOf[ReasonableLocals]
       cm.getPaymentDbInfoMemo.get(fullTag.paymentHash).localOpt match {
-        case Some(local) if local.isIncoming && PaymentStatus.SUCCEEDED == local.status => becomeFulfilled(local, adds)
-        case Some(local) if adds.exists(_.packet.payload.totalAmount < local.amountOrMin) => becomeRejected(IncomingRejected(None), adds)
-        case Some(local) if local.isIncoming && accumulatedEnough(adds) => becomeFulfilled(local, adds)
-        case _ if adds.exists(tooFewBlocksUntilExpiry) => becomeRejected(IncomingRejected(None), adds)
+        case Some(alreadyRevealed) if alreadyRevealed.isIncoming && PaymentStatus.SUCCEEDED == alreadyRevealed.status => becomeRevealed(alreadyRevealed, adds)
+        case _ if adds.exists(_.packet.add.cltvExpiry.toLong < LNParams.blockCount.get + LNParams.cltvRejectThreshold) => becomeRejected(IncomingRejected(None), adds)
+        case Some(covered) if covered.isIncoming && covered.pr.amount.isDefined && askCovered(adds, covered) => becomeRevealed(covered, adds)
         case None => becomeRejected(IncomingRejected(None), adds)
         case _ => // Do nothing
       }
 
     case (_: UpdateAddHtlcExt, null, PROCESSING) =>
-      // Just saw the another add, prolong timeout
-      delayedCMDWorker.replaceWork(CMDAbort)
+      // Just saw another add so prolong timeout
+      delayedCMDWorker.replaceWork(CMDTimeout)
 
-    case (CMDAbort, null, PROCESSING) =>
-      // Trigger ChannelMaster to send us pending incoming payments
-      become(IncomingRejected(PaymentTimeout.toSome), REJECTED)
+    case (CMDTimeout, null, PROCESSING) =>
+      become(null, DECIDING)
       cm.stateUpdated(Nil)
+
+    case (inFlight: InFlightPayments, null, DECIDING) =>
+      val adds = inFlight.in(fullTag).asInstanceOf[ReasonableLocals]
+      cm.getPaymentDbInfoMemo.get(fullTag.paymentHash).localOpt match {
+        case Some(alreadyRevealed) if alreadyRevealed.isIncoming && PaymentStatus.SUCCEEDED == alreadyRevealed.status => becomeRevealed(alreadyRevealed, adds)
+        case Some(collectedSomething) if collectedSomething.isIncoming && collectedSomething.pr.amount.isEmpty && adds.nonEmpty => becomeRevealed(collectedSomething, adds)
+        case Some(covered) if covered.isIncoming && covered.pr.amount.isDefined && askCovered(adds, covered) => becomeRevealed(covered, adds)
+        case _ => becomeRejected(IncomingRejected(PaymentTimeout.toSome), adds)
+      }
 
     case (inFlight: InFlightPayments, revealed: IncomingRevealed, REVEALED) =>
       // Re-fulfill all subsequent leftovers forever and consider them donations
@@ -68,7 +76,7 @@ abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaste
 
   def tooFewBlocksUntilExpiry(add: ReasonableLocal): Boolean = add.packet.add.cltvExpiry.toLong < LNParams.blockCount.get + LNParams.cltvRejectThreshold
 
-  def accumulatedEnough(adds: Iterable[ReasonableLocal] = Nil): Boolean = adds.nonEmpty && adds.map(_.packet.add.amountMsat).sum >= adds.head.packet.payload.totalAmount
+  def askCovered(adds: Iterable[ReasonableLocal], info: PaymentInfo): Boolean = adds.map(_.packet.add.amountMsat).sum >= info.amountOrMin
 
   def fulfill(info: PaymentInfo, adds: Iterable[ReasonableLocal] = None): Unit = {
     for (local <- adds) cm.sendTo(local.fulfillCommand(info.preimage), local.packet.add.channelId)
@@ -85,7 +93,7 @@ abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaste
     reject(data1, adds)
   }
 
-  def becomeFulfilled(info: PaymentInfo, adds: Iterable[ReasonableLocal] = None): Unit = {
+  def becomeRevealed(info: PaymentInfo, adds: Iterable[ReasonableLocal] = None): Unit = {
     cm.payBag.updOkIncoming(adds.map(_.packet.add.amountMsat).sum, fullTag.paymentHash)
     cm.getPaymentDbInfoMemo.invalidate(fullTag.paymentHash)
     become(IncomingRevealed(info), REVEALED)
