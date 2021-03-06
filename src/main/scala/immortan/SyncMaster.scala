@@ -19,15 +19,15 @@ import immortan.utils.Rx
 
 
 object SyncMaster {
-  val WAITING = "state-waiting"
-  val SHUT_DOWN = "state-shut-down"
-  val SHORT_ID_SYNC = "state-short-id-sync"
-  val GOSSIP_SYNC = "state-gossip-sync"
-  val PHC_SYNC = "phc-sync"
+  final val WAITING = "state-waiting"
+  final val SHUT_DOWN = "state-shut-down"
+  final val SHORT_ID_SYNC = "state-short-id-sync"
+  final val GOSSIP_SYNC = "state-gossip-sync"
+  final val PHC_SYNC = "phc-sync"
 
-  val CMDAddSync = "cmd-add-sync"
-  val CMDGetGossip = "cmd-get-gossip"
-  val CMDShutdown = "cmd-shut-down"
+  final val CMDAddSync = "cmd-add-sync"
+  final val CMDGetGossip = "cmd-get-gossip"
+  final val CMDShutdown = "cmd-shut-down"
 
   type ConfirmedBySet = Set[PublicKey]
   type ShortChanIdSet = Set[ShortChannelId]

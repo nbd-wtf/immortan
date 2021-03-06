@@ -113,7 +113,11 @@ case class CMD_ADD_HTLC(fullTag: FullPaymentTag, firstAmount: MilliSatoshi, cltv
   }
 }
 
-final case class CMD_UPDATE_FEE(feeratePerKw: FeeratePerKw) extends Command
+case object CMD_CHECK_FEERATE extends Command
+case class CMD_UPDATE_FEERATE(channelId: ByteVector32, feeratePerKw: FeeratePerKw) extends Command {
+  val ourFeeRatesUpdate: UpdateFee = UpdateFee(channelId, feeratePerKw)
+}
+
 case class CMD_HOSTED_STATE_OVERRIDE(so: StateOverride) extends Command
 case class HC_CMD_RESIZE(delta: Satoshi) extends Command
 case object CMD_SOCKET_OFFLINE extends Command
@@ -131,8 +135,7 @@ trait PersistentChannelData extends ChannelData {
   def channelId: ByteVector32
 }
 
-sealed trait HasNormalCommitments extends PersistentChannelData { me =>
-  def withoutUpdate: HasNormalCommitments = me.modify(_.commitments.updateOpt).setTo(None)
+sealed trait HasNormalCommitments extends PersistentChannelData {
   override def channelId: ByteVector32 = commitments.channelId
   def commitments: NormalCommits
 }

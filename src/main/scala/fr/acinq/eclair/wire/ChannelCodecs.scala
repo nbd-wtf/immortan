@@ -179,8 +179,8 @@ object ChannelCodecs {
       ("remoteNextCommitInfo" | either(bool8, waitingForRevocationCodec, publicKey)) ::
       ("commitInput" | inputInfoCodec) ::
       ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec)) ::
-      ("updateOpt" | optional(bool8, lengthDelimited(channelUpdateCodec))) ::
       ("channelId" | bytes32) ::
+      ("updateOpt" | optional(bool8, lengthDelimited(channelUpdateCodec))) ::
       ("startedAt" | int64)
   }).as[NormalCommits]
 

@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.eclair._
+import fr.acinq.bitcoin._
 import fr.acinq.eclair.wire._
 import com.softwaremill.quicklens._
 import fr.acinq.eclair.transactions._
@@ -25,7 +26,6 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import immortan.{LNParams, RemoteNodeInfo, UpdateAddHtlcExt}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, DeterministicWallet, SatoshiLong}
 import fr.acinq.bitcoin.Crypto.PublicKey
 
 
@@ -68,7 +68,7 @@ trait Commitments {
 case class NormalCommits(channelVersion: ChannelVersion, remoteInfo: RemoteNodeInfo, localParams: LocalParams, remoteParams: RemoteParams,
                          channelFlags: Byte, localCommit: LocalCommit, remoteCommit: RemoteCommit, localChanges: LocalChanges, remoteChanges: RemoteChanges,
                          localNextHtlcId: Long, remoteNextHtlcId: Long, remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey], commitInput: InputInfo,
-                         remotePerCommitmentSecrets: ShaChain, updateOpt: Option[ChannelUpdate], channelId: ByteVector32,
+                         remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32, updateOpt: Option[ChannelUpdate] = None,
                          startedAt: Long = System.currentTimeMillis) extends Commitments { me =>
 
   val latestRemoteCommit: RemoteCommit = remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit)
@@ -285,18 +285,13 @@ case class NormalCommits(channelVersion: ChannelVersion, remoteInfo: RemoteNodeI
     (addRemoteProposal(fail), ourAdd)
   }
 
-  def sendFee(cmd: CMD_UPDATE_FEE): Option[(NormalCommits, UpdateFee)] = {
-    // let's compute the current commitment *as seen by them* with this change taken into account
-    val fee = UpdateFee(channelId, cmd.feeratePerKw)
-    // update_fee replace each other, so we can remove previous ones
-    val commitments1 = me.modify(_.localChanges.proposed).using(_.filter { case _: UpdateFee => false case _ => true } :+ fee)
+  def sendFee(msg: UpdateFee): (NormalCommits, Satoshi) = {
+    // Let's compute the current commitment *as seen by them* with this change taken into account
+    val commitments1 = me.modify(_.localChanges.proposed).using(_.filter { case _: UpdateFee => false case _ => true } :+ msg)
     val reduced = CommitmentSpec.reduce(commitments1.remoteCommit.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
-
-    // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
-    // we look from remote's point of view, so if local is funder remote doesn't pay the fees
     val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced, channelVersion.commitmentFormat)
-    val missing = reduced.toRemote.truncateToSatoshi - commitments1.remoteParams.channelReserve - fees
-    if (missing < 0.sat) None else Some(commitments1, fee)
+    val reserve = reduced.toRemote.truncateToSatoshi - commitments1.remoteParams.channelReserve - fees
+    (commitments1, reserve)
   }
 
   def receiveFee(fee: UpdateFee, feeConf: OnChainFeeConf): NormalCommits = {

@@ -92,10 +92,9 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
           throw new RuntimeException
         } else {
           val publishableTxs = PublishableTxs(signedLocalCommitTx, Nil)
-          val commits = NormalCommits(wait.channelVersion, wait.remoteInfo, wait.localParams, wait.remoteParams, wait.channelFlags,
-            LocalCommit(index = 0L, wait.localSpec, publishableTxs), wait.remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
-            localNextHtlcId = 0L, remoteNextHtlcId = 0L, remoteNextCommitInfo = Right(randomKey.publicKey), signedLocalCommitTx.input, ShaChain.init,
-            updateOpt = None, wait.channelId, startedAt = System.currentTimeMillis)
+          val commits = NormalCommits(wait.channelVersion, wait.remoteInfo, wait.localParams, wait.remoteParams, wait.channelFlags, LocalCommit(index = 0L, wait.localSpec, publishableTxs),
+            wait.remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 0L, remoteNextHtlcId = 0L, remoteNextCommitInfo = Right(randomKey.publicKey),
+            signedLocalCommitTx.input, ShaChain.init, wait.channelId)
 
           chainWallet.watcher ! WatchSpent(receiver, commits.commitInput.outPoint.txid, commits.commitInput.outPoint.index.toInt, commits.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
           chainWallet.watcher ! WatchConfirmed(receiver, commits.commitInput.outPoint.txid, commits.commitInput.txOut.publicKeyScript, LNParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
@@ -148,8 +147,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         val remoteCommit = RemoteCommit(index = 0L, remoteSpec, remoteCommitTx.tx.txid, remotePerCommitmentPoint = wait.initFundee.theirOpen.firstPerCommitmentPoint)
         val commits = NormalCommits(wait.initFundee.channelVersion, wait.initFundee.remoteInfo, wait.initFundee.localParams, wait.remoteParams, wait.initFundee.theirOpen.channelFlags,
           LocalCommit(index = 0L, localSpec, publishableTxs), remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 0L, remoteNextHtlcId = 0L,
-          remoteNextCommitInfo = Right(randomKey.publicKey), signedLocalCommitTx.input, ShaChain.init, updateOpt = None, fundingSigned.channelId,
-          startedAt = System.currentTimeMillis)
+          remoteNextCommitInfo = Right(randomKey.publicKey), signedLocalCommitTx.input, ShaChain.init, fundingSigned.channelId)
 
         chainWallet.watcher ! WatchSpent(receiver, commits.commitInput.outPoint.txid, commits.commitInput.outPoint.index.toInt, commits.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
         chainWallet.watcher ! WatchConfirmed(receiver, commits.commitInput.outPoint.txid, commits.commitInput.txOut.publicKeyScript, LNParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
@@ -189,6 +187,23 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
       case (norm: DATA_NORMAL, update: ChannelUpdate, OPEN | SLEEPING) if update.shortChannelId == norm.shortChannelId && Announcements.checkSig(update)(norm.commitments.remoteInfo.nodeId) =>
         data = me STORE norm.modify(_.commitments.updateOpt).setTo(update.toSome)
+
+
+      case (norm: DATA_NORMAL, CMD_CHECK_FEERATE, OPEN) =>
+        // Current feerates are supposed to be updated before this command is received
+        feeUpdateRequired(norm.commitments, LNParams.currentFeerates.get).foreach(process)
+
+
+      case (norm: DATA_NORMAL, cmd: CMD_UPDATE_FEERATE, OPEN) if norm.commitments.localParams.isFunder =>
+        // Unconditionally update feerates here, check whether this is needed was done at earlier stage
+        val (commits1, reserve) = norm.commitments.sendFee(cmd.ourFeeRatesUpdate)
+
+        if (reserve.toLong > 0L) {
+          // Only send update if we can afford it
+          BECOME(norm.copy(commitments = commits1), OPEN)
+          SEND(cmd.ourFeeRatesUpdate)
+          doProcess(CMD_SIGN)
+        }
 
 
       // We may schedule shutdown while channel is offline
@@ -287,6 +302,8 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
       case (norm: DATA_NORMAL, commitSig: CommitSig, OPEN) =>
         val (commits1, revocation) = norm.commitments.receiveCommit(commitSig)
         StoreBecomeSend(norm.copy(commitments = commits1), OPEN, revocation)
+        // We may have fulfilled some incoming HTLCs, check feerate again
+        process(CMD_CHECK_FEERATE)
         doProcess(CMD_SIGN)
 
 
@@ -394,4 +411,10 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
       case (data1: DATA_NEGOTIATING, _: ChannelReestablish, SLEEPING) => handleNegotiationsSync(data1)
       case _ =>
     }
+
+  def feeUpdateRequired(commits: NormalCommits, rates: CurrentFeerates): Option[CMD_UPDATE_FEERATE] = {
+    val networkFeeratePerKw = LNParams.onChainFeeConf.getCommitmentFeerate(commits.channelVersion, rates.toSome)
+    val shouldUpdate = LNParams.onChainFeeConf.shouldUpdateFee(commits.localCommit.spec.feeratePerKw, networkFeeratePerKw)
+    if (commits.localParams.isFunder && shouldUpdate) CMD_UPDATE_FEERATE(commits.channelId, networkFeeratePerKw).toSome else None
+  }
 }

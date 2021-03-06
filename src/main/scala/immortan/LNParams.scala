@@ -6,6 +6,7 @@ import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
 import com.softwaremill.sttp._
 import fr.acinq.eclair.Features._
+
 import scala.concurrent.duration._
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.blockchain.electrum._
@@ -13,9 +14,11 @@ import fr.acinq.bitcoin.DeterministicWallet._
 import scodec.bits.{ByteVector, HexStringSyntax}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import immortan.utils.{FiatRatesInfo, WalletEventsCatcher}
+
 import scala.concurrent.{ExecutionContextExecutor, Future}
 import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
+
 import fr.acinq.eclair.transactions.{DirectedHtlc, Transactions}
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import fr.acinq.eclair.channel.{LocalParams, NormalCommits, PersistentChannelData}
@@ -30,7 +33,9 @@ import fr.acinq.eclair.crypto.Generators
 import immortan.crypto.Noise.KeyPair
 import java.io.ByteArrayInputStream
 import java.nio.ByteOrder
+
 import akka.util.Timeout
+import fr.acinq.eclair.blockchain.CurrentFeerates
 
 
 object LNParams {
@@ -123,18 +128,20 @@ object LNParams {
       mempoolMinFee = FeeratePerKB(5000.sat)
     )
 
-  val feeratesPerKB: AtomicReference[FeeratesPerKB] = new AtomicReference(defaultFeerates)
-  val feeratesPerKw: AtomicReference[FeeratesPerKw] = new AtomicReference(FeeratesPerKw apply defaultFeerates)
   val blockCount: AtomicLong = new AtomicLong(0L)
+
+  val feeratesPerKB: AtomicReference[FeeratesPerKB] = new AtomicReference(defaultFeerates)
+
+  val currentFeerates: AtomicReference[CurrentFeerates] = new AtomicReference(CurrentFeerates(FeeratesPerKw(defaultFeerates)))
 
   val feeEstimator: FeeEstimator = new FeeEstimator {
     override def getFeeratePerKb(target: Int): FeeratePerKB = feeratesPerKB.get.feePerBlock(target)
-    override def getFeeratePerKw(target: Int): FeeratePerKw = feeratesPerKw.get.feePerBlock(target)
+    override def getFeeratePerKw(target: Int): FeeratePerKw = currentFeerates.get.feeratesPerKw.feePerBlock(target)
   }
 
   val onChainFeeConf: OnChainFeeConf =
     OnChainFeeConf(FeeTargets(fundingBlockTarget = 6, commitmentBlockTarget = 6, mutualCloseBlockTarget = 36, claimMainBlockTarget = 36),
-      feeEstimator, closeOnOfflineMismatch = false, updateFeeMinDiffRatio = 0.1, FeerateTolerance(0.5, 10), perNodeFeerateTolerance = Map.empty)
+      feeEstimator, closeOnOfflineMismatch = false, updateFeeMinDiffRatio = 0.1, FeerateTolerance(0.2, 20), perNodeFeerateTolerance = Map.empty)
 
   implicit val timeout: Timeout = Timeout(30.seconds)
   implicit val system: ActorSystem = ActorSystem("immortan-actor-system")

@@ -98,7 +98,7 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
 
   def doProcess(change: Any): Unit = (change, state) match {
     case (sendMultiPart: SendMultiPart, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
-      // Before going any firther maybe reduce failure times to give failing previously channels a chance
+      // Before going any further maybe reduce failure times to give previously failing channels a chance
       val noPendingPayments = data.payments.values.forall(fsm => SUCCEEDED == fsm.state || ABORTED == fsm.state)
       if (noPendingPayments) become(data.withFailuresReduced, state)
 
@@ -225,8 +225,9 @@ sealed trait PartStatus { me =>
 
 case class InFlightInfo(cmd: CMD_ADD_HTLC, route: Route)
 case class WaitForChanOnline(onionKey: PrivateKey, amount: MilliSatoshi) extends PartStatus
+case class WaitForRouteOrInFlight(onionKey: PrivateKey, amount: MilliSatoshi, cnc: ChanAndCommits, flight: Option[InFlightInfo] = None,
+                                  localFailed: List[Channel] = Nil, remoteAttempts: Int = 0) extends PartStatus {
 
-case class WaitForRouteOrInFlight(onionKey: PrivateKey, amount: MilliSatoshi, cnc: ChanAndCommits, flight: Option[InFlightInfo] = None, localFailed: List[Channel] = Nil, remoteAttempts: Int = 0) extends PartStatus {
   def oneMoreRemoteAttempt(cnc1: ChanAndCommits): WaitForRouteOrInFlight = copy(flight = None, remoteAttempts = remoteAttempts + 1, cnc = cnc1)
   def oneMoreLocalAttempt(cnc1: ChanAndCommits): WaitForRouteOrInFlight = copy(flight = None, localFailed = localFailedChans, cnc = cnc1)
   lazy val localFailedChans: List[Channel] = cnc.chan :: localFailed
@@ -276,9 +277,9 @@ class OutgoingPaymentSender(fullTag: FullPaymentTag, opm: OutgoingPaymentMaster)
       opm.events.outgoingRevealed(data, fulfill)
       become(data, SUCCEEDED)
 
-    case (_: RemoteFulfill, SUCCEEDED) =>
+    case (_: RemoteFulfill, SUCCEEDED) if noLeftoversInChans =>
       // Got a subsequent preimage for pending leftover parts
-      if (noLeftoversInChans) opm.events.outgoingFinalized(data)
+      opm.events.outgoingFinalized(data)
 
     case (CMDChanGotOnline, PENDING) =>
       data.parts.values.collectFirst { case wait: WaitForChanOnline =>
