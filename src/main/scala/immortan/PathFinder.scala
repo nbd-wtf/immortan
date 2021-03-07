@@ -2,17 +2,15 @@ package immortan
 
 import immortan.PathFinder._
 import immortan.crypto.Tools._
+import immortan.utils.{Rx, Statistics}
 import immortan.crypto.{CanBeRepliedTo, StateMachine}
-
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
+import fr.acinq.eclair.router.Router.{Data, PublicChannel, RouteRequest}
 import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt, Router, Sync}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Router.{Data, PublicChannel, RouteRequest}
 import fr.acinq.eclair.router.RouteCalculation.handleRouteRequest
 import fr.acinq.eclair.wire.ChannelUpdate
 import java.util.concurrent.Executors
-
-import immortan.utils.{Rx, Statistics}
 
 
 object PathFinder {
