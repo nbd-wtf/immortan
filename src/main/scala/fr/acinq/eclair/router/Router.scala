@@ -37,6 +37,7 @@ object Router {
 
   case class PublicChannel(update1Opt: Option[ChannelUpdateExt], update2Opt: Option[ChannelUpdateExt], ann: ChannelAnnouncement) {
     def getChannelUpdateSameSideAs(cu: ChannelUpdate): Option[ChannelUpdateExt] = if (cu.position == ChannelUpdate.POSITION1NODE) update1Opt else update2Opt
+    def feeProportionalMillionths: Iterable[Long] = (update1Opt ++ update2Opt).map(_.update.feeProportionalMillionths)
   }
 
   trait Hop {

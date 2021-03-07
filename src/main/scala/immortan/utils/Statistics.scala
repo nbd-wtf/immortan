@@ -2,7 +2,7 @@ package immortan.utils
 
 
 abstract class Statistics[O] {
-  type Collection = Traversable[O]
+  type Collection = Iterable[O]
 
   def extract(item: O): Double
 

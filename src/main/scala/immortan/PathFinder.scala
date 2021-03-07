@@ -3,6 +3,7 @@ package immortan
 import immortan.PathFinder._
 import immortan.crypto.Tools._
 import immortan.crypto.{CanBeRepliedTo, StateMachine}
+
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt, Router, Sync}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
@@ -10,7 +11,8 @@ import fr.acinq.eclair.router.Router.{Data, PublicChannel, RouteRequest}
 import fr.acinq.eclair.router.RouteCalculation.handleRouteRequest
 import fr.acinq.eclair.wire.ChannelUpdate
 import java.util.concurrent.Executors
-import immortan.utils.Rx
+
+import immortan.utils.{Rx, Statistics}
 
 
 object PathFinder {
@@ -26,6 +28,7 @@ object PathFinder {
 }
 
 abstract class PathFinder(normalStore: NetworkDataStore, hostedStore: NetworkDataStore) extends StateMachine[Data] { me =>
+  private[this] val stats: Statistics[Long] = new Statistics[Long] { override def extract(item: Long): Double = item.toDouble }
   implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
   def process(changeMessage: Any): Unit = scala.concurrent.Future(me doProcess changeMessage)
   var listeners: Set[CanBeRepliedTo] = Set.empty
@@ -182,5 +185,10 @@ abstract class PathFinder(normalStore: NetworkDataStore, hostedStore: NetworkDat
         // Disabled private/unknown-public update, remove from graph
         data.copy(graph = data.graph removeEdge edge.desc)
     }
+  }
+
+  def currentProportionalFeeMean: Option[Long] = {
+    val sample = data.channels.values.flatMap(_.feeProportionalMillionths)
+    if (sample.size > 1000) stats.mean(sample).toLong.toSome else None
   }
 }
