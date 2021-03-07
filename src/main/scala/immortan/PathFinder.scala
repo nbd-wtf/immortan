@@ -188,7 +188,8 @@ abstract class PathFinder(normalStore: NetworkDataStore, hostedStore: NetworkDat
   }
 
   def currentProportionalFeeMean: Option[Long] = {
-    val sample = data.channels.values.flatMap(_.feeProportionalMillionths)
-    if (sample.size > 1000) stats.mean(sample).toLong.toSome else None
+    val sample = data.channels.values.toList.flatMap(_.feeProportionalMillionths)
+    if (sample.size > 1000) Some(stats.mean(stats removeExtremeOutliers sample).toLong)
+    else None
   }
 }
