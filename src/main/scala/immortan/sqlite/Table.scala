@@ -179,8 +179,12 @@ object TxTable extends Table {
   val (table, txid, depth, receivedMsat, sentMsat, feeMsat, firstSeen, completedAt, description, balanceMsat, fiatRates, incoming, doubleSpent) = paymentTableFields
   val inserts = s"$txid, $depth, $receivedMsat, $sentMsat, $feeMsat, $firstSeen, $completedAt, $description, $balanceMsat, $fiatRates, $incoming, $doubleSpent"
   val newSql = s"INSERT OR IGNORE INTO $table ($inserts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+
+  // Selecting
+  val selectSummarySql = s"SELECT SUM($feeMsat), SUM($receivedMsat), SUM($sentMsat), COUNT($id) FROM $table WHERE $doubleSpent = 0"
   val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 3"
 
+  // Updating
   val updDoubleSpentSql = s"UPDATE $table SET $doubleSpent = ? WHERE $txid = ?"
   val updCompletedAtSql = s"UPDATE $table SET $completedAt = ? WHERE $txid = ?"
   val updDepthSql = s"UPDATE $table SET $depth = ? WHERE $txid = ?"

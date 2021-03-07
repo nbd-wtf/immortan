@@ -12,9 +12,9 @@ import fr.acinq.bitcoin.ByteVector32
 import scala.util.Try
 
 
-case class RelayedSummary(relayed: MilliSatoshi, earned: MilliSatoshi, count: Long)
+case class RelaySummary(relayed: MilliSatoshi, earned: MilliSatoshi, count: Long)
 
-case class PaidSummary(fees: MilliSatoshi, received: MilliSatoshi, sent: MilliSatoshi, count: Long)
+case class PaymentSummary(fees: MilliSatoshi, received: MilliSatoshi, sent: MilliSatoshi, count: Long)
 
 class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
   def getPaymentInfo(paymentHash: ByteVector32): Option[PaymentInfo] = db.select(PaymentTable.selectOneSql, paymentHash.toHex).headTry(toPaymentInfo).toOption
@@ -57,12 +57,12 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
         chainFee.toLong: JLong, 1: java.lang.Integer /* INCOMING = 1 */)
     }
 
-  def paidSummary: Try[PaidSummary] = db.select(PaymentTable.selectSummarySql).headTry { rc =>
-    PaidSummary(fees = MilliSatoshi(rc long 0), received = MilliSatoshi(rc long 1), sent = MilliSatoshi(rc long 2), count = rc long 3)
+  def paymentSummary: Try[PaymentSummary] = db.select(PaymentTable.selectSummarySql).headTry { rc =>
+    PaymentSummary(fees = MilliSatoshi(rc long 0), received = MilliSatoshi(rc long 1), sent = MilliSatoshi(rc long 2), count = rc long 3)
   }
 
-  def relayedSummary: Try[RelayedSummary] = db.select(RelayPreimageTable.selectSummarySql).headTry { rc =>
-    RelayedSummary(relayed = MilliSatoshi(rc long 0), earned = MilliSatoshi(rc long 1), count = rc long 2)
+  def relaySummary: Try[RelaySummary] = db.select(RelayPreimageTable.selectSummarySql).headTry { rc =>
+    RelaySummary(relayed = MilliSatoshi(rc long 0), earned = MilliSatoshi(rc long 1), count = rc long 2)
   }
 
   def toPaymentInfo(rc: RichCursor): PaymentInfo =
@@ -76,4 +76,24 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
     RelayedPreimageInfo(paymentHashString = rc string RelayPreimageTable.hash, preimageString = rc string RelayPreimageTable.preimage,
       relayed = MilliSatoshi(rc long RelayPreimageTable.relayed), earned = MilliSatoshi(rc long RelayPreimageTable.earned),
       stamp = rc long RelayPreimageTable.stamp, fast = rc long RelayPreimageTable.fast)
+}
+
+abstract class SQlitePaymentBagCached(db: DBInterface) extends SQlitePaymentBag(db) {
+  override def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32, stamp: Long, relayed: MilliSatoshi, earned: MilliSatoshi, fast: Long): Unit = {
+    super.addRelayedPreimageInfo(paymentHash, preimage, stamp, relayed, earned, fast)
+    invalidateRelayCache
+  }
+
+  override def updOkOutgoing(upd: UpdateFulfillHtlc, fee: MilliSatoshi): Unit = {
+    super.updOkOutgoing(upd, fee)
+    invalidatePaymentCache
+  }
+
+  override def updOkIncoming(receivedAmount: MilliSatoshi, paymentHash: ByteVector32): Unit = {
+    super.updOkIncoming(receivedAmount, paymentHash)
+    invalidatePaymentCache
+  }
+
+  def invalidatePaymentCache: Unit
+  def invalidateRelayCache: Unit
 }

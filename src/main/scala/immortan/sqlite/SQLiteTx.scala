@@ -9,7 +9,10 @@ import java.lang.{Long => JLong}
 import immortan.crypto.Tools.Fiat2Btc
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.MilliSatoshi
+import scala.util.Try
 
+
+case class TxSummary(fees: MilliSatoshi, received: MilliSatoshi, sent: MilliSatoshi, count: Long)
 
 class SQLiteTx(db: DBInterface) {
   def updDoubleSpent(txid: ByteVector32): Unit =
@@ -18,6 +21,12 @@ class SQLiteTx(db: DBInterface) {
   def updConfidence(event: TransactionConfidenceChanged): Unit = db txWrap {
     db.change(TxTable.updCompletedAtSql, event.txid.toHex, event.msecs: JLong)
     db.change(TxTable.updDepthSql, event.txid.toHex, event.depth: JLong)
+  }
+
+  def listRecentTxs: RichCursor = db.select(TxTable.selectRecentSql)
+
+  def txSummary: Try[TxSummary] = db.select(TxTable.selectSummarySql).headTry { rc =>
+    TxSummary(fees = MilliSatoshi(rc long 0), received = MilliSatoshi(rc long 1), sent = MilliSatoshi(rc long 2), count = rc long 3)
   }
 
   def putTx(event: TransactionReceived, description: TxDescription, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc): Unit =
@@ -30,4 +39,18 @@ class SQLiteTx(db: DBInterface) {
       sentMsat = MilliSatoshi(rc long TxTable.sentMsat), feeMsat = MilliSatoshi(rc long TxTable.feeMsat), seenAt = rc long TxTable.firstSeen,
       completedAt = rc long TxTable.completedAt, descriptionString = rc string TxTable.description, balanceSnapshot = MilliSatoshi(rc long TxTable.balanceMsat),
       fiatRatesString = rc string TxTable.fiatRates, incoming = rc long TxTable.incoming, doubleSpent = rc long TxTable.doubleSpent)
+}
+
+abstract class SQLiteTxCached(db: DBInterface) extends SQLiteTx(db) {
+  override def putTx(event: TransactionReceived, description: TxDescription, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc): Unit = {
+    super.putTx(event, description, balanceSnap, fiatRateSnap)
+    invalidateCache
+  }
+
+  override def updDoubleSpent(txid: ByteVector32): Unit = {
+    super.updDoubleSpent(txid)
+    invalidateCache
+  }
+
+  def invalidateCache: Unit
 }

@@ -4,6 +4,7 @@ import immortan._
 import spray.json._
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
+import immortan.sqlite.{PaymentSummary, RelaySummary, TxSummary}
 import immortan.utils.FiatRates.{BitpayItemList, CoinGeckoItemMap}
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.WalletReady
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -135,6 +136,14 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
   implicit val messageActionFmt: JsonFormat[MessageAction] = taggedJsonFmt(jsonFormat[Option[String], String, MessageAction](MessageAction.apply, "domain", "message"), tag = "message")
 
   implicit val urlActionFmt: JsonFormat[UrlAction] = taggedJsonFmt(jsonFormat[Option[String], String, String, UrlAction](UrlAction.apply, "domain", "description", "url"), tag = "url")
+
+  // Summaries
+
+  implicit val relaySummaryFmt: JsonFormat[RelaySummary] = jsonFormat[MilliSatoshi, MilliSatoshi, Long, RelaySummary](RelaySummary.apply, "relayed", "earned", "count")
+
+  implicit val paymentSummaryFmt: JsonFormat[PaymentSummary] = jsonFormat[MilliSatoshi, MilliSatoshi, MilliSatoshi, Long, PaymentSummary](PaymentSummary.apply, "fees", "received", "sent", "count")
+
+  implicit val txSummaryFmt: JsonFormat[TxSummary] = jsonFormat[MilliSatoshi, MilliSatoshi, MilliSatoshi, Long, TxSummary](TxSummary.apply, "fees", "received", "sent", "count")
 
   // LNURL
 
