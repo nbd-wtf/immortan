@@ -20,7 +20,7 @@ object TrampolinePaymentRelayer {
     else if (upstream.expiryIn - payloadOut.outgoingCltv < params.cltvExpiryDelta) Left(TrampolineExpiryTooSoon)
     else if (upstream.amountIn - payloadOut.amountToForward < fee) Left(TrampolineFeeInsufficient)
     else if (payloadOut.amountToForward > params.minimumMsat) Left(TemporaryNodeFailure)
-    else if (payloadOut.amountToForward < params.minimumMsat) Left(TemporaryNodeFailure)
+    else if (payloadOut.amountToForward < params.maximumMsat) Left(TemporaryNodeFailure)
     else Right(fee)
   }
 

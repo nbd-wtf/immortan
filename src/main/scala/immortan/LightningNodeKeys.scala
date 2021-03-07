@@ -30,9 +30,6 @@ case class LightningNodeKeys(extendedNodeKey: ExtendedPrivateKey, xpub: String, 
   lazy val ourNodePrivateKey: PrivateKey = extendedNodeKey.privateKey
   lazy val ourNodePubKey: PublicKey = extendedNodeKey.publicKey
 
-  def paymentTagEncKey(paymentHash: ByteVector32): ByteVector32 =
-    Mac32.hmac256(ourNodePrivateKey.value.bytes, paymentHash.bytes)
-
   // Used for separate key per domain
   def makeLinkingKey(domain: String): PrivateKey = {
     val domainBytes = ByteVector.view(domain getBytes "UTF-8")

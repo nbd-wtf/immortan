@@ -1,12 +1,12 @@
 package immortan.sqlite
 
 import java.lang.{Long => JLong}
-import immortan.{ChannelBag, HostedCommits}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.{CltvExpiry, ShortChannelId}
-import fr.acinq.eclair.channel.{NormalCommits, PersistentChannelData}
+import fr.acinq.eclair.channel.PersistentChannelData
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.wire.ChannelCodecs
+import immortan.ChannelBag
 
 
 class SQLiteChannel(db: DBInterface) extends ChannelBag {
@@ -21,9 +21,7 @@ class SQLiteChannel(db: DBInterface) extends ChannelBag {
     db.select(ChannelTable.selectAllSql).iterable(_ byteVec ChannelTable.data)
       .map(bits => ChannelCodecs.persistentDataCodec.decode(bits.toBitVector).require.value)
 
-  override def delete(commitments: HostedCommits): Unit = db.change(ChannelTable.killSql, commitments.channelId.toHex)
-
-  override def hide(commitments: NormalCommits): Unit = db.change(ChannelTable.hideSql, commitments.channelId.toHex)
+  override def delete(channelId: ByteVector32): Unit = db.change(ChannelTable.killSql, channelId.toHex)
 
   // HTLC infos
 

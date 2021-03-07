@@ -8,10 +8,13 @@ import fr.acinq.eclair.wire.HostedMessagesCodecs._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.wire.LastCrossSignedState
 import fr.acinq.bitcoin.Crypto.PublicKey
+import scodec.bits.ByteVector
 import scodec.Codec
 
 
 case class HostedState(nodeId1: PublicKey, nodeId2: PublicKey, lastCrossSignedState: LastCrossSignedState)
+
+case class ChannelBackup(channels: ByteVector, htlcInfos: ByteVector, relays: ByteVector)
 
 object ExtCodecs {
   val hostedStateCodec = {
@@ -19,6 +22,12 @@ object ExtCodecs {
       (publicKey withContext "nodeId2") ::
       (lastCrossSignedStateCodec withContext "lastCrossSignedState")
   }.as[HostedState]
+
+  val channelBackupCodec = {
+    (varsizebinarydata withContext "channels") ::
+      (varsizebinarydata withContext "htlcInfos") ::
+      (varsizebinarydata withContext "relays")
+  }.as[ChannelBackup]
 
 
   val lightningNodeKeysCodec = {

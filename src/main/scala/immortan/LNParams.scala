@@ -17,8 +17,8 @@ import scala.concurrent.{ExecutionContextExecutor, Future}
 import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import fr.acinq.eclair.transactions.{DirectedHtlc, Transactions}
+import fr.acinq.eclair.channel.{LocalParams, PersistentChannelData}
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
-import fr.acinq.eclair.channel.{LocalParams, NormalCommits, PersistentChannelData}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
@@ -306,8 +306,7 @@ object ChannelBag {
 
 trait ChannelBag {
   def all: Iterable[PersistentChannelData]
-  def hide(commitments: NormalCommits): Unit
-  def delete(commitments: HostedCommits): Unit
+  def delete(channelId: ByteVector32): Unit
   def put(data: PersistentChannelData): PersistentChannelData
 
   def htlcInfos(commitNumer: Long): Iterable[ChannelBag.Hash160AndCltv]

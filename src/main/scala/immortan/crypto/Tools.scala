@@ -9,6 +9,7 @@ import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, ShortChannelId}
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import immortan.wire.ExtCodecs.channelBackupCodec
 import fr.acinq.eclair.router.Router.ChannelDesc
 import fr.acinq.eclair.router.RouteCalculation
 import fr.acinq.eclair.crypto.ChaCha20Poly1305
@@ -16,6 +17,7 @@ import immortan.crypto.Noise.KeyPair
 import java.util.concurrent.TimeUnit
 import java.io.ByteArrayInputStream
 import language.implicitConversions
+import immortan.wire.ChannelBackup
 import immortan.crypto.Tools.none
 import scala.collection.mutable
 import rx.lang.scala.Observable
@@ -90,6 +92,14 @@ object Tools {
 
   def chaChaDecrypt(key: ByteVector32, data: ByteVector): Try[ByteVector] = Try {
     ChaCha20Poly1305.decrypt(key, nonce = data drop 16 take 12, ciphertext = data drop 28, ByteVector.empty, mac = data take 16)
+  }
+
+  def encryptBackup(backup: ChannelBackup, seed: ByteVector): ByteVector = {
+    chaChaEncrypt(Crypto.sha256(seed), randomBytes(12), channelBackupCodec.encode(backup).require.toByteVector)
+  }
+
+  def decryptBackup(backup: ByteVector, seed: ByteVector): Try[ChannelBackup] = {
+    chaChaDecrypt(Crypto.sha256(seed), backup).map(raw => channelBackupCodec.decode(raw.toBitVector).require.value)
   }
 }
 

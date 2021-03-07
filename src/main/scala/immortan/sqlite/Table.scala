@@ -6,24 +6,22 @@ trait Table {
 }
 
 object ChannelTable extends Table {
-  val (table, channelId, isRemoved, data) = ("channel", "chanid", "isremoved", "data")
-  val selectAllSql = s"SELECT * FROM $table WHERE $isRemoved = 0 ORDER BY $id DESC"
+  val (table, channelId, data) = ("channel", "chanid", "data")
   val newSql = s"INSERT OR IGNORE INTO $table ($channelId, $data) VALUES (?, ?)"
-  val hideSql = s"UPDATE $table SET $isRemoved = 1 WHERE $channelId = ?"
   val updSql = s"UPDATE $table SET $data = ? WHERE $channelId = ?"
   val killSql = s"DELETE FROM $table WHERE WHERE $channelId = ?"
+  val selectAllSql = s"SELECT * FROM $table ORDER BY $id DESC"
 
   def createStatements: Seq[String] =
     s"""CREATE TABLE IF NOT EXISTS $table(
       $id INTEGER PRIMARY KEY AUTOINCREMENT,
       $channelId TEXT NOT NULL UNIQUE,
-      $isRemoved INTEGER NOT NULL,
       $data BLOB NOT NULL
     )""" :: Nil
 }
 
 object HtlcInfoTable extends Table {
-  val (table, sid, commitNumber, paymentHash160, cltvExpiry) = ("htlcinfo", "sid", "commitnumber", "hash160", "cltv")
+  val (table, sid, commitNumber, paymentHash160, cltvExpiry) = ("htlcinfo", "sid", "cnumber", "hash160", "cltv")
   val newSql = s"INSERT INTO $table ($sid, $commitNumber, $paymentHash160, $cltvExpiry) VALUES (?, ?, ?, ?)"
   val selectAllSql = s"SELECT * FROM $table WHERE $commitNumber = ?"
   val killSql = s"DELETE FROM $table WHERE $sid = ?"
@@ -46,7 +44,7 @@ object RelayPreimageTable extends Table {
   val (table, hash, preimage, stamp, relayed, earned, fast) = ("relaypreimage", "hash", "preimage", "stamp", "relayed", "earned", "fast")
   val newSql = s"INSERT INTO $table ($hash, $preimage, $stamp, $relayed, $earned, $fast) VALUES (?, ?, ?, ?, ?, ?)"
   val selectSummarySql = s"SELECT SUM($relayed), SUM($earned), COUNT($id) FROM $table"
-  val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 5"
+  val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 3"
   val selectByHashSql = s"SELECT * FROM $table WHERE $hash = ?"
 
   def createStatements: Seq[String] = {
@@ -153,7 +151,7 @@ object PaymentTable extends Table {
 
   // Selecting
   val selectOneSql = s"SELECT * FROM $table WHERE $hash = ?"
-  val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 10 WHERE $stamp > 0"
+  val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 3 WHERE $stamp > 0"
   val selectSummarySql = s"SELECT SUM($feeMsat), SUM($receivedMsat), SUM($sentMsat), COUNT($id) FROM $table WHERE $status = $SUCCEEDED"
   val searchSql = s"SELECT * FROM $table WHERE $hash IN (SELECT $hash FROM $fts$table WHERE $search MATCH ? LIMIT 25)"
 
@@ -181,7 +179,7 @@ object TxTable extends Table {
   val (table, txid, depth, receivedMsat, sentMsat, feeMsat, firstSeen, completedAt, description, balanceMsat, fiatRates, incoming, doubleSpent) = paymentTableFields
   val inserts = s"$txid, $depth, $receivedMsat, $sentMsat, $feeMsat, $firstSeen, $completedAt, $description, $balanceMsat, $fiatRates, $incoming, $doubleSpent"
   val newSql = s"INSERT OR IGNORE INTO $table ($inserts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-  val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 10"
+  val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 3"
 
   val updDoubleSpentSql = s"UPDATE $table SET $doubleSpent = ? WHERE $txid = ?"
   val updCompletedAtSql = s"UPDATE $table SET $completedAt = ? WHERE $txid = ?"
