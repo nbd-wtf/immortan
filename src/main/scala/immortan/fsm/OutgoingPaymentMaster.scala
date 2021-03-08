@@ -91,9 +91,8 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
 
   var listeners = Set.empty[OutgoingPaymentMasterListener]
   val events: OutgoingPaymentMasterListener = new OutgoingPaymentMasterListener {
-    override def outgoingFailed(data: OutgoingPaymentSenderData, noLeftovers: Boolean): Unit = for (lst <- listeners) lst.outgoingFailed(data, noLeftovers)
-    override def outgoingRevealed(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = for (lst <- listeners) lst.outgoingRevealed(data, fulfill)
-    override def outgoingFinalized(data: OutgoingPaymentSenderData): Unit = for (lst <- listeners) lst.outgoingFinalized(data)
+    override def partRejected(data: OutgoingPaymentSenderData): Unit = for (lst <- listeners) lst.partRejected(data)
+    override def gotPreimage(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill, isFirst: Boolean): Unit = for (lst <- listeners) lst.gotPreimage(data, fulfill, isFirst)
   }
 
   def doProcess(change: Any): Unit = (change, state) match {
@@ -209,10 +208,8 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
 }
 
 trait OutgoingPaymentMasterListener {
-  def outgoingFailed(data: OutgoingPaymentSenderData, noLeftovers: Boolean): Unit = none
-  def outgoingRevealed(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = none
-  // Called after preimage has been revealed and no more outgoing payment parts are left
-  def outgoingFinalized(data: OutgoingPaymentSenderData): Unit = none
+  def partRejected(data: OutgoingPaymentSenderData): Unit = none
+  def gotPreimage(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill, isFirst: Boolean): Unit = none
 }
 
 // Individual outgoing part status
@@ -272,14 +269,13 @@ class OutgoingPaymentSender(fullTag: FullPaymentTag, opm: OutgoingPaymentMaster)
     case (CMDAbort, INIT | PENDING) if data.inFlightParts.isEmpty => me abortAndNotify data.copy(parts = Map.empty)
 
     case (fulfill: RemoteFulfill, INIT | PENDING | ABORTED) =>
-      if (noLeftoversInChans) opm.events.outgoingFinalized(data)
-      // May be called with pending leftovers on restart
-      opm.events.outgoingRevealed(data, fulfill)
+      // The most important first event (save to db, relay etc)
+      opm.events.gotPreimage(data, fulfill, isFirst = true)
       become(data, SUCCEEDED)
 
-    case (_: RemoteFulfill, SUCCEEDED) if noLeftoversInChans =>
-      // Got a subsequent preimage for pending leftover parts
-      opm.events.outgoingFinalized(data)
+    case (fulfill: RemoteFulfill, SUCCEEDED) =>
+      // May not be that important but works as trigger
+      opm.events.gotPreimage(data, fulfill, isFirst = false)
 
     case (CMDChanGotOnline, PENDING) =>
       data.parts.values.collectFirst { case wait: WaitForChanOnline =>
@@ -419,8 +415,6 @@ class OutgoingPaymentSender(fullTag: FullPaymentTag, opm: OutgoingPaymentMaster)
 
   def feeLeftover: MilliSatoshi = data.cmd.totalFeeReserve - data.usedFee
 
-  def noLeftoversInChans: Boolean = !opm.cm.allInChannelOutgoing.contains(fullTag)
-
   def canBeSplit(totalAmount: MilliSatoshi): Boolean = totalAmount / 2 >= data.cmd.routerConf.mppMinPartAmount
 
   def assignToChans(sendable: mutable.Map[ChanAndCommits, MilliSatoshi], data1: OutgoingPaymentSenderData, amount: MilliSatoshi): Unit = {
@@ -477,8 +471,9 @@ class OutgoingPaymentSender(fullTag: FullPaymentTag, opm: OutgoingPaymentMaster)
     }
 
   def abortAndNotify(data1: OutgoingPaymentSenderData): Unit = {
-    val noLeftoversAnywhere = data1.inFlightParts.isEmpty && noLeftoversInChans
-    opm.events.outgoingFailed(data1, noLeftoversAnywhere)
+    // Can be considered finalized if: (1) ABORTED, (2) no in-flight parts, (3) no leftovers in channels
+    // but the last two checks will be performed at later stages, FSM itself should not be concerned about these
+    opm.events.partRejected(data1)
     become(data1, ABORTED)
   }
 }
