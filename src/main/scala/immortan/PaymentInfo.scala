@@ -14,9 +14,7 @@ import immortan.utils.LNUrl
 object PaymentInfo {
   final val NOT_SENDABLE_LOW_FUNDS = 1
   final val NOT_SENDABLE_IN_FLIGHT = 2
-  final val NOT_SENDABLE_INCOMING = 3
-  final val NOT_SENDABLE_RELAYED = 4
-  final val NOT_SENDABLE_SUCCESS = 5
+  final val NOT_SENDABLE_SUCCESS = 3
   final val SENDABLE = 0
 }
 
@@ -26,8 +24,6 @@ object PaymentStatus {
   final val ABORTED = "state-aborted"
   final val SUCCEEDED = "state-succeeded"
 }
-
-case class PaymentDbInfo(localOpt: Option[PaymentInfo], relayedOpt: Option[RelayedPreimageInfo], paymentHash: ByteVector32)
 
 case class PaymentInfo(prString: String, preimageString: String, status: String, stamp: Long, descriptionString: String, actionString: String,
                        paymentHashString: String, received: MilliSatoshi, sent: MilliSatoshi, fee: MilliSatoshi, balanceSnapshot: MilliSatoshi,

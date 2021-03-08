@@ -5,6 +5,8 @@ trait Table {
   def createStatements: Seq[String]
 }
 
+// Database #1, essential data, exportable to backup
+
 object ChannelTable extends Table {
   val (table, channelId, data) = ("channel", "chanid", "data")
   val newSql = s"INSERT OR IGNORE INTO $table ($channelId, $data) VALUES (?, ?)"
@@ -40,24 +42,20 @@ object HtlcInfoTable extends Table {
   }
 }
 
-object RelayPreimageTable extends Table {
-  val (table, hash, preimage, stamp, relayed, earned, fast) = ("relaypreimage", "hash", "preimage", "stamp", "relayed", "earned", "fast")
-  val newSql = s"INSERT INTO $table ($hash, $preimage, $stamp, $relayed, $earned, $fast) VALUES (?, ?, ?, ?, ?, ?)"
-  val selectSummarySql = s"SELECT SUM($relayed), SUM($earned), COUNT($id) FROM $table"
-  val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 3"
+object PreimageTable extends Table {
+  val (table, hash, preimage) = ("preimages", "hash", "preimage")
+  val newSql = s"INSERT OR IGNORE INTO $table ($hash, $preimage) VALUES (?, ?)"
   val selectByHashSql = s"SELECT * FROM $table WHERE $hash = ?"
 
-  def createStatements: Seq[String] = {
-    val createTable = s"""CREATE TABLE IF NOT EXISTS $table(
-      $id INTEGER PRIMARY KEY AUTOINCREMENT, $hash TEXT NOT NULL, $preimage TEXT NOT NULL,
-      $stamp INTEGER NOT NULL, $relayed INTEGER NOT NULL, $earned INTEGER NOT NULL,
-      $fast INTEGER NOT NULL
-    )"""
-
-    val addIndex1 = s"CREATE INDEX IF NOT EXISTS idx1$table ON $table ($hash)"
-    createTable :: addIndex1 :: Nil
-  }
+  def createStatements: Seq[String] =
+    s"""CREATE TABLE IF NOT EXISTS $table(
+      $id INTEGER PRIMARY KEY AUTOINCREMENT,
+      $hash TEXT NOT NULL UNIQUE,
+      $preimage TEXT NOT NULL
+    )""" :: Nil
 }
+
+// Database #2, graph data, disposable since can be re-synchronized
 
 abstract class ChannelAnnouncementTable(val table: String) extends Table {
   val (features, shortChannelId, nodeId1, nodeId2) = ("features", "shortchannelid", "nodeid1", "nodeid2")
@@ -140,6 +138,22 @@ object HostedExcludedChannelTable extends ExcludedChannelTable("hosted_excluded_
   val killPresentInChans = s"DELETE FROM $table WHERE $shortChannelId IN ($select LIMIT 1000000)"
 }
 
+// Database #3, unrecoverable, but not critically important data, will not go to backup
+
+object RelayTable extends Table {
+  val (table, hash, preimage, stamp, relayed, earned, fast) = ("relay", "hash", "preimage", "stamp", "relayed", "earned", "fast")
+  val newSql = s"INSERT INTO $table ($hash, $preimage, $stamp, $relayed, $earned, $fast) VALUES (?, ?, ?, ?, ?, ?)"
+  val selectSummarySql = s"SELECT SUM($relayed), SUM($earned), COUNT($id) FROM $table"
+  val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 3"
+
+  def createStatements: Seq[String] =
+    s"""CREATE TABLE IF NOT EXISTS $table(
+      $id INTEGER PRIMARY KEY AUTOINCREMENT, $hash TEXT NOT NULL,
+      $preimage TEXT NOT NULL, $stamp INTEGER NOT NULL, $relayed INTEGER NOT NULL,
+      $earned INTEGER NOT NULL, $fast INTEGER NOT NULL
+    )""" :: Nil
+}
+
 object PaymentTable extends Table {
   import immortan.PaymentStatus.SUCCEEDED
   private val paymentTableFields = ("search", "payment", "pr", "preimage", "status", "stamp", "desc", "action", "hash", "received", "sent", "fee", "balance", "fiatrates", "chainfee", "incoming")
@@ -150,7 +164,7 @@ object PaymentTable extends Table {
   val deleteSql = s"DELETE FROM $table WHERE $hash = ?"
 
   // Selecting
-  val selectOneSql = s"SELECT * FROM $table WHERE $hash = ?"
+  val selectByHashSql = s"SELECT * FROM $table WHERE $hash = ?"
   val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 3 WHERE $stamp > 0"
   val selectSummarySql = s"SELECT SUM($feeMsat), SUM($receivedMsat), SUM($sentMsat), COUNT($id) FROM $table WHERE $status = $SUCCEEDED"
   val searchSql = s"SELECT * FROM $table WHERE $hash IN (SELECT $hash FROM $fts$table WHERE $search MATCH ? LIMIT 25)"
@@ -163,7 +177,7 @@ object PaymentTable extends Table {
   def createStatements: Seq[String] = {
     val createTable = s"""CREATE TABLE IF NOT EXISTS $table(
       $id INTEGER PRIMARY KEY AUTOINCREMENT, $pr TEXT NOT NULL, $preimage TEXT NOT NULL, $status TEXT NOT NULL, $stamp INTEGER NOT NULL,
-      $description TEXT NOT NULL, $action TEXT NOT NULL, $hash TEXT NOT NULL UNIQUE,$receivedMsat INTEGER NOT NULL, $sentMsat INTEGER NOT NULL,
+      $description TEXT NOT NULL, $action TEXT NOT NULL, $hash TEXT NOT NULL UNIQUE, $receivedMsat INTEGER NOT NULL, $sentMsat INTEGER NOT NULL,
       $feeMsat INTEGER NOT NULL, $balanceMsat INTEGER NOT NULL, $fiatRates TEXT NOT NULL, $chainFee INTEGER NOT NULL, $incoming INTEGER NOT NULL
     )"""
 

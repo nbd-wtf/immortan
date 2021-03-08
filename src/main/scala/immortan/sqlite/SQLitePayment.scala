@@ -16,10 +16,10 @@ case class RelaySummary(relayed: MilliSatoshi, earned: MilliSatoshi, count: Long
 
 case class PaymentSummary(fees: MilliSatoshi, received: MilliSatoshi, sent: MilliSatoshi, count: Long)
 
-class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
-  def getPaymentInfo(paymentHash: ByteVector32): Option[PaymentInfo] = db.select(PaymentTable.selectOneSql, paymentHash.toHex).headTry(toPaymentInfo).toOption
+class SQlitePaymentBag(db: DBInterface, preimageDb: DBInterface) extends PaymentBag {
+  def getPaymentInfo(paymentHash: ByteVector32): Try[PaymentInfo] = db.select(PaymentTable.selectByHashSql, paymentHash.toHex).headTry(toPaymentInfo)
 
-  def getRelayedPreimageInfo(paymentHash: ByteVector32): Option[RelayedPreimageInfo] = db.select(RelayPreimageTable.selectByHashSql, paymentHash.toHex).headTry(toRelayedPreimageInfo).toOption
+  def getPreimage(hash: ByteVector32): Try[ByteVector32] = preimageDb.select(PreimageTable.selectByHashSql, hash.toHex).headTry(_ string PreimageTable.preimage).map(ByteVector32.fromValidHex)
 
   def addSearchablePayment(search: String, paymentHash: ByteVector32): Unit = db.change(PaymentTable.newVirtualSql, search, paymentHash.toHex)
 
@@ -27,16 +27,23 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
 
   def listRecentPayments: RichCursor = db.select(PaymentTable.selectRecentSql)
 
-  def listRecentRelays: RichCursor = db.select(RelayPreimageTable.selectRecentSql)
+  def listRecentRelays: RichCursor = db.select(RelayTable.selectRecentSql)
 
   def abortOutgoing(paymentHash: ByteVector32): Unit = db.change(PaymentTable.updStatusSql, PaymentStatus.ABORTED, paymentHash.toHex)
 
-  def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32, stamp: Long, relayed: MilliSatoshi, earned: MilliSatoshi, fast: Long): Unit =
-    db.change(RelayPreimageTable.newSql, paymentHash.toHex, preimage.toHex, stamp: JLong, relayed.toLong: JLong, earned.toLong: JLong, fast: JLong)
+  def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32, stamp: Long, relayed: MilliSatoshi, earned: MilliSatoshi, fast: Long): Unit = db txWrap {
+    db.change(RelayTable.newSql, paymentHash.toHex, preimage.toHex, stamp: JLong, relayed.toLong: JLong, earned.toLong: JLong, fast: JLong)
+    preimageDb.change(PreimageTable.newSql, paymentHash.toHex, preimage.toHex)
+  }
 
-  def updOkOutgoing(upd: UpdateFulfillHtlc, fee: MilliSatoshi): Unit = db.change(PaymentTable.updOkOutgoingSql, upd.paymentPreimage.toHex, fee.toLong: JLong, upd.paymentHash.toHex)
+  def updOkOutgoing(upd: UpdateFulfillHtlc, fee: MilliSatoshi): Unit = db txWrap {
+    db.change(PaymentTable.updOkOutgoingSql, upd.paymentPreimage.toHex, fee.toLong: JLong, upd.paymentHash.toHex)
+    preimageDb.change(PreimageTable.newSql, upd.paymentHash.toHex, upd.paymentPreimage.toHex)
+  }
 
-  def updOkIncoming(receivedAmount: MilliSatoshi, paymentHash: ByteVector32): Unit = db.change(PaymentTable.updOkIncomingSql, receivedAmount.toLong: JLong, System.currentTimeMillis: JLong, paymentHash.toHex)
+  def updOkIncoming(receivedAmount: MilliSatoshi, paymentHash: ByteVector32): Unit = {
+    db.change(PaymentTable.updOkIncomingSql, receivedAmount.toLong: JLong, System.currentTimeMillis: JLong, paymentHash.toHex)
+  }
 
   def replaceOutgoingPayment(prex: PaymentRequestExt, description: PaymentDescription, action: Option[PaymentAction],
                              finalAmount: MilliSatoshi, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc, chainFee: MilliSatoshi): Unit =
@@ -55,13 +62,16 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
         new String /* NO ACTION */, prex.pr.paymentHash.toHex, prex.pr.amount.getOrElse(0L.msat).toLong: JLong /* MUST COME FROM PR! NO AMOUNT IF RECEIVED = 0 */,
         0L: JLong /* SENT = 0 MSAT, NOTHING TO SEND */, 0L: JLong /* NO FEE FOR INCOMING PAYMENT */, balanceSnap.toLong: JLong, fiatRateSnap.toJson.compactPrint,
         chainFee.toLong: JLong, 1: java.lang.Integer /* INCOMING = 1 */)
+
+      // Also record preimage to essentail database to make sure we have it in backup
+      preimageDb.change(PreimageTable.newSql, prex.pr.paymentHash.toHex, preimage.toHex)
     }
 
   def paymentSummary: Try[PaymentSummary] = db.select(PaymentTable.selectSummarySql).headTry { rc =>
     PaymentSummary(fees = MilliSatoshi(rc long 0), received = MilliSatoshi(rc long 1), sent = MilliSatoshi(rc long 2), count = rc long 3)
   }
 
-  def relaySummary: Try[RelaySummary] = db.select(RelayPreimageTable.selectSummarySql).headTry { rc =>
+  def relaySummary: Try[RelaySummary] = db.select(RelayTable.selectSummarySql).headTry { rc =>
     RelaySummary(relayed = MilliSatoshi(rc long 0), earned = MilliSatoshi(rc long 1), count = rc long 2)
   }
 
@@ -73,12 +83,12 @@ class SQlitePaymentBag(db: DBInterface) extends PaymentBag {
       fiatRatesString = rc string PaymentTable.fiatRates, chainFee = MilliSatoshi(rc long PaymentTable.chainFee), incoming = rc long PaymentTable.incoming)
 
   def toRelayedPreimageInfo(rc: RichCursor): RelayedPreimageInfo =
-    RelayedPreimageInfo(paymentHashString = rc string RelayPreimageTable.hash, preimageString = rc string RelayPreimageTable.preimage,
-      relayed = MilliSatoshi(rc long RelayPreimageTable.relayed), earned = MilliSatoshi(rc long RelayPreimageTable.earned),
-      stamp = rc long RelayPreimageTable.stamp, fast = rc long RelayPreimageTable.fast)
+    RelayedPreimageInfo(paymentHashString = rc string RelayTable.hash, preimageString = rc string RelayTable.preimage,
+      relayed = MilliSatoshi(rc long RelayTable.relayed), earned = MilliSatoshi(rc long RelayTable.earned),
+      stamp = rc long RelayTable.stamp, fast = rc long RelayTable.fast)
 }
 
-abstract class SQlitePaymentBagCached(db: DBInterface) extends SQlitePaymentBag(db) {
+abstract class SQlitePaymentBagCached(db: DBInterface, preimageDb: DBInterface) extends SQlitePaymentBag(db, preimageDb) {
   override def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32, stamp: Long, relayed: MilliSatoshi, earned: MilliSatoshi, fast: Long): Unit = {
     super.addRelayedPreimageInfo(paymentHash, preimage, stamp, relayed, earned, fast)
     invalidateRelayCache

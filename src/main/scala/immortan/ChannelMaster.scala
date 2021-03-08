@@ -7,7 +7,6 @@ import immortan.crypto.Tools._
 import immortan.PaymentStatus._
 import immortan.ChannelMaster._
 import fr.acinq.eclair.channel._
-
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteReject}
 import immortan.ChannelListener.{Malfunction, Transition}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -16,9 +15,13 @@ import fr.acinq.eclair.payment.IncomingPacket
 import com.google.common.cache.LoadingCache
 import immortan.fsm.OutgoingPaymentMaster
 import fr.acinq.bitcoin.ByteVector32
+import scala.util.Try
 
 
 object ChannelMaster {
+  type PreimageTry = Try[ByteVector32]
+  type PaymentInfoTry = Try[PaymentInfo]
+
   type OutgoingAdds = Iterable[UpdateAddHtlc]
   type UndeterminedResolutions = Iterable[UndeterminedResolution]
   type ReasonableTrampolines = Iterable[ReasonableTrampoline]
@@ -64,8 +67,9 @@ case class InFlightPayments(out: Map[FullPaymentTag, OutgoingAdds], in: Map[Full
 }
 
 abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val pf: PathFinder) extends ChannelListener { me =>
-  val getPaymentDbInfoMemo: LoadingCache[ByteVector32, PaymentDbInfo] = memoize(getPaymentDbInfo)
+  val getPaymentInfoMemo: LoadingCache[ByteVector32, PaymentInfoTry] = memoize(payBag.getPaymentInfo)
   val initResolveMemo: LoadingCache[UpdateAddHtlcExt, IncomingResolution] = memoize(initResolve)
+  val getPreimageMemo: LoadingCache[ByteVector32, PreimageTry] = memoize(payBag.getPreimage)
 
   val sockBrandingBridge: ConnectionListener
   val sockChannelBridge: ConnectionListener
@@ -89,12 +93,6 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
   // RECEIVE/SEND UTILITIES
 
-  def getPaymentDbInfo(paymentHash: ByteVector32): PaymentDbInfo = {
-    val inRelayDb = payBag.getRelayedPreimageInfo(paymentHash)
-    val inPaymentDb = payBag.getPaymentInfo(paymentHash)
-    PaymentDbInfo(inPaymentDb, inRelayDb, paymentHash)
-  }
-
   def maxReceivableInfo: Option[CommitsAndMax] = {
     val canReceive = all.values.filter(Channel.isOperational).flatMap(Channel.chanAndCommitsOpt).filter(_.commits.updateOpt.isDefined).toList.sortBy(_.commits.availableForReceive)
     // Example: (5, 50, 60, 100) -> (50, 60, 100), receivable = 50*3 = 150 (the idea is for smallest remaining operational channel to be able to handle an evenly split amount)
@@ -103,13 +101,11 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
     if (candidates.isEmpty) None else candidates.maxBy(_.maxReceivable).toSome
   }
 
-  def checkIfSendable(tag: FullPaymentTag, fee: MilliSatoshi, amount: MilliSatoshi): Int = getPaymentDbInfoMemo(tag.paymentHash) match {
+  def checkIfSendable(tag: FullPaymentTag, fee: MilliSatoshi, amount: MilliSatoshi): Int = getPreimageMemo(tag.paymentHash) match {
     case _ if opm.getSendable(all.values.filter(Channel.isOperational), maxFee = fee).values.sum < amount => PaymentInfo.NOT_SENDABLE_LOW_FUNDS // Not enough balance
     case _ if opm.data.payments.get(tag).exists(fsm => PENDING == fsm.state || INIT == fsm.state) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is pending in FSM
     case _ if opm.data.payments.get(tag).exists(fsm => SUCCEEDED == fsm.state) => PaymentInfo.NOT_SENDABLE_SUCCESS // This payment has just been fulfilled at runtime
-    case info if info.localOpt.exists(SUCCEEDED == _.status) => PaymentInfo.NOT_SENDABLE_SUCCESS // Successfully sent or received a long time ago
-    case info if info.localOpt.exists(_.isIncoming) => PaymentInfo.NOT_SENDABLE_INCOMING // Incoming payment with this hash exists
-    case info if info.relayedOpt.isDefined => PaymentInfo.NOT_SENDABLE_RELAYED // Related preimage has been relayed
+    case info if info.isSuccess => PaymentInfo.NOT_SENDABLE_SUCCESS // Already have a preimage, meaning it already has been send/received/relayed
     case _ => PaymentInfo.SENDABLE // Has never been sent or ABORTED by now
   }
 

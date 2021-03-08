@@ -32,6 +32,7 @@ import immortan.crypto.Noise.KeyPair
 import java.io.ByteArrayInputStream
 import java.nio.ByteOrder
 import akka.util.Timeout
+import scala.util.Try
 
 
 object LNParams {
@@ -282,9 +283,6 @@ trait NetworkDataStore {
 // Bag of stored payments and successful relays
 
 trait PaymentBag {
-  def getPaymentInfo(paymentHash: ByteVector32): Option[PaymentInfo]
-  def getRelayedPreimageInfo(paymentHash: ByteVector32): Option[RelayedPreimageInfo]
-
   def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32, stamp: Long,
                              relayed: MilliSatoshi, earned: MilliSatoshi, fast: Long)
 
@@ -294,6 +292,9 @@ trait PaymentBag {
 
   def replaceIncomingPayment(prex: PaymentRequestExt, preimage: ByteVector32, description: PaymentDescription,
                              balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc, chainFee: MilliSatoshi): Unit
+
+  def getPaymentInfo(paymentHash: ByteVector32): Try[PaymentInfo]
+  def getPreimage(hash: ByteVector32): Try[ByteVector32]
 
   // These MUST be the only two methods capable of updating payment state to SUCCEEDED
   def updOkIncoming(receivedAmount: MilliSatoshi, paymentHash: ByteVector32): Unit

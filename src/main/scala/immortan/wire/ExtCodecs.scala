@@ -14,7 +14,7 @@ import scodec.Codec
 
 case class HostedState(nodeId1: PublicKey, nodeId2: PublicKey, lastCrossSignedState: LastCrossSignedState)
 
-case class ChannelBackup(channels: ByteVector, htlcInfos: ByteVector, relays: ByteVector)
+case class ChannelBackup(channels: ByteVector, htlcInfos: ByteVector, preimages: ByteVector)
 
 object ExtCodecs {
   val hostedStateCodec = {
@@ -26,7 +26,7 @@ object ExtCodecs {
   val channelBackupCodec = {
     (varsizebinarydata withContext "channels") ::
       (varsizebinarydata withContext "htlcInfos") ::
-      (varsizebinarydata withContext "relays")
+      (varsizebinarydata withContext "preimages")
   }.as[ChannelBackup]
 
 

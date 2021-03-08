@@ -6,6 +6,7 @@ import immortan.crypto.Tools._
 import fr.acinq.eclair.channel._
 import immortan.fsm.IncomingPaymentReceiver._
 import immortan.ChannelMaster.ReasonableLocals
+import fr.acinq.bitcoin.ByteVector32
 import immortan.crypto.StateMachine
 
 
@@ -18,7 +19,7 @@ object IncomingPaymentReceiver {
 }
 
 trait IncomingPaymentReceiverData
-case class IncomingRevealed(info: PaymentInfo) extends IncomingPaymentReceiverData
+case class IncomingRevealed(preimage: ByteVector32) extends IncomingPaymentReceiverData
 case class IncomingRejected(commonFailure: Option[FailureMessage] = None) extends IncomingPaymentReceiverData
 
 abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaster) extends StateMachine[IncomingPaymentReceiverData] {
@@ -36,11 +37,13 @@ abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaste
 
     case (inFlight: InFlightPayments, null, PROCESSING) =>
       val adds = inFlight.in(fullTag).asInstanceOf[ReasonableLocals]
-      cm.getPaymentDbInfoMemo.get(fullTag.paymentHash).localOpt match {
-        case Some(alreadyRevealed) if alreadyRevealed.isIncoming && PaymentStatus.SUCCEEDED == alreadyRevealed.status => becomeRevealed(alreadyRevealed, adds)
+      val preimageTry = cm.getPreimageMemo.get(fullTag.paymentHash)
+
+      cm.getPaymentInfoMemo.get(fullTag.paymentHash).toOption match {
+        case None => if (preimageTry.isSuccess) becomeRevealed(preimageTry.get, adds) else becomeRejected(IncomingRejected(None), adds)
+        case Some(alreadyRevealed) if alreadyRevealed.isIncoming && PaymentStatus.SUCCEEDED == alreadyRevealed.status => becomeRevealed(alreadyRevealed.preimage, adds)
         case _ if adds.exists(_.packet.add.cltvExpiry.toLong < LNParams.blockCount.get + LNParams.cltvRejectThreshold) => becomeRejected(IncomingRejected(None), adds)
-        case Some(covered) if covered.isIncoming && covered.pr.amount.isDefined && askCovered(adds, covered) => becomeRevealed(covered, adds)
-        case None => becomeRejected(IncomingRejected(None), adds)
+        case Some(coveredAll) if coveredAll.isIncoming && coveredAll.pr.amount.isDefined && askCovered(adds, coveredAll) => becomeRevealed(coveredAll.preimage, adds)
         case _ => // Do nothing
       }
 
@@ -54,17 +57,19 @@ abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaste
 
     case (inFlight: InFlightPayments, null, DECIDING) =>
       val adds = inFlight.in(fullTag).asInstanceOf[ReasonableLocals]
-      cm.getPaymentDbInfoMemo.get(fullTag.paymentHash).localOpt match {
-        case Some(alreadyRevealed) if alreadyRevealed.isIncoming && PaymentStatus.SUCCEEDED == alreadyRevealed.status => becomeRevealed(alreadyRevealed, adds)
-        case Some(collectedSomething) if collectedSomething.isIncoming && collectedSomething.pr.amount.isEmpty && gotEnough(adds) => becomeRevealed(collectedSomething, adds)
-        case Some(covered) if covered.isIncoming && covered.pr.amount.isDefined && askCovered(adds, covered) => becomeRevealed(covered, adds)
-        case _ => becomeRejected(IncomingRejected(PaymentTimeout.toSome), adds)
+      val preimageTry = cm.getPreimageMemo.get(fullTag.paymentHash)
+
+      cm.getPaymentInfoMemo.get(fullTag.paymentHash).toOption match {
+        case Some(alreadyRevealed) if alreadyRevealed.isIncoming && PaymentStatus.SUCCEEDED == alreadyRevealed.status => becomeRevealed(alreadyRevealed.preimage, adds)
+        case Some(coveredAll) if coveredAll.isIncoming && coveredAll.pr.amount.isDefined && askCovered(adds, coveredAll) => becomeRevealed(coveredAll.preimage, adds)
+        case Some(collectedSome) if collectedSome.isIncoming && collectedSome.pr.amount.isEmpty && gotSome(adds) => becomeRevealed(collectedSome.preimage, adds)
+        case None => if (preimageTry.isSuccess) becomeRevealed(preimageTry.get, adds) else becomeRejected(IncomingRejected(PaymentTimeout.toSome), adds)
       }
 
     case (inFlight: InFlightPayments, revealed: IncomingRevealed, REVEALED) =>
       // Re-fulfill all subsequent leftovers forever and consider them donations
       val adds = inFlight.in(fullTag).asInstanceOf[ReasonableLocals]
-      fulfill(revealed.info, adds)
+      fulfill(revealed.preimage, adds)
 
     case (inFlight: InFlightPayments, rejected: IncomingRejected, REJECTED) =>
       // Keep failing leftovers and any new parts with original failure
@@ -74,12 +79,12 @@ abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaste
 
   // Utils
 
-  def gotEnough(adds: Iterable[ReasonableLocal] = Nil): Boolean = adds.nonEmpty && adds.map(_.packet.add.amountMsat).sum >= adds.head.packet.payload.totalAmount
+  def gotSome(adds: Iterable[ReasonableLocal] = Nil): Boolean = adds.nonEmpty && adds.map(_.packet.add.amountMsat).sum >= adds.head.packet.payload.totalAmount
 
   def askCovered(adds: Iterable[ReasonableLocal], info: PaymentInfo): Boolean = adds.map(_.packet.add.amountMsat).sum >= info.amountOrMin
 
-  def fulfill(info: PaymentInfo, adds: Iterable[ReasonableLocal] = None): Unit = {
-    for (local <- adds) cm.sendTo(local.fulfillCommand(info.preimage), local.packet.add.channelId)
+  def fulfill(preimage: ByteVector32, adds: Iterable[ReasonableLocal] = None): Unit = {
+    for (local <- adds) cm.sendTo(local.fulfillCommand(preimage), local.packet.add.channelId)
   }
 
   def reject(data1: IncomingRejected, adds: Iterable[ReasonableLocal] = None): Unit = data1.commonFailure match {
@@ -93,11 +98,12 @@ abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaste
     reject(data1, adds)
   }
 
-  def becomeRevealed(info: PaymentInfo, adds: Iterable[ReasonableLocal] = None): Unit = {
+  def becomeRevealed(preimage: ByteVector32, adds: Iterable[ReasonableLocal] = None): Unit = {
     cm.payBag.updOkIncoming(adds.map(_.packet.add.amountMsat).sum, fullTag.paymentHash)
-    cm.getPaymentDbInfoMemo.invalidate(fullTag.paymentHash)
-    become(IncomingRevealed(info), REVEALED)
+    cm.getPaymentInfoMemo.invalidate(fullTag.paymentHash)
+    cm.getPreimageMemo.invalidate(fullTag.paymentHash)
+    become(IncomingRevealed(preimage), REVEALED)
     incomingRevealed(fullTag)
-    fulfill(info, adds)
+    fulfill(preimage, adds)
   }
 }
