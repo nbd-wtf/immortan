@@ -63,6 +63,7 @@ object ChannelMaster {
 
 case class InFlightPayments(out: Map[FullPaymentTag, OutgoingAdds], in: Map[FullPaymentTag, UndeterminedResolutions] = Map.empty) {
   // Incoming HTLC tag is extracted from onion, corresponsing outgoing HTLC tag is stored in TLV, this way in/out can be linked
+  def nothingLeftForTag(fullTag: FullPaymentTag): Boolean = !out.contains(fullTag) && !in.contains(fullTag)
   val allTags: Set[FullPaymentTag] = out.keySet ++ in.keySet
 }
 
@@ -73,8 +74,8 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
   val sockBrandingBridge: ConnectionListener
   val sockChannelBridge: ConnectionListener
-  val opm: OutgoingPaymentMaster
 
+  val opm: OutgoingPaymentMaster = new OutgoingPaymentMaster(me)
   val connectionListeners = Set(sockBrandingBridge, sockChannelBridge)
   var all = Map.empty[ByteVector32, Channel]
 

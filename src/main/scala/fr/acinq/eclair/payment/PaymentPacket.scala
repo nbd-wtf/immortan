@@ -135,12 +135,6 @@ object IncomingPacket {
 
 /** Helpers to create outgoing payment packets. */
 object OutgoingPacket {
-
-  case class TrampolineAdds(adds: Seq[UpdateAddHtlc] = Nil) {
-    val amountIn: MilliSatoshi = adds.map(_.amountMsat).sum
-    val expiryIn: CltvExpiry = adds.map(_.cltvExpiry).min
-  }
-
   /**
    * Build an encrypted onion packet from onion payloads and node public keys.
    */

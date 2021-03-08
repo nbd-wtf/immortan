@@ -54,9 +54,7 @@ case class RemoteFailure(packet: Sphinx.DecryptedFailurePacket, route: Route) ex
 // Master commands and data
 
 case class SplitIntoHalves(amount: MilliSatoshi)
-
 case class NodeFailed(failedNodeId: PublicKey, increment: Int)
-
 case class ChannelFailed(failedDescAndCap: DescAndCapacity, increment: Int)
 
 // Tag contains a PaymentSecret taken from upstream (for routed payments), it is required to group payments with same hash
@@ -88,10 +86,11 @@ object OutgoingPaymentMaster {
 class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[OutgoingPaymentMasterData] with CanBeRepliedTo { self =>
   def process(change: Any): Unit = scala.concurrent.Future(self doProcess change)(Channel.channelContext)
   become(OutgoingPaymentMasterData(Map.empty), EXPECTING_PAYMENTS)
+  cm.pf.listeners += self
 
   var listeners = Set.empty[OutgoingPaymentMasterListener]
   val events: OutgoingPaymentMasterListener = new OutgoingPaymentMasterListener {
-    override def partRejected(data: OutgoingPaymentSenderData): Unit = for (lst <- listeners) lst.partRejected(data)
+    override def outgoingPartAborted(data: OutgoingPaymentSenderData): Unit = for (lst <- listeners) lst.outgoingPartAborted(data)
     override def gotPreimage(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill, isFirst: Boolean): Unit = for (lst <- listeners) lst.gotPreimage(data, fulfill, isFirst)
   }
 
@@ -101,9 +100,8 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
       val noPendingPayments = data.payments.values.forall(fsm => SUCCEEDED == fsm.state || ABORTED == fsm.state)
       if (noPendingPayments) become(data.withFailuresReduced, state)
 
-      val sender = data.payments.getOrElse(sendMultiPart.fullTag, self withSender sendMultiPart.fullTag)
-      for (assistedEdge <- sendMultiPart.assistedEdges) cm.pf process assistedEdge
-      sender doProcess sendMultiPart
+      for (extraEdge <- sendMultiPart.assistedEdges) cm.pf process extraEdge
+      getSender(sendMultiPart.fullTag) doProcess sendMultiPart
       self process CMDAskForRoute
 
     case (CMDChanGotOnline, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
@@ -170,12 +168,13 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
     case _ =>
   }
 
-  def withSender(fullTag: FullPaymentTag): OutgoingPaymentSender = {
-    val newOutgoingPaymentSender = new OutgoingPaymentSender(fullTag, self)
-    val data1 = data.payments.updated(fullTag, newOutgoingPaymentSender)
-    become(data.copy(payments = data1), state)
-    newOutgoingPaymentSender
-  }
+  def getSender(fullTag: FullPaymentTag): OutgoingPaymentSender =
+    if (data.payments contains fullTag) data.payments(fullTag) else {
+      val newOutgoingPaymentSender = new OutgoingPaymentSender(fullTag, self)
+      val data1 = data.payments.updated(fullTag, newOutgoingPaymentSender)
+      become(data.copy(payments = data1), state)
+      newOutgoingPaymentSender
+    }
 
   def rightNowSendable(chans: Iterable[Channel], maxFee: MilliSatoshi): mutable.Map[ChanAndCommits, MilliSatoshi] = {
     // This method is supposed to be used to find channels which are able to currently handle a given amount + fee
@@ -208,7 +207,7 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
 }
 
 trait OutgoingPaymentMasterListener {
-  def partRejected(data: OutgoingPaymentSenderData): Unit = none
+  def outgoingPartAborted(data: OutgoingPaymentSenderData): Unit = none
   def gotPreimage(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill, isFirst: Boolean): Unit = none
 }
 
@@ -222,9 +221,7 @@ sealed trait PartStatus { me =>
 
 case class InFlightInfo(cmd: CMD_ADD_HTLC, route: Route)
 case class WaitForChanOnline(onionKey: PrivateKey, amount: MilliSatoshi) extends PartStatus
-case class WaitForRouteOrInFlight(onionKey: PrivateKey, amount: MilliSatoshi, cnc: ChanAndCommits, flight: Option[InFlightInfo] = None,
-                                  localFailed: List[Channel] = Nil, remoteAttempts: Int = 0) extends PartStatus {
-
+case class WaitForRouteOrInFlight(onionKey: PrivateKey, amount: MilliSatoshi, cnc: ChanAndCommits, flight: Option[InFlightInfo], localFailed: List[Channel], remoteAttempts: Int) extends PartStatus {
   def oneMoreRemoteAttempt(cnc1: ChanAndCommits): WaitForRouteOrInFlight = copy(flight = None, remoteAttempts = remoteAttempts + 1, cnc = cnc1)
   def oneMoreLocalAttempt(cnc1: ChanAndCommits): WaitForRouteOrInFlight = copy(flight = None, localFailed = localFailedChans, cnc = cnc1)
   lazy val localFailedChans: List[Channel] = cnc.chan :: localFailed
@@ -430,10 +427,11 @@ class OutgoingPaymentSender(fullTag: FullPaymentTag, opm: OutgoingPaymentMaster)
         // Example: channel leftover=300, minSendable=10, chanSendable=400 -> sending 300
         // Example: channel leftover=6, minSendable=10, chanSendable=200 -> sending 10
         // Example: channel leftover=6, minSendable=10, chanSendable=8 -> skipping
+
         val noFeeAmount = leftover max cnc.commits.minSendable min chanSendable
-        val wait = WaitForRouteOrInFlight(randomKey, noFeeAmount, cnc).tuple
+        val wait = WaitForRouteOrInFlight(randomKey, noFeeAmount, cnc, None, Nil, 0)
         if (noFeeAmount < cnc.commits.minSendable) (accumulator, leftover)
-        else (accumulator + wait, leftover - noFeeAmount)
+        else (accumulator + wait.tuple, leftover - noFeeAmount)
 
       case (collected, _) =>
         // No more amount to assign
@@ -473,7 +471,7 @@ class OutgoingPaymentSender(fullTag: FullPaymentTag, opm: OutgoingPaymentMaster)
   def abortAndNotify(data1: OutgoingPaymentSenderData): Unit = {
     // Can be considered finalized if: (1) ABORTED, (2) no in-flight parts, (3) no leftovers in channels
     // but the last two checks will be performed at later stages, FSM itself should not be concerned about these
-    opm.events.partRejected(data1)
+    opm.events.outgoingPartAborted(data1)
     become(data1, ABORTED)
   }
 }

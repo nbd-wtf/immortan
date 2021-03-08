@@ -5,7 +5,7 @@ import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
 import fr.acinq.eclair.channel._
 import immortan.fsm.IncomingPaymentReceiver._
-import immortan.ChannelMaster.ReasonableLocals
+import immortan.ChannelMaster.{PreimageTry, ReasonableLocals}
 import fr.acinq.bitcoin.ByteVector32
 import immortan.crypto.StateMachine
 
@@ -20,7 +20,7 @@ object IncomingPaymentReceiver {
 
 trait IncomingPaymentReceiverData
 case class IncomingRevealed(preimage: ByteVector32) extends IncomingPaymentReceiverData
-case class IncomingRejected(commonFailure: Option[FailureMessage] = None) extends IncomingPaymentReceiverData
+case class IncomingRejected(failure: Option[FailureMessage] = None) extends IncomingPaymentReceiverData
 
 abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaster) extends StateMachine[IncomingPaymentReceiverData] {
   def incomingFinalized(fullTag: FullPaymentTag) // Called when we receive a bag of cross-signed incoming payments which has no related incoming HTLCs
@@ -31,7 +31,7 @@ abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaste
   become(null, PROCESSING)
 
   def doProcess(msg: Any): Unit = (msg, data, state) match {
-    case (inFlight: InFlightPayments, _, PROCESSING | REVEALED | REJECTED) if inFlight.in.getOrElse(fullTag, Nil).isEmpty =>
+    case (inFlight: InFlightPayments, _, PROCESSING | REVEALED | REJECTED) if inFlight.nothingLeftForTag(fullTag) =>
       // We have previously failed or fulfilled an incoming payment as a whole and all parts have been cleared by now
       incomingFinalized(fullTag)
 
@@ -57,7 +57,7 @@ abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaste
 
     case (inFlight: InFlightPayments, null, DECIDING) =>
       val adds = inFlight.in(fullTag).asInstanceOf[ReasonableLocals]
-      val preimageTry = cm.getPreimageMemo.get(fullTag.paymentHash)
+      val preimageTry: PreimageTry = cm.getPreimageMemo.get(fullTag.paymentHash)
 
       cm.getPaymentInfoMemo.get(fullTag.paymentHash).toOption match {
         case Some(alreadyRevealed) if alreadyRevealed.isIncoming && PaymentStatus.SUCCEEDED == alreadyRevealed.status => becomeRevealed(alreadyRevealed.preimage, adds)
@@ -87,7 +87,7 @@ abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaste
     for (local <- adds) cm.sendTo(local.fulfillCommand(preimage), local.packet.add.channelId)
   }
 
-  def reject(data1: IncomingRejected, adds: Iterable[ReasonableLocal] = None): Unit = data1.commonFailure match {
+  def reject(data1: IncomingRejected, adds: Iterable[ReasonableLocal] = None): Unit = data1.failure match {
     case None => for (local <- adds) cm.sendTo(local.failCommand(local.packet.add.incorrectDetails), local.packet.add.channelId)
     case Some(fail) => for (local <- adds) cm.sendTo(local.failCommand(fail), local.packet.add.channelId)
   }
