@@ -15,6 +15,7 @@ import fr.acinq.eclair.payment.IncomingPacket
 import com.google.common.cache.LoadingCache
 import immortan.fsm.OutgoingPaymentMaster
 import fr.acinq.bitcoin.ByteVector32
+import scodec.bits.ByteVector
 import scala.util.Try
 
 
@@ -63,7 +64,6 @@ object ChannelMaster {
 
 case class InFlightPayments(out: Map[FullPaymentTag, OutgoingAdds], in: Map[FullPaymentTag, UndeterminedResolutions] = Map.empty) {
   // Incoming HTLC tag is extracted from onion, corresponsing outgoing HTLC tag is stored in TLV, this way in/out can be linked
-  def nothingLeftForTag(fullTag: FullPaymentTag): Boolean = !out.contains(fullTag) && !in.contains(fullTag)
   val allTags: Set[FullPaymentTag] = out.keySet ++ in.keySet
 }
 

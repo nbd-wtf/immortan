@@ -3,7 +3,6 @@ package immortan.fsm
 import immortan._
 import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
-import fr.acinq.eclair.channel._
 import immortan.fsm.IncomingPaymentReceiver._
 import immortan.ChannelMaster.{PreimageTry, ReasonableLocals}
 import fr.acinq.bitcoin.ByteVector32
@@ -11,47 +10,45 @@ import immortan.crypto.StateMachine
 
 
 object IncomingPaymentReceiver {
-  final val PROCESSING = "receiver-processing"
+  final val FINALIZING = "receiver-finalizing"
+  final val RECEIVING = "receiver-receiving"
   final val DECIDING = "receiver-deciding"
-  final val REJECTED = "receiver-rejected"
-  final val REVEALED = "receiver-revealed"
   final val CMDTimeout = "cmd-timeout"
 }
 
 trait IncomingPaymentReceiverData
 case class IncomingRevealed(preimage: ByteVector32) extends IncomingPaymentReceiverData
-case class IncomingRejected(failure: Option[FailureMessage] = None) extends IncomingPaymentReceiverData
+case class IncomingAborted(failure: Option[FailureMessage] = None) extends IncomingPaymentReceiverData
 
 abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaster) extends StateMachine[IncomingPaymentReceiverData] {
   def incomingFinalized(fullTag: FullPaymentTag) // Called when we receive a bag of cross-signed incoming payments which has no related incoming HTLCs
-  def incomingRevealed(fullTag: FullPaymentTag) // Called when preimage is revealed for the first time (incoming MPP leftovers may be present)
 
   // Start timeout countdown right away
   delayedCMDWorker.replaceWork(CMDTimeout)
-  become(null, PROCESSING)
+  become(null, RECEIVING)
 
   def doProcess(msg: Any): Unit = (msg, data, state) match {
-    case (inFlight: InFlightPayments, _, PROCESSING | REVEALED | REJECTED) if inFlight.nothingLeftForTag(fullTag) =>
-      // We have previously failed or fulfilled an incoming payment as a whole and all parts have been cleared by now
+    case (inFlight: InFlightPayments, _, RECEIVING | DECIDING | FINALIZING) if !inFlight.in.contains(fullTag) =>
+      // We have previously failed or fulfilled an incoming payment as a whole and all parts have been cleared
       incomingFinalized(fullTag)
 
-    case (inFlight: InFlightPayments, null, PROCESSING) =>
+    case (inFlight: InFlightPayments, null, RECEIVING) =>
       val adds = inFlight.in(fullTag).asInstanceOf[ReasonableLocals]
-      val preimageTry = cm.getPreimageMemo.get(fullTag.paymentHash)
+      val preimageTry: PreimageTry = cm.getPreimageMemo.get(fullTag.paymentHash)
 
       cm.getPaymentInfoMemo.get(fullTag.paymentHash).toOption match {
-        case None => if (preimageTry.isSuccess) becomeRevealed(preimageTry.get, adds) else becomeRejected(IncomingRejected(None), adds)
+        case None => if (preimageTry.isSuccess) becomeRevealed(preimageTry.get, adds) else becomeAborted(IncomingAborted(None), adds)
         case Some(alreadyRevealed) if alreadyRevealed.isIncoming && PaymentStatus.SUCCEEDED == alreadyRevealed.status => becomeRevealed(alreadyRevealed.preimage, adds)
-        case _ if adds.exists(_.packet.add.cltvExpiry.toLong < LNParams.blockCount.get + LNParams.cltvRejectThreshold) => becomeRejected(IncomingRejected(None), adds)
-        case Some(coveredAll) if coveredAll.isIncoming && coveredAll.pr.amount.isDefined && askCovered(adds, coveredAll) => becomeRevealed(coveredAll.preimage, adds)
+        case _ if adds.exists(_.packet.add.cltvExpiry.toLong < LNParams.blockCount.get + LNParams.cltvRejectThreshold) => becomeAborted(IncomingAborted(None), adds)
+        case Some(covered) if covered.isIncoming && covered.pr.amount.isDefined && askCovered(adds, covered) => becomeRevealed(covered.preimage, adds)
         case _ => // Do nothing
       }
 
-    case (_: UpdateAddHtlcExt, null, PROCESSING) =>
+    case (_: UpdateAddHtlcExt, null, RECEIVING) =>
       // Just saw another add so prolong timeout
       delayedCMDWorker.replaceWork(CMDTimeout)
 
-    case (CMDTimeout, null, PROCESSING) =>
+    case (CMDTimeout, null, RECEIVING) =>
       become(null, DECIDING)
       cm.stateUpdated(Nil)
 
@@ -63,47 +60,44 @@ abstract class IncomingPaymentReceiver(fullTag: FullPaymentTag, cm: ChannelMaste
         case Some(alreadyRevealed) if alreadyRevealed.isIncoming && PaymentStatus.SUCCEEDED == alreadyRevealed.status => becomeRevealed(alreadyRevealed.preimage, adds)
         case Some(coveredAll) if coveredAll.isIncoming && coveredAll.pr.amount.isDefined && askCovered(adds, coveredAll) => becomeRevealed(coveredAll.preimage, adds)
         case Some(collectedSome) if collectedSome.isIncoming && collectedSome.pr.amount.isEmpty && gotSome(adds) => becomeRevealed(collectedSome.preimage, adds)
-        case None => if (preimageTry.isSuccess) becomeRevealed(preimageTry.get, adds) else becomeRejected(IncomingRejected(PaymentTimeout.toSome), adds)
+        case None => if (preimageTry.isSuccess) becomeRevealed(preimageTry.get, adds) else becomeAborted(IncomingAborted(PaymentTimeout.toSome), adds)
       }
 
-    case (inFlight: InFlightPayments, revealed: IncomingRevealed, REVEALED) =>
-      // Re-fulfill all subsequent leftovers forever and consider them donations
+    case (inFlight: InFlightPayments, revealed: IncomingRevealed, FINALIZING) =>
       val adds = inFlight.in(fullTag).asInstanceOf[ReasonableLocals]
       fulfill(revealed.preimage, adds)
 
-    case (inFlight: InFlightPayments, rejected: IncomingRejected, REJECTED) =>
-      // Keep failing leftovers and any new parts with original failure
+    case (inFlight: InFlightPayments, aborted: IncomingAborted, FINALIZING) =>
       val adds = inFlight.in(fullTag).asInstanceOf[ReasonableLocals]
-      reject(rejected, adds)
+      abort(aborted, adds)
   }
 
   // Utils
 
-  def gotSome(adds: Iterable[ReasonableLocal] = Nil): Boolean = adds.nonEmpty && adds.map(_.packet.add.amountMsat).sum >= adds.head.packet.payload.totalAmount
+  def gotSome(adds: ReasonableLocals): Boolean = adds.nonEmpty && adds.map(_.packet.add.amountMsat).sum >= adds.head.packet.payload.totalAmount
 
-  def askCovered(adds: Iterable[ReasonableLocal], info: PaymentInfo): Boolean = adds.map(_.packet.add.amountMsat).sum >= info.amountOrMin
+  def askCovered(adds: ReasonableLocals, info: PaymentInfo): Boolean = adds.map(_.packet.add.amountMsat).sum >= info.amountOrMin
 
-  def fulfill(preimage: ByteVector32, adds: Iterable[ReasonableLocal] = None): Unit = {
+  def fulfill(preimage: ByteVector32, adds: ReasonableLocals): Unit = {
     for (local <- adds) cm.sendTo(local.fulfillCommand(preimage), local.packet.add.channelId)
   }
 
-  def reject(data1: IncomingRejected, adds: Iterable[ReasonableLocal] = None): Unit = data1.failure match {
+  def abort(data1: IncomingAborted, adds: ReasonableLocals): Unit = data1.failure match {
     case None => for (local <- adds) cm.sendTo(local.failCommand(local.packet.add.incorrectDetails), local.packet.add.channelId)
     case Some(fail) => for (local <- adds) cm.sendTo(local.failCommand(fail), local.packet.add.channelId)
   }
 
-  def becomeRejected(data1: IncomingRejected, adds: Iterable[ReasonableLocal] = None): Unit = {
+  def becomeAborted(data1: IncomingAborted, adds: ReasonableLocals): Unit = {
     // Fail parts and retain a failure message to maybe re-fail using the same error
-    become(data1, REJECTED)
-    reject(data1, adds)
+    become(data1, FINALIZING)
+    abort(data1, adds)
   }
 
-  def becomeRevealed(preimage: ByteVector32, adds: Iterable[ReasonableLocal] = None): Unit = {
+  def becomeRevealed(preimage: ByteVector32, adds: ReasonableLocals): Unit = {
     cm.payBag.updOkIncoming(adds.map(_.packet.add.amountMsat).sum, fullTag.paymentHash)
     cm.getPaymentInfoMemo.invalidate(fullTag.paymentHash)
     cm.getPreimageMemo.invalidate(fullTag.paymentHash)
-    become(IncomingRevealed(preimage), REVEALED)
-    incomingRevealed(fullTag)
+    become(IncomingRevealed(preimage), FINALIZING)
     fulfill(preimage, adds)
   }
 }

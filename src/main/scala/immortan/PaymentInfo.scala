@@ -76,10 +76,9 @@ case class SwapOutDescription(invoiceText: String, btcAddress: String, chainFee:
 
 // Relayed preimages
 
-case class RelayedPreimageInfo(paymentHashString: String, preimageString: String, relayed: MilliSatoshi, earned: MilliSatoshi, stamp: Long, fast: Long) {
+case class RelayedPreimageInfo(paymentHashString: String, preimageString: String, relayed: MilliSatoshi, earned: MilliSatoshi, stamp: Long) {
   lazy val paymentHash: ByteVector32 = ByteVector32(ByteVector fromValidHex paymentHashString)
   lazy val preimage: ByteVector32 = ByteVector32(ByteVector fromValidHex preimageString)
-  val isFast: Boolean = fast == 1L
 }
 
 // Tx descriptions

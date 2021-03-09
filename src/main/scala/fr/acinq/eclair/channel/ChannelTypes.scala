@@ -80,18 +80,22 @@ sealed trait Command
 sealed trait IncomingResolution
 
 sealed trait UndeterminedResolution extends IncomingResolution {
+  def failCommand(failure: FailureMessage): FinalResolution = CMD_FAIL_HTLC(Right(failure), secret, add)
+  def fulfillCommand(preimage: ByteVector32): FinalResolution = CMD_FULFILL_HTLC(preimage, add)
+
   val fullTag: FullPaymentTag
   val secret: PrivateKey
+  val add: UpdateAddHtlc
 }
 
 case class ReasonableTrampoline(packet: IncomingPacket.NodeRelayPacket, secret: PrivateKey) extends UndeterminedResolution {
   val fullTag: FullPaymentTag = FullPaymentTag(packet.outerPayload.paymentSecret.get, packet.add.paymentHash, PaymentTagTlv.TRAMPLOINE)
+  val add: UpdateAddHtlc = packet.add
 }
 
 case class ReasonableLocal(packet: IncomingPacket.FinalPacket, secret: PrivateKey) extends UndeterminedResolution {
   val fullTag: FullPaymentTag = FullPaymentTag(packet.payload.paymentSecret.get, packet.add.paymentHash, PaymentTagTlv.LOCAL)
-  def failCommand(failure: FailureMessage): FinalResolution = CMD_FAIL_HTLC(Right(failure), secret, packet.add)
-  def fulfillCommand(preimage: ByteVector32): FinalResolution = CMD_FULFILL_HTLC(preimage, packet.add)
+  val add: UpdateAddHtlc = packet.add
 }
 
 sealed trait FinalResolution extends IncomingResolution { val theirAdd: UpdateAddHtlc }

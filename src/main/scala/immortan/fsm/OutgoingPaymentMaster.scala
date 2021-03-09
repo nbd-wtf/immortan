@@ -57,6 +57,8 @@ case class SplitIntoHalves(amount: MilliSatoshi)
 case class NodeFailed(failedNodeId: PublicKey, increment: Int)
 case class ChannelFailed(failedDescAndCap: DescAndCapacity, increment: Int)
 
+// TODO: different total amount for inner/outer trampoline onions for split payments
+// Important: with trampoline payment targetNodeId is next trampoline node, not necessairly final recipient
 // Tag contains a PaymentSecret taken from upstream (for routed payments), it is required to group payments with same hash
 case class SendMultiPart(fullTag: FullPaymentTag, routerConf: RouterConf, targetNodeId: PublicKey, totalAmount: MilliSatoshi = 0L.msat,
                          totalFeeReserve: MilliSatoshi = 0L.msat, paymentSecret: ByteVector32 = ByteVector32.Zeroes, targetExpiry: CltvExpiry = CltvExpiry(0),

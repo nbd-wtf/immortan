@@ -141,16 +141,15 @@ object HostedExcludedChannelTable extends ExcludedChannelTable("hosted_excluded_
 // Database #3, unrecoverable, but not critically important data, will not go to backup
 
 object RelayTable extends Table {
-  val (table, hash, preimage, stamp, relayed, earned, fast) = ("relay", "hash", "preimage", "stamp", "relayed", "earned", "fast")
-  val newSql = s"INSERT INTO $table ($hash, $preimage, $stamp, $relayed, $earned, $fast) VALUES (?, ?, ?, ?, ?, ?)"
+  val (table, hash, preimage, stamp, relayed, earned) = ("relay", "hash", "preimage", "stamp", "relayed", "earned")
+  val newSql = s"INSERT INTO $table ($hash, $preimage, $stamp, $relayed, $earned) VALUES (?, ?, ?, ?, ?)"
   val selectSummarySql = s"SELECT SUM($relayed), SUM($earned), COUNT($id) FROM $table"
   val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 3"
 
   def createStatements: Seq[String] =
     s"""CREATE TABLE IF NOT EXISTS $table(
-      $id INTEGER PRIMARY KEY AUTOINCREMENT, $hash TEXT NOT NULL,
-      $preimage TEXT NOT NULL, $stamp INTEGER NOT NULL, $relayed INTEGER NOT NULL,
-      $earned INTEGER NOT NULL, $fast INTEGER NOT NULL
+      $id INTEGER PRIMARY KEY AUTOINCREMENT, $hash TEXT NOT NULL UNIQUE, $preimage TEXT NOT NULL,
+      $stamp INTEGER NOT NULL, $relayed INTEGER NOT NULL, $earned INTEGER NOT NULL
     )""" :: Nil
 }
 

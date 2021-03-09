@@ -113,9 +113,9 @@ package object eclair {
 
   def isPay2PubkeyHash(address: String): Boolean = address.startsWith("1") || address.startsWith("m") || address.startsWith("n")
 
-  def proportionalFee(proportionalFee: Long, paymentAmount: MilliSatoshi): MilliSatoshi = (paymentAmount * proportionalFee) / 1000000
+  def proportionalFee(paymentAmount: MilliSatoshi, proportionalFee: Long): MilliSatoshi = (paymentAmount * proportionalFee) / 1000000
 
-  def nodeFee(baseFee: MilliSatoshi, proportionalRatio: Long, paymentAmount: MilliSatoshi): MilliSatoshi = baseFee + proportionalFee(proportionalRatio, paymentAmount)
+  def nodeFee(baseFee: MilliSatoshi, proportionalRatio: Long, paymentAmount: MilliSatoshi): MilliSatoshi = baseFee + proportionalFee(paymentAmount, proportionalRatio)
 
   // proportional^(exponent = 1) + ln(proportional)^(logExponent = 0) is linear
   // proportional^(exponent = 0.97) + ln(proportional)^(logExponent = 3.9) gives moderate discounts
