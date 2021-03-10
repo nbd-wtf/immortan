@@ -58,6 +58,7 @@ abstract class TrampolinePaymentRelayer(fullTag: FullPaymentTag, cm: ChannelMast
   def relayFinalized(fullTag: FullPaymentTag)
 
   private val sender = cm.opm.getSender(fullTag)
+  delayedCMDWorker.replaceWork(CMDTimeout)
   become(freshData = null, RECEIVING)
   cm.opm.listeners += me
 
@@ -101,10 +102,10 @@ abstract class TrampolinePaymentRelayer(fullTag: FullPaymentTag, cm: ChannelMast
       preimageTry match {
         case Success(preimage) => becomeRevealed(preimage, ins)
         case _ if collectedEnough(ins) && outs.isEmpty => becomeSendingOrAborted(ins)
-        case _ if collectedEnough(ins) && outs.nonEmpty => become(TrampolineStopping(retry = true), SENDING)
-        case _ if ins.nonEmpty && outs.isEmpty => delayedCMDWorker.replaceWork(CMDTimeout) // Have not collected enough yet, no outgoing
-        case _ if outs.nonEmpty => become(TrampolineStopping(retry = false), SENDING) // Have not collected enough yet have outgoing
-        case _ if !inFlight.allTags.contains(fullTag) => relayFinalized(fullTag)
+        case _ if collectedEnough(ins) && outs.nonEmpty => become(TrampolineStopping(retry = true), SENDING) // App has been restarted midway, fail safely and retry
+        case _ if outs.nonEmpty => become(TrampolineStopping(retry = false), SENDING) // Have not collected enough yet have outgoing (this is pathologic state)
+        case _ if !inFlight.allTags.contains(fullTag) => relayFinalized(fullTag) // Somehow no leftovers are present at all, nothing left to do
+        case _ => // Do nothing, wait for more parts with a timeout
       }
 
     case (_: ReasonableTrampoline, null, RECEIVING) =>
@@ -160,7 +161,9 @@ abstract class TrampolinePaymentRelayer(fullTag: FullPaymentTag, cm: ChannelMast
     fulfill(preimage, adds)
   }
 
-  def collectedEnough(adds: ReasonableTrampolines): Boolean = adds.nonEmpty && amountIn(adds) >= adds.head.packet.outerPayload.totalAmount
+  def collectedEnough(adds: ReasonableTrampolines): Boolean = {
+    adds.nonEmpty && amountIn(adds) >= adds.head.packet.outerPayload.totalAmount
+  }
 
   // Account for pathological case where we don't have incoming parts (channel removed somehow)
   def maybeAddRelayedPreimageInfo(preimage: ByteVector32, adds: ReasonableTrampolines): Unit = if (adds.nonEmpty) {
