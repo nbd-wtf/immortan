@@ -33,17 +33,12 @@ class SQlitePaymentBag(db: DBInterface, preimageDb: DBInterface) extends Payment
 
   def storePreimage(paymentHash: ByteVector32, preimage: ByteVector32): Unit = preimageDb.change(PreimageTable.newSql, paymentHash.toHex, preimage.toHex)
 
+  def updOkOutgoing(upd: UpdateFulfillHtlc, fee: MilliSatoshi): Unit = db.change(PaymentTable.updOkOutgoingSql, upd.paymentPreimage.toHex, fee.toLong: JLong, upd.paymentHash.toHex)
+
+  def updOkIncoming(receivedAmount: MilliSatoshi, paymentHash: ByteVector32): Unit = db.change(PaymentTable.updOkIncomingSql, receivedAmount.toLong: JLong, System.currentTimeMillis: JLong, paymentHash.toHex)
+
   def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32, stamp: Long, relayed: MilliSatoshi, earned: MilliSatoshi): Unit =
     db.change(RelayTable.newSql, paymentHash.toHex, preimage.toHex, stamp: JLong, relayed.toLong: JLong, earned.toLong: JLong)
-
-  def updOkOutgoing(upd: UpdateFulfillHtlc, fee: MilliSatoshi): Unit = db txWrap {
-    db.change(PaymentTable.updOkOutgoingSql, upd.paymentPreimage.toHex, fee.toLong: JLong, upd.paymentHash.toHex)
-    storePreimage(upd.paymentHash, upd.paymentPreimage)
-  }
-
-  def updOkIncoming(receivedAmount: MilliSatoshi, paymentHash: ByteVector32): Unit = {
-    db.change(PaymentTable.updOkIncomingSql, receivedAmount.toLong: JLong, System.currentTimeMillis: JLong, paymentHash.toHex)
-  }
 
   def replaceOutgoingPayment(prex: PaymentRequestExt, description: PaymentDescription, action: Option[PaymentAction],
                              finalAmount: MilliSatoshi, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc, chainFee: MilliSatoshi): Unit =

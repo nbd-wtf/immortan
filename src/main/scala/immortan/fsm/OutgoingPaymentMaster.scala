@@ -61,8 +61,9 @@ case class ChannelFailed(failedDescAndCap: DescAndCapacity, increment: Int)
 // Important: with trampoline payment targetNodeId is next trampoline node, not necessairly final recipient
 // Tag contains a PaymentSecret taken from upstream (for routed payments), it is required to group payments with same hash
 case class SendMultiPart(fullTag: FullPaymentTag, routerConf: RouterConf, targetNodeId: PublicKey, totalAmount: MilliSatoshi = 0L.msat,
-                         totalFeeReserve: MilliSatoshi = 0L.msat, paymentSecret: ByteVector32 = ByteVector32.Zeroes, targetExpiry: CltvExpiry = CltvExpiry(0),
-                         allowedChans: Seq[Channel] = Nil, assistedEdges: Set[GraphEdge] = Set.empty, onionTlvs: Seq[OnionTlv] = Nil, userCustomTlvs: Seq[GenericTlv] = Nil)
+                         totalFeeReserve: MilliSatoshi = 0L.msat, targetExpiry: CltvExpiry = CltvExpiry(0), allowedChans: Seq[Channel] = Nil,
+                         paymentSecret: ByteVector32 = ByteVector32.Zeroes, assistedEdges: Set[GraphEdge] = Set.empty,
+                         onionTlvs: Seq[OnionTlv] = Nil, userCustomTlvs: Seq[GenericTlv] = Nil)
 
 case class OutgoingPaymentMasterData(payments: Map[FullPaymentTag, OutgoingPaymentSender],
                                      chanFailedAtAmount: Map[ChannelDesc, MilliSatoshi] = Map.empty withDefaultValue Long.MaxValue.msat,
@@ -85,10 +86,10 @@ object OutgoingPaymentMaster {
   final val CMDAbort = "cmd-abort"
 }
 
-class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[OutgoingPaymentMasterData] with CanBeRepliedTo { self =>
-  def process(change: Any): Unit = scala.concurrent.Future(self doProcess change)(Channel.channelContext)
+class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[OutgoingPaymentMasterData] with CanBeRepliedTo { me =>
+  def process(change: Any): Unit = scala.concurrent.Future(me doProcess change)(Channel.channelContext)
   become(OutgoingPaymentMasterData(Map.empty), EXPECTING_PAYMENTS)
-  cm.pf.listeners += self
+  cm.pf.listeners += me
 
   var listeners = Set.empty[OutgoingPaymentMasterListener]
   val events: OutgoingPaymentMasterListener = new OutgoingPaymentMasterListener {
@@ -103,12 +104,12 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
 
       for (extraEdge <- sendMultiPart.assistedEdges) cm.pf process extraEdge
       getSender(sendMultiPart.fullTag) doProcess sendMultiPart
-      self process CMDAskForRoute
+      me process CMDAskForRoute
 
     case (CMDChanGotOnline, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
       // Payments may still have awaiting parts due to offline channels
       data.payments.values.foreach(_ doProcess CMDChanGotOnline)
-      self process CMDAskForRoute
+      me process CMDAskForRoute
 
     case (CMDAskForRoute | PathFinder.NotifyOperational, EXPECTING_PAYMENTS) =>
       // This is a proxy to always send command in payment master thread
@@ -124,8 +125,8 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
       val ignoreChansFailedAtAmount = data.chanFailedAtAmount.collect { case (desc, failedAt) if failedAt - currentUsedDescs(desc) - req.amount / 8 <= req.amount => desc }
       val ignoreNodes = data.nodeFailedWithUnknownUpdateTimes.collect { case (nodeId, failTimes) if failTimes >= LNParams.routerConf.maxStrangeNodeFailures => nodeId }
       val req1 = req.copy(ignoreNodes = ignoreNodes.toSet, ignoreChannels = ignoreChansFailedTimes.toSet ++ ignoreChansCanNotHandle ++ ignoreChansFailedAtAmount)
-      cm.pf process Tuple2(self, req1)
       become(data, WAITING_FOR_ROUTE)
+      cm.pf process Tuple2(me, req1)
 
     case (PathFinder.NotifyRejected, WAITING_FOR_ROUTE) =>
       // Pathfinder is not yet ready, switch local state back
@@ -136,7 +137,7 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
       data.payments.get(response.fullTag).foreach(_ doProcess response)
       // Switch state to allow new route requests to come through
       become(data, EXPECTING_PAYMENTS)
-      self process CMDAskForRoute
+      me process CMDAskForRoute
 
     case (ChannelFailed(descAndCapacity, increment), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
       // At this point an affected InFlight status IS STILL PRESENT so failedAtAmount = sum(inFlight)
@@ -156,22 +157,22 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
 
     case (exception @ CMDException(_, cmd: CMD_ADD_HTLC), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
       data.payments.get(cmd.fullTag).foreach(_ doProcess exception)
-      self process CMDAskForRoute
+      me process CMDAskForRoute
 
     case (fulfill: RemoteFulfill, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
       data.payments.get(fulfill.ourAdd.fullTag).foreach(_ doProcess fulfill)
-      self process CMDAskForRoute
+      me process CMDAskForRoute
 
     case (reject: RemoteReject, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
       data.payments.get(reject.ourAdd.fullTag).foreach(_ doProcess reject)
-      self process CMDAskForRoute
+      me process CMDAskForRoute
 
     case _ =>
   }
 
   def getSender(fullTag: FullPaymentTag): OutgoingPaymentSender =
     if (data.payments contains fullTag) data.payments(fullTag) else {
-      val newOutgoingPaymentSender = new OutgoingPaymentSender(fullTag, self)
+      val newOutgoingPaymentSender = new OutgoingPaymentSender(fullTag, me)
       val data1 = data.payments.updated(fullTag, newOutgoingPaymentSender)
       become(data.copy(payments = data1), state)
       newOutgoingPaymentSender

@@ -16,8 +16,8 @@ import scala.util.Success
 
 
 trait TrampolinePaymentRelayerData
-case class TrampolineStopping(retry: Boolean) extends TrampolinePaymentRelayerData // SENDING
 case class TrampolineProcessing(finalNodeId: PublicKey) extends TrampolinePaymentRelayerData // SENDING
+case class TrampolineStopping(retryOnceFinalized: Boolean) extends TrampolinePaymentRelayerData // SENDING
 case class TrampolineRevealed(preimage: ByteVector32) extends TrampolinePaymentRelayerData // SENDING | FINALIZING
 case class TrampolineAborted(failure: FailureMessage) extends TrampolinePaymentRelayerData // FINALIZING
 
@@ -29,6 +29,7 @@ object TrampolinePaymentRelayer {
 
   def amountIn(adds: ReasonableTrampolines): MilliSatoshi = adds.map(_.add.amountMsat).sum
   def expiryIn(adds: ReasonableTrampolines): CltvExpiry = if (adds.isEmpty) CltvExpiry(0) else adds.map(_.add.cltvExpiry).min
+  def collectedEnough(adds: ReasonableTrampolines): Boolean = adds.nonEmpty && amountIn(adds) >= adds.head.packet.outerPayload.totalAmount
 
   def relayFee(params: TrampolineOn, ins: ReasonableTrampolines): MilliSatoshi = {
     val linearProportional = proportionalFee(amountIn(ins), params.feeProportionalMillionths)
@@ -40,7 +41,7 @@ object TrampolinePaymentRelayer {
     else if (relayFee(params, ins) > amountIn(ins) - ins.head.packet.innerPayload.amountToForward) Some(TrampolineFeeInsufficient) // Proposed trampoline fee is less than required by our node
     else if (expiryIn(ins) - ins.head.packet.innerPayload.outgoingCltv < params.cltvExpiryDelta) Some(TrampolineExpiryTooSoon) // Proposed delta is less than required by our node
     else if (CltvExpiry(blockHeight) > ins.head.packet.innerPayload.outgoingCltv) Some(TrampolineExpiryTooSoon) // Recepient's CLTV expiry is below current chain height
-    else if (ins.map(_.packet.outerPayload.totalAmount).toSet.size > 1) Some(ins.head.add.incorrectDetails) // All payment parts MUST have the same TotalAmount value
+    else if (ins.map(_.packet.outerPayload.totalAmount).toSet.size != 1) Some(ins.head.add.incorrectDetails) // All payment parts MUST have the same TotalAmount value
     else if (ins.head.packet.innerPayload.amountToForward < params.minimumMsat) Some(TemporaryNodeFailure) // Too small payment
     else if (ins.head.packet.innerPayload.amountToForward > params.maximumMsat) Some(TemporaryNodeFailure) // Too big payment
     else None
@@ -68,18 +69,18 @@ abstract class TrampolinePaymentRelayer(fullTag: FullPaymentTag, cm: ChannelMast
       val ins = inFlight.in.getOrElse(fullTag, Nil).asInstanceOf[ReasonableTrampolines]
       becomeRevealed(revealed.preimage, ins)
 
-    case (fulfill: RemoteFulfill, _, SENDING) =>
+    case (fulfill: RemoteFulfill, _, FINALIZING | RECEIVING | SENDING) =>
       // We have outgoing in-flight payments and just got a preimage
       become(TrampolineRevealed(fulfill.preimage), SENDING)
       cm.stateUpdated(Nil)
 
-    case (_: OutgoingPaymentSenderData, stopping: TrampolineStopping, SENDING) if stopping.retry =>
-      // We were waiting for all outgoing parts to fail after app restart
+    case (_: OutgoingPaymentSenderData, TrampolineStopping(true), SENDING) =>
+      // We were waiting for all outgoing parts to fail on app restart, try again
       become(null, RECEIVING)
       cm.stateUpdated(Nil)
 
     case (data: OutgoingPaymentSenderData, _: TrampolineStopping, SENDING) =>
-      // We were waiting for all outgoing parts to fail after app restart
+      // We were waiting for all outgoing parts to fail on app restart, fail incoming
       become(abortedWithError(data.failures, invalidPubKey), FINALIZING)
       cm.stateUpdated(Nil)
 
@@ -102,8 +103,8 @@ abstract class TrampolinePaymentRelayer(fullTag: FullPaymentTag, cm: ChannelMast
       preimageTry match {
         case Success(preimage) => becomeRevealed(preimage, ins)
         case _ if collectedEnough(ins) && outs.isEmpty => becomeSendingOrAborted(ins)
-        case _ if collectedEnough(ins) && outs.nonEmpty => become(TrampolineStopping(retry = true), SENDING) // App has been restarted midway, fail safely and retry
-        case _ if outs.nonEmpty => become(TrampolineStopping(retry = false), SENDING) // Have not collected enough yet have outgoing (this is pathologic state)
+        case _ if collectedEnough(ins) && outs.nonEmpty => become(TrampolineStopping(retryOnceFinalized = true), SENDING) // App has been restarted midway, fail safely and retry
+        case _ if outs.nonEmpty => become(TrampolineStopping(retryOnceFinalized = false), SENDING) // Have not collected enough yet have outgoing (this is pathologic state)
         case _ if !inFlight.allTags.contains(fullTag) => relayFinalized(fullTag) // Somehow no leftovers are present at all, nothing left to do
         case _ => // Do nothing, wait for more parts with a timeout
       }
@@ -145,43 +146,30 @@ abstract class TrampolinePaymentRelayer(fullTag: FullPaymentTag, cm: ChannelMast
         abort(data1, adds)
 
       case None =>
-        val sendMultiPart = computeSend(LNParams.trampoline, adds)
-        become(TrampolineProcessing(sendMultiPart.targetNodeId), SENDING)
-        cm.opm process sendMultiPart
+        val innerPayload = adds.head.packet.innerPayload
+        val totalFeeReserve = amountIn(adds) - innerPayload.amountToForward - relayFee(LNParams.trampoline, adds)
+        val routerConf = LNParams.routerConf.copy(maxCltv = expiryIn(adds) - innerPayload.outgoingCltv - LNParams.trampoline.cltvExpiryDelta)
+        val extraEdges = RouteCalculation.makeExtraEdges(innerPayload.invoiceRoutingInfo.map(_.map(_.toList).toList) getOrElse Nil, innerPayload.outgoingNodeId)
+        val send = SendMultiPart(fullTag, routerConf, innerPayload.outgoingNodeId, innerPayload.amountToForward, totalFeeReserve, innerPayload.outgoingCltv, cm.all.values.toSeq)
+
+        become(TrampolineProcessing(innerPayload.outgoingNodeId), SENDING)
+        // If invoice features are present, the sender is asking us to relay to a non-trampoline recipient, it is known that recipient supports MPP
+        if (innerPayload.invoiceFeatures.isDefined) cm.opm process send.copy(assistedEdges = extraEdges, paymentSecret = innerPayload.paymentSecret.get)
+        else cm.opm process send.copy(onionTlvs = OnionTlv.TrampolineOnion(adds.head.packet.nextPacket) :: Nil, paymentSecret = randomBytes32)
     }
   }
 
   def becomeRevealed(preimage: ByteVector32, adds: ReasonableTrampolines): Unit = {
     // Unconditionally persist an obtained preimage and update relays if we have data
     cm.payBag.storePreimage(fullTag.paymentHash, preimage)
-    maybeAddRelayedPreimageInfo(preimage, adds)
-
     cm.getPreimageMemo.invalidate(fullTag.paymentHash)
     become(TrampolineRevealed(preimage), FINALIZING)
     fulfill(preimage, adds)
-  }
 
-  def collectedEnough(adds: ReasonableTrampolines): Boolean = {
-    adds.nonEmpty && amountIn(adds) >= adds.head.packet.outerPayload.totalAmount
-  }
-
-  // Account for pathological case where we don't have incoming parts (channel removed somehow)
-  def maybeAddRelayedPreimageInfo(preimage: ByteVector32, adds: ReasonableTrampolines): Unit = if (adds.nonEmpty) {
-    val finalFee = adds.head.packet.outerPayload.totalAmount - adds.head.packet.innerPayload.amountToForward - sender.data.usedFee
-    cm.payBag.addRelayedPreimageInfo(fullTag.paymentHash, preimage, System.currentTimeMillis, adds.head.packet.outerPayload.totalAmount, finalFee)
-  }
-
-  def computeSend(params: TrampolineOn, adds: ReasonableTrampolines): SendMultiPart = {
-    val routerConf = LNParams.routerConf.copy(maxCltv = expiryIn(adds) - adds.head.packet.innerPayload.outgoingCltv - params.cltvExpiryDelta)
-    val sendMultiPart = SendMultiPart(fullTag, routerConf, targetNodeId = adds.head.packet.innerPayload.outgoingNodeId, totalAmount = adds.head.packet.innerPayload.amountToForward,
-      totalFeeReserve = amountIn(adds) - adds.head.packet.innerPayload.amountToForward - relayFee(params, adds), targetExpiry = adds.head.packet.innerPayload.outgoingCltv,
-      allowedChans = cm.all.values.toSeq)
-
-    val routingHints = adds.head.packet.innerPayload.invoiceRoutingInfo.map(_.map(_.toList).toList).getOrElse(Nil)
-    val extraEdges = RouteCalculation.makeExtraEdges(routingHints, adds.head.packet.innerPayload.outgoingNodeId)
-
-    // If invoice features are present, the sender is asking us to relay to a non-trampoline recipient, it is known that recipient supports MPP, so payment secret can be exatracted
-    if (adds.head.packet.innerPayload.invoiceFeatures.isDefined) sendMultiPart.copy(assistedEdges = extraEdges, paymentSecret = adds.head.packet.innerPayload.paymentSecret.get)
-    else sendMultiPart.copy(onionTlvs = OnionTlv.TrampolineOnion(adds.head.packet.nextPacket) :: Nil, paymentSecret = randomBytes32)
+    adds.headOption.foreach { add =>
+      // This accounts for pathological case where don't have incoing HTLCs for whatever reason
+      val finalFee = add.packet.outerPayload.totalAmount - add.packet.innerPayload.amountToForward - sender.data.usedFee
+      cm.payBag.addRelayedPreimageInfo(fullTag.paymentHash, preimage, System.currentTimeMillis, add.packet.innerPayload.totalAmount, finalFee)
+    }
   }
 }

@@ -123,7 +123,10 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
     val bag = InFlightPayments(allInChannelOutgoing, partialIncoming)
   }
 
-  override def fulfillReceived(fulfill: RemoteFulfill): Unit = opm process fulfill
+  override def fulfillReceived(fulfill: RemoteFulfill): Unit = {
+    // Anything which matches hash should be notified, tag is not important
+    opm process fulfill
+  }
 
   override def addReceived(add: UpdateAddHtlcExt): Unit = ???
 }
