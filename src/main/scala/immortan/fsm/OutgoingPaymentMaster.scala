@@ -92,8 +92,7 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
 
   var listeners = Set.empty[OutgoingPaymentMasterListener]
   val events: OutgoingPaymentMasterListener = new OutgoingPaymentMasterListener {
-    override def outgoingPartAborted(data: OutgoingPaymentSenderData): Unit = for (lst <- listeners) lst.outgoingPartAborted(data)
-    override def gotPreimage(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill, isFirst: Boolean): Unit = for (lst <- listeners) lst.gotPreimage(data, fulfill, isFirst)
+    override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = for (lst <- listeners) lst.wholePaymentFailed(data)
   }
 
   def doProcess(change: Any): Unit = (change, state) match {
@@ -209,8 +208,8 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
 }
 
 trait OutgoingPaymentMasterListener {
-  def outgoingPartAborted(data: OutgoingPaymentSenderData): Unit = none
-  def gotPreimage(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill, isFirst: Boolean): Unit = none
+  // With local failures only this will be the only way to find out that payment has failed
+  def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = none
 }
 
 // Individual outgoing part status
@@ -260,21 +259,13 @@ class OutgoingPaymentSender(fullTag: FullPaymentTag, opm: OutgoingPaymentMaster)
   become(OutgoingPaymentSenderData(SendMultiPart(fullTag, LNParams.routerConf, invalidPubKey), Map.empty), INIT)
 
   def doProcess(msg: Any): Unit = (msg, state) match {
+    case (_: RemoteFulfill, INIT | PENDING | ABORTED) => become(data, SUCCEEDED)
     case (CMDException(_, cmd: CMD_ADD_HTLC), ABORTED) => me abortAndNotify data.withoutPartId(cmd.partId)
     case (remoteReject: RemoteReject, ABORTED) => me abortAndNotify data.withoutPartId(remoteReject.ourAdd.partId)
     case (remoteReject: RemoteReject, INIT) => me abortAndNotify data.withLocalFailure(NOT_RETRYING_NO_DETAILS, remoteReject.ourAdd.amountMsat)
     case (cmd: SendMultiPart, INIT | ABORTED) => assignToChans(opm.rightNowSendable(cmd.allowedChans, cmd.totalFeeReserve), OutgoingPaymentSenderData(cmd, Map.empty), cmd.totalAmount)
     // In case if some parts get through we'll eventaully get a remote timeout, but if all parts are still waiting after some reasonable time then we need to fail locally
     case (CMDAbort, INIT | PENDING) if data.inFlightParts.isEmpty => me abortAndNotify data.copy(parts = Map.empty)
-
-    case (fulfill: RemoteFulfill, INIT | PENDING | ABORTED) =>
-      // The most important first event (save to db, relay etc)
-      opm.events.gotPreimage(data, fulfill, isFirst = true)
-      become(data, SUCCEEDED)
-
-    case (fulfill: RemoteFulfill, SUCCEEDED) =>
-      // May not be that important but works as trigger
-      opm.events.gotPreimage(data, fulfill, isFirst = false)
 
     case (CMDChanGotOnline, PENDING) =>
       data.parts.values.collectFirst { case wait: WaitForChanOnline =>
@@ -471,9 +462,9 @@ class OutgoingPaymentSender(fullTag: FullPaymentTag, opm: OutgoingPaymentMaster)
     }
 
   def abortAndNotify(data1: OutgoingPaymentSenderData): Unit = {
-    // Can be considered finalized if: (1) ABORTED, (2) no in-flight parts, (3) no leftovers in channels
-    // but the last two checks will be performed at later stages, FSM itself should not be concerned about these
-    opm.events.outgoingPartAborted(data1)
+    val leftoversPresentInChans = opm.cm.allInChannelOutgoing.contains(fullTag)
+    val noLeftoversAnywhere = data1.inFlightParts.isEmpty && !leftoversPresentInChans
+    if (noLeftoversAnywhere) opm.events.wholePaymentFailed(data1)
     become(data1, ABORTED)
   }
 }

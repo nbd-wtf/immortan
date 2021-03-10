@@ -31,14 +31,14 @@ class SQlitePaymentBag(db: DBInterface, preimageDb: DBInterface) extends Payment
 
   def abortOutgoing(paymentHash: ByteVector32): Unit = db.change(PaymentTable.updStatusSql, PaymentStatus.ABORTED, paymentHash.toHex)
 
-  def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32, stamp: Long, relayed: MilliSatoshi, earned: MilliSatoshi): Unit = db txWrap {
+  def storePreimage(paymentHash: ByteVector32, preimage: ByteVector32): Unit = preimageDb.change(PreimageTable.newSql, paymentHash.toHex, preimage.toHex)
+
+  def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32, stamp: Long, relayed: MilliSatoshi, earned: MilliSatoshi): Unit =
     db.change(RelayTable.newSql, paymentHash.toHex, preimage.toHex, stamp: JLong, relayed.toLong: JLong, earned.toLong: JLong)
-    preimageDb.change(PreimageTable.newSql, paymentHash.toHex, preimage.toHex)
-  }
 
   def updOkOutgoing(upd: UpdateFulfillHtlc, fee: MilliSatoshi): Unit = db txWrap {
     db.change(PaymentTable.updOkOutgoingSql, upd.paymentPreimage.toHex, fee.toLong: JLong, upd.paymentHash.toHex)
-    preimageDb.change(PreimageTable.newSql, upd.paymentHash.toHex, upd.paymentPreimage.toHex)
+    storePreimage(upd.paymentHash, upd.paymentPreimage)
   }
 
   def updOkIncoming(receivedAmount: MilliSatoshi, paymentHash: ByteVector32): Unit = {
@@ -62,9 +62,6 @@ class SQlitePaymentBag(db: DBInterface, preimageDb: DBInterface) extends Payment
         new String /* NO ACTION */, prex.pr.paymentHash.toHex, prex.pr.amount.getOrElse(0L.msat).toLong: JLong /* MUST COME FROM PR! NO AMOUNT IF RECEIVED = 0 */,
         0L: JLong /* SENT = 0 MSAT, NOTHING TO SEND */, 0L: JLong /* NO FEE FOR INCOMING PAYMENT */, balanceSnap.toLong: JLong, fiatRateSnap.toJson.compactPrint,
         chainFee.toLong: JLong, 1: java.lang.Integer /* INCOMING = 1 */)
-
-      // Also record preimage to essentail database to make sure we have it in backup
-      preimageDb.change(PreimageTable.newSql, prex.pr.paymentHash.toHex, preimage.toHex)
     }
 
   def paymentSummary: Try[PaymentSummary] = db.select(PaymentTable.selectSummarySql).headTry { rc =>
@@ -88,8 +85,8 @@ class SQlitePaymentBag(db: DBInterface, preimageDb: DBInterface) extends Payment
 }
 
 abstract class SQlitePaymentBagCached(db: DBInterface, preimageDb: DBInterface) extends SQlitePaymentBag(db, preimageDb) {
-  override def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32, stamp: Long, relayed: MilliSatoshi, earned: MilliSatoshi, fast: Long): Unit = {
-    super.addRelayedPreimageInfo(paymentHash, preimage, stamp, relayed, earned, fast)
+  override def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32, stamp: Long, relayed: MilliSatoshi, earned: MilliSatoshi): Unit = {
+    super.addRelayedPreimageInfo(paymentHash, preimage, stamp, relayed, earned)
     invalidateRelayCache
   }
 

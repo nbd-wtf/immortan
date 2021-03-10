@@ -283,6 +283,8 @@ trait NetworkDataStore {
 // Bag of stored payments and successful relays
 
 trait PaymentBag {
+  def storePreimage(paymentHash: ByteVector32, preimage: ByteVector32)
+
   def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32,
                              stamp: Long, relayed: MilliSatoshi, earned: MilliSatoshi)
 

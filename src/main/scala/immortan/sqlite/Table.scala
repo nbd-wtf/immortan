@@ -142,7 +142,7 @@ object HostedExcludedChannelTable extends ExcludedChannelTable("hosted_excluded_
 
 object RelayTable extends Table {
   val (table, hash, preimage, stamp, relayed, earned) = ("relay", "hash", "preimage", "stamp", "relayed", "earned")
-  val newSql = s"INSERT INTO $table ($hash, $preimage, $stamp, $relayed, $earned) VALUES (?, ?, ?, ?, ?)"
+  val newSql = s"INSERT OR IGNORE INTO $table ($hash, $preimage, $stamp, $relayed, $earned) VALUES (?, ?, ?, ?, ?)"
   val selectSummarySql = s"SELECT SUM($relayed), SUM($earned), COUNT($id) FROM $table"
   val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 3"
 
