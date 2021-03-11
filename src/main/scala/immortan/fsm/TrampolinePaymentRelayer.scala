@@ -14,7 +14,6 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import immortan.crypto.Tools.Any2Some
 import fr.acinq.bitcoin.ByteVector32
 import immortan.crypto.StateMachine
-
 import scala.util.Success
 
 
@@ -158,7 +157,10 @@ abstract class TrampolinePaymentRelayer(fullTag: FullPaymentTag, cm: ChannelMast
         val totalFeeReserve = amountIn(adds) - innerPayload.amountToForward - relayFee(LNParams.trampoline, adds)
         val routerConf = LNParams.routerConf.copy(maxCltv = expiryIn(adds) - innerPayload.outgoingCltv - LNParams.trampoline.cltvExpiryDelta)
         val extraEdges = RouteCalculation.makeExtraEdges(innerPayload.invoiceRoutingInfo.map(_.map(_.toList).toList).getOrElse(Nil), innerPayload.outgoingNodeId)
-        val send = SendMultiPart(fullTag, routerConf, innerPayload.outgoingNodeId, innerPayload.amountToForward, totalFeeReserve, innerPayload.outgoingCltv, cm.all.values.toSeq)
+
+        val send = SendMultiPart(fullTag, routerConf, innerPayload.outgoingNodeId,
+          onionTotal = innerPayload.amountToForward, actualTotal = innerPayload.amountToForward,
+          totalFeeReserve, innerPayload.outgoingCltv, allowedChans = cm.all.values.toSeq)
 
         become(TrampolineProcessing(innerPayload.outgoingNodeId), SENDING)
         // If invoice features are present, the sender is asking us to relay to a non-trampoline recipient, it is known that recipient supports MPP

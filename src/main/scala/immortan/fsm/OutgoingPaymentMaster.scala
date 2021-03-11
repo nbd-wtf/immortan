@@ -57,13 +57,15 @@ case class SplitIntoHalves(amount: MilliSatoshi)
 case class NodeFailed(failedNodeId: PublicKey, increment: Int)
 case class ChannelFailed(failedDescAndCap: DescAndCapacity, increment: Int)
 
-// TODO: different total amount for inner/outer trampoline onions for split payments
 // Important: with trampoline payment targetNodeId is next trampoline node, not necessairly final recipient
 // Tag contains a PaymentSecret taken from upstream (for routed payments), it is required to group payments with same hash
-case class SendMultiPart(fullTag: FullPaymentTag, routerConf: RouterConf, targetNodeId: PublicKey, totalAmount: MilliSatoshi = 0L.msat,
-                         totalFeeReserve: MilliSatoshi = 0L.msat, targetExpiry: CltvExpiry = CltvExpiry(0), allowedChans: Seq[Channel] = Nil,
-                         paymentSecret: ByteVector32 = ByteVector32.Zeroes, assistedEdges: Set[GraphEdge] = Set.empty,
-                         onionTlvs: Seq[OnionTlv] = Nil, userCustomTlvs: Seq[GenericTlv] = Nil)
+// When splitting a payment `onionTotal` is expected to be higher than `actualTotal` to make recipient see the same TotalAmount across different HTLC sets
+case class SendMultiPart(fullTag: FullPaymentTag, routerConf: RouterConf, targetNodeId: PublicKey, onionTotal: MilliSatoshi = 0L.msat, actualTotal: MilliSatoshi = 0L.msat,
+                         totalFeeReserve: MilliSatoshi = 0L.msat, targetExpiry: CltvExpiry = CltvExpiry(0), allowedChans: Seq[Channel] = Nil, paymentSecret: ByteVector32 = ByteVector32.Zeroes,
+                         assistedEdges: Set[GraphEdge] = Set.empty, onionTlvs: Seq[OnionTlv] = Nil, userCustomTlvs: Seq[GenericTlv] = Nil) {
+
+  require(onionTotal >= actualTotal)
+}
 
 case class OutgoingPaymentMasterData(payments: Map[FullPaymentTag, OutgoingPaymentSender],
                                      chanFailedAtAmount: Map[ChannelDesc, MilliSatoshi] = Map.empty withDefaultValue Long.MaxValue.msat,
@@ -267,7 +269,7 @@ class OutgoingPaymentSender(fullTag: FullPaymentTag, opm: OutgoingPaymentMaster)
     case (CMDException(_, cmd: CMD_ADD_HTLC), ABORTED) => me abortAndNotify data.withoutPartId(cmd.partId)
     case (remoteReject: RemoteReject, ABORTED) => me abortAndNotify data.withoutPartId(remoteReject.ourAdd.partId)
     case (remoteReject: RemoteReject, INIT) => me abortAndNotify data.withLocalFailure(NOT_RETRYING_NO_DETAILS, remoteReject.ourAdd.amountMsat)
-    case (cmd: SendMultiPart, INIT | ABORTED) => assignToChans(opm.rightNowSendable(cmd.allowedChans, cmd.totalFeeReserve), OutgoingPaymentSenderData(cmd, Map.empty), cmd.totalAmount)
+    case (cmd: SendMultiPart, INIT | ABORTED) => assignToChans(opm.rightNowSendable(cmd.allowedChans, cmd.totalFeeReserve), OutgoingPaymentSenderData(cmd, Map.empty), cmd.actualTotal)
     // In case if some parts get through we'll eventaully get a remote timeout, but if all parts are still waiting after some reasonable time then we need to fail locally
     case (CMDAbort, INIT | PENDING) if data.inFlightParts.isEmpty => me abortAndNotify data.copy(parts = Map.empty)
 
@@ -297,7 +299,7 @@ class OutgoingPaymentSender(fullTag: FullPaymentTag, opm: OutgoingPaymentMaster)
 
     case (found: RouteFound, PENDING) =>
       data.parts.values.collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isEmpty && wait.partId == found.partId =>
-        val finalPayload = Onion.createMultiPartPayload(wait.amount, data.cmd.totalAmount, data.cmd.targetExpiry, data.cmd.paymentSecret, data.cmd.onionTlvs, data.cmd.userCustomTlvs)
+        val finalPayload = Onion.createMultiPartPayload(wait.amount, data.cmd.onionTotal, data.cmd.targetExpiry, data.cmd.paymentSecret, data.cmd.onionTlvs, data.cmd.userCustomTlvs)
         val (firstAmount, firstExpiry, onion) = OutgoingPacket.buildPacket(Sphinx.PaymentPacket)(wait.onionKey, fullTag.paymentHash, found.route.hops, finalPayload)
         val cmdAdd = CMD_ADD_HTLC(fullTag, firstAmount, firstExpiry, PacketAndSecrets(onion.packet, onion.sharedSecrets), finalPayload)
         become(data.copy(parts = data.parts + wait.copy(flight = InFlightInfo(cmdAdd, found.route).toSome).tuple), PENDING)
