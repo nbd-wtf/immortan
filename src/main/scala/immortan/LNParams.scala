@@ -24,10 +24,10 @@ import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
 import fr.acinq.eclair.blockchain.CurrentFeerates
 import fr.acinq.eclair.router.ChannelUpdateExt
-import fr.acinq.eclair.payment.PaymentRequest
 import org.bitcoinj.core.NetworkParameters
 import immortan.SyncMaster.ShortChanIdSet
 import fr.acinq.eclair.crypto.Generators
+import immortan.utils.PaymentRequestExt
 import immortan.crypto.Noise.KeyPair
 import java.io.ByteArrayInputStream
 import java.nio.ByteOrder
@@ -254,8 +254,6 @@ case class WalletExt(wallet: ElectrumEclairWallet, eventsCatcher: ActorRef, clie
 case class UpdateAddHtlcExt(theirAdd: UpdateAddHtlc, remoteInfo: RemoteNodeInfo)
 
 case class SwapInStateExt(state: SwapInState, nodeId: PublicKey)
-
-case class PaymentRequestExt(pr: PaymentRequest, raw: String)
 
 // Interfaces
 
