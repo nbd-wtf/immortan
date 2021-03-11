@@ -3,7 +3,7 @@ package immortan.fsm
 import fr.acinq.eclair._
 import fr.acinq.eclair.wire._
 import immortan.fsm.TrampolinePaymentRelayer._
-import immortan.{ChannelMaster, InFlightPayments, LNParams}
+import immortan.{ChannelMaster, InFlightPayments, LNParams, PaymentStatus}
 import immortan.ChannelMaster.{OutgoingAdds, PreimageTry, ReasonableTrampolines}
 import fr.acinq.eclair.channel.ReasonableTrampoline
 import fr.acinq.eclair.transactions.RemoteFulfill
@@ -14,6 +14,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import immortan.crypto.Tools.Any2Some
 import fr.acinq.bitcoin.ByteVector32
 import immortan.crypto.StateMachine
+
 import scala.util.Success
 
 
@@ -31,7 +32,7 @@ object TrampolinePaymentRelayer {
 
   def first(adds: ReasonableTrampolines): IncomingPacket.NodeRelayPacket = adds.head.packet
   def firstOption(adds: ReasonableTrampolines): Option[IncomingPacket.NodeRelayPacket] = adds.headOption.map(_.packet)
-  def collectedEnough(adds: ReasonableTrampolines): Boolean = firstOption(adds).exists(amountIn(adds) >= _.outerPayload.totalAmount)
+  def relayCovered(adds: ReasonableTrampolines): Boolean = firstOption(adds).exists(amountIn(adds) >= _.outerPayload.totalAmount)
 
   def amountIn(adds: ReasonableTrampolines): MilliSatoshi = adds.map(_.add.amountMsat).sum
   def expiryIn(adds: ReasonableTrampolines): CltvExpiry = adds.map(_.add.cltvExpiry).min
@@ -94,9 +95,10 @@ abstract class TrampolinePaymentRelayer(fullTag: FullPaymentTag, cm: ChannelMast
       become(abortedWithError(data.failures, processing.finalNodeId), FINALIZING)
       cm.stateUpdated(Nil)
 
-    case (inFlight: InFlightPayments, _, FINALIZING | SENDING) if !inFlight.allTags.contains(fullTag) && sender.data.inFlightParts.isEmpty =>
+    case (inFlight: InFlightPayments, _, FINALIZING | SENDING) if !inFlight.allTags.contains(fullTag) && sender.state != PaymentStatus.PENDING =>
       // We have neither incoming nor outgoing parts left in channels and no in-flight parts in sender FSM, the only option is to finalize a relay
       // this will most likely happen AFTER we have resolved all outgoing payments and started resolving related incoming payments
+      // look at sender status, not in-flight payments because they weill be retained when SUCCEEDED, so never empty
       relayFinalized(fullTag)
 
     case (inFlight: InFlightPayments, null, RECEIVING) =>
@@ -107,8 +109,8 @@ abstract class TrampolinePaymentRelayer(fullTag: FullPaymentTag, cm: ChannelMast
 
       preimageTry match {
         case Success(preimage) => becomeRevealed(preimage, ins)
-        case _ if collectedEnough(ins) && outs.isEmpty => becomeSendingOrAborted(ins)
-        case _ if collectedEnough(ins) && outs.nonEmpty => become(TrampolineStopping(retryOnceFinalized = true), SENDING) // App has been restarted midway, fail safely and retry
+        case _ if relayCovered(ins) && outs.isEmpty => becomeSendingOrAborted(ins)
+        case _ if relayCovered(ins) && outs.nonEmpty => become(TrampolineStopping(retryOnceFinalized = true), SENDING) // App has been restarted midway, fail safely and retry
         case _ if outs.nonEmpty => become(TrampolineStopping(retryOnceFinalized = false), SENDING) // Have not collected enough yet have outgoing (this is pathologic state)
         case _ if !inFlight.allTags.contains(fullTag) => relayFinalized(fullTag) // Somehow no leftovers are present at all, nothing left to do
         case _ => // Do nothing, wait for more parts with a timeout

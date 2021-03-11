@@ -202,6 +202,7 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
     // This gets supposedly used capacities of external channels in a routing graph
     // we need this to exclude channels which definitely can't route a given amount right now
     val accumulator = mutable.Map.empty[DescAndCapacity, MilliSatoshi] withDefaultValue 0L.msat
+    // This will include FSMs in SUCCEEDED state and in-flight parts which may not actually be in-flight
     val descsAndCaps = data.payments.values.flatMap(_.data.inFlightParts).flatMap(_.route.routedPerChannelHop)
     descsAndCaps.foreach { case (amount, chanHop) => accumulator(chanHop.edge.toDescAndCapacity) += amount }
     accumulator

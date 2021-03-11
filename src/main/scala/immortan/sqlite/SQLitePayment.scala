@@ -80,8 +80,8 @@ class SQlitePaymentBag(db: DBInterface, preimageDb: DBInterface) extends Payment
 }
 
 abstract class SQlitePaymentBagCached(db: DBInterface, preimageDb: DBInterface) extends SQlitePaymentBag(db, preimageDb) {
-  override def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32, stamp: Long, relayed: MilliSatoshi, earned: MilliSatoshi): Unit = {
-    super.addRelayedPreimageInfo(paymentHash, preimage, stamp, relayed, earned)
+  override def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32, relayed: MilliSatoshi, earned: MilliSatoshi): Unit = {
+    super.addRelayedPreimageInfo(paymentHash, preimage, relayed, earned)
     invalidateRelayCache
   }
 
