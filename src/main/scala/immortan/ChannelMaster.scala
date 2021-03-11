@@ -15,7 +15,6 @@ import fr.acinq.eclair.payment.IncomingPacket
 import com.google.common.cache.LoadingCache
 import immortan.fsm.OutgoingPaymentMaster
 import fr.acinq.bitcoin.ByteVector32
-import scodec.bits.ByteVector
 import scala.util.Try
 
 
@@ -94,7 +93,7 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
   // RECEIVE/SEND UTILITIES
 
-  def maxReceivableInfo: Option[CommitsAndMax] = {
+  def maxReceivable: Option[CommitsAndMax] = {
     val canReceive = all.values.filter(Channel.isOperational).flatMap(Channel.chanAndCommitsOpt).filter(_.commits.updateOpt.isDefined).toList.sortBy(_.commits.availableForReceive)
     // Example: (5, 50, 60, 100) -> (50, 60, 100), receivable = 50*3 = 150 (the idea is for smallest remaining operational channel to be able to handle an evenly split amount)
     val withoutSmall = canReceive.dropWhile(_.commits.availableForReceive * canReceive.size < canReceive.last.commits.availableForReceive).takeRight(4)
@@ -102,11 +101,18 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
     if (candidates.isEmpty) None else candidates.maxBy(_.maxReceivable).toSome
   }
 
-  def checkIfSendable(tag: FullPaymentTag, fee: MilliSatoshi, amount: MilliSatoshi): Int = getPreimageMemo(tag.paymentHash) match {
-    case _ if opm.getSendable(all.values.filter(Channel.isOperational), maxFee = fee).values.sum < amount => PaymentInfo.NOT_SENDABLE_LOW_FUNDS // Not enough balance
+  def maxSendable: MilliSatoshi = {
+    val chans = all.values.filter(Channel.isOperational)
+    val sendableNoFee = opm.getSendable(chans, maxFee = 0L.msat).values.sum
+    // Subtract max send fee from each channel since each channel may use all of it
+    opm.getSendable(chans, maxFee = sendableNoFee * LNParams.offChainFeeRatio).values.sum
+  }
+
+  def checkIfSendable(tag: FullPaymentTag, amount: MilliSatoshi): Int = getPreimageMemo(tag.paymentHash) match {
     case _ if opm.data.payments.get(tag).exists(fsm => PENDING == fsm.state || INIT == fsm.state) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is pending in FSM
     case _ if opm.data.payments.get(tag).exists(fsm => SUCCEEDED == fsm.state) => PaymentInfo.NOT_SENDABLE_SUCCESS // This payment has just been fulfilled at runtime
-    case info if info.isSuccess => PaymentInfo.NOT_SENDABLE_SUCCESS // Already have a preimage, meaning it already has been send/received/relayed
+    case _ if amount > maxSendable => PaymentInfo.NOT_SENDABLE_LOW_FUNDS // Not enough funds in a wallet
+    case info if info.isSuccess => PaymentInfo.NOT_SENDABLE_SUCCESS // Preimage is revealed
     case _ => PaymentInfo.SENDABLE // Has never been sent or ABORTED by now
   }
 

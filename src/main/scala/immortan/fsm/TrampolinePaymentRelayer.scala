@@ -36,14 +36,14 @@ object TrampolinePaymentRelayer {
   def amountIn(adds: ReasonableTrampolines): MilliSatoshi = adds.map(_.add.amountMsat).sum
   def expiryIn(adds: ReasonableTrampolines): CltvExpiry = adds.map(_.add.cltvExpiry).min
 
-  def relayFee(params: TrampolineOn, adds: ReasonableTrampolines): MilliSatoshi = {
-    val linearProportional = proportionalFee(amountIn(adds), params.feeProportionalMillionths)
+  def relayFee(amount: MilliSatoshi, params: TrampolineOn): MilliSatoshi = {
+    val linearProportional = proportionalFee(amount, params.feeProportionalMillionths)
     trampolineFee(linearProportional.toLong, params.feeBaseMsat, params.exponent, params.logExponent)
   }
 
   def validateRelay(params: TrampolineOn, adds: ReasonableTrampolines, blockHeight: Long): Option[FailureMessage] =
     if (first(adds).innerPayload.invoiceFeatures.isDefined && first(adds).innerPayload.paymentSecret.isEmpty) Some(TemporaryNodeFailure) // We do not deliver to non-trampoline, non-MPP recipients
-    else if (relayFee(params, adds) > amountIn(adds) - first(adds).innerPayload.amountToForward) Some(TrampolineFeeInsufficient) // Proposed trampoline fee is less than required by our node
+    else if (relayFee(amountIn(adds), params) > amountIn(adds) - first(adds).innerPayload.amountToForward) Some(TrampolineFeeInsufficient) // Proposed trampoline fee is less than required by our node
     else if (expiryIn(adds) - first(adds).innerPayload.outgoingCltv < params.cltvExpiryDelta) Some(TrampolineExpiryTooSoon) // Proposed delta is less than required by our node
     else if (CltvExpiry(blockHeight) > first(adds).innerPayload.outgoingCltv) Some(TrampolineExpiryTooSoon) // Recepient's CLTV expiry is below current chain height
     else if (adds.map(_.packet.innerPayload.amountToForward).toSet.size != 1) first(adds).add.incorrectDetails.toSome
@@ -154,7 +154,7 @@ abstract class TrampolinePaymentRelayer(fullTag: FullPaymentTag, cm: ChannelMast
 
       case None =>
         val innerPayload = first(adds).innerPayload
-        val totalFeeReserve = amountIn(adds) - innerPayload.amountToForward - relayFee(LNParams.trampoline, adds)
+        val totalFeeReserve = amountIn(adds) - innerPayload.amountToForward - relayFee(amountIn(adds), LNParams.trampoline)
         val routerConf = LNParams.routerConf.copy(maxCltv = expiryIn(adds) - innerPayload.outgoingCltv - LNParams.trampoline.cltvExpiryDelta)
         val extraEdges = RouteCalculation.makeExtraEdges(innerPayload.invoiceRoutingInfo.map(_.map(_.toList).toList).getOrElse(Nil), innerPayload.outgoingNodeId)
 

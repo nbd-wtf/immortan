@@ -46,7 +46,7 @@ object InputParser {
     case shortNodeLink(key, host) => RemoteNodeInfo(PublicKey.fromBin(ByteVector fromValidHex key), NodeAddress.fromParts(host, port = 9735), key take 16 grouped 4 mkString "-")
     case lnPayReq(prefix, data) => PaymentRequestExt(uri = Failure(new RuntimeException), PaymentRequest.read(s"$prefix$data"), s"$prefix$data")
     case lnUrl(prefix, data) => LNUrl.fromBech32(s"$prefix$data")
-    case _ => bitcoinUri(s"bitcoin:$rawInput")
+    case _ => bitcoinUri(s"$bitcoin$rawInput")
   }
 }
 
