@@ -52,7 +52,7 @@ object InputParser {
 
 object PaymentRequestExt {
   def fromUri(raw: String): PaymentRequestExt = {
-    val invoiceWithoutPrefix = raw.split(':').drop(1).head
+    val invoiceWithoutPrefix = raw.split(':').drop(1).mkString
     val lnPayReq(invoicePrefix, invoiceData) = invoiceWithoutPrefix
     val uri = Try(Uri parse s"$lightning//$invoiceWithoutPrefix")
     val pr = PaymentRequest.read(s"$invoicePrefix$invoiceData")

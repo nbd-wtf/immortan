@@ -5,7 +5,7 @@ import fr.acinq.eclair._
 import org.scalatest.funsuite.AnyFunSuite
 
 class InputParserSpec extends AnyFunSuite {
-  test("PArse payment requests with splits") {
+  test("Parse payment requests with splits") {
     val req = "lnbc1psy596qpp5umsexzwdmh2a5uwwjunwq0nnl56l09kjx0ht93h3ys9088h0023sdzq235hqurfdcsxz6m4d4skjem0wfhkgumtdyszsarfwpcxjm3wd4jjj2r" +
       "4xyerqvffcqzpgxqyz5vqsp5dcu2nprdalp7wuglpvnep45mygs6ksq8m7xkvyrzae7lw80ttjds9qyyssq3g5xv50amvyq0526zh3f4wf3z0qhh9vnr0up8uaa948cawjx9n" +
       "rjaz7rlnjtkg4ejapccrrme2jp7za8mdjfmurv7wc9wm8wg0ja4lgqwyv8he"
