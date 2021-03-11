@@ -286,7 +286,7 @@ trait PaymentBag {
   def storePreimage(paymentHash: ByteVector32, preimage: ByteVector32)
 
   def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32,
-                             stamp: Long, relayed: MilliSatoshi, earned: MilliSatoshi)
+                             relayed: MilliSatoshi, earned: MilliSatoshi)
 
   def replaceOutgoingPayment(prex: PaymentRequestExt, desc: PaymentDescription, action: Option[PaymentAction],
                              finalAmount: MilliSatoshi, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc,
