@@ -11,7 +11,7 @@ class InputParserSpec extends AnyFunSuite {
       "rjaz7rlnjtkg4ejapccrrme2jp7za8mdjfmurv7wc9wm8wg0ja4lgqwyv8he"
 
     val uri1 = s"lightning:$req?splits=100,2000,300000"
-    val uri2 = s"lightning:$req?x=1&splits=2000,6000"
+    val uri2 = s"lightning://$req?x=1&splits=2000,6000"
     val uri3 = s"lightning:$req?splits="
     val uri4 = s"lightning:$req"
 

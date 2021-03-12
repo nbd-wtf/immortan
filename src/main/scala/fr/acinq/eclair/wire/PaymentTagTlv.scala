@@ -14,9 +14,9 @@ case class ShortPaymentTag(paymentSecret: ByteVector32, tag: Int)
 case class FullPaymentTag(paymentHash: ByteVector32, paymentSecret: ByteVector32, tag: Int)
 
 object PaymentTagTlv {
-  final val UNKNOWN = 0
-  final val TRAMPLOINE = 2
-  final val LOCAL = 1
+  final val LOCALLY_SENT = 0
+  final val TRAMPLOINE_ROUTED = 1
+  final val FINAL_INCOMING = 2
 
   case class EncryptedPaymentSecret(data: ByteVector) extends Tlv
 

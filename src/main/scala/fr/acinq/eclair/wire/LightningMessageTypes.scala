@@ -91,8 +91,6 @@ case class UpdateAddHtlc(channelId: ByteVector32, id: Long,
                          amountMsat: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onionRoutingPacket: OnionRoutingPacket,
                          tlvStream: TlvStream.GenericTlvStream = TlvStream.empty) extends HtlcMessage with HasChannelId with UpdateMessage {
 
-  def incorrectDetails: FailureMessage = IncorrectOrUnknownPaymentDetails(amountMsat, LNParams.blockCount.get)
-
   // Important: LNParams.format must be defined
   private[this] lazy val fullTagOpt: Option[FullPaymentTag] = for {
     cipherBytes <- tlvStream.get[PaymentTagTlv.EncryptedPaymentSecret]
@@ -101,7 +99,7 @@ case class UpdateAddHtlc(channelId: ByteVector32, id: Long,
   } yield FullPaymentTag(paymentHash, secret, tag)
 
   // This is relevant for outgoing payments, NO_SECRET is synonimous to locally initiated outgoing payment
-  lazy val fullTag: FullPaymentTag = fullTagOpt getOrElse FullPaymentTag(ChannelMaster.NO_SECRET, paymentHash, PaymentTagTlv.UNKNOWN)
+  lazy val fullTag: FullPaymentTag = fullTagOpt getOrElse FullPaymentTag(ChannelMaster.NO_SECRET, paymentHash, PaymentTagTlv.LOCALLY_SENT)
 
   // This is relevant for outgoing payments where we can ensure onion key uniqueness
   final val partId: ByteVector = onionRoutingPacket.publicKey

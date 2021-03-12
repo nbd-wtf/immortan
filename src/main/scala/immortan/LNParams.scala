@@ -126,9 +126,7 @@ object LNParams {
     )
 
   val blockCount: AtomicLong = new AtomicLong(0L)
-
   val feeratesPerKB: AtomicReference[FeeratesPerKB] = new AtomicReference(defaultFeerates)
-
   val currentFeerates: AtomicReference[CurrentFeerates] = new AtomicReference(CurrentFeerates(FeeratesPerKw(defaultFeerates)))
 
   val feeEstimator: FeeEstimator = new FeeEstimator {
@@ -160,6 +158,8 @@ object LNParams {
     val eclairWallet = new ElectrumEclairWallet(wallet, chainHash)
     WalletExt(eclairWallet, catcher, clientPool, watcher)
   }
+
+  def incorrectDetails(amount: MilliSatoshi): FailureMessage = IncorrectOrUnknownPaymentDetails(amount, blockCount.get)
 
   def currentBlockDay: Long = blockCount.get / blocksPerDay
 }

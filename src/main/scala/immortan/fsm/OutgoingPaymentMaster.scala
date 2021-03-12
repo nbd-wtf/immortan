@@ -57,6 +57,9 @@ case class SplitIntoHalves(amount: MilliSatoshi)
 case class NodeFailed(failedNodeId: PublicKey, increment: Int)
 case class ChannelFailed(failedDescAndCap: DescAndCapacity, increment: Int)
 
+case class CreatSenderFSM(fullTag: FullPaymentTag)
+case class RemoveSenderFSM(fullTag: FullPaymentTag)
+
 // Important: with trampoline payment targetNodeId is next trampoline node, not necessairly final recipient
 // Tag contains a PaymentSecret taken from upstream (for routed payments), it is required to group payments with same hash
 // When splitting a payment `onionTotal` is expected to be higher than `actualTotal` to make recipient see the same TotalAmount across different HTLC sets
@@ -91,7 +94,6 @@ object OutgoingPaymentMaster {
 class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[OutgoingPaymentMasterData] with CanBeRepliedTo { me =>
   def process(change: Any): Unit = scala.concurrent.Future(me doProcess change)(Channel.channelContext)
   become(OutgoingPaymentMasterData(Map.empty), EXPECTING_PAYMENTS)
-  cm.pf.listeners += me
 
   var listeners = Set.empty[OutgoingPaymentMasterListener]
   val events: OutgoingPaymentMasterListener = new OutgoingPaymentMasterListener {
@@ -162,12 +164,19 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
       me process CMDAskForRoute
 
     case (fulfill: RemoteFulfill, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
-      data.payments.get(fulfill.ourAdd.fullTag).foreach(_ doProcess fulfill)
+      // We may have local and multiple routed outgoing payment sets at once, all of them must be notified
+      data.payments.filterKeys(_.paymentHash == fulfill.ourAdd.paymentHash).values.foreach(_ doProcess fulfill)
       me process CMDAskForRoute
 
     case (reject: RemoteReject, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
       data.payments.get(reject.ourAdd.fullTag).foreach(_ doProcess reject)
       me process CMDAskForRoute
+
+    case (RemoveSenderFSM(fullTag), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
+      become(data.copy(payments = data.payments - fullTag), state)
+
+    case (CreatSenderFSM(fullTag), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
+      getSender(fullTag)
 
     case _ =>
   }
@@ -265,10 +274,10 @@ class OutgoingPaymentSender(fullTag: FullPaymentTag, opm: OutgoingPaymentMaster)
   become(OutgoingPaymentSenderData(SendMultiPart(fullTag, LNParams.routerConf, invalidPubKey), Map.empty), INIT)
 
   def doProcess(msg: Any): Unit = (msg, state) match {
-    case (_: RemoteFulfill, INIT | PENDING | ABORTED) => become(data, SUCCEEDED)
     case (CMDException(_, cmd: CMD_ADD_HTLC), ABORTED) => me abortAndNotify data.withoutPartId(cmd.partId)
     case (remoteReject: RemoteReject, ABORTED) => me abortAndNotify data.withoutPartId(remoteReject.ourAdd.partId)
     case (remoteReject: RemoteReject, INIT) => me abortAndNotify data.withLocalFailure(NOT_RETRYING_NO_DETAILS, remoteReject.ourAdd.amountMsat)
+    case (remoteFulfill: RemoteFulfill, INIT | PENDING | ABORTED) if remoteFulfill.ourAdd.paymentHash == fullTag.paymentHash => become(data, SUCCEEDED)
     case (cmd: SendMultiPart, INIT | ABORTED) => assignToChans(opm.rightNowSendable(cmd.allowedChans, cmd.totalFeeReserve), OutgoingPaymentSenderData(cmd, Map.empty), cmd.actualTotal)
     // In case if some parts get through we'll eventaully get a remote timeout, but if all parts are still waiting after some reasonable time then we need to fail locally
     case (CMDAbort, INIT | PENDING) if data.inFlightParts.isEmpty => me abortAndNotify data.copy(parts = Map.empty)

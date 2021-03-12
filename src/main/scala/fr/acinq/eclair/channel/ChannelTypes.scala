@@ -79,22 +79,23 @@ sealed trait Command
 
 sealed trait IncomingResolution
 
-sealed trait UndeterminedResolution extends IncomingResolution {
+sealed trait ReasonableResolution extends IncomingResolution {
+  def incorrectDetailsFailCommand: FinalResolution = failCommand(LNParams incorrectDetails add.amountMsat)
   def failCommand(failure: FailureMessage): FinalResolution = CMD_FAIL_HTLC(Right(failure), secret, add)
   def fulfillCommand(preimage: ByteVector32): FinalResolution = CMD_FULFILL_HTLC(preimage, add)
 
-  val fullTag: FullPaymentTag
-  val secret: PrivateKey
+  val fullTag: FullPaymentTag // Payment type and grouping data (paymentHash x paymentSecret x type)
+  val secret: PrivateKey // Node secret used by peer (might be peer-specific or invoice-specific nodeId)
   val add: UpdateAddHtlc
 }
 
-case class ReasonableTrampoline(packet: IncomingPacket.NodeRelayPacket, secret: PrivateKey) extends UndeterminedResolution {
-  val fullTag: FullPaymentTag = FullPaymentTag(packet.outerPayload.paymentSecret.get, packet.add.paymentHash, PaymentTagTlv.TRAMPLOINE)
+case class ReasonableTrampoline(packet: IncomingPacket.NodeRelayPacket, secret: PrivateKey) extends ReasonableResolution {
+  val fullTag: FullPaymentTag = FullPaymentTag(packet.add.paymentHash, packet.outerPayload.paymentSecret.get, PaymentTagTlv.TRAMPLOINE_ROUTED)
   val add: UpdateAddHtlc = packet.add
 }
 
-case class ReasonableLocal(packet: IncomingPacket.FinalPacket, secret: PrivateKey) extends UndeterminedResolution {
-  val fullTag: FullPaymentTag = FullPaymentTag(packet.payload.paymentSecret.get, packet.add.paymentHash, PaymentTagTlv.LOCAL)
+case class ReasonableLocal(packet: IncomingPacket.FinalPacket, secret: PrivateKey) extends ReasonableResolution {
+  val fullTag: FullPaymentTag = FullPaymentTag(packet.add.paymentHash, packet.payload.paymentSecret.get, PaymentTagTlv.FINAL_INCOMING)
   val add: UpdateAddHtlc = packet.add
 }
 
