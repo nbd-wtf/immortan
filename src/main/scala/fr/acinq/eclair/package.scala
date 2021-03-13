@@ -123,7 +123,7 @@ package object eclair {
   // proportional^(exponent = 0) + ln(proportional)^(logExponent = 0) gives base + 2 msat, independent of payment amount
   def trampolineFee(proportional: Long, baseFee: MilliSatoshi, exponent: Double, logExponent: Double): MilliSatoshi = {
     val nonLinearFeeMsat = math.pow(proportional, exponent) + math.pow(math.log(proportional), logExponent)
-    baseFee + MilliSatoshi(nonLinearFeeMsat.toLong)
+    baseFee + MilliSatoshi(nonLinearFeeMsat.ceil.toLong)
   }
 
   /**

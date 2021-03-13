@@ -24,7 +24,6 @@ import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
 import fr.acinq.eclair.blockchain.CurrentFeerates
 import fr.acinq.eclair.router.ChannelUpdateExt
-import org.bitcoinj.core.NetworkParameters
 import immortan.SyncMaster.ShortChanIdSet
 import fr.acinq.eclair.crypto.Generators
 import immortan.utils.PaymentRequestExt
@@ -56,7 +55,6 @@ object LNParams {
   val minDustLimit: Satoshi = Satoshi(546L)
   val minDepthBlocks: Int = 3
 
-  val jParams: NetworkParameters = org.bitcoinj.params.MainNetParams.get
   val chainHash: ByteVector32 = Block.LivenetGenesisBlock.hash
   val reserveToFundingRatio = 0.0025 // %
   val offChainFeeRatio = 0.01 // %

@@ -54,6 +54,9 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster) ex
 
     case (inFlight: InFlightPayments, null, RECEIVING) =>
       val adds = inFlight.in(fullTag).asInstanceOf[ReasonableLocals]
+      // Important: when creating new invoice we SPECIFICALLY DO NOT put a preimage into preimage storage
+      // we only do that for final incoming payment once it's getting fulfilled to know it was fulfilled in future
+      // having PaymentStatus.SUCCEEDED in payment db is not enough because that table does not get included in backup
       val preimageTry: PreimageTry = cm.getPreimageMemo.get(fullTag.paymentHash)
 
       cm.getPaymentInfoMemo.get(fullTag.paymentHash).toOption match {
@@ -83,7 +86,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster) ex
         case Some(alreadyRevealed) if alreadyRevealed.isIncoming && PaymentStatus.SUCCEEDED == alreadyRevealed.status => becomeRevealed(alreadyRevealed.preimage, adds)
         case Some(coveredAll) if coveredAll.isIncoming && coveredAll.pr.amount.isDefined && askCovered(adds, coveredAll) => becomeRevealed(coveredAll.preimage, adds)
         case Some(collectedSome) if collectedSome.isIncoming && collectedSome.pr.amount.isEmpty && gotSome(adds) => becomeRevealed(collectedSome.preimage, adds)
-        case None => if (preimageTry.isSuccess) becomeRevealed(preimageTry.get, adds) else becomeAborted(IncomingAborted(PaymentTimeout.toSome), adds)
+        case _ => if (preimageTry.isSuccess) becomeRevealed(preimageTry.get, adds) else becomeAborted(IncomingAborted(PaymentTimeout.toSome), adds)
       }
 
     case (inFlight: InFlightPayments, revealed: IncomingRevealed, FINALIZING) =>
@@ -113,7 +116,10 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster) ex
   }
 
   def becomeRevealed(preimage: ByteVector32, adds: ReasonableLocals): Unit = {
+    // With final payment we ALREADY know a preimage, but also put it into storage
+    // doing so makes it transferrable as storage db gets included in backup file
     cm.payBag.updOkIncoming(amountIn(adds), fullTag.paymentHash)
+    cm.payBag.storePreimage(fullTag.paymentHash, preimage)
     cm.getPaymentInfoMemo.invalidate(fullTag.paymentHash)
     cm.getPreimageMemo.invalidate(fullTag.paymentHash)
     become(IncomingRevealed(preimage), FINALIZING)
@@ -243,7 +249,6 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
 
   def becomeSendingOrAborted(adds: ReasonableTrampolines): Unit = {
     require(adds.nonEmpty, "A set of incoming HTLCs must be non-empty")
-    // Make sure all supplied parameters are sane before starting a send phase
     val result = validateRelay(LNParams.trampoline, adds, LNParams.blockCount.get)
 
     result match {
@@ -270,10 +275,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
   }
 
   def becomeRevealed(preimage: ByteVector32, adds: ReasonableTrampolines): Unit = {
-    // Unconditionally persist an obtained preimage and update relays if we have incoming payments
-    // note that we may not have enough or no incoming payments at all in pathological states
-    cm.payBag.storePreimage(fullTag.paymentHash, preimage)
-    cm.getPreimageMemo.invalidate(fullTag.paymentHash)
+    // We might not have enough or no incoming payments at all in pathological states
     become(TrampolineRevealed(preimage), FINALIZING)
     fulfill(preimage, adds)
 

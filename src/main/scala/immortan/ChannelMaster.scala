@@ -23,7 +23,7 @@ object ChannelMaster {
   type PaymentInfoTry = Try[PaymentInfo]
 
   type OutgoingAdds = Iterable[UpdateAddHtlc]
-  type UndeterminedResolutions = Iterable[ReasonableResolution]
+  type ReasonableResolutions = Iterable[ReasonableResolution]
   type ReasonableTrampolines = Iterable[ReasonableTrampoline]
   type ReasonableLocals = Iterable[ReasonableLocal]
 
@@ -61,7 +61,7 @@ object ChannelMaster {
   }
 }
 
-case class InFlightPayments(out: Map[FullPaymentTag, OutgoingAdds], in: Map[FullPaymentTag, UndeterminedResolutions] = Map.empty) {
+case class InFlightPayments(out: Map[FullPaymentTag, OutgoingAdds], in: Map[FullPaymentTag, ReasonableResolutions] = Map.empty) {
   // Incoming HTLC tag is extracted from onion, corresponsing outgoing HTLC tag is stored in TLV, this way in/out can be linked
   val allTags: Set[FullPaymentTag] = out.keySet ++ in.keySet
 }
@@ -79,8 +79,8 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
   var inProcessors = Map.empty[FullPaymentTag, IncomingPaymentProcessor]
   var all = Map.empty[ByteVector32, Channel]
 
-  opm.listeners += me
   pf.listeners += opm
+  opm.listeners += me
 
   // CHANNEL MANAGEMENT
 
@@ -127,7 +127,7 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
   }
 
   def notifyFSMs(out: Map[FullPaymentTag, OutgoingAdds], in: Iterable[IncomingResolution], rejects: Seq[RemoteReject], makeMissingOutgoingFSM: Boolean): Unit = {
-    in.foreach { case finalResolution: FinalResolution => sendTo(finalResolution, finalResolution.theirAdd.channelId) case _ => } // First, immediately resolve invalid adds
+    in.foreach { case finalResolve: FinalResolution => sendTo(finalResolve, finalResolve.theirAdd.channelId) case _ => } // First, immediately resolve invalid adds
     val partialIncoming = in.collect { case resolve: ReasonableResolution => resolve }.groupBy(_.fullTag) // Then, collect reasonable adds which need further analysis
     val bag = InFlightPayments(out, partialIncoming)
 
@@ -152,8 +152,14 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
   override def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = notifyFSMs(allInChannelOutgoing, allIncomingResolutions, rejects, makeMissingOutgoingFSM = false)
 
+  // TODO: multiple receives?
   override def fulfillReceived(fulfill: RemoteFulfill): Unit = {
-    // TODO: save preimage to database
+    payBag.storePreimage(fulfill.ourAdd.paymentHash, fulfill.preimage)
+    getPreimageMemo.invalidate(fulfill.ourAdd.paymentHash)
+
+//    opm.data.payments.values.find()
+//    fulfill.ourAdd.fullTag
+
     // We may have local and multiple routed outgoing payment sets at once, all of them must be notified
     inProcessors.filterKeys(_.paymentHash == fulfill.ourAdd.paymentHash).values.foreach(_ doProcess fulfill)
     opm process fulfill
@@ -167,5 +173,7 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
   // This is executed in OutgoingPaymentMaster context
 
+  // TODO: increase update scores on preimage
+  // TODO: incoming FSMs remove themselves, how to remove local sending FSM on success/failure?
   override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = ???
 }

@@ -1,14 +1,14 @@
 package immortan.utils
 
-import scala.util.{Failure, Try}
+import fr.acinq.eclair._
+import immortan.utils.InputParser._
+import scala.util.{Failure, Success, Try}
 import immortan.{LNParams, RemoteNodeInfo}
-import immortan.utils.InputParser.{lightning, lnPayReq}
 import fr.acinq.eclair.payment.PaymentRequest
 import scala.util.matching.UnanchoredRegex
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.wire.NodeAddress
-import fr.acinq.eclair.MilliSatoshi
-import org.bitcoinj.uri.BitcoinURI
+import fr.acinq.bitcoin.ScriptElt
 import scodec.bits.ByteVector
 import immortan.utils.uri.Uri
 
@@ -31,22 +31,16 @@ object InputParser {
   val lightning: String = "lightning:"
   val bitcoin: String = "bitcoin:"
 
-  def bitcoinUri(bitcoinUriLink: String): BitcoinURI = {
-    val bitcoinURI = new BitcoinURI(LNParams.jParams, bitcoinUriLink)
-    require(null != bitcoinURI.getAddress, "No address detected")
-    bitcoinURI
-  }
-
   def parse(rawInput: String): Any = rawInput take 2880 match {
-    case uriLink if uriLink.startsWith(bitcoin) => bitcoinUri(uriLink)
+    case uriLink if uriLink.startsWith(bitcoin) => BitcoinUri.fromRaw(uriLink)
     case uriLink if uriLink.startsWith(lightning) => PaymentRequestExt.fromUri(uriLink)
-    case uriLink if uriLink.startsWith(bitcoin.toUpperCase) => bitcoinUri(uriLink.toLowerCase)
+    case uriLink if uriLink.startsWith(bitcoin.toUpperCase) => BitcoinUri.fromRaw(uriLink.toLowerCase)
     case uriLink if uriLink.startsWith(lightning.toUpperCase) => PaymentRequestExt.fromUri(uriLink.toLowerCase)
     case nodeLink(key, host, port) => RemoteNodeInfo(PublicKey.fromBin(ByteVector fromValidHex key), NodeAddress.fromParts(host, port.toInt), key take 16 grouped 4 mkString "-")
     case shortNodeLink(key, host) => RemoteNodeInfo(PublicKey.fromBin(ByteVector fromValidHex key), NodeAddress.fromParts(host, port = 9735), key take 16 grouped 4 mkString "-")
-    case lnPayReq(prefix, data) => PaymentRequestExt(uri = Failure(new RuntimeException), PaymentRequest.read(s"$prefix$data"), s"$prefix$data")
+    case lnPayReq(prefix, data) => PaymentRequestExt.fromRaw(s"$prefix$data")
     case lnUrl(prefix, data) => LNUrl.fromBech32(s"$prefix$data")
-    case _ => bitcoinUri(s"$bitcoin$rawInput")
+    case _ => BitcoinUri.fromRaw(s"$bitcoin$rawInput")
   }
 }
 
@@ -58,8 +52,30 @@ object PaymentRequestExt {
     val pr = PaymentRequest.read(s"$invoicePrefix$invoiceData")
     PaymentRequestExt(uri, pr, s"$invoicePrefix$invoiceData")
   }
+
+  def fromRaw(raw: String): PaymentRequestExt = {
+    val noUri: Try[Uri] = Failure(new RuntimeException)
+    PaymentRequestExt(noUri, PaymentRequest.read(raw), raw)
+  }
 }
 
 case class PaymentRequestExt(uri: Try[Uri], pr: PaymentRequest, raw: String) {
-  lazy val splits: List[MilliSatoshi] = uri.map(_.getQueryParameter("splits").split(',').toList.map(_.toLong) map MilliSatoshi.apply) getOrElse Nil
+  val splits: List[MilliSatoshi] = uri.map(_.getQueryParameter("splits").split(',').toList.map(_.toLong) map MilliSatoshi.apply).getOrElse(Nil)
+}
+
+object BitcoinUri {
+  def fromRaw(raw: String): BitcoinUri = {
+    val dataWithoutPrefix = raw.split(':').drop(1).mkString.replace("//", "")
+    val uri = Uri.parse(s"$bitcoin//$dataWithoutPrefix")
+    BitcoinUri(Success(uri), uri.getHost)
+  }
+}
+
+case class BitcoinUri(uri: Try[Uri], address: String) {
+  val isValid: Boolean = Try(pubKeyScript).toOption.exists(_.nonEmpty)
+  val amount: Option[MilliSatoshi] = uri.map(_ getQueryParameter "amount").map(BigDecimal.apply).map(Denomination.btcBigDecimal2MSat).toOption
+  val prExt: Option[PaymentRequestExt] = uri.map(_ getQueryParameter "lightning").map(PaymentRequestExt.fromRaw).toOption
+  val message: Option[String] = uri.map(_ getQueryParameter "message").map(_.trim).filter(_.nonEmpty).toOption
+  val label: Option[String] = uri.map(_ getQueryParameter "label").map(_.trim).filter(_.nonEmpty).toOption
+  def pubKeyScript: Seq[ScriptElt] = addressToPublicKeyScript(address, LNParams.chainHash)
 }

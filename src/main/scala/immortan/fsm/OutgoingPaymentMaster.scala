@@ -181,7 +181,7 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
     case _ =>
   }
 
-  def getSender(fullTag: FullPaymentTag): OutgoingPaymentSender =
+  private def getSender(fullTag: FullPaymentTag) =
     if (data.payments contains fullTag) data.payments(fullTag) else {
       val newOutgoingPaymentSender = new OutgoingPaymentSender(fullTag, me)
       val data1 = data.payments.updated(fullTag, newOutgoingPaymentSender)
