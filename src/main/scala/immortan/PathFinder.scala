@@ -43,15 +43,21 @@ abstract class PathFinder(normalStore: NetworkDataStore, hostedStore: NetworkDat
   def getExtraNodes: Set[RemoteNodeInfo]
 
   def doProcess(change: Any): Unit = (change, state) match {
-    // This covers two cases: when graph is still not loaded at all and when we have a loaded empty graph (likey a first launch)
-    case (Tuple2(sender: CanBeRepliedTo, _: RouteRequest), OPERATIONAL) if data.channels.isEmpty => sender process NotifyRejected
-    case (Tuple2(sender: CanBeRepliedTo, _: RouteRequest), WAITING) => sender process NotifyRejected
+    case (Tuple2(sender: CanBeRepliedTo, _: RouteRequest), OPERATIONAL) if data.channels.isEmpty =>
+      // Graph is loaded but it is empty (likey a first launch or synchronizing)
+      sender process NotifyRejected
 
     case (Tuple2(sender: CanBeRepliedTo, request: RouteRequest), OPERATIONAL) =>
       // In OPERATIONAL state we instruct graph to search through the single pre-selected local channel
       // it is safe to not check for existance becase base graph never has our private outgoing edges
       val graph1 = data.graph.addEdge(edge = request.localEdge, checkIfContains = false)
       sender process handleRouteRequest(graph1, request)
+
+    case (Tuple2(sender: CanBeRepliedTo, _: RouteRequest), WAITING) =>
+      // We need a loaded routing data to search for path properly
+      // load that data while notifying sender if it's absent
+      sender process NotifyRejected
+      me process CMDLoadGraph
 
     case (CMDResync, WAITING) =>
       // We need a loaded routing data to sync properly

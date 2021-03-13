@@ -24,7 +24,7 @@ object InputParser {
   }
 
   private[this] val prefixes = PaymentRequest.prefixes.values mkString "|"
-  private[this] val lnUrl = s"(?im).*?(lnurl)([0-9]{1,}[a-z0-9]+){1}".r.unanchored
+  private[this] val lnUrl = "(?im).*?(lnurl)([0-9]+[a-z0-9]+)".r.unanchored
   private[this] val shortNodeLink = "([a-fA-F0-9]{66})@([a-zA-Z0-9:.\\-_]+)".r.unanchored
   val nodeLink: UnanchoredRegex = "([a-fA-F0-9]{66})@([a-zA-Z0-9:.\\-_]+):([0-9]+)".r.unanchored
   val lnPayReq: UnanchoredRegex = s"(?im).*?($prefixes)([0-9]{1,}[a-z0-9]+){1}".r.unanchored
@@ -46,7 +46,7 @@ object InputParser {
 
 object PaymentRequestExt {
   def fromUri(raw: String): PaymentRequestExt = {
-    val invoiceWithoutPrefix = raw.split(':').drop(1).mkString
+    val invoiceWithoutPrefix = raw.split(':').drop(1).mkString.replace("//", "")
     val lnPayReq(invoicePrefix, invoiceData) = invoiceWithoutPrefix
     val uri = Try(Uri parse s"$lightning//$invoiceWithoutPrefix")
     val pr = PaymentRequest.read(s"$invoicePrefix$invoiceData")
