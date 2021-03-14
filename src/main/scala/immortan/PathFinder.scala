@@ -10,6 +10,7 @@ import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt, Router, Sync}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.RouteCalculation.handleRouteRequest
 import fr.acinq.eclair.wire.ChannelUpdate
+import fr.acinq.eclair.CltvExpiryDelta
 import java.util.concurrent.Executors
 
 
@@ -19,6 +20,7 @@ object PathFinder {
 
   val NotifyRejected = "notify-rejected" // Pathfinder can't process a route request right now
   val NotifyOperational = "notify-operational" // Pathfinder has loaded a graph and is operational
+
   val CMDLoadGraph = "cmd-load-graph"
   val CMDResync = "cmd-resync"
 
@@ -26,7 +28,6 @@ object PathFinder {
 }
 
 abstract class PathFinder(normalStore: NetworkDataStore, hostedStore: NetworkDataStore) extends StateMachine[Data] { me =>
-  private[this] val stats: Statistics[Long] = new Statistics[Long] { override def extract(item: Long): Double = item.toDouble }
   implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
   def process(changeMessage: Any): Unit = scala.concurrent.Future(me doProcess changeMessage)
   var listeners: Set[CanBeRepliedTo] = Set.empty
@@ -191,9 +192,19 @@ abstract class PathFinder(normalStore: NetworkDataStore, hostedStore: NetworkDat
     }
   }
 
-  def currentProportionalFeeMean: Option[Long] = {
-    val sample = data.channels.values.toList.flatMap(_.feeProportionalMillionths)
-    if (sample.size > 1000) Some(stats.mean(stats removeExtremeOutliers sample).toLong)
+  // Stats
+
+  def currentFeeProportionalMean: Option[Long] = {
+    val sample: Seq[Long] = data.channels.values.toVector.flatMap(_.feeProportionalMillionths)
+    val noOutlierSample: Seq[Long] = Statistics.removeExtremeOutliers(sample)(identity)
+    if (sample.size > 100) Statistics.meanBy(noOutlierSample)(identity).toLong.toSome
+    else None
+  }
+
+  def currentCltvDeltaMean: Option[Long] = {
+    val sample: Seq[CltvExpiryDelta] = data.channels.values.toVector.flatMap(_.cltvExpiryDeltas)
+    val noOutlierSample: Seq[CltvExpiryDelta] = Statistics.removeExtremeOutliers(sample)(identity)
+    if (sample.size > 100) Statistics.meanBy(noOutlierSample)(identity).toLong.toSome
     else None
   }
 }

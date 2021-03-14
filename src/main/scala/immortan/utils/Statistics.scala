@@ -1,22 +1,39 @@
 package immortan.utils
 
 
-abstract class Statistics[O] {
-  type Collection = List[O]
-
-  def extract(item: O): Double
-
-  def removeExtremeOutliers(items: Collection, lower: Int = 20, upper: Int = 20): Collection = items.size match { case size =>
-    items.sortBy(extract).drop(size / lower).dropRight(size / upper)
+object Statistics {
+  def removeExtremeOutliers[T, N](items: Seq[T] = Nil, lowerPct: Int = 10, upperPct: Int = 10)(extractor: T => N)(implicit n: Numeric[N] = null): Seq[T] = items.size match { case size =>
+    items.sortBy(extractor).drop(size / lowerPct).dropRight(size / upperPct)
   }
 
-  def isTopOutlier(mu: Double, sd: Double, devitaionTimes: Double)(item: O): Boolean = extract(item) > mu + sd * devitaionTimes
+  def meanBy[T, N](items: Traversable[T] = Nil)(extractor: T => N)(implicit n: Numeric[N] = null): Double =
+    items.foldLeft(0D) { case (total, item) => n.toDouble(extractor apply item) + total } / items.size
 
-  def isBottomOutlier(mu: Double, sd: Double, devitaionTimes: Double)(item: O): Boolean = extract(item) < mu + sd * devitaionTimes
+  def varianceBy[T, N](items: Traversable[T] = Nil)(extractor: T => N)(implicit n: Numeric[N] = null): Double = meanBy(items)(extractor) match { case computedMean =>
+    items.foldLeft(0D) { case (total, item) => math.pow(n.toDouble(extractor apply item) - computedMean, 2) + total } / items.size.toDouble
+  }
 
-  def variance(items: Collection, mean: Double): Double = (0D /: items) { case (total, item) => math.pow(extract(item) - mean, 2) + total } / items.size
+  def stdDevBy[T, N](items:Traversable[T] = Nil)(extractor: T => N)(implicit n: Numeric[N] = null): Double = {
+    val computedVarianceBy = varianceBy(items)(extractor)
+    math.sqrt(computedVarianceBy)
+  }
 
-  def sd(items: Collection, mean: Double): Double = math sqrt variance(items, mean)
+  def zscoresBy[T, N](items:Traversable[T] = Nil)(extractor: T => N)(implicit n: Numeric[N] = null): Seq[Double] = {
+    val computedStdDevBy = stdDevBy(items)(extractor)
+    val computedMeanBy = meanBy(items)(extractor)
 
-  def mean(items: Collection): Double = items.map(extract).sum / items.size
+    items.map { item =>
+      val extractedValue = n.toDouble(extractor apply item)
+      (extractedValue - computedMeanBy) / computedStdDevBy
+    }.toSeq
+  }
+
+  def pearsonBy[A, B, C](items: Traversable[A] = Nil)(x: A => B)(y: A => C)(implicit n: Numeric[B], q: Numeric[C] = null): Double = {
+    val computedZScores = zscoresBy(items)(x) zip zscoresBy(items)(y)
+
+    computedZScores.foldLeft(0D) { case (total, items) =>
+      val (scoredXItem, scoredYItem) = items
+      scoredXItem * scoredYItem + total
+    } / items.size.toDouble
+  }
 }

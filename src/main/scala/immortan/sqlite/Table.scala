@@ -66,9 +66,9 @@ abstract class ChannelAnnouncementTable(val table: String) extends Table {
 
   def createStatements: Seq[String] =
     s"""CREATE TABLE IF NOT EXISTS $table(
-      $id INTEGER PRIMARY KEY AUTOINCREMENT, $features BLOB NOT NULL,
-      $shortChannelId INTEGER NOT NULL UNIQUE, $nodeId1 BLOB NOT NULL,
-      $nodeId2 BLOB NOT NULL
+      $id INTEGER PRIMARY KEY AUTOINCREMENT,
+      $features BLOB NOT NULL, $shortChannelId INTEGER NOT NULL UNIQUE,
+      $nodeId1 BLOB NOT NULL, $nodeId2 BLOB NOT NULL
     )""" :: Nil
 }
 

@@ -43,9 +43,8 @@ class SQLiteNetwork(val db: DBInterface, updateTable: ChannelUpdateTable, announ
 
     val crc32: JLong = Sync.getChecksum(cu)
 
-    db.change(updateTable.newSql, cu.shortChannelId.toJavaLong, timestamp, messageFlags, channelFlags,
-      cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, htlcMaxMsat, cu.position,
-      1L: JLong, crc32)
+    db.change(updateTable.newSql, cu.shortChannelId.toJavaLong, timestamp, messageFlags, channelFlags, cltvExpiryDelta,
+      htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, htlcMaxMsat, cu.position, 1L: JLong, crc32)
 
     db.change(updateTable.updSQL, timestamp, messageFlags, channelFlags, cltvExpiryDelta, htlcMinimumMsat,
       feeBaseMsat, feeProportionalMillionths, htlcMaxMsat, crc32, cu.shortChannelId.toJavaLong, cu.position)
