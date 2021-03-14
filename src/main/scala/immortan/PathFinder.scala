@@ -4,14 +4,13 @@ import immortan.PathFinder._
 import immortan.crypto.Tools._
 import immortan.utils.{Rx, Statistics}
 import immortan.crypto.{CanBeRepliedTo, StateMachine}
-
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi}
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import fr.acinq.eclair.router.Router.{Data, PublicChannel, RouteRequest}
 import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt, Router, Sync}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.RouteCalculation.handleRouteRequest
 import fr.acinq.eclair.wire.ChannelUpdate
-import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi}
 import java.util.concurrent.Executors
 
 
@@ -28,7 +27,7 @@ object PathFinder {
   val RESYNC_PERIOD: Long = 1000L * 3600 * 24 * 3 // 3 days in msecs
 }
 
-case class AvgRouteParams(cltvExpiryDelta: CltvExpiryDelta, feeProportionalMillionths: MilliSatoshi, feeBaseMsat: MilliSatoshi, sampleSize: Long)
+case class AvgHopParams(cltvExpiryDelta: CltvExpiryDelta, feeProportionalMillionths: MilliSatoshi, feeBaseMsat: MilliSatoshi, sampleSize: Long)
 
 abstract class PathFinder(normalStore: NetworkDataStore, hostedStore: NetworkDataStore) extends StateMachine[Data] { me =>
   implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
@@ -195,14 +194,12 @@ abstract class PathFinder(normalStore: NetworkDataStore, hostedStore: NetworkDat
     }
   }
 
-  // Stats
-
-  def getCurrentStats: AvgRouteParams = {
+  def getAvgHopParams: AvgHopParams = {
     val sample = data.channels.values.toVector.flatMap(_.allUpdates)
     val noFeeOutliers = Statistics.removeExtremeOutliers(sample)(_.update.feeProportionalMillionths)
     val cltvExpiryDelta = CltvExpiryDelta(Statistics.meanBy(noFeeOutliers)(_.update.cltvExpiryDelta).toInt)
     val proportional = MilliSatoshi(Statistics.meanBy(noFeeOutliers)(_.update.feeProportionalMillionths).toLong)
     val base = MilliSatoshi(Statistics.meanBy(noFeeOutliers)(_.update.feeBaseMsat).toLong)
-    AvgRouteParams(cltvExpiryDelta, proportional, base, noFeeOutliers.size)
+    AvgHopParams(cltvExpiryDelta, proportional, base, noFeeOutliers.size)
   }
 }
