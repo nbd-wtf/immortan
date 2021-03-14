@@ -6,29 +6,29 @@ object Statistics {
     items.sortBy(extractor).drop(size / lowerPct).dropRight(size / upperPct)
   }
 
-  def meanBy[T, N](items: Traversable[T] = Nil)(extractor: T => N)(implicit n: Numeric[N] = null): Double =
+  def meanBy[T, N](items: Seq[T] = Nil)(extractor: T => N)(implicit n: Numeric[N] = null): Double =
     items.foldLeft(0D) { case (total, item) => n.toDouble(extractor apply item) + total } / items.size
 
-  def varianceBy[T, N](items: Traversable[T] = Nil)(extractor: T => N)(implicit n: Numeric[N] = null): Double = meanBy(items)(extractor) match { case computedMean =>
+  def varianceBy[T, N](items: Seq[T] = Nil)(extractor: T => N)(implicit n: Numeric[N] = null): Double = meanBy(items)(extractor) match { case computedMean =>
     items.foldLeft(0D) { case (total, item) => math.pow(n.toDouble(extractor apply item) - computedMean, 2) + total } / items.size.toDouble
   }
 
-  def stdDevBy[T, N](items:Traversable[T] = Nil)(extractor: T => N)(implicit n: Numeric[N] = null): Double = {
+  def stdDevBy[T, N](items: Seq[T] = Nil)(extractor: T => N)(implicit n: Numeric[N] = null): Double = {
     val computedVarianceBy = varianceBy(items)(extractor)
     math.sqrt(computedVarianceBy)
   }
 
-  def zscoresBy[T, N](items:Traversable[T] = Nil)(extractor: T => N)(implicit n: Numeric[N] = null): Seq[Double] = {
+  def zscoresBy[T, N](items: Seq[T] = Nil)(extractor: T => N)(implicit n: Numeric[N] = null): Seq[Double] = {
     val computedStdDevBy = stdDevBy(items)(extractor)
     val computedMeanBy = meanBy(items)(extractor)
 
     items.map { item =>
       val extractedValue = n.toDouble(extractor apply item)
       (extractedValue - computedMeanBy) / computedStdDevBy
-    }.toSeq
+    }
   }
 
-  def pearsonBy[A, B, C](items: Traversable[A] = Nil)(x: A => B)(y: A => C)(implicit n: Numeric[B], q: Numeric[C] = null): Double = {
+  def pearsonBy[A, B, C](items: Seq[A] = Nil)(x: A => B)(y: A => C)(implicit n: Numeric[B], q: Numeric[C] = null): Double = {
     val computedZScores = zscoresBy(items)(x) zip zscoresBy(items)(y)
 
     computedZScores.foldLeft(0D) { case (total, items) =>
