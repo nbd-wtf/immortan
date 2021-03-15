@@ -288,9 +288,10 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, opm: OutgoingPaymentMas
       me abortAndNotify data.copy(parts = Map.empty)
 
     case (fulfill: RemoteFulfill, INIT | PENDING | ABORTED) if fulfill.ourAdd.paymentHash == fullTag.paymentHash =>
-      become(data.withoutPartId(fulfill.ourAdd.partId), SUCCEEDED)
+      val data1 = data.withoutPartId(fulfill.ourAdd.partId)
       // Provide original data with all used routes intact
       opm.events.preimageRevealed(data, fulfill)
+      become(data1, SUCCEEDED)
 
     case (fulfill: RemoteFulfill, SUCCEEDED) if fulfill.ourAdd.paymentHash == fullTag.paymentHash =>
       // Remove in-flight parts so they don't interfere with anything
