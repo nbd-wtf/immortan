@@ -66,7 +66,7 @@ case class InFlightPayments(out: Map[FullPaymentTag, OutgoingAdds], in: Map[Full
   val allTags: Set[FullPaymentTag] = out.keySet ++ in.keySet
 }
 
-abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val pf: PathFinder) extends ChannelListener with OutgoingPaymentMasterListener { me =>
+abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag: DataBag, val pf: PathFinder) extends ChannelListener with OutgoingPaymentMasterListener { me =>
   val getPaymentInfoMemo: LoadingCache[ByteVector32, PaymentInfoTry] = memoize(payBag.getPaymentInfo)
   val initResolveMemo: LoadingCache[UpdateAddHtlcExt, IncomingResolution] = memoize(initResolve)
   val getPreimageMemo: LoadingCache[ByteVector32, PreimageTry] = memoize(payBag.getPreimage)
@@ -118,11 +118,11 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
     opm.getSendable(chans, maxFee = sendableNoFee * LNParams.offChainFeeRatio).values.sum
   }
 
-  def checkIfSendable(tag: FullPaymentTag, amount: MilliSatoshi): Int = getPreimageMemo(tag.paymentHash) match {
-    case _ if opm.data.payments.get(tag).exists(fsm => PENDING == fsm.state || INIT == fsm.state) => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is pending in FSM
-    case _ if opm.data.payments.get(tag).exists(fsm => SUCCEEDED == fsm.state) => PaymentInfo.NOT_SENDABLE_SUCCESS // This payment has just been fulfilled at runtime
+  def checkIfSendable(tag: FullPaymentTag, amount: MilliSatoshi): Int = opm.data.payments.get(tag) match {
+    case Some(outgoingFSM) if PENDING == outgoingFSM.state || INIT == outgoingFSM.state => PaymentInfo.NOT_SENDABLE_IN_FLIGHT // This payment is pending in FSM
+    case Some(outgoingFSM) if SUCCEEDED == outgoingFSM.state => PaymentInfo.NOT_SENDABLE_SUCCESS // This payment has just been fulfilled at runtime
+    case _ if getPreimageMemo(tag.paymentHash).isSuccess => PaymentInfo.NOT_SENDABLE_SUCCESS // Preimage is revealed
     case _ if amount > maxSendable => PaymentInfo.NOT_SENDABLE_LOW_FUNDS // Not enough funds in a wallet
-    case info if info.isSuccess => PaymentInfo.NOT_SENDABLE_SUCCESS // Preimage is revealed
     case _ => PaymentInfo.SENDABLE // Has never been sent or ABORTED by now
   }
 
@@ -134,12 +134,12 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
     bag.allTags.foreach {
       case fullTag if PaymentTagTlv.TRAMPLOINE_ROUTED == fullTag.tag && !inProcessors.contains(fullTag) => inProcessors += new TrampolinePaymentRelayer(fullTag, me).tuple
       case fullTag if PaymentTagTlv.FINAL_INCOMING == fullTag.tag && !inProcessors.contains(fullTag) => inProcessors += new IncomingPaymentReceiver(fullTag, me).tuple
-      case fullTag if PaymentTagTlv.LOCALLY_SENT == fullTag.tag && makeMissingOutgoingFSM => opm process CreatSenderFSM(fullTag)
+      case fullTag if PaymentTagTlv.LOCALLY_SENT == fullTag.tag && makeMissingOutgoingFSM => opm process CreateSenderFSM(fullTag)
       case _ => // Do nothing
     }
 
-    // Incoming FSM may have been created, but now no related payments are left (incoming or outgoing)
-    // this is used by incoming FSMs to finalize themselves including removal from `inProcessors`
+    // Incoming FSM may have been created, but now no related incoming or outgoing payments are left
+    // this is used by incoming FSMs to finalize themselves including removal from `inProcessors` map
     inProcessors.values.foreach(_ doProcess bag)
     rejects.foreach(opm.process)
   }
@@ -152,28 +152,45 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
   override def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = notifyFSMs(allInChannelOutgoing, allIncomingResolutions, rejects, makeMissingOutgoingFSM = false)
 
-  // TODO: multiple receives?
-  override def fulfillReceived(fulfill: RemoteFulfill): Unit = {
-    payBag.storePreimage(fulfill.ourAdd.paymentHash, fulfill.preimage)
-    getPreimageMemo.invalidate(fulfill.ourAdd.paymentHash)
+  override def fulfillReceived(fulfill: RemoteFulfill): Unit = opm process fulfill
 
-//    opm.data.payments.values.find()
-//    fulfill.ourAdd.fullTag
-
-    // We may have local and multiple routed outgoing payment sets at once, all of them must be notified
-    inProcessors.filterKeys(_.paymentHash == fulfill.ourAdd.paymentHash).values.foreach(_ doProcess fulfill)
-    opm process fulfill
-  }
-
+  // Mainly to prolong timeouts
   override def addReceived(add: UpdateAddHtlcExt): Unit = initResolveMemo(add) match {
     case resolve: ReasonableTrampoline => currentTrampolineRoutedPayments.values.find(_.fullTag == resolve.fullTag).foreach(_ doProcess resolve)
     case resolve: ReasonableLocal => currentFinalIncomingPayments.values.find(_.fullTag == resolve.fullTag).foreach(_ doProcess resolve)
     case _ => // Do nothing
   }
 
-  // This is executed in OutgoingPaymentMaster context
+  // These are executed in OutgoingPaymentMaster context
+  // Currently local outgoing FSM stays in memory forever on becoming SUCCEEDED/ABORTED
+  // this is harmless because in-flight routes are getting cleared as payment is winding down
 
-  // TODO: increase update scores on preimage
-  // TODO: incoming FSMs remove themselves, how to remove local sending FSM on success/failure?
-  override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = ???
+  // Only treat local payments here, relays are handled in trampoline FSM
+  override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = if (data.cmd.fullTag.tag == PaymentTagTlv.LOCALLY_SENT) {
+    if (data.failures.nonEmpty) dataBag.putReport(data.cmd.fullTag.paymentHash, data failuresAsString LNParams.denomination)
+    payBag.updAbortedOutgoing(data.cmd.fullTag.paymentHash)
+  }
+
+  override def preimageRevealed(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = {
+    // We have just seen a first preimage for locally initiated OR trampoline-routed outgoing payment
+
+    chanBag.db txWrap {
+      // First, unconditionally persist a preimage before doing anything else
+      payBag.storePreimage(fulfill.ourAdd.paymentHash, fulfill.preimage)
+      // Should be silently disregarded if this is a routed payment
+      payBag.updOkOutgoing(fulfill, data.usedFee)
+    }
+
+    if (data.cmd.fullTag.tag == PaymentTagTlv.LOCALLY_SENT) chanBag.db txWrap {
+      // Then, persist various metadata when this is a locally initiated payment
+      payBag.getPaymentInfo(fulfill.ourAdd.paymentHash).foreach { outgoingPaymentInfo =>
+        payBag.addSearchablePayment(outgoingPaymentInfo.description.queryText, fulfill.ourAdd.paymentHash)
+        if (data.inFlightParts.nonEmpty) dataBag.putReport(fulfill.ourAdd.paymentHash, data usedRoutesAsString LNParams.denomination)
+        for (successfullUpdateExt <- data.successfulUpdates) pf.normalStore.incrementChannelScore(successfullUpdateExt.update)
+      }
+    }
+
+    getPaymentInfoMemo.invalidate(fulfill.ourAdd.paymentHash)
+    getPreimageMemo.invalidate(fulfill.ourAdd.paymentHash)
+  }
 }

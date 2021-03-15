@@ -1,8 +1,8 @@
 package immortan.sqlite
 
 import immortan.sqlite.SQLiteData._
-import immortan.{StorageFormat, SwapInStateExt}
 import fr.acinq.eclair.wire.{HostedChannelBranding, SwapInState}
+import immortan.{DataBag, StorageFormat, SwapInStateExt}
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32}
 import java.lang.{Integer => JInt}
 
@@ -26,7 +26,7 @@ object SQLiteData {
   final val LABEL_PAYMENT_REPORT_PREFIX = "label-payment-report-"
 }
 
-class SQLiteData(db: DBInterface) extends WalletDb {
+class SQLiteData(db: DBInterface) extends WalletDb with DataBag {
   def delete(label: String): Unit = db.change(DataTable.killSql, label)
 
   def tryGet(label: String): Try[ByteVector] = db.select(DataTable.selectSql, label).headTry(_ byteVec DataTable.content)

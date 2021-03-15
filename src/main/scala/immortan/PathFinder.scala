@@ -29,7 +29,7 @@ object PathFinder {
 
 case class AvgHopParams(cltvExpiryDelta: CltvExpiryDelta, feeProportionalMillionths: MilliSatoshi, feeBaseMsat: MilliSatoshi, sampleSize: Long)
 
-abstract class PathFinder(normalStore: NetworkDataStore, hostedStore: NetworkDataStore) extends StateMachine[Data] { me =>
+abstract class PathFinder(val normalStore: NetworkDataStore, hostedStore: NetworkDataStore) extends StateMachine[Data] { me =>
   implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
   def process(changeMessage: Any): Unit = scala.concurrent.Future(me doProcess changeMessage)
   var listeners: Set[CanBeRepliedTo] = Set.empty
@@ -195,7 +195,7 @@ abstract class PathFinder(normalStore: NetworkDataStore, hostedStore: NetworkDat
   }
 
   def getAvgHopParams: AvgHopParams = {
-    val sample = data.channels.values.toVector.flatMap(_.allUpdates)
+    val sample = data.channels.values.toVector.flatMap(pc => pc.update1Opt ++ pc.update2Opt)
     val noFeeOutliers = Statistics.removeExtremeOutliers(sample)(_.update.feeProportionalMillionths)
     val cltvExpiryDelta = CltvExpiryDelta(Statistics.meanBy(noFeeOutliers)(_.update.cltvExpiryDelta).toInt)
     val proportional = MilliSatoshi(Statistics.meanBy(noFeeOutliers)(_.update.feeProportionalMillionths).toLong)

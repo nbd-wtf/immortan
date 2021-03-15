@@ -9,11 +9,11 @@ import fr.acinq.eclair.wire.ChannelCodecs
 import immortan.ChannelBag
 
 
-class SQLiteChannel(db: DBInterface) extends ChannelBag {
+class SQLiteChannel(val db: DBInterface) extends ChannelBag {
   override def put(data: PersistentChannelData): PersistentChannelData = db txWrap {
-    val raw = ChannelCodecs.persistentDataCodec.encode(data).require.toByteArray
-    db.change(ChannelTable.newSql, data.channelId.toHex, raw)
-    db.change(ChannelTable.updSql, raw, data.channelId.toHex)
+    val rawContent = ChannelCodecs.persistentDataCodec.encode(data).require.toByteArray
+    db.change(ChannelTable.newSql, data.channelId.toHex, rawContent)
+    db.change(ChannelTable.updSql, rawContent, data.channelId.toHex)
     data
   }
 

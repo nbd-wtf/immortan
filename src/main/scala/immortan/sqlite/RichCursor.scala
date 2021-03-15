@@ -1,7 +1,7 @@
 package immortan.sqlite
 
-import scodec.bits.{BitVector, ByteVector}
 import immortan.crypto.Tools.Bytes
+import scodec.bits.ByteVector
 import scala.util.Try
 
 

@@ -4,9 +4,9 @@ import immortan._
 import spray.json._
 import fr.acinq.eclair._
 import immortan.utils.ImplicitJsonFormats._
-
 import java.lang.{Long => JLong}
-import fr.acinq.eclair.wire.UpdateFulfillHtlc
+
+import fr.acinq.eclair.transactions.RemoteFulfill
 import immortan.utils.PaymentRequestExt
 import immortan.crypto.Tools.Fiat2Btc
 import fr.acinq.bitcoin.ByteVector32
@@ -30,11 +30,11 @@ class SQlitePaymentBag(db: DBInterface, preimageDb: DBInterface) extends Payment
 
   def listRecentRelays: RichCursor = db.select(RelayTable.selectRecentSql)
 
-  def abortOutgoing(paymentHash: ByteVector32): Unit = db.change(PaymentTable.updStatusSql, PaymentStatus.ABORTED, paymentHash.toHex)
-
   def storePreimage(paymentHash: ByteVector32, preimage: ByteVector32): Unit = preimageDb.change(PreimageTable.newSql, paymentHash.toHex, preimage.toHex)
 
-  def updOkOutgoing(upd: UpdateFulfillHtlc, fee: MilliSatoshi): Unit = db.change(PaymentTable.updOkOutgoingSql, upd.paymentPreimage.toHex, fee.toLong: JLong, upd.paymentHash.toHex)
+  def updAbortedOutgoing(paymentHash: ByteVector32): Unit = db.change(PaymentTable.updStatusSql, PaymentStatus.ABORTED, paymentHash.toHex)
+
+  def updOkOutgoing(fulfill: RemoteFulfill, fee: MilliSatoshi): Unit = db.change(PaymentTable.updOkOutgoingSql, fulfill.preimage.toHex, fee.toLong: JLong, fulfill.ourAdd.paymentHash.toHex)
 
   def updOkIncoming(receivedAmount: MilliSatoshi, paymentHash: ByteVector32): Unit = db.change(PaymentTable.updOkIncomingSql, receivedAmount.toLong: JLong, System.currentTimeMillis: JLong, paymentHash.toHex)
 
@@ -86,8 +86,8 @@ abstract class SQlitePaymentBagCached(db: DBInterface, preimageDb: DBInterface) 
     invalidateRelayCache
   }
 
-  override def updOkOutgoing(upd: UpdateFulfillHtlc, fee: MilliSatoshi): Unit = {
-    super.updOkOutgoing(upd, fee)
+  override def updOkOutgoing(fulfill: RemoteFulfill, fee: MilliSatoshi): Unit = {
+    super.updOkOutgoing(fulfill, fee)
     invalidatePaymentCache
   }
 

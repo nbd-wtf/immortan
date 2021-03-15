@@ -64,15 +64,18 @@ case class AESAction(domain: Option[String], description: String, ciphertext: St
 
 // Payment descriptions
 
-sealed trait PaymentDescription { val invoiceText: String }
+sealed trait PaymentDescription {
+  val invoiceText: String
+  val queryText: String
+}
 
-case class PlainDescription(invoiceText: String) extends PaymentDescription
+case class PlainDescription(invoiceText: String) extends PaymentDescription { val queryText: String = invoiceText }
 
-case class PlainMetaDescription(invoiceText: String, meta: String) extends PaymentDescription
+case class PlainMetaDescription(invoiceText: String, meta: String) extends PaymentDescription { val queryText: String = s"$invoiceText $meta" }
 
-case class SwapInDescription(invoiceText: String, txid: String, internalId: Long, nodeId: PublicKey) extends PaymentDescription
+case class SwapInDescription(invoiceText: String, txid: String, internalId: Long, nodeId: PublicKey) extends PaymentDescription { val queryText: String = s"$invoiceText $txid ${nodeId.toString}" }
 
-case class SwapOutDescription(invoiceText: String, btcAddress: String, chainFee: Satoshi, nodeId: PublicKey) extends PaymentDescription
+case class SwapOutDescription(invoiceText: String, btcAddress: String, chainFee: Satoshi, nodeId: PublicKey) extends PaymentDescription { val queryText: String = s"$invoiceText $btcAddress ${nodeId.toString}" }
 
 // Relayed preimages
 

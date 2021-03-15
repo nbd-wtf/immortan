@@ -12,13 +12,13 @@ import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.bitcoin.DeterministicWallet._
 import scodec.bits.{ByteVector, HexStringSyntax}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import immortan.utils.{FiatRatesInfo, WalletEventsCatcher}
 import scala.concurrent.{ExecutionContextExecutor, Future}
 import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
-import fr.acinq.eclair.transactions.{DirectedHtlc, Transactions}
 import fr.acinq.eclair.channel.{LocalParams, PersistentChannelData}
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
+import fr.acinq.eclair.transactions.{DirectedHtlc, RemoteFulfill, Transactions}
+import immortan.utils.{Denomination, FiatRatesInfo, PaymentRequestExt, WalletEventsCatcher}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
@@ -26,9 +26,9 @@ import fr.acinq.eclair.blockchain.CurrentFeerates
 import fr.acinq.eclair.router.ChannelUpdateExt
 import immortan.SyncMaster.ShortChanIdSet
 import fr.acinq.eclair.crypto.Generators
-import immortan.utils.PaymentRequestExt
 import immortan.crypto.Noise.KeyPair
 import java.io.ByteArrayInputStream
+import immortan.sqlite.DBInterface
 import java.nio.ByteOrder
 import akka.util.Timeout
 import scala.util.Try
@@ -101,6 +101,7 @@ object LNParams {
   var chainWallet: WalletExt = _
   var syncParams: SyncParams = _
   var fiatRatesInfo: FiatRatesInfo = _
+  var denomination: Denomination = _
   var trampoline: TrampolineOn = _
 
   var routerConf: RouterConf =
@@ -281,6 +282,8 @@ trait NetworkDataStore {
 trait PaymentBag {
   def storePreimage(paymentHash: ByteVector32, preimage: ByteVector32)
 
+  def addSearchablePayment(search: String, paymentHash: ByteVector32): Unit
+
   def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32,
                              relayed: MilliSatoshi, earned: MilliSatoshi)
 
@@ -296,7 +299,22 @@ trait PaymentBag {
 
   // These MUST be the only two methods capable of updating payment state to SUCCEEDED
   def updOkIncoming(receivedAmount: MilliSatoshi, paymentHash: ByteVector32): Unit
-  def updOkOutgoing(upd: UpdateFulfillHtlc, fee: MilliSatoshi): Unit
+  def updOkOutgoing(fulfill: RemoteFulfill, fee: MilliSatoshi): Unit
+  def updAbortedOutgoing(paymentHash: ByteVector32): Unit
+}
+
+trait DataBag {
+  def putFormat(format: StorageFormat): Unit
+  def tryGetFormat: Try[StorageFormat]
+
+  def putReport(paymentHash: ByteVector32, report: String): Unit
+  def tryGetReport(paymentHash: ByteVector32): Try[String]
+
+  def putBranding(nodeId: PublicKey, branding: HostedChannelBranding): Unit
+  def tryGetBranding(nodeId: PublicKey): Try[HostedChannelBranding]
+
+  def putSwapInState(nodeId: PublicKey, state: SwapInState): Unit
+  def tryGetSwapInState(nodeId: PublicKey): Try[SwapInStateExt]
 }
 
 object ChannelBag {
@@ -304,6 +322,7 @@ object ChannelBag {
 }
 
 trait ChannelBag {
+  val db: DBInterface
   def all: Iterable[PersistentChannelData]
   def delete(channelId: ByteVector32): Unit
   def put(data: PersistentChannelData): PersistentChannelData

@@ -141,7 +141,7 @@ object HostedExcludedChannelTable extends ExcludedChannelTable("hosted_excluded_
 // Database #3, unrecoverable, but not critically important data, will not go to backup
 
 object RelayTable extends Table {
-  val (table, hash, preimage, stamp, relayed, earned) = ("relay", "hash", "preimage", "stamp", "relayed", "earned")
+  val (table, hash, preimage, stamp, relayed, earned) = ("relay", "hash", "preimage", "stamp", "relayed", "earned") // TODO: payment secret as further grouping factor is needed
   val newSql = s"INSERT OR IGNORE INTO $table ($hash, $preimage, $stamp, $relayed, $earned) VALUES (?, ?, ?, ?, ?)"
   val selectSummarySql = s"SELECT SUM($relayed), SUM($earned), COUNT($id) FROM $table"
   val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 3"

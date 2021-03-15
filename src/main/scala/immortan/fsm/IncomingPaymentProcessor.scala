@@ -44,7 +44,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster) ex
 
   require(fullTag.tag == PaymentTagTlv.FINAL_INCOMING)
   delayedCMDWorker.replaceWork(CMDTimeout)
-  become(freshData = null, RECEIVING)
+  become(null, RECEIVING)
 
   def doProcess(msg: Any): Unit = (msg, data, state) match {
     case (inFlight: InFlightPayments, _, RECEIVING | FINALIZING) if !inFlight.in.contains(fullTag) =>
@@ -55,7 +55,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster) ex
     case (inFlight: InFlightPayments, null, RECEIVING) =>
       val adds = inFlight.in(fullTag).asInstanceOf[ReasonableLocals]
       // Important: when creating new invoice we SPECIFICALLY DO NOT put a preimage into preimage storage
-      // we only do that for final incoming payment once it's getting fulfilled to know it was fulfilled in future
+      // we only do that once we reveal a preimage, thus letting us know that we have already revealed it on restart
       // having PaymentStatus.SUCCEEDED in payment db is not enough because that table does not get included in backup
       val preimageTry: PreimageTry = cm.getPreimageMemo.get(fullTag.paymentHash)
 
@@ -166,14 +166,17 @@ case class TrampolineRevealed(preimage: ByteVector32) extends IncomingProcessorD
 case class TrampolineAborted(failure: FailureMessage) extends IncomingProcessorData // FINALIZING
 
 class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) extends IncomingPaymentProcessor with OutgoingPaymentMasterListener { self =>
+  override def preimageRevealed(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit =  if (data.cmd.fullTag == fullTag) doProcess(fulfill)
   override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = if (data.cmd.fullTag == fullTag) doProcess(data)
   import TrampolinePaymentRelayer._
 
   require(fullTag.tag == PaymentTagTlv.TRAMPLOINE_ROUTED)
   delayedCMDWorker.replaceWork(CMDTimeout)
-  become(freshData = null, RECEIVING)
+  become(null, RECEIVING)
 
-  cm.opm process CreatSenderFSM(fullTag)
+  // We may have outgoing leftovers on app restart
+  // so we need to always listen to sender FSM events
+  cm.opm process CreateSenderFSM(fullTag)
   cm.opm.listeners += self
 
   def doProcess(msg: Any): Unit = (msg, data, state) match {
@@ -182,8 +185,13 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
       val ins = inFlight.in.getOrElse(fullTag, Nil).asInstanceOf[ReasonableTrampolines]
       becomeRevealed(revealed.preimage, ins)
 
-    case (fulfill: RemoteFulfill, _, FINALIZING | RECEIVING | SENDING) if fulfill.ourAdd.paymentHash == fullTag.paymentHash =>
-      // We have outgoing in-flight payments and just got a preimage, can start fulfilling pending incoming HTLCs immediately
+    case (fulfill: RemoteFulfill, _: TrampolineAborted, FINALIZING) if fulfill.ourAdd.paymentHash == fullTag.paymentHash =>
+      // We were winding a relay down but suddenly got a preimage, can start fulfilling incoming HTLCs immediately
+      become(TrampolineRevealed(fulfill.preimage), SENDING)
+      cm.stateUpdated(Nil)
+
+    case (fulfill: RemoteFulfill, _, RECEIVING | SENDING) if fulfill.ourAdd.paymentHash == fullTag.paymentHash =>
+      // We have outgoing in-flight payments and just got a preimage, can start fulfilling incoming HTLCs immediately
       become(TrampolineRevealed(fulfill.preimage), SENDING)
       cm.stateUpdated(Nil)
 
@@ -192,7 +200,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
       become(null, RECEIVING)
       cm.stateUpdated(Nil)
 
-    case (data: OutgoingPaymentSenderData, _: TrampolineStopping, SENDING) =>
+    case (data: OutgoingPaymentSenderData, TrampolineStopping(false), SENDING) =>
       // We were waiting for all outgoing parts to fail on app restart, fail incoming
       become(abortedWithError(data.failures, invalidPubKey), FINALIZING)
       cm.stateUpdated(Nil)
@@ -262,10 +270,11 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
         val totalFeeReserve = amountIn(adds) - innerPayload.amountToForward - relayFee(amountIn(adds), LNParams.trampoline)
         val routerConf = LNParams.routerConf.copy(maxCltv = expiryIn(adds) - innerPayload.outgoingCltv - LNParams.trampoline.cltvExpiryDelta)
         val extraEdges = RouteCalculation.makeExtraEdges(innerPayload.invoiceRoutingInfo.map(_.map(_.toList).toList).getOrElse(Nil), innerPayload.outgoingNodeId)
+        val allowedChans = cm.all -- adds.map(_.add.channelId).toSet // It makes no sense to try to route out a payment through channels used by peer to route it in
 
         val send = SendMultiPart(fullTag, routerConf, innerPayload.outgoingNodeId,
           onionTotal = innerPayload.amountToForward, actualTotal = innerPayload.amountToForward,
-          totalFeeReserve, innerPayload.outgoingCltv, allowedChans = cm.all.values.toSeq)
+          totalFeeReserve, innerPayload.outgoingCltv, allowedChans = allowedChans.values.toSeq)
 
         become(TrampolineProcessing(innerPayload.outgoingNodeId), SENDING)
         // If invoice features are present, the sender is asking us to relay to a non-trampoline recipient, it is known that recipient supports MPP
@@ -275,7 +284,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
   }
 
   def becomeRevealed(preimage: ByteVector32, adds: ReasonableTrampolines): Unit = {
-    // We might not have enough or no incoming payments at all in pathological states
+    // We might not have enough OR no incoming payments at all in pathological states
     become(TrampolineRevealed(preimage), FINALIZING)
     fulfill(preimage, adds)
 
