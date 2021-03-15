@@ -284,7 +284,7 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, opm: OutgoingPaymentMas
 
     case (CMDAbort, INIT | PENDING) if data.inFlightParts.isEmpty =>
       // In case if some parts get through we'll eventaully get a remote timeout
-      // if all parts are still waiting after some timeout then we need to fail locally
+      // but if all parts are still waiting after timeout then we need to fail locally
       me abortAndNotify data.copy(parts = Map.empty)
 
     case (fulfill: RemoteFulfill, INIT | PENDING | ABORTED) if fulfill.ourAdd.paymentHash == fullTag.paymentHash =>

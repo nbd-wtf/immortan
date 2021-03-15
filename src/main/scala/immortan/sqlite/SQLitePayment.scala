@@ -10,6 +10,8 @@ import fr.acinq.eclair.transactions.RemoteFulfill
 import immortan.utils.PaymentRequestExt
 import immortan.crypto.Tools.Fiat2Btc
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.wire.FullPaymentTag
+
 import scala.util.Try
 
 
@@ -30,7 +32,7 @@ class SQlitePaymentBag(db: DBInterface, preimageDb: DBInterface) extends Payment
 
   def listRecentRelays: RichCursor = db.select(RelayTable.selectRecentSql)
 
-  def storePreimage(paymentHash: ByteVector32, preimage: ByteVector32): Unit = preimageDb.change(PreimageTable.newSql, paymentHash.toHex, preimage.toHex)
+  def addPreimage(paymentHash: ByteVector32, preimage: ByteVector32): Unit = preimageDb.change(PreimageTable.newSql, paymentHash.toHex, preimage.toHex)
 
   def updAbortedOutgoing(paymentHash: ByteVector32): Unit = db.change(PaymentTable.updStatusSql, PaymentStatus.ABORTED, paymentHash.toHex)
 
@@ -38,8 +40,8 @@ class SQlitePaymentBag(db: DBInterface, preimageDb: DBInterface) extends Payment
 
   def updOkIncoming(receivedAmount: MilliSatoshi, paymentHash: ByteVector32): Unit = db.change(PaymentTable.updOkIncomingSql, receivedAmount.toLong: JLong, System.currentTimeMillis: JLong, paymentHash.toHex)
 
-  def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32, relayed: MilliSatoshi, earned: MilliSatoshi): Unit =
-    db.change(RelayTable.newSql, paymentHash.toHex, preimage.toHex, System.currentTimeMillis: JLong, relayed.toLong: JLong, earned.toLong: JLong)
+  def addRelayedPreimageInfo(fullTag: FullPaymentTag, preimage: ByteVector32, relayed: MilliSatoshi, earned: MilliSatoshi): Unit =
+    db.change(RelayTable.newSql, fullTag.paymentHash.toHex, fullTag.paymentSecret.toHex, preimage.toHex, System.currentTimeMillis: JLong, relayed.toLong: JLong, earned.toLong: JLong)
 
   def replaceOutgoingPayment(prex: PaymentRequestExt, description: PaymentDescription, action: Option[PaymentAction],
                              finalAmount: MilliSatoshi, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc, chainFee: MilliSatoshi): Unit =
@@ -81,8 +83,8 @@ class SQlitePaymentBag(db: DBInterface, preimageDb: DBInterface) extends Payment
 }
 
 abstract class SQlitePaymentBagCached(db: DBInterface, preimageDb: DBInterface) extends SQlitePaymentBag(db, preimageDb) {
-  override def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32, relayed: MilliSatoshi, earned: MilliSatoshi): Unit = {
-    super.addRelayedPreimageInfo(paymentHash, preimage, relayed, earned)
+  override def addRelayedPreimageInfo(fullTag: FullPaymentTag, preimage: ByteVector32, relayed: MilliSatoshi, earned: MilliSatoshi): Unit = {
+    super.addRelayedPreimageInfo(fullTag, preimage, relayed, earned)
     invalidateRelayCache
   }
 

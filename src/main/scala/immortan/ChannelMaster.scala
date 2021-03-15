@@ -82,6 +82,9 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
   pf.listeners += opm
   opm.listeners += me
 
+  // Initial run to create FSMs for in-flight payments, including locally initiated outgoing payments
+  notifyFSMs(allInChannelOutgoing, allIncomingResolutions, rejects = Nil, makeMissingOutgoingFSM = true)
+
   // CHANNEL MANAGEMENT
 
   def initConnect: Unit =
@@ -156,8 +159,8 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
   // Mainly to prolong timeouts
   override def addReceived(add: UpdateAddHtlcExt): Unit = initResolveMemo(add) match {
-    case resolve: ReasonableTrampoline => currentTrampolineRoutedPayments.values.find(_.fullTag == resolve.fullTag).foreach(_ doProcess resolve)
-    case resolve: ReasonableLocal => currentFinalIncomingPayments.values.find(_.fullTag == resolve.fullTag).foreach(_ doProcess resolve)
+    case resolve: ReasonableTrampoline => inProcessors.values.find(_.fullTag == resolve.fullTag).foreach(_ doProcess resolve)
+    case resolve: ReasonableLocal => inProcessors.values.find(_.fullTag == resolve.fullTag).foreach(_ doProcess resolve)
     case _ => // Do nothing
   }
 
@@ -176,7 +179,7 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
     chanBag.db txWrap {
       // First, unconditionally persist a preimage before doing anything else
-      payBag.storePreimage(fulfill.ourAdd.paymentHash, fulfill.preimage)
+      payBag.addPreimage(fulfill.ourAdd.paymentHash, fulfill.preimage)
       // Should be silently disregarded if this is a routed payment
       payBag.updOkOutgoing(fulfill, data.usedFee)
     }

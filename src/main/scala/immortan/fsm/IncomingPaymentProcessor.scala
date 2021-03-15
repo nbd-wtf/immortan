@@ -119,7 +119,8 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster) ex
     // With final payment we ALREADY know a preimage, but also put it into storage
     // doing so makes it transferrable as storage db gets included in backup file
     cm.payBag.updOkIncoming(amountIn(adds), fullTag.paymentHash)
-    cm.payBag.storePreimage(fullTag.paymentHash, preimage)
+    cm.payBag.addPreimage(fullTag.paymentHash, preimage)
+
     cm.getPaymentInfoMemo.invalidate(fullTag.paymentHash)
     cm.getPreimageMemo.invalidate(fullTag.paymentHash)
     become(IncomingRevealed(preimage), FINALIZING)
@@ -290,9 +291,9 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
 
     for {
       packet <- firstOption(adds)
-      sender <- cm.opm.data.payments.get(fullTag)
-      finalFee = packet.outerPayload.totalAmount - packet.innerPayload.amountToForward - sender.data.usedFee
-    } cm.payBag.addRelayedPreimageInfo(fullTag.paymentHash, preimage, packet.innerPayload.amountToForward, finalFee)
+      senderFSM <- cm.opm.data.payments.get(fullTag)
+      finalFee = packet.outerPayload.totalAmount - packet.innerPayload.amountToForward - senderFSM.data.usedFee
+    } cm.payBag.addRelayedPreimageInfo(fullTag, preimage, packet.innerPayload.amountToForward, finalFee)
   }
 
   def becomeShutdown: Unit = {

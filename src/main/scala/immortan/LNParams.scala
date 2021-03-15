@@ -280,12 +280,9 @@ trait NetworkDataStore {
 // Bag of stored payments and successful relays
 
 trait PaymentBag {
-  def storePreimage(paymentHash: ByteVector32, preimage: ByteVector32)
-
+  def addPreimage(paymentHash: ByteVector32, preimage: ByteVector32)
   def addSearchablePayment(search: String, paymentHash: ByteVector32): Unit
-
-  def addRelayedPreimageInfo(paymentHash: ByteVector32, preimage: ByteVector32,
-                             relayed: MilliSatoshi, earned: MilliSatoshi)
+  def addRelayedPreimageInfo(fullTag: FullPaymentTag, preimage: ByteVector32, relayed: MilliSatoshi, earned: MilliSatoshi)
 
   def replaceOutgoingPayment(prex: PaymentRequestExt, desc: PaymentDescription, action: Option[PaymentAction],
                              finalAmount: MilliSatoshi, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc,

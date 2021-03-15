@@ -141,16 +141,22 @@ object HostedExcludedChannelTable extends ExcludedChannelTable("hosted_excluded_
 // Database #3, unrecoverable, but not critically important data, will not go to backup
 
 object RelayTable extends Table {
-  val (table, hash, preimage, stamp, relayed, earned) = ("relay", "hash", "preimage", "stamp", "relayed", "earned") // TODO: payment secret as further grouping factor is needed
-  val newSql = s"INSERT OR IGNORE INTO $table ($hash, $preimage, $stamp, $relayed, $earned) VALUES (?, ?, ?, ?, ?)"
+  val (table, hash, secret, preimage, stamp, relayed, earned) = ("relay", "hash", "secret", "preimage", "stamp", "relayed", "earned")
+  val newSql = s"INSERT OR IGNORE INTO $table ($hash, $secret, $preimage, $stamp, $relayed, $earned) VALUES (?, ?, ?, ?, ?, ?)"
   val selectSummarySql = s"SELECT SUM($relayed), SUM($earned), COUNT($id) FROM $table"
   val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 3"
 
-  def createStatements: Seq[String] =
-    s"""CREATE TABLE IF NOT EXISTS $table(
-      $id INTEGER PRIMARY KEY AUTOINCREMENT, $hash TEXT NOT NULL UNIQUE, $preimage TEXT NOT NULL,
-      $stamp INTEGER NOT NULL, $relayed INTEGER NOT NULL, $earned INTEGER NOT NULL
-    )""" :: Nil
+  def createStatements: Seq[String] = {
+    val createTable = s"""CREATE TABLE IF NOT EXISTS $table(
+      $id INTEGER PRIMARY KEY AUTOINCREMENT, $hash TEXT NOT NULL, $secret TEXT NOT NULL,
+      $preimage TEXT NOT NULL, $stamp INTEGER NOT NULL, $relayed INTEGER NOT NULL,
+      $earned INTEGER NOT NULL
+    )"""
+
+    // Account for many relayed payment sets with same hash but different payment secrets
+    val addIndex1 = s"CREATE UNIQUE INDEX IF NOT EXISTS idx2$table ON $table ($hash, $secret)"
+    createTable :: addIndex1 :: Nil
+  }
 }
 
 object PaymentTable extends Table {
