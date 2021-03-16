@@ -168,7 +168,7 @@ case class TrampolineAborted(failure: FailureMessage) extends IncomingProcessorD
 
 class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) extends IncomingPaymentProcessor with OutgoingPaymentMasterListener { self =>
   // Important: we need to filter events by tag because we listen to OutgoingPaymentMaster which fires them for ANY sender FSM, not just the one we are interested in
-  // Important: we may have outgoing leftovers on restart, so we always need to create a sender FSM right away, which in turn will will be used to fire events once leftovers get finalized
+  // Important: we may have outgoing leftovers on restart, so we always need to create a sender FSM right away, which in turn will be used to fire events once leftovers get finalized
   override def preimageRevealed(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = if (data.cmd.fullTag == fullTag) self doProcess TrampolineRevealed(fulfill.preimage, data.toSome)
   override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = if (data.cmd.fullTag == fullTag) self doProcess data
 

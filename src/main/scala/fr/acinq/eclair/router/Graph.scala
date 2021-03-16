@@ -238,7 +238,7 @@ object Graph {
 
     val CAPACITY_CHANNEL_LOW: MilliSatoshi = MilliBtc(10).toMilliSatoshi
 
-    val CAPACITY_CHANNEL_HIGH: MilliSatoshi = Btc(20).toMilliSatoshi
+    val CAPACITY_CHANNEL_HIGH: MilliSatoshi = Btc(10).toMilliSatoshi
 
     val CLTV_LOW = 9
 
