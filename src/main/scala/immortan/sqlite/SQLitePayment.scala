@@ -7,11 +7,10 @@ import immortan.utils.ImplicitJsonFormats._
 import java.lang.{Long => JLong}
 
 import fr.acinq.eclair.transactions.RemoteFulfill
+import fr.acinq.eclair.wire.FullPaymentTag
 import immortan.utils.PaymentRequestExt
 import immortan.crypto.Tools.Fiat2Btc
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.wire.FullPaymentTag
-
 import scala.util.Try
 
 

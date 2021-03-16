@@ -177,8 +177,8 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
       data.payments.filterKeys(_.paymentHash == fulfill.ourAdd.paymentHash).values.foreach(_ doProcess fulfill)
       me process CMDAskForRoute
 
-    case (reject: RemoteReject, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
-      data.payments.get(reject.ourAdd.fullTag).foreach(_ doProcess reject)
+    case (remoteReject: RemoteReject, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
+      data.payments.get(remoteReject.ourAdd.fullTag).foreach(_ doProcess remoteReject)
       me process CMDAskForRoute
 
     case _ =>
