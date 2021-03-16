@@ -18,6 +18,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.eclair.crypto.ShaChain
 import scodec.bits.ByteVector
+import immortan.utils.Rx
 
 
 object ChannelNormal {
@@ -257,20 +258,19 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         SEND(msg)
 
 
-      case (norm: DATA_NORMAL, CMD_SIGN, OPEN)
+      case (norm: DATA_NORMAL, CMD_SIGN, OPEN) if norm.commitments.localHasChanges && norm.commitments.remoteNextCommitInfo.isRight =>
         // We have something to sign and remote unused pubKey, don't forget to store revoked HTLC data
-        if norm.commitments.localHasChanges && norm.commitments.remoteNextCommitInfo.isRight =>
 
         val (commits1, commitSigMessage, nextRemoteCommit) = norm.commitments.sendCommit
         val out = Transactions.trimOfferedHtlcs(norm.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, norm.commitments.channelVersion.commitmentFormat)
         val in = Transactions.trimReceivedHtlcs(norm.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, norm.commitments.channelVersion.commitmentFormat)
+        // This includes hashing and db calls on potentially dozens of in-flight HTLCs, do this in separate thread but throw if it fails to know early
+        Rx.ioQueue.foreach(_ => bag.putHtlcInfos(out ++ in, norm.shortChannelId, nextRemoteCommit.index), throw _)
         StoreBecomeSend(norm.copy(commitments = commits1), OPEN, commitSigMessage)
-        bag.putHtlcInfos(out ++ in, norm.shortChannelId, nextRemoteCommit.index)
 
 
-      case (norm: DATA_NORMAL, CMD_SIGN, OPEN)
+      case (norm: DATA_NORMAL, CMD_SIGN, OPEN) if norm.remoteShutdown.isDefined && !norm.commitments.localHasUnsignedOutgoingHtlcs =>
         // We have nothing to sign so check for valid shutdown state, only consider when we have nothing in-flight
-        if norm.remoteShutdown.isDefined && !norm.commitments.localHasUnsignedOutgoingHtlcs =>
         val (data1, replies) = maybeStartNegotiations(norm, norm.remoteShutdown.get)
         StoreBecomeSend(data1, OPEN, replies:_*)
 
