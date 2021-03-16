@@ -32,18 +32,19 @@ case class DBInterfaceSqliteGeneral(connection: Connection) extends DBInterface 
     RichCursorSqliteGeneral(prepStatement.executeQuery)
   }
 
-  def txWrap[T](exec: => T): T = {
+  def txWrap[T](run: => T): T = {
     val old = connection.getAutoCommit
     connection.setAutoCommit(false)
 
     try {
-      exec
+      val runResult = run
+      connection.commit
+      runResult
     } catch {
       case error: Throwable =>
         connection.rollback
         throw error
     } finally {
-      connection.commit
       connection.setAutoCommit(old)
     }
   }
