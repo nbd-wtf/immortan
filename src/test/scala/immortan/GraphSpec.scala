@@ -3,14 +3,14 @@ package immortan
 import fr.acinq.eclair._
 import immortan.utils.GraphUtils._
 import com.softwaremill.quicklens._
-import fr.acinq.eclair.router.Router.{ChannelDesc, NoRouteAvailable, RouteFound, RouteRequest}
+import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
 import fr.acinq.eclair.router.RouteCalculation
 import org.scalatest.funsuite.AnyFunSuite
 
 
 class GraphSpec extends AnyFunSuite {
-  test("Calculate a best possible route") {
+  test("Calculate the best possible route") {
     val routeRequest: RouteRequest = makeRouteRequest(100000.msat, getParams(routerConf, 100000.msat, offChainFeeRatio), fromNode = a, fromLocalEdge = null)
 
     val graph = DirectedGraph (

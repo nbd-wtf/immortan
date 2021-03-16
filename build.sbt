@@ -4,8 +4,6 @@ version := "0.1"
 
 scalaVersion := "2.11.12"
 
-libraryDependencies += "org.scalatest" % "scalatest_2.11" % "3.1.1"
-
 libraryDependencies += "com.typesafe.akka" % "akka-testkit_2.11" % "2.5.32"
 
 libraryDependencies += "org.scodec" % "scodec-core_2.11" % "1.11.3"
@@ -31,5 +29,11 @@ libraryDependencies += "com.softwaremill.quicklens" % "quicklens_2.11" % "1.6.1"
 libraryDependencies += "org.bouncycastle" % "bcprov-jdk15to18" % "1.68"
 
 libraryDependencies += "com.google.guava" % "guava" % "29.0-android"
+
+// Testing
+
+libraryDependencies += "org.scalatest" % "scalatest_2.11" % "3.1.1"
+
+libraryDependencies += "org.xerial" % "sqlite-jdbc" % "3.27.2.1"
 
 enablePlugins(ReproducibleBuildsPlugin)
