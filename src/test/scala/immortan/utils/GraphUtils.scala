@@ -8,6 +8,7 @@ import fr.acinq.eclair.router.Router.{ChannelDesc, RouteParams, RouteRequest, Ro
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, FullPaymentTag, PaymentTagTlv}
 import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.bitcoin.Crypto.PublicKey
+import immortan.sqlite.SQLiteNetwork
 import scodec.bits.ByteVector
 
 
@@ -59,5 +60,43 @@ object GraphUtils {
   def makeRouteRequest(amount: MilliSatoshi, params: RouteParams, fromNode: PublicKey, fromLocalEdge: GraphEdge): RouteRequest = {
     val fullTag = FullPaymentTag(paymentHash = randomBytes32, paymentSecret = randomBytes32, tag = PaymentTagTlv.LOCALLY_SENT)
     RouteRequest(fullTag, partId = ByteVector32.Zeroes.bytes, fromNode, target = d, amount, fromLocalEdge, params)
+  }
+
+  def fillBasicGraph(store: SQLiteNetwork): Unit = {
+    val channelAB: ChannelAnnouncement = makeAnnouncement(1L, a, b)
+    val channelAC: ChannelAnnouncement = makeAnnouncement(2L, a, c)
+    val channelBD: ChannelAnnouncement = makeAnnouncement(3L, b, d)
+    val channelCD: ChannelAnnouncement = makeAnnouncement(4L, c, d)
+
+    val updateABFromA: ChannelUpdate = makeUpdate(ShortChannelId(1L), a, b, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val updateABFromB: ChannelUpdate = makeUpdate(ShortChannelId(1L), b, a, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+
+    val updateACFromA: ChannelUpdate = makeUpdate(ShortChannelId(2L), a, c, 1.msat, 10, cltvDelta = CltvExpiryDelta(134), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val updateACFromC: ChannelUpdate = makeUpdate(ShortChannelId(2L), c, a, 1.msat, 10, cltvDelta = CltvExpiryDelta(134), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+
+    val updateBDFromB: ChannelUpdate = makeUpdate(ShortChannelId(3L), b, d, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val updateBDFromD: ChannelUpdate = makeUpdate(ShortChannelId(3L), d, b, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+
+    val updateCDFromC: ChannelUpdate = makeUpdate(ShortChannelId(4L), c, d, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val updateCDFromD: ChannelUpdate = makeUpdate(ShortChannelId(4L), d, c, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+
+    store.db txWrap {
+      store.addChannelAnnouncement(channelAB)
+      store.addChannelAnnouncement(channelAC)
+      store.addChannelAnnouncement(channelBD)
+      store.addChannelAnnouncement(channelCD)
+
+      store.addChannelUpdateByPosition(updateABFromA)
+      store.addChannelUpdateByPosition(updateABFromB)
+
+      store.addChannelUpdateByPosition(updateACFromA)
+      store.addChannelUpdateByPosition(updateACFromC)
+
+      store.addChannelUpdateByPosition(updateBDFromB)
+      store.addChannelUpdateByPosition(updateBDFromD)
+
+      store.addChannelUpdateByPosition(updateCDFromC)
+      store.addChannelUpdateByPosition(updateCDFromD)
+    }
   }
 }

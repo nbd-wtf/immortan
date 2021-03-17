@@ -58,14 +58,14 @@ object PreimageTable extends Table {
 // Database #2, graph data, disposable since can be re-synchronized
 
 abstract class ChannelAnnouncementTable(val table: String) extends Table {
+  // This one must be a method, not a value because of late binding of abstract val
+  def killNotPresentInChans = s"DELETE FROM $table WHERE $shortChannelId NOT IN ($selectFromRelatedUpdateTable)"
   val selectFromRelatedUpdateTable: String
 
   val (features, shortChannelId, nodeId1, nodeId2) = ("features", "shortchannelid", "nodeid1", "nodeid2")
   val newSql = s"INSERT OR IGNORE INTO $table ($features, $shortChannelId, $nodeId1, $nodeId2) VALUES (?, ?, ?, ?)"
   val selectAllSql = s"SELECT * FROM $table"
   val killAllSql = s"DELETE * FROM $table"
-
-  val killNotPresentInChans = s"DELETE FROM $table WHERE $shortChannelId NOT IN ($selectFromRelatedUpdateTable)"
 
   def createStatements: Seq[String] =
     s"""CREATE TABLE IF NOT EXISTS $table(
@@ -115,14 +115,14 @@ object NormalChannelUpdateTable extends ChannelUpdateTable("normal_updates", use
 object HostedChannelUpdateTable extends ChannelUpdateTable("hosted_updates", useHeuristics = false)
 
 abstract class ExcludedChannelTable(val table: String) extends Table {
+  // This one must be a method, not a value because of late binding of abstract val
+  def killPresentInChans = s"DELETE FROM $table WHERE $shortChannelId IN ($selectFromRelatedUpdateTable)"
   val selectFromRelatedUpdateTable: String
 
   val Tuple2(shortChannelId, until) = ("shortchannelid", "excludeduntilstamp")
   val newSql = s"INSERT OR IGNORE INTO $table ($shortChannelId, $until) VALUES (?, ?)"
   val selectSql = s"SELECT * FROM $table WHERE $until > ? LIMIT 1000000"
   val killOldSql = s"DELETE FROM $table WHERE $until < ?"
-
-  val killPresentInChans = s"DELETE FROM $table WHERE $shortChannelId IN ($selectFromRelatedUpdateTable)"
 
   def createStatements: Seq[String] = {
     val createTable = s"CREATE TABLE IF NOT EXISTS $table($id INTEGER PRIMARY KEY AUTOINCREMENT, $shortChannelId INTEGER NOT NULL UNIQUE, $until INTEGER NOT NULL)"

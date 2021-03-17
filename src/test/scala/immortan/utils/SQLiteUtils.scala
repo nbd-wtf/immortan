@@ -1,7 +1,7 @@
 package immortan.utils
 
+import immortan.sqlite._
 import java.sql.{Connection, DriverManager}
-import immortan.sqlite.{DBInterface, DBInterfaceSqliteGeneral, Table}
 
 
 object SQLiteUtils {
@@ -16,5 +16,14 @@ object SQLiteUtils {
     }
 
     interface
+  }
+
+  def getSQLiteNetworkStores: (SQLiteNetwork, SQLiteNetwork) = {
+    val interface = interfaceWithTables(getConnection, NormalChannelAnnouncementTable, HostedChannelAnnouncementTable,
+      NormalExcludedChannelTable, HostedExcludedChannelTable, NormalChannelUpdateTable, HostedChannelUpdateTable)
+
+    val normal = new SQLiteNetwork(interface, NormalChannelUpdateTable, NormalChannelAnnouncementTable, NormalExcludedChannelTable)
+    val hosted = new SQLiteNetwork(interface, HostedChannelUpdateTable, HostedChannelAnnouncementTable, HostedExcludedChannelTable)
+    (normal, hosted)
   }
 }
