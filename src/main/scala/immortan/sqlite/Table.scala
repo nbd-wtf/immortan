@@ -58,11 +58,14 @@ object PreimageTable extends Table {
 // Database #2, graph data, disposable since can be re-synchronized
 
 abstract class ChannelAnnouncementTable(val table: String) extends Table {
+  val selectFromRelatedUpdateTable: String
+
   val (features, shortChannelId, nodeId1, nodeId2) = ("features", "shortchannelid", "nodeid1", "nodeid2")
   val newSql = s"INSERT OR IGNORE INTO $table ($features, $shortChannelId, $nodeId1, $nodeId2) VALUES (?, ?, ?, ?)"
   val selectAllSql = s"SELECT * FROM $table"
   val killAllSql = s"DELETE * FROM $table"
-  val killNotPresentInChans: String
+
+  val killNotPresentInChans = s"DELETE FROM $table WHERE $shortChannelId NOT IN ($selectFromRelatedUpdateTable)"
 
   def createStatements: Seq[String] =
     s"""CREATE TABLE IF NOT EXISTS $table(
@@ -73,13 +76,11 @@ abstract class ChannelAnnouncementTable(val table: String) extends Table {
 }
 
 object NormalChannelAnnouncementTable extends ChannelAnnouncementTable("normal_announcements") {
-  private val select = s"SELECT ${NormalChannelUpdateTable.sid} FROM ${NormalChannelUpdateTable.table}"
-  val killNotPresentInChans = s"DELETE FROM $table WHERE $shortChannelId NOT IN ($select LIMIT 1000000)"
+  val selectFromRelatedUpdateTable = s"SELECT ${NormalChannelUpdateTable.sid} FROM ${NormalChannelUpdateTable.table}"
 }
 
 object HostedChannelAnnouncementTable extends ChannelAnnouncementTable("hosted_announcements") {
-  private val select = s"SELECT ${HostedChannelUpdateTable.sid} FROM ${HostedChannelUpdateTable.table}"
-  val killNotPresentInChans = s"DELETE FROM $table WHERE $shortChannelId NOT IN ($select LIMIT 1000000)"
+  val selectFromRelatedUpdateTable = s"SELECT ${HostedChannelUpdateTable.sid} FROM ${HostedChannelUpdateTable.table}"
 }
 
 abstract class ChannelUpdateTable(val table: String, val useHeuristics: Boolean) extends Table {
@@ -114,11 +115,14 @@ object NormalChannelUpdateTable extends ChannelUpdateTable("normal_updates", use
 object HostedChannelUpdateTable extends ChannelUpdateTable("hosted_updates", useHeuristics = false)
 
 abstract class ExcludedChannelTable(val table: String) extends Table {
+  val selectFromRelatedUpdateTable: String
+
   val Tuple2(shortChannelId, until) = ("shortchannelid", "excludeduntilstamp")
   val newSql = s"INSERT OR IGNORE INTO $table ($shortChannelId, $until) VALUES (?, ?)"
   val selectSql = s"SELECT * FROM $table WHERE $until > ? LIMIT 1000000"
   val killOldSql = s"DELETE FROM $table WHERE $until < ?"
-  val killPresentInChans: String
+
+  val killPresentInChans = s"DELETE FROM $table WHERE $shortChannelId IN ($selectFromRelatedUpdateTable)"
 
   def createStatements: Seq[String] = {
     val createTable = s"CREATE TABLE IF NOT EXISTS $table($id INTEGER PRIMARY KEY AUTOINCREMENT, $shortChannelId INTEGER NOT NULL UNIQUE, $until INTEGER NOT NULL)"
@@ -129,13 +133,11 @@ abstract class ExcludedChannelTable(val table: String) extends Table {
 }
 
 object NormalExcludedChannelTable extends ExcludedChannelTable("normal_excluded_updates") {
-  private val select = s"SELECT ${NormalChannelUpdateTable.sid} FROM ${NormalChannelUpdateTable.table}"
-  val killPresentInChans = s"DELETE FROM $table WHERE $shortChannelId IN ($select LIMIT 1000000)"
+  val selectFromRelatedUpdateTable = s"SELECT ${NormalChannelUpdateTable.sid} FROM ${NormalChannelUpdateTable.table}"
 }
 
 object HostedExcludedChannelTable extends ExcludedChannelTable("hosted_excluded_updates") {
-  private val select = s"SELECT ${HostedChannelUpdateTable.sid} FROM ${HostedChannelUpdateTable.table}"
-  val killPresentInChans = s"DELETE FROM $table WHERE $shortChannelId IN ($select LIMIT 1000000)"
+  val selectFromRelatedUpdateTable = s"SELECT ${HostedChannelUpdateTable.sid} FROM ${HostedChannelUpdateTable.table}"
 }
 
 // Database #3, unrecoverable, but not critically important data, will not go to backup
