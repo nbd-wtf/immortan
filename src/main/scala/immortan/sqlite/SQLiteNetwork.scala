@@ -21,7 +21,7 @@ class SQLiteNetwork(val db: DBInterface, updateTable: ChannelUpdateTable, announ
 
   def listChannelsWithOneUpdate: ShortChanIdSet = db.select(updateTable.selectHavingOneUpdate).set(_ long updateTable.sid).map(ShortChannelId.apply)
 
-  def incrementChannelScore(cu: ChannelUpdate): Unit = db.change(updateTable.updScoreSql, cu.shortChannelId.toJavaLong, cu.position)
+  def incrementChannelScore(cu: ChannelUpdate): Unit = db.change(updateTable.updScoreSql, cu.shortChannelId.toJavaLong)
 
   def removeChannelUpdate(shortId: ShortChannelId): Unit = db.change(updateTable.killSql, shortId.toJavaLong)
 
