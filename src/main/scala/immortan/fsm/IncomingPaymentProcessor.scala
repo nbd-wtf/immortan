@@ -166,17 +166,14 @@ case class TrampolineStopping(retryOnceFinalized: Boolean) extends IncomingProce
 case class TrampolineRevealed(preimage: ByteVector32, senderData: Option[OutgoingPaymentSenderData] = None) extends IncomingProcessorData // SENDING | FINALIZING
 case class TrampolineAborted(failure: FailureMessage) extends IncomingProcessorData // FINALIZING
 
-class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) extends IncomingPaymentProcessor with OutgoingPaymentMasterListener { self =>
-  // Important: we need to filter events by tag because we listen to OutgoingPaymentMaster which fires them for ANY sender FSM, not just the one we are interested in
-  // Important: we may have outgoing leftovers on restart, so we always need to create a sender FSM right away, which in turn will be used to fire events once leftovers get finalized
-  override def preimageRevealed(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = if (data.cmd.fullTag == fullTag) self doProcess TrampolineRevealed(fulfill.preimage, data.toSome)
-  override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = if (data.cmd.fullTag == fullTag) self doProcess data
-
-  cm.opm process CreateSenderFSM(fullTag)
-  cm.opm.listeners += self
+class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) extends IncomingPaymentProcessor with OutgoingPaymentEvents { self =>
+  // Important: we may have outgoing leftovers on restart, so we always need to create a sender FSM right away, which will be firing events once leftovers get finalized
+  override def preimageRevealed(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = self doProcess TrampolineRevealed(fulfill.preimage, data.toSome)
+  override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = self doProcess data
 
   import immortan.fsm.TrampolinePaymentRelayer._
   require(fullTag.tag == PaymentTagTlv.TRAMPLOINE_ROUTED)
+  cm.opm process CreateSenderFSM(fullTag, listener = self)
   delayedCMDWorker.replaceWork(CMDTimeout)
   become(null, RECEIVING)
 
@@ -184,7 +181,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
     case (inFlight: InFlightPayments, TrampolineRevealed(preimage, senderData), SENDING) =>
       // A special case after we have just received a first preimage and can become revealed
       val ins = inFlight.in.getOrElse(fullTag, Nil).asInstanceOf[ReasonableTrampolines]
-      becomeRevealed(preimage, ins)
+      becomeFinalRevealed(preimage, ins)
 
       firstOption(ins).foreach { packet =>
         // First, we may not have incoming HTLCs at all in pathological states
@@ -197,15 +194,11 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
 
     case (revealed: TrampolineRevealed, _: TrampolineAborted, FINALIZING) =>
       // We were winding a relay down but suddenly got a preimage
-      // Sender data will likely have an incorrect used fee
-      become(revealed, SENDING)
-      cm.stateUpdated(Nil)
+      becomeInitRevealed(revealed)
 
     case (revealed: TrampolineRevealed, _, RECEIVING | SENDING) =>
       // We have outgoing in-flight payments and just got a preimage
-      // Provided sender data copy should contain a correct used fee
-      become(revealed, SENDING)
-      cm.stateUpdated(Nil)
+      becomeInitRevealed(revealed)
 
     case (_: OutgoingPaymentSenderData, TrampolineStopping(true), SENDING) =>
       // We were waiting for all outgoing parts to fail on app restart, try again
@@ -233,7 +226,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
       val outs: OutgoingAdds = inFlight.out.getOrElse(fullTag, Nil)
 
       preimageTry match {
-        case Success(preimage) => becomeRevealed(preimage, ins)
+        case Success(preimage) => becomeFinalRevealed(preimage, ins)
         case _ if relayCovered(ins) && outs.isEmpty => becomeSendingOrAborted(ins)
         case _ if relayCovered(ins) && outs.nonEmpty => become(TrampolineStopping(retryOnceFinalized = true), SENDING) // App has been restarted midway, fail safely and retry
         case _ if outs.nonEmpty => become(TrampolineStopping(retryOnceFinalized = false), SENDING) // Have not collected enough yet have outgoing (this is pathologic state)
@@ -295,7 +288,16 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
     }
   }
 
-  def becomeRevealed(preimage: ByteVector32, adds: ReasonableTrampolines): Unit = {
+  def becomeInitRevealed(revealed: TrampolineRevealed): Unit = {
+    // First, unconditionally persist a preimage before doing anything else
+    cm.payBag.addPreimage(fullTag.paymentHash, revealed.preimage)
+    cm.getPreimageMemo.invalidate(fullTag.paymentHash)
+    // Await for subsequent incoming leftovers
+    become(revealed, SENDING)
+    cm.stateUpdated(Nil)
+  }
+
+  def becomeFinalRevealed(preimage: ByteVector32, adds: ReasonableTrampolines): Unit = {
     // We might not have enough OR no incoming payments at all in pathological states
     become(TrampolineRevealed(preimage, senderData = None), FINALIZING)
     fulfill(preimage, adds)
@@ -304,7 +306,6 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
   def becomeShutdown: Unit = {
     cm.opm process RemoveSenderFSM(fullTag)
     cm.inProcessors -= fullTag
-    cm.opm.listeners -= self
     become(null, SHUTDOWN)
   }
 }

@@ -56,8 +56,7 @@ case class RemoteFailure(packet: Sphinx.DecryptedFailurePacket, route: Route) ex
 case class SplitIntoHalves(amount: MilliSatoshi)
 case class NodeFailed(failedNodeId: PublicKey, increment: Int)
 case class ChannelFailed(failedDescAndCap: DescAndCapacity, increment: Int)
-
-case class CreateSenderFSM(fullTag: FullPaymentTag)
+case class CreateSenderFSM(fullTag: FullPaymentTag, listener: OutgoingPaymentEvents)
 case class RemoveSenderFSM(fullTag: FullPaymentTag)
 
 // Important: with trampoline payment targetNodeId is next trampoline node, not necessairly final recipient
@@ -95,20 +94,15 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
   def process(change: Any): Unit = scala.concurrent.Future(me doProcess change)(Channel.channelContext)
   become(OutgoingPaymentMasterData(Map.empty), EXPECTING_PAYMENTS)
 
-  var listeners = Set.empty[OutgoingPaymentMasterListener]
-  val events: OutgoingPaymentMasterListener = new OutgoingPaymentMasterListener {
-    override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = for (lst <- listeners) lst.wholePaymentFailed(data)
-    override def preimageRevealed(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = for (lst <- listeners) lst.preimageRevealed(data, fulfill)
-  }
-
   def doProcess(change: Any): Unit = (change, state) match {
     case (send: SendMultiPart, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
       // Before going any further maybe reduce failure times to give previously failing channels a chance
       val noPendingPayments = data.payments.values.forall(fsm => SUCCEEDED == fsm.state || ABORTED == fsm.state)
       if (noPendingPayments) become(data.withFailuresReduced, state)
 
-      for (assistedEdge <- send.assistedEdges) cm.pf process assistedEdge
-      data.payments.getOrElse(send.fullTag, me newSender send.fullTag) doProcess send
+      // Related sender FSM must be present
+      send.assistedEdges.foreach(cm.pf.process)
+      data.payments(send.fullTag) doProcess send
       me process CMDAskForRoute
 
     case (CMDChanGotOnline, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
@@ -158,11 +152,11 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
       val atTimes1 = data.nodeFailedWithUnknownUpdateTimes.updated(nodeId, newNodeFailedTimes)
       become(data.copy(nodeFailedWithUnknownUpdateTimes = atTimes1), state)
 
-    case (RemoveSenderFSM(fullTag), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
-      become(data.copy(payments = data.payments - fullTag), state)
+    case (remove: RemoveSenderFSM, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
+      become(data.copy(payments = data.payments - remove.fullTag), state)
 
-    case (CreateSenderFSM(fullTag), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
-      data.payments.getOrElse(fullTag, me newSender fullTag)
+    case (create: CreateSenderFSM, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
+      data.payments.getOrElse(create.fullTag, me newSender create)
 
     // Following messages expect that target FSM is always present
     // this won't be the case with failed/fulfilled leftovers in channels on app restart
@@ -184,9 +178,9 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
     case _ =>
   }
 
-  private def newSender(fullTag: FullPaymentTag) = {
-    val newSenderFSM = new OutgoingPaymentSender(fullTag, me)
-    val data1 = data.payments.updated(fullTag, newSenderFSM)
+  private def newSender(create: CreateSenderFSM) = {
+    val newSenderFSM = new OutgoingPaymentSender(create.fullTag, create.listener, me)
+    val data1 = data.payments.updated(create.fullTag, newSenderFSM)
     become(data.copy(payments = data1), state)
     newSenderFSM
   }
@@ -220,12 +214,6 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
     descsAndCaps.foreach { case (amount, chanHop) => accumulator(chanHop.edge.toDescAndCapacity) += amount }
     accumulator
   }
-}
-
-trait OutgoingPaymentMasterListener {
-  // With local failures this will be the only way to know
-  def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = none
-  def preimageRevealed(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = none
 }
 
 // Individual outgoing part status
@@ -273,7 +261,13 @@ case class OutgoingPaymentSenderData(cmd: SendMultiPart, parts: Map[ByteVector, 
   }
 }
 
-class OutgoingPaymentSender(val fullTag: FullPaymentTag, opm: OutgoingPaymentMaster) extends StateMachine[OutgoingPaymentSenderData] { me =>
+trait OutgoingPaymentEvents {
+  // With local failures this will be the only way to know
+  def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = none
+  def preimageRevealed(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = none
+}
+
+class OutgoingPaymentSender(val fullTag: FullPaymentTag, listener: OutgoingPaymentEvents, opm: OutgoingPaymentMaster) extends StateMachine[OutgoingPaymentSenderData] { me =>
   become(OutgoingPaymentSenderData(SendMultiPart(fullTag, LNParams.routerConf, invalidPubKey), Map.empty), INIT)
 
   def doProcess(msg: Any): Unit = (msg, state) match {
@@ -290,7 +284,7 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, opm: OutgoingPaymentMas
     case (fulfill: RemoteFulfill, INIT | PENDING | ABORTED) if fulfill.ourAdd.paymentHash == fullTag.paymentHash =>
       val data1 = data.withoutPartId(fulfill.ourAdd.partId)
       // Provide original data with all used routes intact
-      opm.events.preimageRevealed(data, fulfill)
+      listener.preimageRevealed(data, fulfill)
       become(data1, SUCCEEDED)
 
     case (fulfill: RemoteFulfill, SUCCEEDED) if fulfill.ourAdd.paymentHash == fullTag.paymentHash =>
@@ -494,7 +488,7 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, opm: OutgoingPaymentMas
   def abortAndNotify(data1: OutgoingPaymentSenderData): Unit = {
     val leftoversPresentInChans = opm.cm.allInChannelOutgoing.contains(fullTag)
     val noLeftoversAnywhere = data1.inFlightParts.isEmpty && !leftoversPresentInChans
-    if (noLeftoversAnywhere) opm.events.wholePaymentFailed(data1)
+    if (noLeftoversAnywhere) listener.wholePaymentFailed(data1)
     become(data1, ABORTED)
   }
 }

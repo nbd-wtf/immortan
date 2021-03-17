@@ -1,8 +1,9 @@
 package immortan.sqlite
 
-import immortan.crypto.Tools.{Bytes, runAnd}
+import immortan.crypto.Tools.Bytes
 import java.sql.ResultSet
 import scala.util.Try
+
 
 case class RichCursorSqliteGeneral(rs: ResultSet) extends RichCursor { me =>
   def iterable[T](transform: RichCursor => T): Iterable[T] = try map(transform) finally rs.close

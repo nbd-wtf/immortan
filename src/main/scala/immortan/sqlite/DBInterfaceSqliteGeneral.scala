@@ -1,35 +1,30 @@
 package immortan.sqlite
 
 import java.lang.{Double => JDouble, Integer => JInt, Long => JLong}
+import java.sql.{Connection, PreparedStatement}
 import immortan.crypto.Tools.Bytes
-import java.sql.Connection
 
 
 case class DBInterfaceSqliteGeneral(connection: Connection) extends DBInterface {
+  def change(sql: String, params: Object*): Unit = change(connection.prepareStatement(sql), params:_*)
 
-  def change(sql: String, params: Object*): Unit = {
-    val prepStatement = connection.prepareStatement(sql)
+  def change(stmt: PreparedStatement, params: Object*): Unit = bindParameters(params, stmt).executeUpdate
 
+  def select(sql: String, params: String*): RichCursor = select(connection.prepareStatement(sql), params:_*)
+
+  def select(stmt: PreparedStatement, params: String*): RichCursor = RichCursorSqliteGeneral(bindParameters(params, stmt).executeQuery)
+
+  def bindParameters(params: Seq[Object], stmt: PreparedStatement): PreparedStatement = {
     params.zipWithIndex.foreach {
-      case (data: JDouble, idx) => prepStatement.setDouble(idx + 1, data)
-      case (data: String, idx) => prepStatement.setString(idx + 1, data)
-      case (data: Bytes, idx) => prepStatement.setBytes(idx + 1, data)
-      case (data: JLong, idx) => prepStatement.setLong(idx + 1, data)
-      case (data: JInt, idx) => prepStatement.setInt(idx + 1, data)
+      case (queryParameter: JDouble, positionIndex) => stmt.setDouble(positionIndex + 1, queryParameter)
+      case (queryParameter: String, positionIndex) => stmt.setString(positionIndex + 1, queryParameter)
+      case (queryParameter: Bytes, positionIndex) => stmt.setBytes(positionIndex + 1, queryParameter)
+      case (queryParameter: JLong, positionIndex) => stmt.setLong(positionIndex + 1, queryParameter)
+      case (queryParameter: JInt, positionIndex) => stmt.setInt(positionIndex + 1, queryParameter)
       case _ => throw new RuntimeException
     }
 
-    prepStatement.executeUpdate
-  }
-
-  def select(sql: String, params: String*): RichCursor = {
-    val prepStatement = connection.prepareStatement(sql)
-
-    params.zipWithIndex.foreach {
-      case (data, idx) => prepStatement.setString(idx + 1, data)
-    }
-
-    RichCursorSqliteGeneral(prepStatement.executeQuery)
+    stmt
   }
 
   def txWrap[T](run: => T): T = {
