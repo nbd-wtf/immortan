@@ -238,7 +238,7 @@ object ElectrumHeadersTable extends Table {
   val (table, height, blockHash, header) = ("headers", "height", "blockhash", "header")
   val addHeaderSql = s"INSERT OR IGNORE INTO $table ($height, $blockHash, $header) VALUES (?, ?, ?)"
 
-  val selectHeaderByHeightSql = s"SELECT * FROM $table WHERE $height = ?"
+  val selectByHeightSql = s"SELECT * FROM $table WHERE $height = ?"
   val selectByBlockHashSql = s"SELECT * FROM $table WHERE $blockHash = ?"
   val selectHeadersSql = s"SELECT * FROM $table WHERE $height >= ? ORDER BY $height LIMIT ?"
   val selectTipSql = s"SELECT * FROM $table INNER JOIN (SELECT MAX($height) AS maxHeight FROM $table) t1 ON $height = t1.maxHeight"

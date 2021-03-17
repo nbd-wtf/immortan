@@ -82,23 +82,24 @@ class SQLiteData(db: DBInterface) extends WalletDb with DataBag {
   // HeadersDb
 
   override def addHeaders(startHeight: Int, headers: Seq[BlockHeader] = Nil): Unit = db txWrap {
-    for (Tuple2(header, idx) <- headers.zipWithIndex) db.change(ElectrumHeadersTable.table, startHeight + idx: JInt, header.hash.toHex, BlockHeader.write(header).toArray)
+    for (Tuple2(header, idx) <- headers.zipWithIndex) db.change(ElectrumHeadersTable.addHeaderSql,
+      startHeight + idx: JInt, header.hash.toHex, BlockHeader.write(header).toArray)
   }
 
   override def getHeader(height: Int): Option[BlockHeader] =
-    db.select(ElectrumHeadersTable.selectHeaderByHeightSql, height.toString).headTry { rc =>
+    db.select(ElectrumHeadersTable.selectByHeightSql, height.toString).headTry { rc =>
       BlockHeader.read(rc bytes ElectrumHeadersTable.header)
     }.toOption
 
   override def getHeader(blockHash: ByteVector32): Option[HeightAndHeader] =
-    db.select(ElectrumHeadersTable.selectHeaderByHeightSql, blockHash.toHex).headTry { rc =>
+    db.select(ElectrumHeadersTable.selectByBlockHashSql, blockHash.toHex).headTry { rc =>
       val header = BlockHeader.read(rc bytes ElectrumHeadersTable.header)
       val height = rc int ElectrumHeadersTable.height
       (height, header)
     }.toOption
 
   override def getHeaders(startHeight: Int, maxCount: Int): Seq[BlockHeader] =
-    db.select(ElectrumHeadersTable.selectHeadersSql, startHeight.toString).iterable { rc =>
+    db.select(ElectrumHeadersTable.selectHeadersSql, startHeight.toString, maxCount.toString).iterable { rc =>
       BlockHeader.read(rc bytes ElectrumHeadersTable.header)
     }.toList
 

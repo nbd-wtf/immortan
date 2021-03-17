@@ -177,7 +177,7 @@ class ElectrumClientPool(blockCount: AtomicLong, serverAddresses: Set[ElectrumSe
 
 object ElectrumClientPool {
 
-  case class ElectrumServerAddress(adress: InetSocketAddress, ssl: SSL)
+  case class ElectrumServerAddress(address: InetSocketAddress, ssl: SSL)
 
   def readServerAddresses(stream: InputStream, sslEnabled: Boolean): Set[ElectrumServerAddress] = try {
     val JObject(values) = JsonMethods.parse(stream)
@@ -213,7 +213,7 @@ object ElectrumClientPool {
     * @return a random address that we're not connected to yet
     */
   def pickAddress(serverAddresses: Set[ElectrumServerAddress], usedAddresses: Set[InetSocketAddress]): Option[ElectrumServerAddress] = {
-    Random.shuffle(serverAddresses.filterNot(a => usedAddresses.contains(a.adress)).toSeq).headOption
+    Random.shuffle(serverAddresses.filterNot(a => usedAddresses.contains(a.address)).toSeq).headOption
   }
 
   sealed trait State
