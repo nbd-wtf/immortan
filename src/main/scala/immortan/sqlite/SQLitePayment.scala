@@ -18,7 +18,7 @@ case class RelaySummary(relayed: MilliSatoshi, earned: MilliSatoshi, count: Long
 
 case class PaymentSummary(fees: MilliSatoshi, received: MilliSatoshi, sent: MilliSatoshi, count: Long)
 
-class SQlitePaymentBag(db: DBInterface, preimageDb: DBInterface) extends PaymentBag {
+class SQlitePayment(db: DBInterface, preimageDb: DBInterface) extends PaymentBag {
   def getPaymentInfo(paymentHash: ByteVector32): Try[PaymentInfo] = db.select(PaymentTable.selectByHashSql, paymentHash.toHex).headTry(toPaymentInfo)
 
   def getPreimage(hash: ByteVector32): Try[ByteVector32] = preimageDb.select(PreimageTable.selectByHashSql, hash.toHex).headTry(_ string PreimageTable.preimage).map(ByteVector32.fromValidHex)
@@ -81,7 +81,7 @@ class SQlitePaymentBag(db: DBInterface, preimageDb: DBInterface) extends Payment
       relayed = MilliSatoshi(rc long RelayTable.relayed), earned = MilliSatoshi(rc long RelayTable.earned), stamp = rc long RelayTable.stamp)
 }
 
-abstract class SQlitePaymentBagCached(db: DBInterface, preimageDb: DBInterface) extends SQlitePaymentBag(db, preimageDb) {
+abstract class SQlitePaymentCached(db: DBInterface, preimageDb: DBInterface) extends SQlitePayment(db, preimageDb) {
   override def addRelayedPreimageInfo(fullTag: FullPaymentTag, preimage: ByteVector32, relayed: MilliSatoshi, earned: MilliSatoshi): Unit = {
     super.addRelayedPreimageInfo(fullTag, preimage, relayed, earned)
     invalidateRelayCache

@@ -256,7 +256,7 @@ case class SwapInStateExt(state: SwapInState, nodeId: PublicKey)
 
 // Interfaces
 
-trait NetworkDataStore {
+trait NetworkBag {
   def addChannelAnnouncement(ca: ChannelAnnouncement): Unit
   def listChannelAnnouncements: Iterable[ChannelAnnouncement]
 

@@ -343,6 +343,8 @@ object HostedMessagesCodecs {
       (text withContext "contactInfo")
   }.as[HostedChannelBranding]
 
+  // LCSS must NOT have arbitrary trailing data because it is stored as non-length-delimited
+
   val lastCrossSignedStateCodec = {
     (bool withContext "isHost") ::
       (varsizebinarydata withContext "refundScriptPubKey") ::

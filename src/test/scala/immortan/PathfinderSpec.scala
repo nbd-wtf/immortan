@@ -3,6 +3,7 @@ package immortan
 import fr.acinq.eclair._
 import immortan.utils.GraphUtils._
 import immortan.utils.SQLiteUtils._
+import immortan.utils.ChannelUtils._
 import immortan.crypto.{CanBeRepliedTo, Tools}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
 import fr.acinq.eclair.router.Router.{NoRouteAvailable, RouteFound}
@@ -13,15 +14,6 @@ import org.scalatest.funsuite.AnyFunSuite
 class PathfinderSpec extends AnyFunSuite {
   val (normalStore, hostedStore) = getSQLiteNetworkStores
   fillBasicGraph(normalStore)
-
-  def makePathFinder: PathFinder =
-    new PathFinder(normalStore, hostedStore) {
-      def getLastTotalResyncStamp: Long = System.currentTimeMillis // Won't resync
-      def getLastNormalResyncStamp: Long = System.currentTimeMillis // Won't resync
-      def updateLastTotalResyncStamp(stamp: Long): Unit = Tools.none
-      def updateLastNormalResyncStamp(stamp: Long): Unit = Tools.none
-      def getExtraNodes: Set[RemoteNodeInfo] = Set.empty
-    }
 
   test("Exclude one-sided and ghost channels") {
     val channel1AS: ChannelAnnouncement = makeAnnouncement(5L, a, s) // To be excluded because it's a ghost channel
@@ -55,7 +47,7 @@ class PathfinderSpec extends AnyFunSuite {
   test("Reject, load graph, notify once operational") {
     var responses: List[Any] = Nil
 
-    val pf = makePathFinder
+    val pf = makePathFinder(normalStore, hostedStore)
 
     val sender = new CanBeRepliedTo {
       override def process(reply: Any): Unit = responses ::= reply
@@ -75,7 +67,7 @@ class PathfinderSpec extends AnyFunSuite {
   test("Find a route on cold start") {
     var obtainedRoute: RouteFound = null
 
-    val pf = makePathFinder
+    val pf = makePathFinder(normalStore, hostedStore)
 
     val fromKey = randomKey.publicKey
     val fakeLocalEdge = Tools.mkFakeLocalEdge(from = fromKey, toPeer = a)
@@ -97,7 +89,7 @@ class PathfinderSpec extends AnyFunSuite {
   test("Find a route using assited channels") {
     var response: Any = null
 
-    val pf = makePathFinder
+    val pf = makePathFinder(normalStore, hostedStore)
 
     val sender = new CanBeRepliedTo {
       override def process(reply: Any): Unit = response = reply

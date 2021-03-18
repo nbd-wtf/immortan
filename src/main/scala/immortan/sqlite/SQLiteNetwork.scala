@@ -12,7 +12,7 @@ import fr.acinq.bitcoin.ByteVector64
 import scodec.bits.ByteVector
 
 
-class SQLiteNetwork(val db: DBInterface, updateTable: ChannelUpdateTable, announceTable: ChannelAnnouncementTable, excludedTable: ExcludedChannelTable) extends NetworkDataStore {
+class SQLiteNetwork(val db: DBInterface, updateTable: ChannelUpdateTable, announceTable: ChannelAnnouncementTable, excludedTable: ExcludedChannelTable) extends NetworkBag {
   def addChannelAnnouncement(ca: ChannelAnnouncement): Unit = db.change(announceTable.newSql, Array.emptyByteArray, ca.shortChannelId.toJavaLong, ca.nodeId1.value.toArray, ca.nodeId2.value.toArray)
 
   def addExcludedChannel(shortId: ShortChannelId, untilStamp: Long): Unit = db.change(excludedTable.newSql, shortId.toJavaLong, System.currentTimeMillis + untilStamp: JLong)

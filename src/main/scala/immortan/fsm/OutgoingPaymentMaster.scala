@@ -29,6 +29,7 @@ object PaymentFailure {
   type Failures = List[PaymentFailure]
   final val NO_ROUTES_FOUND = "no-routes-found"
   final val NOT_ENOUGH_FUNDS = "not-enough-funds"
+  final val PAYMENT_NOT_SENDABLE = "payment-not-sendable"
   final val RUN_OUT_OF_RETRY_ATTEMPTS = "run-out-of-retry-attempts"
   final val PEER_COULD_NOT_PARSE_ONION = "peer-could-not-parse-onion"
   final val NOT_RETRYING_NO_DETAILS = "not-retrying-no-details"
@@ -60,7 +61,7 @@ case class CreateSenderFSM(fullTag: FullPaymentTag, listener: OutgoingPaymentEve
 case class RemoveSenderFSM(fullTag: FullPaymentTag)
 
 // Important: with trampoline payment targetNodeId is next trampoline node, not necessairly final recipient
-// Tag contains a PaymentSecret taken from upstream (for routed payments), it is required to group payments with same hash
+// Important: `fullTag` contains a DIFFERENT PaymentSecret taken from upstream (for routed payments), it is required to group payments with same hash
 // When splitting a payment `onionTotal` is expected to be higher than `actualTotal` to make recipient see the same TotalAmount across different HTLC sets
 case class SendMultiPart(fullTag: FullPaymentTag, routerConf: RouterConf, targetNodeId: PublicKey, onionTotal: MilliSatoshi = 0L.msat, actualTotal: MilliSatoshi = 0L.msat,
                          totalFeeReserve: MilliSatoshi = 0L.msat, targetExpiry: CltvExpiry = CltvExpiry(0), allowedChans: Seq[Channel] = Nil, paymentSecret: ByteVector32 = ByteVector32.Zeroes,
@@ -267,7 +268,7 @@ trait OutgoingPaymentEvents {
   def preimageRevealed(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = none
 }
 
-class OutgoingPaymentSender(val fullTag: FullPaymentTag, listener: OutgoingPaymentEvents, opm: OutgoingPaymentMaster) extends StateMachine[OutgoingPaymentSenderData] { me =>
+class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listener: OutgoingPaymentEvents, opm: OutgoingPaymentMaster) extends StateMachine[OutgoingPaymentSenderData] { me =>
   become(OutgoingPaymentSenderData(SendMultiPart(fullTag, LNParams.routerConf, invalidPubKey), Map.empty), INIT)
 
   def doProcess(msg: Any): Unit = (msg, state) match {
@@ -329,10 +330,10 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, listener: OutgoingPayme
         val singleCapableCncCandidates = opm.rightNowSendable(data.cmd.allowedChans diff wait.localFailedChans, feeLeftover)
 
         singleCapableCncCandidates.collectFirst { case (cnc, chanSendable) if chanSendable >= wait.amount => cnc } match {
-          case _ if reason == InPrincipleNotSendable => me abortAndNotify data.withoutPartId(wait.partId).withLocalFailure(RUN_OUT_OF_RETRY_ATTEMPTS, wait.amount)
+          case _ if reason == InPrincipleNotSendable => me abortAndNotify data.withoutPartId(wait.partId).withLocalFailure(PAYMENT_NOT_SENDABLE, wait.amount)
           case None if reason == ChannelOffline => assignToChans(opm.rightNowSendable(data.cmd.allowedChans, feeLeftover), data.withoutPartId(wait.partId), wait.amount)
-          case None => assignToChans(opm.rightNowSendable(data.cmd.allowedChans.filter(wait.cnc.chan.!=), feeLeftover), data.withoutPartId(wait.partId), wait.amount)
           case Some(anotherCapableCnc) => become(data.copy(parts = data.parts + wait.oneMoreLocalAttempt(anotherCapableCnc).tuple), PENDING)
+          case None => me abortAndNotify data.withoutPartId(wait.partId).withLocalFailure(RUN_OUT_OF_RETRY_ATTEMPTS, wait.amount)
         }
       }
 
@@ -461,13 +462,13 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, listener: OutgoingPayme
         // leftover may be slightly negative due to min sendable corrections
         become(data1.copy(parts = data1.parts ++ newParts), PENDING)
 
-      case (_, rest) if opm.getSendable(data.cmd.allowedChans.filter(Channel.isOperationalAndSleeping), feeLeftover).values.sum >= rest =>
+      case (_, rest) if opm.getSendable(data1.cmd.allowedChans.filter(Channel.isOperationalAndSleeping), feeLeftover).values.sum >= rest =>
         // Amount has not been fully split, but it is possible to further successfully split it once some SLEEPING channel becomes OPEN
         become(data1.copy(parts = data1.parts + WaitForChanOnline(randomKey, amount).tuple), PENDING)
 
       case _ =>
         // A positive leftover is present with no more channels left
-        // partId should already have been removed from data at this point
+        // partId should have already been removed from data at this point
         me abortAndNotify data1.withLocalFailure(NOT_ENOUGH_FUNDS, amount)
     }
 

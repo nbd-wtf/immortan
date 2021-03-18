@@ -91,6 +91,7 @@ class SQLiteData(db: DBInterface) extends WalletDb with DataBag {
       BlockHeader.read(rc bytes ElectrumHeadersTable.header)
     }.toOption
 
+  // Only used in testing currently
   override def getHeader(blockHash: ByteVector32): Option[HeightAndHeader] =
     db.select(ElectrumHeadersTable.selectByBlockHashSql, blockHash.toHex).headTry { rc =>
       val header = BlockHeader.read(rc bytes ElectrumHeadersTable.header)

@@ -29,10 +29,11 @@ object PathFinder {
 
 case class AvgHopParams(cltvExpiryDelta: CltvExpiryDelta, feeProportionalMillionths: MilliSatoshi, feeBaseMsat: MilliSatoshi, sampleSize: Long)
 
-abstract class PathFinder(val normalStore: NetworkDataStore, hostedStore: NetworkDataStore) extends StateMachine[Data] { me =>
+abstract class PathFinder(val normalStore: NetworkBag, hostedStore: NetworkBag) extends StateMachine[Data] { me =>
   implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
   def process(changeMessage: Any): Unit = scala.concurrent.Future(me doProcess changeMessage)
   var listeners: Set[CanBeRepliedTo] = Set.empty
+  var debugMode: Boolean = false
 
   // We don't load routing data on every startup but when user (or system) actually needs it
   become(Data(channels = Map.empty, hostedChannels = Map.empty, extraEdges = Map.empty, graph = DirectedGraph.apply), WAITING)
@@ -46,21 +47,30 @@ abstract class PathFinder(val normalStore: NetworkDataStore, hostedStore: Networ
   def getExtraNodes: Set[RemoteNodeInfo]
 
   def doProcess(change: Any): Unit = (change, state) match {
-    case (Tuple2(sender: CanBeRepliedTo, _: RouteRequest), OPERATIONAL) if data.channels.isEmpty =>
-      // Graph is loaded but it is empty (likey a first launch or synchronizing)
-      sender process NotifyRejected
-
     case (Tuple2(sender: CanBeRepliedTo, request: RouteRequest), OPERATIONAL) =>
-      // In OPERATIONAL state we instruct graph to search through the single pre-selected local channel
-      // it is safe to not check for existance becase base graph never has our private outgoing edges
-      val graph1 = data.graph.addEdge(edge = request.localEdge, checkIfContains = false)
-      sender process handleRouteRequest(graph1, request)
+
+      if (data.channels.isEmpty) {
+        // Graph is loaded but it is empty
+        // likey a first launch or synchronizing
+        sender process NotifyRejected
+      } else {
+        // In OPERATIONAL state we instruct graph to search through the single pre-selected local channel
+        // it is safe to not check for existance becase base graph never has our private outgoing edges
+        val graph1 = data.graph.addEdge(edge = request.localEdge, checkIfContains = false)
+        sender process handleRouteRequest(graph1, request)
+      }
 
     case (Tuple2(sender: CanBeRepliedTo, _: RouteRequest), WAITING) =>
-      // We need a loaded routing data to search for path properly
-      // load that data while notifying sender if it's absent
-      sender process NotifyRejected
-      me process CMDLoadGraph
+
+      if (debugMode) {
+        // Do not proceed, just inform the sender
+        sender process NotifyRejected
+      } else {
+        // We need a loaded routing data to search for path properly
+        // load that data while notifying sender if it's absent
+        sender process NotifyRejected
+        me process CMDLoadGraph
+      }
 
     case (CMDResync, WAITING) =>
       // We need a loaded routing data to sync properly
@@ -149,7 +159,7 @@ abstract class PathFinder(val normalStore: NetworkDataStore, hostedStore: Networ
   }
 
   // Common resover for normal/hosted public channel updates
-  def resolve(pubChan: PublicChannel, newUpdate: ChannelUpdate, store: NetworkDataStore): Data = {
+  def resolve(pubChan: PublicChannel, newUpdate: ChannelUpdate, store: NetworkBag): Data = {
     val currentUpdateExtOpt: Option[ChannelUpdateExt] = pubChan.getChannelUpdateSameSideAs(newUpdate)
     val newUpdateIsOlder: Boolean = currentUpdateExtOpt.exists(_.update.timestamp >= newUpdate.timestamp)
     val newUpdateExt = currentUpdateExtOpt.map(_ withNewUpdate newUpdate) getOrElse ChannelUpdateExt(newUpdate, Sync.getChecksum(newUpdate), score = 1L, useHeuristics = false)
@@ -158,7 +168,7 @@ abstract class PathFinder(val normalStore: NetworkDataStore, hostedStore: Networ
 
   // Resolves channel updates which we obtain from node errors while trying to route payments
   // store is optional to make sure private normal/hosted channel updates never make it to our database
-  def resolveKnownDesc(edge: GraphEdge, storeOpt: Option[NetworkDataStore], isOld: Boolean): Data = {
+  def resolveKnownDesc(edge: GraphEdge, storeOpt: Option[NetworkBag], isOld: Boolean): Data = {
     val isEnabled = Announcements.isEnabled(edge.updExt.update.channelFlags)
 
     storeOpt match {
