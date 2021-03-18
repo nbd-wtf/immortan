@@ -18,6 +18,7 @@ import org.scalatest.funsuite.AnyFunSuite
 
 // TODO: timeout
 // TODO: multiple competing payments
+// TODO: smaller part taking disproportionally larger fee out of reserve
 
 class MPPSpec extends AnyFunSuite {
   test("Split between direct and non-direct channel") {
@@ -58,14 +59,12 @@ class MPPSpec extends AnyFunSuite {
     cm.opm process send
     synchronized(wait(200))
 
-    val parts = cm.opm.data.payments(tag).data.parts.values
-    val List(part1, part2) = parts.collect { case inFlight: WaitForRouteOrInFlight => inFlight }
+    val List(part1, part2) = cm.opm.data.payments(tag).data.inFlightParts
 
-    assert(parts.size == 2)
-    assert(part1.flight.get.route.hops.size == 1) // US -> A
-    assert(part1.flight.get.route.fee == 0L.msat)
-    assert(part2.flight.get.route.hops.size == 2) // US -> C -> A
-    assert(part2.flight.get.route.fee == 920L.msat)
+    assert(part1.route.hops.size == 1) // US -> A
+    assert(part1.route.fee == 0L.msat)
+    assert(part2.route.hops.size == 2) // US -> C -> A
+    assert(part2.route.fee == 920L.msat)
   }
 
   test("Split after no route found on first attempt") {
@@ -108,15 +107,13 @@ class MPPSpec extends AnyFunSuite {
     cm.pf process PathFinder.CMDLoadGraph
     synchronized(wait(500))
 
-    val parts = cm.opm.data.payments(tag).data.parts.values
+    val List(part1, part2) = cm.opm.data.payments(tag).data.inFlightParts
     // First chosen route can not handle a second part so another route is chosen
-    val List(part1, part2) = parts.collect { case inFlight: WaitForRouteOrInFlight => inFlight.flight.get }
     assert(part1.route.hops.map(_.nodeId) == Seq(LNParams.format.keys.ourNodePubKey, a, c, d))
     assert(part2.route.hops.map(_.nodeId) == Seq(LNParams.format.keys.ourNodePubKey, a, b, d))
     assert(cm.opm.data.payments(tag).data.usedFee == 24L.msat)
     assert(part1.cmd.firstAmount == 300012L.msat)
     assert(part2.cmd.firstAmount == 300012L.msat)
-    assert(parts.size == 2)
   }
 
   test("Fail on excessive local failures") {

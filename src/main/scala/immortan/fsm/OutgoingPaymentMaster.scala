@@ -23,7 +23,6 @@ import scala.util.Random.shuffle
 import scala.collection.mutable
 import scodec.bits.ByteVector
 
-// Remote failures
 
 object PaymentFailure {
   type Failures = List[PaymentFailure]
