@@ -147,6 +147,7 @@ class MPPSpec extends AnyFunSuite {
     assert(failures.size == 1) // We have got exactly one failure event
     assert(cm.opm.data.payments(tag).data.failures.head.asInstanceOf[LocalFailure].status == PaymentFailure.RUN_OUT_OF_RETRY_ATTEMPTS)
     assert(cm.opm.data.payments(tag).state == PaymentStatus.ABORTED)
+    assert(cm.opm.data.payments(tag).data.inFlightParts.isEmpty)
   }
 
   test("Fail fast on terminal failure") {
@@ -182,5 +183,6 @@ class MPPSpec extends AnyFunSuite {
     assert(failures.size == 1) // We have got exactly one failure event
     assert(cm.opm.data.payments(tag).data.failures.head.asInstanceOf[LocalFailure].status == PaymentFailure.PAYMENT_NOT_SENDABLE)
     assert(cm.opm.data.payments(tag).state == PaymentStatus.ABORTED)
+    assert(cm.opm.data.payments(tag).data.inFlightParts.isEmpty)
   }
 }
