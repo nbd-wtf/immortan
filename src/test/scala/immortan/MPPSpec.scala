@@ -396,8 +396,8 @@ class MPPSpec extends AnyFunSuite {
     synchronized(wait(500))
 
     val List(part1, part2) = cm.opm.data.payments(tag).data.parts.values.collect { case inFlight: WaitForRouteOrInFlight => inFlight }
-    println(part1.flight.get.route.fee == 8L.msat) // First part takes a very cheap route, but that route can't handle the second part
-    println(part2.flight.get.route.fee == 5984.msat) // Another route is very expensive, but we can afford it because first part took very little, so we are still within fee bounds for a payment as a whole
+    assert(part1.flight.get.route.fee == 8L.msat) // First part takes a very cheap route, but that route can't handle the second part
+    assert(part2.flight.get.route.fee == 5984.msat) // Another route is very expensive, but we can afford it because first part took very little, so we are still within fee bounds for a payment as a whole
     assert(part1.amount == part2.amount)
   }
 
