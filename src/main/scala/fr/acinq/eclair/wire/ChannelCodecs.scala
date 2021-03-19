@@ -20,7 +20,6 @@ import scodec.codecs._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.CommonCodecs._
-import fr.acinq.eclair.wire.HostedMessagesCodecs._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.crypto.ShaChain

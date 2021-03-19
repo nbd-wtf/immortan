@@ -19,7 +19,7 @@ package fr.acinq.eclair.wire
 import scodec.codecs._
 import fr.acinq.eclair._
 import fr.acinq.eclair.wire.CommonCodecs._
-import fr.acinq.eclair.wire.ChannelCodecs.channelVersionCodec
+import fr.acinq.eclair.wire.ChannelCodecs._
 import scodec.bits.ByteVector
 import scodec.Codec
 
@@ -280,53 +280,21 @@ object LightningMessageCodecs {
       ("message" | bits)
   }.as[UnknownMessage]
 
-  //
+  // HOSTED CHANNELS
 
-  val lightningMessageCodec: DiscriminatorCodec[LightningMessage, Int] =
-    discriminated[LightningMessage].by(uint16)
-      .typecase(16, initCodec)
-      .typecase(17, errorCodec)
-      .typecase(18, pingCodec)
-      .typecase(19, pongCodec)
-      .typecase(32, openChannelCodec)
-      .typecase(33, acceptChannelCodec)
-      .typecase(34, fundingCreatedCodec)
-      .typecase(35, fundingSignedCodec)
-      .typecase(36, fundingLockedCodec)
-      .typecase(38, shutdownCodec)
-      .typecase(39, closingSignedCodec)
-      .typecase(128, updateAddHtlcCodec)
-      .typecase(130, updateFulfillHtlcCodec)
-      .typecase(131, updateFailHtlcCodec)
-      .typecase(132, commitSigCodec)
-      .typecase(133, revokeAndAckCodec)
-      .typecase(134, updateFeeCodec)
-      .typecase(135, updateFailMalformedHtlcCodec)
-      .typecase(136, channelReestablishCodec)
-      .typecase(256, channelAnnouncementCodec)
-      .typecase(257, nodeAnnouncementCodec)
-      .typecase(258, channelUpdateCodec)
-      .typecase(259, announcementSignaturesCodec)
-      .typecase(261, queryShortChannelIdsCodec)
-      .typecase(262, replyShortChanelIdsEndCodec)
-      .typecase(263, queryChannelRangeCodec)
-      .typecase(264, replyChannelRangeCodec)
-      .typecase(265, gossipTimestampFilterCodec)
-
-  //
-
-  val lightningMessageCodecWithFallback: Codec[LightningMessage] =
-    discriminatorWithDefault(lightningMessageCodec, unknownMessageCodec.upcast)
-}
-
-object HostedMessagesCodecs {
   val invokeHostedChannelCodec = {
     (bytes32 withContext "chainHash") ::
       (varsizebinarydata withContext "refundScriptPubKey") ::
       (varsizebinarydata withContext "secret")
   }.as[InvokeHostedChannel]
 
-  val initHostedChannelCodec = {
+  val hostedChannelBrandingCodec = {
+    (rgb withContext "rgbColor") ::
+      (varsizebinarydata withContext "pngIcon") ::
+      (text withContext "contactInfo")
+  }.as[HostedChannelBranding]
+
+  lazy val initHostedChannelCodec = {
     (uint64 withContext "maxHtlcValueInFlightMsat") ::
       (millisatoshi withContext "htlcMinimumMsat") ::
       (uint16 withContext "maxAcceptedHtlcs") ::
@@ -337,15 +305,9 @@ object HostedMessagesCodecs {
       (channelVersionCodec withContext "version")
   }.as[InitHostedChannel]
 
-  val hostedChannelBrandingCodec = {
-    (rgb withContext "rgbColor") ::
-      (varsizebinarydata withContext "pngIcon") ::
-      (text withContext "contactInfo")
-  }.as[HostedChannelBranding]
-
   // LCSS must NOT have arbitrary trailing data because it is stored as non-length-delimited
 
-  val lastCrossSignedStateCodec = {
+  lazy val lastCrossSignedStateCodec = {
     (bool withContext "isHost") ::
       (varsizebinarydata withContext "refundScriptPubKey") ::
       (initHostedChannelCodec withContext "initHostedChannel") ::
@@ -382,7 +344,7 @@ object HostedMessagesCodecs {
       (bool withContext "wantsReply")
   }.as[AnnouncementSignature]
 
-  val resizeChannelCodec = {
+  lazy val resizeChannelCodec = {
     (satoshi withContext "newCapacity") ::
       (bytes64 withContext "clientSig")
   }.as[ResizeChannel]
@@ -413,9 +375,9 @@ object HostedMessagesCodecs {
   final val HC_UPDATE_FAIL_HTLC_TAG = 65501
   final val HC_UPDATE_FAIL_MALFORMED_HTLC_TAG = 65499
   final val HC_ERROR_TAG = 65497
-}
 
-object SwapCodecs {
+  // SWAP-IN
+
   val swapInResponseCodec = {
     ("btcAddress" | text) ::
       ("minChainDeposit" | satoshi)
@@ -449,7 +411,7 @@ object SwapCodecs {
       ("processing" | listOfN(uint16, pendingDepositCodec))
   }.as[SwapInState]
 
-  // SwapOut
+  // SWAP-OUT
 
   val blockTargetAndFeeCodec = {
     ("blockTarget" | uint16) ::
@@ -497,9 +459,9 @@ object SwapCodecs {
   final val SWAP_OUT_TRANSACTION_REQUEST_MESSAGE_TAG = 55023
   final val SWAP_OUT_TRANSACTION_RESPONSE_MESSAGE_TAG = 55021
   final val SWAP_OUT_TRANSACTION_DENIED_MESSAGE_TAG = 55019
-}
 
-object TrampolineStatusCodecs {
+  // TRAMPOLINE STATUS
+
   val trampolineOnCodec = {
     (millisatoshi withContext "minimumMsat") ::
       (millisatoshi withContext "maximumMsat") ::
@@ -512,12 +474,46 @@ object TrampolineStatusCodecs {
 
   final val TRAMPOLINE_STATUS_ON_TAG = 44789
   final val TRAMPOLINE_STATUS_OFF_TAG = 44787
-}
 
-object ExtMessageMapping {
-  import TrampolineStatusCodecs._
-  import HostedMessagesCodecs._
-  import SwapCodecs._
+  //
+
+  val lightningMessageCodec: DiscriminatorCodec[LightningMessage, Int] =
+    discriminated[LightningMessage].by(uint16)
+      .typecase(16, initCodec)
+      .typecase(17, errorCodec)
+      .typecase(18, pingCodec)
+      .typecase(19, pongCodec)
+      .typecase(32, openChannelCodec)
+      .typecase(33, acceptChannelCodec)
+      .typecase(34, fundingCreatedCodec)
+      .typecase(35, fundingSignedCodec)
+      .typecase(36, fundingLockedCodec)
+      .typecase(38, shutdownCodec)
+      .typecase(39, closingSignedCodec)
+      .typecase(128, updateAddHtlcCodec)
+      .typecase(130, updateFulfillHtlcCodec)
+      .typecase(131, updateFailHtlcCodec)
+      .typecase(132, commitSigCodec)
+      .typecase(133, revokeAndAckCodec)
+      .typecase(134, updateFeeCodec)
+      .typecase(135, updateFailMalformedHtlcCodec)
+      .typecase(136, channelReestablishCodec)
+      .typecase(256, channelAnnouncementCodec)
+      .typecase(257, nodeAnnouncementCodec)
+      .typecase(258, channelUpdateCodec)
+      .typecase(259, announcementSignaturesCodec)
+      .typecase(261, queryShortChannelIdsCodec)
+      .typecase(262, replyShortChanelIdsEndCodec)
+      .typecase(263, queryChannelRangeCodec)
+      .typecase(264, replyChannelRangeCodec)
+      .typecase(265, gossipTimestampFilterCodec)
+
+  //
+
+  val lightningMessageCodecWithFallback: Codec[LightningMessage] =
+    discriminatorWithDefault(lightningMessageCodec, unknownMessageCodec.upcast)
+
+  // EXTENDED MESSAGE UTILS
 
   def decode(msg: UnknownMessage): LightningMessage = msg.tag match {
     case HC_INVOKE_HOSTED_CHANNEL_TAG => invokeHostedChannelCodec.decode(msg.data).require.value

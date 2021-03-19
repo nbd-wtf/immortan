@@ -9,8 +9,8 @@ import java.lang.{Integer => JInt}
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb.persistentDataCodec
-import fr.acinq.eclair.wire.HostedMessagesCodecs.hostedChannelBrandingCodec
-import fr.acinq.eclair.wire.SwapCodecs.swapInStateCodec
+import fr.acinq.eclair.wire.LightningMessageCodecs.hostedChannelBrandingCodec
+import fr.acinq.eclair.wire.LightningMessageCodecs.swapInStateCodec
 import immortan.wire.ExtCodecs.storageFormatCodec
 import fr.acinq.bitcoin.Crypto.PublicKey
 import immortan.crypto.Tools.Bytes

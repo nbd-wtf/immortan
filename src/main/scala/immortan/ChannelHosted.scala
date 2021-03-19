@@ -16,7 +16,7 @@ import scodec.bits.ByteVector
 
 object ChannelHosted {
   def make(initListeners: Set[ChannelListener], hostedData: HostedCommits, bag: ChannelBag): ChannelHosted = new ChannelHosted {
-    def SEND(messages: LightningMessage*): Unit = CommsTower.sendMany(messages.map(ExtMessageMapping.prepareNormal), hostedData.remoteInfo.nodeSpecificPair)
+    def SEND(msgs: LightningMessage*): Unit = CommsTower.sendMany(msgs.map(LightningMessageCodecs.prepareNormal), hostedData.remoteInfo.nodeSpecificPair)
     def STORE(hostedData: PersistentChannelData): PersistentChannelData = bag.put(hostedData)
     listeners = initListeners
     doProcess(hostedData)

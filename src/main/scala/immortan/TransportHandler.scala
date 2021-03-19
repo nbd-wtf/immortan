@@ -3,8 +3,7 @@ package immortan
 import TransportHandler._
 import immortan.crypto.Noise._
 import scala.concurrent.{ExecutionContext, Future}
-import fr.acinq.eclair.wire.{ExtMessageMapping, LightningMessage}
-import fr.acinq.eclair.wire.LightningMessageCodecs.lightningMessageCodecWithFallback
+import fr.acinq.eclair.wire.{LightningMessageCodecs, LightningMessage}
 import scala.concurrent.ExecutionContextExecutor
 import java.util.concurrent.Executors
 import immortan.crypto.StateMachine
@@ -69,7 +68,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector) exte
 
     // Normal operation phase: messages can be sent and received here
     case (cd: CyphertextData, msg: LightningMessage, WAITING_CYPHERTEXT) =>
-      val encoded = lightningMessageCodecWithFallback.encode(ExtMessageMapping prepare msg)
+      val encoded = LightningMessageCodecs.lightningMessageCodecWithFallback.encode(LightningMessageCodecs prepare msg)
       val (encoder1, ciphertext) = encryptMsg(cd.enc, encoded.require.toByteVector)
       handleEncryptedOutgoingData(ciphertext)
       me UPDATE cd.copy(enc = encoder1)

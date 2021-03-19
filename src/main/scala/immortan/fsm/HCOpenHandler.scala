@@ -1,7 +1,7 @@
 package immortan.fsm
 
 import immortan._
-import fr.acinq.eclair.wire.{ExtMessageMapping, HostedChannelMessage, Init, LightningMessage}
+import fr.acinq.eclair.wire.{LightningMessageCodecs, HostedChannelMessage, Init, LightningMessage}
 import fr.acinq.eclair.channel.{CMD_SOCKET_ONLINE, PersistentChannelData}
 import immortan.Channel.{OPEN, SUSPENDED, WAIT_FOR_ACCEPT}
 import immortan.ChannelListener.{Malfunction, Transition}
@@ -15,7 +15,7 @@ abstract class HCOpenHandler(info: RemoteNodeInfo, ourInit: Init, format: Storag
   val peerSpecificRefundPubKey: ByteVector = format.keys.refundPubKey(theirNodeId = info.nodeId)
 
   val freshChannel: ChannelHosted = new ChannelHosted {
-    def SEND(messages: LightningMessage*): Unit = CommsTower.sendMany(messages.map(ExtMessageMapping.prepareNormal), info.nodeSpecificPair)
+    def SEND(msgs: LightningMessage*): Unit = CommsTower.sendMany(msgs.map(LightningMessageCodecs.prepareNormal), info.nodeSpecificPair)
     def STORE(hostedData: PersistentChannelData): PersistentChannelData = cm.chanBag.put(hostedData)
   }
 

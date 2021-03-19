@@ -81,7 +81,7 @@ object CommsTower {
           lastMessage = System.currentTimeMillis
 
           lightningMessageCodecWithFallback.decode(data.bits).require.value match {
-            case message: UnknownMessage => ExtMessageMapping.decode(message) match {
+            case message: UnknownMessage => LightningMessageCodecs.decode(message) match {
               case message: HostedChannelMessage => for (lst <- ourListeners) lst.onHostedMessage(me, message)
               case message: SwapOut => for (lst <- ourListeners) lst.onSwapOutMessage(me, message)
               case message: SwapIn => for (lst <- ourListeners) lst.onSwapInMessage(me, message)

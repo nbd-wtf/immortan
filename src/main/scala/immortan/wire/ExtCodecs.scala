@@ -4,7 +4,6 @@ import immortan._
 import scodec.codecs._
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.ChannelCodecs._
-import fr.acinq.eclair.wire.HostedMessagesCodecs._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.wire.LastCrossSignedState
 import fr.acinq.bitcoin.Crypto.PublicKey
