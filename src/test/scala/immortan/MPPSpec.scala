@@ -21,8 +21,8 @@ class MPPSpec extends AnyFunSuite {
     // Add a US -> C -> A channel
 
     val channelCAAnn = makeAnnouncement(5L, c, a)
-    val updateCAFromC = makeUpdate(ShortChannelId(5L), c, a, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 100000000L.msat)
-    val updateCAFromA = makeUpdate(ShortChannelId(5L), a, c, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 100000000L.msat)
+    val updateCAFromC = makeUpdate(ShortChannelId(5L), c, a, 1L.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 100000000L.msat)
+    val updateCAFromA = makeUpdate(ShortChannelId(5L), a, c, 1L.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 100000000L.msat)
 
     normalStore.addChannelAnnouncement(channelCAAnn)
     normalStore.addChannelUpdateByPosition(updateCAFromC)
@@ -70,11 +70,11 @@ class MPPSpec extends AnyFunSuite {
     cm.pf.debugMode = true
 
     val sendable1 = cm.opm.getSendable(cm.all.values, maxFee = 1000000L.msat).values.head
-    assert(sendable1 == 99000000.msat)
+    assert(sendable1 == 99000000L.msat)
 
     val tag = FullPaymentTag(paymentHash = ByteVector32.One, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
-    val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
-    val send = SendMultiPart(tag, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = s, onionTotal = 600000.msat, actualTotal = 600000.msat,
+    val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1L.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
+    val send = SendMultiPart(tag, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = s, onionTotal = 600000L.msat, actualTotal = 600000L.msat,
       totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
     cm.opm process CreateSenderFSM(tag, noopListener)
@@ -154,8 +154,8 @@ class MPPSpec extends AnyFunSuite {
     cm.pf.debugMode = true
 
     val tag = FullPaymentTag(paymentHash = ByteVector32.One, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
-    val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
-    val send = SendMultiPart(tag, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = s, onionTotal = 400000.msat, actualTotal = 400000.msat,
+    val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1L.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
+    val send = SendMultiPart(tag, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = s, onionTotal = 400000L.msat, actualTotal = 400000L.msat,
       totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
     cm.opm process CreateSenderFSM(tag, noopListener)
@@ -169,8 +169,8 @@ class MPPSpec extends AnyFunSuite {
     assert(wait1.flight.isEmpty)
 
     // In the meantime two new channels are added to the system
-    val hcs2 = makeHostedCommits(nodeId = b, alias = "peer2", toLocal = 300000.msat)
-    val hcs3 = makeHostedCommits(nodeId = c, alias = "peer3", toLocal = 300000.msat)
+    val hcs2 = makeHostedCommits(nodeId = b, alias = "peer2", toLocal = 300000L.msat)
+    val hcs3 = makeHostedCommits(nodeId = c, alias = "peer3", toLocal = 300000L.msat)
     cm.chanBag.put(hcs2)
     cm.chanBag.put(hcs3)
 
@@ -205,7 +205,7 @@ class MPPSpec extends AnyFunSuite {
 
     val tag = FullPaymentTag(paymentHash = ByteVector32.One, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
     val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
-    val send = SendMultiPart(tag, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = s, onionTotal = 600000.msat, actualTotal = 600000.msat,
+    val send = SendMultiPart(tag, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = s, onionTotal = 600000L.msat, actualTotal = 600000L.msat,
       totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
     val desc = ChannelDesc(ShortChannelId(3L), b, d)
@@ -227,7 +227,7 @@ class MPPSpec extends AnyFunSuite {
     val parts = cm.opm.data.payments(tag).data.parts.values.collect { case inFlight: WaitForRouteOrInFlight => inFlight }
     assert(cm.opm.data.payments(tag).feeLeftover == send.totalFeeReserve - parts.flatMap(_.flight).map(_.route.fee).sum)
     // Initial split was 300k/300k, but one of routes has previously failed at 200k so we need to split further
-    assert(Set(150000.msat, 150000.msat, 300000.msat) == parts.map(_.amount).toSet)
+    assert(Set(150000L.msat, 150000L.msat, 300000L.msat) == parts.map(_.amount).toSet)
     assert(cm.opm.data.payments(tag).data.parts.size == 3)
   }
 
@@ -245,8 +245,8 @@ class MPPSpec extends AnyFunSuite {
     val hash = Crypto.sha256(preimage)
 
     val tag = FullPaymentTag(paymentHash = hash, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
-    val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
-    val send = SendMultiPart(tag, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = s, onionTotal = 600000.msat, actualTotal = 600000.msat,
+    val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1L.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
+    val send = SendMultiPart(tag, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = s, onionTotal = 600000L.msat, actualTotal = 600000L.msat,
       totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
     val desc = ChannelDesc(ShortChannelId(3L), b, d)
@@ -295,19 +295,19 @@ class MPPSpec extends AnyFunSuite {
     cm.all = Channel.load(Set(cm), cm.chanBag)
     cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
 
-    val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
+    val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1L.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
 
     import scodec.bits._
     val tag1 = FullPaymentTag(paymentHash = ByteVector32(hex"0200000000000000000000000000000000000000000000000000000000000000"), paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
-    val send1 = SendMultiPart(tag1, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = s, onionTotal = 300000.msat, actualTotal = 300000.msat,
+    val send1 = SendMultiPart(tag1, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = s, onionTotal = 300000L.msat, actualTotal = 300000L.msat,
       totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
     val tag2 = FullPaymentTag(paymentHash = ByteVector32(hex"0300000000000000000000000000000000000000000000000000000000000000"), paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
-    val send2 = SendMultiPart(tag2, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = s, onionTotal = 600000.msat, actualTotal = 600000.msat,
+    val send2 = SendMultiPart(tag2, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = s, onionTotal = 600000L.msat, actualTotal = 600000L.msat,
       totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
     val tag3 = FullPaymentTag(paymentHash = ByteVector32(hex"0400000000000000000000000000000000000000000000000000000000000000"), paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
-    val send3 = SendMultiPart(tag3, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = s, onionTotal = 200000.msat, actualTotal = 200000.msat,
+    val send3 = SendMultiPart(tag3, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = s, onionTotal = 200000L.msat, actualTotal = 200000L.msat,
       totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
     cm.opm process CreateSenderFSM(tag1, noopListener)
@@ -323,11 +323,11 @@ class MPPSpec extends AnyFunSuite {
 
     // First one enjoys full channel capacity
     val ws1 = cm.opm.data.payments(tag1).data.parts.values.collect { case inFlight: WaitForRouteOrInFlight => inFlight }
-    assert(Set(300000.msat) == ws1.map(_.amount).toSet)
+    assert(Set(300000L.msat) == ws1.map(_.amount).toSet)
 
     // Second one had to be split to get through
     val ws2 = cm.opm.data.payments(tag2).data.parts.values.collect { case inFlight: WaitForRouteOrInFlight => inFlight }
-    assert(Set(150000.msat, 150000.msat, 300000.msat) == ws2.map(_.amount).toSet)
+    assert(Set(150000L.msat, 150000L.msat, 300000L.msat) == ws2.map(_.amount).toSet)
 
     // Third one has been knocked out
     assert(cm.opm.data.payments(tag3).state == PaymentStatus.ABORTED)
@@ -347,7 +347,7 @@ class MPPSpec extends AnyFunSuite {
     val hash = Crypto.sha256(preimage)
 
     val tag = FullPaymentTag(paymentHash = hash, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
-    val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
+    val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1L.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
     val send = SendMultiPart(tag, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = s, onionTotal = 600000L.msat, actualTotal = 600000L.msat,
       totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
@@ -373,41 +373,11 @@ class MPPSpec extends AnyFunSuite {
     assert(results.size == 1)
   }
 
-  test("Smaller part takes disproportionally larger fee from reserve") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
-    val (_, _, cm) = makeChannelMasterWithBasicGraph
-
-    val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
-    cm.chanBag.put(hcs1)
-    cm.all = Channel.load(Set(cm), cm.chanBag)
-
-    val tag = FullPaymentTag(paymentHash = ByteVector32.One, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
-    val send = SendMultiPart(tag, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = d, onionTotal = 600000L.msat, actualTotal = 600000L.msat,
-      totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq)
-
-    cm.opm process CreateSenderFSM(tag, noopListener)
-    // Suppose this time we attempt a send when all channels are connected already
-    cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
-
-    cm.pf process PathFinder.CMDLoadGraph
-    cm.pf process makeUpdate(ShortChannelId(3L), b, d, 5950.msat, 100, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
-
-    cm.opm process send
-    synchronized(wait(500))
-
-    val List(part1, part2) = cm.opm.data.payments(tag).data.parts.values.collect { case inFlight: WaitForRouteOrInFlight => inFlight }
-    assert(part1.flight.get.route.fee == 8L.msat) // First part takes a very cheap route, but that route can't handle the second part
-    assert(part2.flight.get.route.fee == 5984.msat) // Another route is very expensive, but we can afford it because first part took very little, so we are still within fee bounds for a payment as a whole
-    assert(part1.amount == part2.amount)
-  }
-
-  // This one MUST be the last one because it changes a global setting
-
   test("Halt fast on terminal failure") {
     LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
-    LNParams.blockCount.set(Int.MaxValue) // This makes all payments unsendable
+    LNParams.blockCount.set(Int.MaxValue)
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
     val hcs2 = makeHostedCommits(nodeId = b, alias = "peer1")
@@ -437,5 +407,34 @@ class MPPSpec extends AnyFunSuite {
     assert(cm.opm.data.payments(tag).data.failures.head.asInstanceOf[LocalFailure].status == PaymentFailure.PAYMENT_NOT_SENDABLE)
     assert(cm.opm.data.payments(tag).state == PaymentStatus.ABORTED)
     assert(cm.opm.data.payments(tag).data.inFlightParts.isEmpty)
+    LNParams.blockCount.set(0)
+  }
+
+  test("Smaller part takes disproportionally larger fee from reserve") {
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    val (_, _, cm) = makeChannelMasterWithBasicGraph
+
+    val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
+    cm.chanBag.put(hcs1)
+    cm.all = Channel.load(Set(cm), cm.chanBag)
+
+    val tag = FullPaymentTag(paymentHash = ByteVector32.One, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
+    val send = SendMultiPart(tag, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = d, onionTotal = 600000L.msat, actualTotal = 600000L.msat,
+      totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq)
+
+    cm.opm process CreateSenderFSM(tag, noopListener)
+    // Suppose this time we attempt a send when all channels are connected already
+    cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
+
+    cm.pf process PathFinder.CMDLoadGraph
+    cm.pf process makeUpdate(ShortChannelId(3L), b, d, 5950L.msat, 100, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000L.msat)
+
+    cm.opm process send
+    synchronized(wait(500))
+
+    val List(part1, part2) = cm.opm.data.payments(tag).data.parts.values.collect { case inFlight: WaitForRouteOrInFlight => inFlight }
+    assert(part1.flight.get.route.fee == 8L.msat) // First part takes a very cheap route, but that route can't handle the second part
+    assert(part2.flight.get.route.fee == 5984L.msat) // Another route is very expensive, but we can afford it because first part took very little, so we are still within fee bounds for a payment as a whole
+    assert(part1.amount == part2.amount)
   }
 }
