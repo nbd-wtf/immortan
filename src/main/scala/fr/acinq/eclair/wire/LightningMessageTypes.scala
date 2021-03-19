@@ -98,7 +98,7 @@ case class UpdateAddHtlc(channelId: ByteVector32, id: Long,
     DecodeResult(ShortPaymentTag(secret, tag), _) <- PaymentTagTlv.shortPaymentTagCodec.decode(plainBytes.toBitVector).toOption
   } yield FullPaymentTag(paymentHash, secret, tag)
 
-  // This is relevant for outgoing payments, NO_SECRET is synonimous to locally initiated outgoing payment
+  // This is relevant for outgoing payments, NO_SECRET means this is a locally initiated outgoing payment
   lazy val fullTag: FullPaymentTag = fullTagOpt getOrElse FullPaymentTag(ChannelMaster.NO_SECRET, paymentHash, PaymentTagTlv.LOCALLY_SENT)
 
   // This is relevant for outgoing payments where we can ensure onion key uniqueness

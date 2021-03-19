@@ -1,24 +1,17 @@
 package immortan
 
-import com.softwaremill.quicklens._
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto.PublicKey
+import immortan.fsm._
 import fr.acinq.eclair._
-import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
-import fr.acinq.eclair.router.Router.RouterConf
-import fr.acinq.eclair.transactions.RemoteFulfill
-import fr.acinq.eclair.wire.{FullPaymentTag, GenericTlv, OnionTlv, PaymentTagTlv}
-import immortan.crypto.Tools.none
-import immortan.fsm.{CreateSenderFSM, LocalFailure, OutgoingPaymentEvents, OutgoingPaymentSenderData, PaymentFailure, SendMultiPart, WaitForChanOnline, WaitForRouteOrInFlight}
-import immortan.sqlite._
+import fr.acinq.eclair.wire._
 import immortan.utils.GraphUtils._
-import immortan.utils.SQLiteUtils._
+import com.softwaremill.quicklens._
 import immortan.utils.ChannelUtils._
+import fr.acinq.bitcoin.{ByteVector32, Crypto}
+import fr.acinq.eclair.channel.CMD_SOCKET_OFFLINE
+import fr.acinq.eclair.transactions.RemoteFulfill
+import fr.acinq.eclair.router.Router.ChannelDesc
 import org.scalatest.funsuite.AnyFunSuite
 
-// TODO: timeout
-// TODO: multiple competing payments
-// TODO: smaller part taking disproportionally larger fee out of reserve
 
 class MPPSpec extends AnyFunSuite {
   test("Split between direct and non-direct channel") {
@@ -38,8 +31,8 @@ class MPPSpec extends AnyFunSuite {
     // Add direct channels with A and C
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1") // Direct channel, but can't handle a whole amount
-    cm.chanBag.put(hcs1)
     val hcs2 = makeHostedCommits(nodeId = c, alias = "peer2") // Indirect channel to be used for the rest of the amount
+    cm.chanBag.put(hcs1)
     cm.chanBag.put(hcs2)
     cm.all = Channel.load(Set(cm), cm.chanBag)
 
@@ -116,7 +109,7 @@ class MPPSpec extends AnyFunSuite {
     assert(part2.cmd.firstAmount == 300012L.msat)
   }
 
-  test("Fail on excessive local failures") {
+  test("Halt on excessive local failures") {
     LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
@@ -150,7 +143,267 @@ class MPPSpec extends AnyFunSuite {
     assert(cm.opm.data.payments(tag).data.inFlightParts.isEmpty)
   }
 
-  test("Fail fast on terminal failure") {
+  test("Switch channel on first one becoming SLEEPING") {
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    val (_, _, cm) = makeChannelMasterWithBasicGraph
+
+    val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
+    cm.chanBag.put(hcs1)
+    cm.all = Channel.load(Set(cm), cm.chanBag)
+    cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
+    cm.pf.debugMode = true
+
+    val tag = FullPaymentTag(paymentHash = ByteVector32.One, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
+    val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
+    val send = SendMultiPart(tag, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = s, onionTotal = 400000.msat, actualTotal = 400000.msat,
+      totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
+
+    cm.opm process CreateSenderFSM(tag, noopListener)
+    cm.opm process send
+
+    synchronized(wait(200))
+    // The only channel has been chosen because it is OPEN, but graph is not ready yet
+    val wait1 = cm.opm.data.payments(tag).data.parts.values.head.asInstanceOf[WaitForRouteOrInFlight]
+    val originalChosenCnc = cm.all.values.flatMap(Channel.chanAndCommitsOpt).find(_.commits.channelId == wait1.cnc.commits.channelId).get
+    assert(cm.opm.data.payments(tag).data.parts.size == 1)
+    assert(wait1.flight.isEmpty)
+
+    // In the meantime two new channels are added to the system
+    val hcs2 = makeHostedCommits(nodeId = b, alias = "peer2", toLocal = 300000.msat)
+    val hcs3 = makeHostedCommits(nodeId = c, alias = "peer3", toLocal = 300000.msat)
+    cm.chanBag.put(hcs2)
+    cm.chanBag.put(hcs3)
+
+    cm.all ++= Channel.load(Set(cm), cm.chanBag) - originalChosenCnc.commits.channelId // Add two new channels
+    val senderData1 = cm.opm.data.payments(tag).data.modify(_.cmd.allowedChans).setTo(cm.all.values.toSeq) // also update FSM
+    cm.opm.data.payments(tag).data = senderData1
+
+    // Graph becomes ready, but chosen chan has gone offline in a meantime
+    cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
+    originalChosenCnc.chan process CMD_SOCKET_OFFLINE
+    cm.pf process PathFinder.CMDLoadGraph
+    synchronized(wait(200L))
+
+    // Payment gets split in two because no remote hop in route can handle a whole and both parts end up with second channel
+    val List(part1, part2) = cm.opm.data.payments(tag).data.parts.values.collect { case inFlight: WaitForRouteOrInFlight => inFlight }
+    assert(part1.cnc.commits.channelId != originalChosenCnc.commits.channelId)
+    assert(part2.cnc.commits.channelId != originalChosenCnc.commits.channelId)
+    assert(cm.opm.data.payments(tag).data.inFlightParts.size == 2)
+    assert(cm.opm.data.payments(tag).data.parts.size == 2)
+    assert(part1.amount + part2.amount == send.actualTotal)
+  }
+
+  test("Correctly process failed-at-amount") {
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    val (_, _, cm) = makeChannelMasterWithBasicGraph
+
+    val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
+    val hcs2 = makeHostedCommits(nodeId = b, alias = "peer2")
+    cm.chanBag.put(hcs1)
+    cm.chanBag.put(hcs2)
+    cm.all = Channel.load(Set(cm), cm.chanBag)
+
+    val tag = FullPaymentTag(paymentHash = ByteVector32.One, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
+    val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
+    val send = SendMultiPart(tag, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = s, onionTotal = 600000.msat, actualTotal = 600000.msat,
+      totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
+
+    val desc = ChannelDesc(ShortChannelId(3L), b, d)
+    // B -> D channel is now unable to handle the first split, but still usable for second split
+    cm.opm.data = cm.opm.data.copy(chanFailedAtAmount = Map(desc -> 200000L.msat))
+
+    cm.opm process CreateSenderFSM(tag, noopListener) // Create since FSM is missing
+    cm.opm process CreateSenderFSM(tag, null) // Disregard since FSM will be present
+
+    synchronized(wait(200))
+    // First created FSM has been retained
+    assert(cm.opm.data.payments(tag).listener == noopListener)
+    // Suppose this time we attempt a send when all channels are connected already
+    cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
+
+    cm.opm process send
+    synchronized(wait(500))
+
+    val parts = cm.opm.data.payments(tag).data.parts.values.collect { case inFlight: WaitForRouteOrInFlight => inFlight }
+    assert(cm.opm.data.payments(tag).feeLeftover == send.totalFeeReserve - parts.flatMap(_.flight).map(_.route.fee).sum)
+    // Initial split was 300k/300k, but one of routes has previously failed at 200k so we need to split further
+    assert(Set(150000.msat, 150000.msat, 300000.msat) == parts.map(_.amount).toSet)
+    assert(cm.opm.data.payments(tag).data.parts.size == 3)
+  }
+
+  test("Correctly process fulfilled payment") {
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    val (_, _, cm) = makeChannelMasterWithBasicGraph
+
+    val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
+    val hcs2 = makeHostedCommits(nodeId = b, alias = "peer2")
+    cm.chanBag.put(hcs1)
+    cm.chanBag.put(hcs2)
+    cm.all = Channel.load(Set(cm), cm.chanBag)
+
+    val preimage = ByteVector32.One
+    val hash = Crypto.sha256(preimage)
+
+    val tag = FullPaymentTag(paymentHash = hash, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
+    val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
+    val send = SendMultiPart(tag, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = s, onionTotal = 600000.msat, actualTotal = 600000.msat,
+      totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
+
+    val desc = ChannelDesc(ShortChannelId(3L), b, d)
+    // B -> D channel is now unable to handle the first split, but still usable for second split
+    cm.opm.data = cm.opm.data.copy(chanFailedAtAmount = Map(desc -> 200000L.msat))
+
+    var results = List.empty[OutgoingPaymentSenderData]
+    val listener: OutgoingPaymentEvents = new OutgoingPaymentEvents {
+      override def preimageRevealed(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = results ::= data
+    }
+
+    cm.opm process CreateSenderFSM(tag, listener) // Create since FSM is missing
+    cm.opm process CreateSenderFSM(tag, null) // Disregard since FSM will be present
+
+    synchronized(wait(200))
+    // First created FSM has been retained
+    assert(cm.opm.data.payments(tag).listener == listener)
+    // Suppose this time we attempt a send when all channels are connected already
+    cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
+
+    cm.opm process send
+    synchronized(wait(500))
+
+    val List(p1, p2, p3) = cm.opm.data.payments(tag).data.inFlightParts.toList
+    cm.opm process RemoteFulfill(preimage, UpdateAddHtlc(null, 1, null, hash, null, p1.cmd.packetAndSecrets.packet, null))
+    synchronized(wait(200))
+    cm.opm process RemoteFulfill(preimage, UpdateAddHtlc(null, 1, null, hash, null, p2.cmd.packetAndSecrets.packet, null))
+    cm.opm process RemoteFulfill(preimage, UpdateAddHtlc(null, 1, null, hash, null, p3.cmd.packetAndSecrets.packet, null))
+    synchronized(wait(200))
+    // All in-flight parts have been cleared and won't interfere with used capacities
+    assert(cm.opm.data.payments(tag).data.inFlightParts.isEmpty)
+    // Original data contains all successful routes
+    assert(results.head.inFlightParts.size == 3)
+    // We only got a single revealed message
+    assert(results.size == 1)
+  }
+
+  test("Handle multiple competing payments") {
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    val (_, _, cm) = makeChannelMasterWithBasicGraph
+
+    val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
+    val hcs2 = makeHostedCommits(nodeId = b, alias = "peer2")
+    cm.chanBag.put(hcs1)
+    cm.chanBag.put(hcs2)
+    cm.all = Channel.load(Set(cm), cm.chanBag)
+    cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
+
+    val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
+
+    import scodec.bits._
+    val tag1 = FullPaymentTag(paymentHash = ByteVector32(hex"0200000000000000000000000000000000000000000000000000000000000000"), paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
+    val send1 = SendMultiPart(tag1, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = s, onionTotal = 300000.msat, actualTotal = 300000.msat,
+      totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
+
+    val tag2 = FullPaymentTag(paymentHash = ByteVector32(hex"0300000000000000000000000000000000000000000000000000000000000000"), paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
+    val send2 = SendMultiPart(tag2, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = s, onionTotal = 600000.msat, actualTotal = 600000.msat,
+      totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
+
+    val tag3 = FullPaymentTag(paymentHash = ByteVector32(hex"0400000000000000000000000000000000000000000000000000000000000000"), paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
+    val send3 = SendMultiPart(tag3, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = s, onionTotal = 200000.msat, actualTotal = 200000.msat,
+      totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
+
+    cm.opm process CreateSenderFSM(tag1, noopListener)
+    cm.opm process send1
+
+    cm.opm process CreateSenderFSM(tag2, noopListener)
+    cm.opm process send2
+
+    cm.opm process CreateSenderFSM(tag3, noopListener)
+    cm.opm process send3
+
+    synchronized(wait(500L))
+
+    // First one enjoys full channel capacity
+    val ws1 = cm.opm.data.payments(tag1).data.parts.values.collect { case inFlight: WaitForRouteOrInFlight => inFlight }
+    assert(Set(300000.msat) == ws1.map(_.amount).toSet)
+
+    // Second one had to be split to get through
+    val ws2 = cm.opm.data.payments(tag2).data.parts.values.collect { case inFlight: WaitForRouteOrInFlight => inFlight }
+    assert(Set(150000.msat, 150000.msat, 300000.msat) == ws2.map(_.amount).toSet)
+
+    // Third one has been knocked out
+    assert(cm.opm.data.payments(tag3).state == PaymentStatus.ABORTED)
+  }
+
+  test("Fail on local timeout") {
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    val (_, _, cm) = makeChannelMasterWithBasicGraph
+
+    val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
+    val hcs2 = makeHostedCommits(nodeId = b, alias = "peer2")
+    cm.chanBag.put(hcs1)
+    cm.chanBag.put(hcs2)
+    cm.all = Channel.load(Set(cm), cm.chanBag)
+
+    val preimage = ByteVector32.One
+    val hash = Crypto.sha256(preimage)
+
+    val tag = FullPaymentTag(paymentHash = hash, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
+    val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
+    val send = SendMultiPart(tag, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = s, onionTotal = 600000L.msat, actualTotal = 600000L.msat,
+      totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
+
+    var results = List.empty[OutgoingPaymentSenderData]
+    val listener: OutgoingPaymentEvents = new OutgoingPaymentEvents {
+      override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = results ::= data
+    }
+
+    cm.opm process CreateSenderFSM(tag, listener)
+    cm.opm process send
+
+    synchronized(wait(200))
+    val parts1 = cm.opm.data.payments(tag).data.parts.values
+    // Our only channel is offline, sender FSM awaits for it to become operational
+    assert(parts1.head.asInstanceOf[WaitForChanOnline].amount == send.actualTotal)
+    assert(parts1.size == 1)
+
+    cm.opm.data.payments(tag) doProcess OutgoingPaymentMaster.CMDAbort
+
+    synchronized(wait(200))
+    assert(cm.opm.data.payments(tag).data.parts.isEmpty)
+    assert(cm.opm.data.payments(tag).state == PaymentStatus.ABORTED)
+    assert(results.size == 1)
+  }
+
+  test("Smaller part takes disproportionally larger fee from reserve") {
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    val (_, _, cm) = makeChannelMasterWithBasicGraph
+
+    val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
+    cm.chanBag.put(hcs1)
+    cm.all = Channel.load(Set(cm), cm.chanBag)
+
+    val tag = FullPaymentTag(paymentHash = ByteVector32.One, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
+    val send = SendMultiPart(tag, routerConf.copy(mppMinPartAmount = MilliSatoshi(30000L)), targetNodeId = d, onionTotal = 600000L.msat, actualTotal = 600000L.msat,
+      totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq)
+
+    cm.opm process CreateSenderFSM(tag, noopListener)
+    // Suppose this time we attempt a send when all channels are connected already
+    cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
+
+    cm.pf process PathFinder.CMDLoadGraph
+    cm.pf process makeUpdate(ShortChannelId(3L), b, d, 5950.msat, 100, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+
+    cm.opm process send
+    synchronized(wait(500))
+
+    val List(part1, part2) = cm.opm.data.payments(tag).data.parts.values.collect { case inFlight: WaitForRouteOrInFlight => inFlight }
+    println(part1.flight.get.route.fee == 8L.msat) // First part takes a very cheap route, but that route can't handle the second part
+    println(part2.flight.get.route.fee == 5984.msat) // Another route is very expensive, but we can afford it because first part took very little, so we are still within fee bounds for a payment as a whole
+    assert(part1.amount == part2.amount)
+  }
+
+  // This one MUST be the last one because it changes a global setting
+
+  test("Halt fast on terminal failure") {
     LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 

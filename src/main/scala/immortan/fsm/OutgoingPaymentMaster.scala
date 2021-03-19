@@ -274,7 +274,10 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listener: OutgoingP
     case (CMDException(_, cmd: CMD_ADD_HTLC), ABORTED) => me abortAndNotify data.withoutPartId(cmd.partId)
     case (remoteReject: RemoteReject, ABORTED) => me abortAndNotify data.withoutPartId(remoteReject.ourAdd.partId)
     case (remoteReject: RemoteReject, INIT) => me abortAndNotify data.withLocalFailure(NOT_RETRYING_NO_DETAILS, remoteReject.ourAdd.amountMsat)
-    case (cmd: SendMultiPart, INIT | ABORTED) => assignToChans(opm.rightNowSendable(cmd.allowedChans, cmd.totalFeeReserve), OutgoingPaymentSenderData(cmd, Map.empty), cmd.actualTotal)
+
+    case (cmd: SendMultiPart, INIT | ABORTED) =>
+      val chans = opm.rightNowSendable(cmd.allowedChans, cmd.totalFeeReserve)
+      assignToChans(chans, OutgoingPaymentSenderData(cmd, Map.empty), cmd.actualTotal)
 
     case (CMDAbort, INIT | PENDING) if data.inFlightParts.isEmpty =>
       // In case if some parts get through we'll eventaully get a remote timeout
