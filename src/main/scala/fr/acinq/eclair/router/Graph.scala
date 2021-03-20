@@ -137,7 +137,7 @@ object Graph {
 
           val currentCost = currentWeight.costs.head
 
-          val canRelayAmount = currentCost <= edge.updExt.capacity && edge.updExt.update.htlcMaximumMsat.forall(currentCost <= _) && currentCost >= edge.updExt.update.htlcMinimumMsat
+          val canRelayAmount = currentCost <= edge.updExt.capacity && currentCost >= edge.updExt.update.htlcMinimumMsat
 
           if (canRelayAmount && boundaries(neighborWeight) && !ignoredEdges.contains(edge.desc) && !ignoredVertices.contains(neighbor)) {
             val previousNeighborWeight = bestWeights.getOrDefaultValue(neighbor)
@@ -350,7 +350,7 @@ object Graph {
        *
        * @param channels map of all known public channels in the network.
        */
-      def makeGraph(channels: Map[ShortChannelId, PublicChannel]): DirectedGraph = {
+      def makeGraph(channels: Map[ShortChannelId, PublicChannel] = Map.empty): DirectedGraph = {
         // initialize the map with the appropriate size to avoid resizing during the graph initialization
         val mutableMap = new DefaultHashMap[PublicKey, List[GraphEdge]](List.empty, channels.size + 1)
 
@@ -360,6 +360,7 @@ object Graph {
             val desc1 = Router.getDesc(u1.update, channel.ann)
             mutableMap.put(desc1.to, GraphEdge(desc1, u1) :: mutableMap.getOrDefaultValue(desc1.to))
           }
+
           channel.update2Opt.foreach { u2 =>
             val desc2 = Router.getDesc(u2.update, channel.ann)
             mutableMap.put(desc2.to, GraphEdge(desc2, u2) :: mutableMap.getOrDefaultValue(desc2.to))

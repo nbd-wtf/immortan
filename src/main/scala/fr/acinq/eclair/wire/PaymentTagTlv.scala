@@ -1,9 +1,8 @@
 package fr.acinq.eclair.wire
 
+import scodec._
 import scodec.codecs._
 import fr.acinq.eclair.wire.CommonCodecs._
-import scodec.{Attempt, Codec}
-
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.UInt64
 import scodec.bits.ByteVector

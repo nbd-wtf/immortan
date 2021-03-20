@@ -80,7 +80,7 @@ case class SyncWorkerPHCData(phcMaster: PHCSyncMaster,
   }
 
   def isUpdateAcceptable(cu: ChannelUpdate): Boolean =
-    cu.htlcMaximumMsat.exists(capacity => capacity >= LNParams.syncParams.minPHCCapacity && capacity <= LNParams.syncParams.maxPHCCapacity) && // Capacity within bounds
+    cu.htlcMaximumMsat.exists(cap => cap >= LNParams.syncParams.minPHCCapacity && cap <= LNParams.syncParams.maxPHCCapacity && cap > cu.htlcMinimumMsat) && // Capacity is fine
       announces.get(cu.shortChannelId).map(_ getNodeIdSameSideAs cu).exists(Announcements checkSig cu) && // We have received a related announce, signature is valid
       expectedPositions.getOrElse(cu.shortChannelId, Set.empty).contains(cu.position) // Remote node must not send the same update twice
 }
@@ -137,7 +137,7 @@ case class SyncWorker(master: CanBeRepliedTo, keyPair: KeyPair, remoteInfo: Remo
         CommsTower.sendMany(data1.queries.headOption, pair)
       }
 
-    case (update: ChannelUpdate, d1: SyncWorkerGossipData, GOSSIP_SYNC) if d1.syncMaster.provenAndTooSmallOrNoInfo(update) => become(d1.copy(excluded = d1.excluded + update.core), GOSSIP_SYNC)
+    case (update: ChannelUpdate, d1: SyncWorkerGossipData, GOSSIP_SYNC) if d1.syncMaster.provenButShouldBeExcluded(update) => become(d1.copy(excluded = d1.excluded + update.core), GOSSIP_SYNC)
     case (update: ChannelUpdate, d1: SyncWorkerGossipData, GOSSIP_SYNC) if d1.syncMaster.provenAndNotExcluded(update.shortChannelId) => become(d1.copy(updates = d1.updates + update.lite), GOSSIP_SYNC)
     case (ann: ChannelAnnouncement, d1: SyncWorkerGossipData, GOSSIP_SYNC) if d1.syncMaster.provenShortIds.contains(ann.shortChannelId) => become(d1.copy(announces = d1.announces + ann.lite), GOSSIP_SYNC)
 
@@ -192,19 +192,16 @@ abstract class SyncMaster(extraNodes: Set[RemoteNodeInfo], excluded: Set[Long], 
   var provenShortIds: ShortChanIdSet = Set.empty
 
   def onChunkSyncComplete(pure: PureRoutingData): Unit
-
   def onTotalSyncComplete: Unit
 
-  def provenAndTooSmallOrNoInfo(update: ChannelUpdate): Boolean = provenShortIds.contains(update.shortChannelId) && update.htlcMaximumMsat.forall(_ < LNParams.syncParams.minCapacity)
-
+  def hasCapacityIssues(update: ChannelUpdate): Boolean = update.htlcMaximumMsat.forall(cap => cap < LNParams.syncParams.minCapacity || cap <= update.htlcMinimumMsat)
+  def provenButShouldBeExcluded(update: ChannelUpdate): Boolean = provenShortIds.contains(update.shortChannelId) && hasCapacityIssues(update)
   def provenAndNotExcluded(shortId: ShortChannelId): Boolean = provenShortIds.contains(shortId) && !excluded.contains(shortId.id)
 
   implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
-
   def process(changeMessage: Any): Unit = scala.concurrent.Future(me doProcess changeMessage)
 
-  become(SyncMasterShortIdData(Set.empty, Map.empty), SHORT_ID_SYNC)
-
+  become(SyncMasterShortIdData(activeSyncs = Set.empty, collectedRanges = Map.empty), SHORT_ID_SYNC)
   (0 until LNParams.syncParams.maxNodesToSyncFrom).foreach(_ => me process CMDAddSync)
 
   def doProcess(change: Any): Unit = (change, data, state) match {
@@ -329,6 +326,7 @@ case class SyncMasterPHCData(activeSyncs: Set[SyncWorker], attemptsLeft: Int) ex
 abstract class PHCSyncMaster(extraNodes: Set[RemoteNodeInfo], routerData: Data) extends StateMachine[SyncMasterPHCData] with GetNewSyncMachine { me =>
   implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
   def process(changeMessage: Any): Unit = scala.concurrent.Future(me doProcess changeMessage)
+
   become(SyncMasterPHCData(Set.empty, attemptsLeft = 12), PHC_SYNC)
   me process CMDAddSync
 
