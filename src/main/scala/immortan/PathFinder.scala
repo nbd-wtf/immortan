@@ -6,8 +6,8 @@ import immortan.utils.{Rx, Statistics}
 import immortan.crypto.{CanBeRepliedTo, StateMachine}
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi}
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
+import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt, Router}
 import fr.acinq.eclair.router.Router.{Data, PublicChannel, RouteRequest}
-import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt, Router, Sync}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.RouteCalculation.handleRouteRequest
 import fr.acinq.eclair.wire.ChannelUpdate
@@ -15,12 +15,10 @@ import java.util.concurrent.Executors
 
 
 object PathFinder {
-  val WAITING = "state-waiting"
-  val OPERATIONAL = "state-operational"
-
-  val NotifyRejected = "notify-rejected" // Pathfinder can't process a route request right now
-  val NotifyOperational = "notify-operational" // Pathfinder has loaded a graph and is operational
-
+  val WAITING = "path-finder-state-waiting"
+  val OPERATIONAL = "path-finder-state-operational"
+  val NotifyRejected = "path-finder-notify-rejected"
+  val NotifyOperational = "path-finder-notify-operational"
   val CMDLoadGraph = "cmd-load-graph"
   val CMDResync = "cmd-resync"
 
@@ -162,7 +160,7 @@ abstract class PathFinder(val normalStore: NetworkBag, hostedStore: NetworkBag) 
   def resolve(pubChan: PublicChannel, newUpdate: ChannelUpdate, store: NetworkBag): Data = {
     val currentUpdateExtOpt: Option[ChannelUpdateExt] = pubChan.getChannelUpdateSameSideAs(newUpdate)
     val newUpdateIsOlder: Boolean = currentUpdateExtOpt.exists(_.update.timestamp >= newUpdate.timestamp)
-    val newUpdateExt = currentUpdateExtOpt.map(_ withNewUpdate newUpdate) getOrElse ChannelUpdateExt(newUpdate, Sync.getChecksum(newUpdate), score = 1L, useHeuristics = false)
+    val newUpdateExt = currentUpdateExtOpt.map(_ withNewUpdate newUpdate).getOrElse(ChannelUpdateExt fromUpdate newUpdate)
     resolveKnownDesc(GraphEdge(Router.getDesc(newUpdate, pubChan.ann), newUpdateExt), storeOpt = Some(store), isOld = newUpdateIsOlder)
   }
 

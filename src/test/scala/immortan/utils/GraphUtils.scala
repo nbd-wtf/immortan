@@ -19,7 +19,7 @@ object GraphUtils {
 
   var routerConf: RouterConf =
     RouterConf(maxCltv = CltvExpiryDelta(2016), routeHopDistance = 6,
-      mppMinPartAmount = MilliSatoshi(30000000L), maxRemoteAttempts = 12,
+      mppMinPartAmount = MilliSatoshi(10000L), maxRemoteAttempts = 12,
       maxChannelFailures = 12, maxStrangeNodeFailures = 12)
 
   val offChainFeeRatio = 0.01 // %

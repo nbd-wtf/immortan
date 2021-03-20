@@ -48,11 +48,15 @@ object RouteCalculation {
     (protoDescs.zipped.toList map ChannelDesc.tupled).zip(extraHops map toFakeUpdate).map(GraphEdge.tupled)
   }
 
-  def toFakeUpdate(extraHop: ExtraHop): ChannelUpdateExt =
-    // Lets assume this fake channel's capacity is infinite, it will be corrected by failed-at-amount
-    ChannelUpdateExt(ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId,
-      System.currentTimeMillis.milliseconds.toSeconds, messageFlags = 1, channelFlags = 0, extraHop.cltvExpiryDelta, LNParams.minPayment,
-      extraHop.feeBase, extraHop.feeProportionalMillionths, Long.MaxValue.msat.toSome), crc32 = 0, score = 1L, useHeuristics = false)
+  def toFakeUpdate(extraHop: ExtraHop): ChannelUpdateExt = {
+    val update = ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId,
+      System.currentTimeMillis.milliseconds.toSeconds, messageFlags = 1, channelFlags = 0, extraHop.cltvExpiryDelta,
+      LNParams.minPayment, extraHop.feeBase, extraHop.feeProportionalMillionths, Long.MaxValue.msat.toSome)
+
+    // Lets assume this fake channel's capacity is infinite
+    // it will be corrected by failed-at-amount mechanism
+    ChannelUpdateExt.fromUpdate(update)
+  }
 
   val ROUTE_MAX_LENGTH: Int = 20
 

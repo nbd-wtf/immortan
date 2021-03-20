@@ -342,14 +342,6 @@ object Graph {
 
       def apply(edges: Seq[GraphEdge]): DirectedGraph = DirectedGraph().addEdges(edges)
 
-      /**
-       * This is the recommended way of initializing the network graph (from a public network DB).
-       * We only use public channels at first; private channels will be added one by one as they come online, and removed
-       * as they go offline.
-       * Private channels may be used to route payments, but most of the time, they will be the first or last hop.
-       *
-       * @param channels map of all known public channels in the network.
-       */
       def makeGraph(channels: Map[ShortChannelId, PublicChannel] = Map.empty): DirectedGraph = {
         // initialize the map with the appropriate size to avoid resizing during the graph initialization
         val mutableMap = new DefaultHashMap[PublicKey, List[GraphEdge]](List.empty, channels.size + 1)

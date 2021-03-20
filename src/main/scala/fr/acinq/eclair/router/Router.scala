@@ -25,6 +25,10 @@ import immortan.utils.Denomination
 import scodec.bits.ByteVector
 
 
+object ChannelUpdateExt {
+  def fromUpdate(update: ChannelUpdate): ChannelUpdateExt = ChannelUpdateExt(update, Sync.getChecksum(update), score = 1L, useHeuristics = false)
+}
+
 case class ChannelUpdateExt(update: ChannelUpdate, crc32: Long, score: Long, useHeuristics: Boolean) {
   def withNewUpdate(cu: ChannelUpdate): ChannelUpdateExt = copy(crc32 = Sync.getChecksum(cu), update = cu)
   lazy val capacity: MilliSatoshi = update.htlcMaximumMsat.get
@@ -99,13 +103,14 @@ object Router {
 
   sealed trait RouteResponse { def fullTag: FullPaymentTag }
 
-  case class RouteFound(route: Route, fullTag: FullPaymentTag, partId: ByteVector) extends RouteResponse
-
   case class NoRouteAvailable(fullTag: FullPaymentTag, partId: ByteVector) extends RouteResponse
+
+  case class RouteFound(route: Route, fullTag: FullPaymentTag, partId: ByteVector) extends RouteResponse
 
   case class Data(channels: Map[ShortChannelId, PublicChannel], hostedChannels: Map[ShortChannelId, PublicChannel], extraEdges: Map[ShortChannelId, GraphEdge], graph: DirectedGraph)
 
-  def getDesc(cu: ChannelUpdate, ann: ChannelAnnouncement): ChannelDesc =
+  def getDesc(cu: ChannelUpdate, ann: ChannelAnnouncement): ChannelDesc = {
     if (Announcements isNode1 cu.channelFlags) ChannelDesc(cu.shortChannelId, ann.nodeId1, ann.nodeId2)
     else ChannelDesc(cu.shortChannelId, ann.nodeId2, ann.nodeId1)
+  }
 }
