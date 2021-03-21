@@ -20,10 +20,6 @@ libraryDependencies += "com.typesafe.akka" % "akka-actor_2.11" % "2.3.14"
 
 libraryDependencies += "io.netty" % "netty-all" % "4.1.42.Final"
 
-libraryDependencies += "com.softwaremill.sttp" % "json4s_2.11" % "1.3.9"
-
-libraryDependencies += "com.softwaremill.sttp" % "okhttp-backend_2.11" % "1.3.9"
-
 libraryDependencies += "com.softwaremill.quicklens" % "quicklens_2.11" % "1.6.1"
 
 libraryDependencies += "org.bouncycastle" % "bcprov-jdk15to18" % "1.68"

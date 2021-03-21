@@ -114,7 +114,8 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         val localFundingPubKey = init.remoteInfo.fundingPublicKey(init.localParams.fundingKeyPath).publicKey
         val emptyUpfrontShutdown: TlvStream[AcceptChannelTlv] = TlvStream(ChannelTlv UpfrontShutdownScript ByteVector.empty)
 
-        Helpers.validateParamsFundee(LNParams.normInit.features, init.theirOpen, init.remoteInfo.nodeId)
+        Helpers.validateParamsFundee(LNParams.normInit.features, init.theirOpen, init.remoteInfo.nodeId, LNParams.feeRatesInfo.onChainFeeConf)
+
         val basePoint = init.localParams.walletStaticPaymentBasepoint.getOrElse(init.remoteInfo.paymentPoint(channelKeyPath).publicKey)
         val accept = AcceptChannel(init.temporaryChannelId, init.localParams.dustLimit, init.localParams.maxHtlcValueInFlightMsat, init.localParams.channelReserve, init.localParams.htlcMinimum,
           LNParams.minDepthBlocks, init.localParams.toSelfDelay, init.localParams.maxAcceptedHtlcs, localFundingPubKey, init.remoteInfo.revocationPoint(channelKeyPath).publicKey, basePoint,
@@ -192,7 +193,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
       case (norm: DATA_NORMAL, CMD_CHECK_FEERATE, OPEN) =>
         // Current feerates are supposed to be updated before this command is received
-        feeUpdateRequired(norm.commitments, LNParams.currentFeerates.get).foreach(process)
+        feeUpdateRequired(norm.commitments, LNParams.feeRatesInfo.current).foreach(process)
 
 
       case (norm: DATA_NORMAL, cmd: CMD_UPDATE_FEERATE, OPEN) if norm.commitments.localParams.isFunder =>
@@ -221,7 +222,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
 
       case (norm: DATA_NORMAL, cmd: CMD_ADD_HTLC, OPEN) if norm.localShutdown.isEmpty && norm.remoteShutdown.isEmpty =>
-        val (commits1, updateAddHtlcMsg) = norm.commitments.sendAdd(cmd, LNParams.blockCount.get, LNParams.onChainFeeConf)
+        val (commits1, updateAddHtlcMsg) = norm.commitments.sendAdd(cmd, LNParams.blockCount.get, LNParams.feeRatesInfo.onChainFeeConf)
         BECOME(norm.copy(commitments = commits1), OPEN)
         SEND(updateAddHtlcMsg)
         doProcess(CMD_SIGN)
@@ -269,14 +270,14 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         StoreBecomeSend(norm.copy(commitments = commits1), OPEN, commitSigMessage)
 
 
+      // We have nothing to sign so check for valid shutdown state, only consider when we have nothing in-flight
       case (norm: DATA_NORMAL, CMD_SIGN, OPEN) if norm.remoteShutdown.isDefined && !norm.commitments.localHasUnsignedOutgoingHtlcs =>
-        // We have nothing to sign so check for valid shutdown state, only consider when we have nothing in-flight
-        val (data1, replies) = maybeStartNegotiations(norm, norm.remoteShutdown.get)
+        val (data1, replies) = maybeStartNegotiations(norm, norm.remoteShutdown.get, LNParams.feeRatesInfo.onChainFeeConf)
         StoreBecomeSend(data1, OPEN, replies:_*)
 
 
       case (norm: DATA_NORMAL, add: UpdateAddHtlc, OPEN) =>
-        val commits1 = norm.commitments.receiveAdd(add, LNParams.onChainFeeConf)
+        val commits1 = norm.commitments.receiveAdd(add, LNParams.feeRatesInfo.onChainFeeConf)
         val theirAdd = UpdateAddHtlcExt(add, norm.commitments.remoteInfo)
         BECOME(norm.copy(commitments = commits1), OPEN)
         events.addReceived(theirAdd)
@@ -319,19 +320,17 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
 
       case (norm: DATA_NORMAL, remoteFee: UpdateFee, OPEN) =>
-        val commits1 = norm.commitments.receiveFee(remoteFee, LNParams.onChainFeeConf)
+        val commits1 = norm.commitments.receiveFee(remoteFee, LNParams.feeRatesInfo.onChainFeeConf)
         BECOME(norm.copy(commitments = commits1), OPEN)
 
 
       case (norm: DATA_NORMAL, remote: Shutdown, OPEN) =>
-        val (data1, replies) = handleRemoteShutdown(norm, remote)
+        val (data1, replies) = handleRemoteShutdown(norm, remote, LNParams.feeRatesInfo.onChainFeeConf)
         StoreBecomeSend(data1, OPEN, replies:_*)
 
       // NEGOTIATIONS
 
-      case (negs: DATA_NEGOTIATING, remote: ClosingSigned, OPEN) =>
-        // Either become CLOSING or keep converging in OPEN
-        handleNegotiations(negs, remote)
+      case (negs: DATA_NEGOTIATING, remote: ClosingSigned, OPEN) => handleNegotiations(negs, remote, LNParams.feeRatesInfo.onChainFeeConf)
 
       // RESTORING FROM STORED DATA
 
@@ -408,13 +407,13 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
 
       case (data1: DATA_NORMAL, reestablish: ChannelReestablish, SLEEPING) => handleNormalSync(data1, reestablish)
-      case (data1: DATA_NEGOTIATING, _: ChannelReestablish, SLEEPING) => handleNegotiationsSync(data1)
+      case (data1: DATA_NEGOTIATING, _: ChannelReestablish, SLEEPING) => handleNegotiationsSync(data1, LNParams.feeRatesInfo.onChainFeeConf)
       case _ =>
     }
 
   def feeUpdateRequired(commits: NormalCommits, rates: CurrentFeerates): Option[CMD_UPDATE_FEERATE] = {
-    val networkFeeratePerKw = LNParams.onChainFeeConf.getCommitmentFeerate(commits.channelVersion, rates.toSome)
-    val shouldUpdate = LNParams.onChainFeeConf.shouldUpdateFee(commits.localCommit.spec.feeratePerKw, networkFeeratePerKw)
+    val networkFeeratePerKw = LNParams.feeRatesInfo.onChainFeeConf.getCommitmentFeerate(commits.channelVersion, rates.toSome)
+    val shouldUpdate = LNParams.feeRatesInfo.onChainFeeConf.shouldUpdateFee(commits.localCommit.spec.feeratePerKw, networkFeeratePerKw)
     if (commits.localParams.isFunder && shouldUpdate) CMD_UPDATE_FEERATE(commits.channelId, networkFeeratePerKw).toSome else None
   }
 }

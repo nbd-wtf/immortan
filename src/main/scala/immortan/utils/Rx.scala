@@ -6,14 +6,6 @@ import rx.lang.scala.Observable
 
 
 object Rx {
-  def callNextOnFail[T, V](run: T => Observable[V], onRunOut: Observable[V], cs: Seq[T] = Nil): Observable[V] = {
-    def proceedWithNext(failure: Throwable): Observable[V] = callNextOnFail(run, onRunOut, cs.tail)
-    if (cs.isEmpty) onRunOut else run(cs.head) onErrorResumeNext proceedWithNext
-  }
-
-  def callAllAtOnce[T, V](run: T => Observable[V], onFailure: Throwable => V, cs: Seq[T] = Nil): Observable[V] =
-    Observable.from(cs).flatMap(item => run(item) onErrorReturn onFailure)
-
   def initDelay[T](next: Observable[T], startMillis: Long, timeoutMillis: Long): Observable[T] = {
     val adjustedTimeout = startMillis + timeoutMillis - System.currentTimeMillis
     val delayLeft = if (adjustedTimeout < 5L) 5L else adjustedTimeout

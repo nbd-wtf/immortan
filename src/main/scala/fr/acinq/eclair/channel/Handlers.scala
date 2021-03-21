@@ -21,8 +21,10 @@ import immortan.Channel._
 import fr.acinq.eclair.wire._
 import immortan.{ChannelNormal, LNParams}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction}
+import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.blockchain.{PublishAsap, WatchConfirmed, WatchSpent}
 import fr.acinq.eclair.channel.Helpers.Closing
+
 import scala.collection.immutable.Queue
 
 /**
@@ -153,9 +155,9 @@ trait Handlers { me: ChannelNormal =>
     }
   }
 
-  def handleNegotiationsSync(d: DATA_NEGOTIATING): Unit = if (d.commitments.localParams.isFunder) {
+  def handleNegotiationsSync(d: DATA_NEGOTIATING, conf: OnChainFeeConf): Unit = if (d.commitments.localParams.isFunder) {
     // we could use the last closing_signed we sent, but network fees may have changed while we were offline so it is better to restart from scratch
-    val (closingTx, closingSigned) = Closing.makeFirstClosingTx(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, LNParams.onChainFeeConf.feeEstimator, LNParams.onChainFeeConf.feeTargets)
+    val (closingTx, closingSigned) = Closing.makeFirstClosingTx(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, conf.feeEstimator, conf.feeTargets)
     StoreBecomeSend(d.copy(closingTxProposed = d.closingTxProposed :+ List(ClosingTxProposed(closingTx.tx, closingSigned))), OPEN, d.localShutdown, closingSigned)
   } else {
     // we start a new round of negotiation
@@ -213,7 +215,7 @@ trait Handlers { me: ChannelNormal =>
     (commitments1, sendQueue)
   }
 
-  def handleRemoteShutdown(d: DATA_NORMAL, remote: Shutdown): (HasNormalCommitments, List[ChannelMessage]) = {
+  def handleRemoteShutdown(d: DATA_NORMAL, remote: Shutdown, conf: OnChainFeeConf): (HasNormalCommitments, List[ChannelMessage]) = {
     // they have pending unsigned htlcs         => they violated the spec, close the channel
     // they don't have pending unsigned htlcs
     //    we have pending unsigned htlcs
@@ -249,11 +251,11 @@ trait Handlers { me: ChannelNormal =>
           (d.copy(remoteShutdown = Some(remote)), Nil)
       }
     } else {
-      maybeStartNegotiations(d, remote)
+      maybeStartNegotiations(d, remote, conf)
     }
   }
 
-  def maybeStartNegotiations(d: DATA_NORMAL, remote: Shutdown): (HasNormalCommitments, List[ChannelMessage]) = {
+  def maybeStartNegotiations(d: DATA_NORMAL, remote: Shutdown, conf: OnChainFeeConf): (HasNormalCommitments, List[ChannelMessage]) = {
     // so we don't have any unsigned outgoing htlcs
     val (localShutdown, sendList) = d.localShutdown match {
       case Some(localShutdown) =>
@@ -268,7 +270,7 @@ trait Handlers { me: ChannelNormal =>
       // there are no pending signed changes, let's go directly to NEGOTIATING
       if (d.commitments.localParams.isFunder) {
         // we are funder, need to initiate the negotiation by sending the first closing_signed
-        val (closingTx, closingSigned) = Closing.makeFirstClosingTx(d.commitments, localShutdown.scriptPubKey, remote.scriptPubKey, LNParams.onChainFeeConf.feeEstimator, LNParams.onChainFeeConf.feeTargets)
+        val (closingTx, closingSigned) = Closing.makeFirstClosingTx(d.commitments, localShutdown.scriptPubKey, remote.scriptPubKey, conf.feeEstimator, conf.feeTargets)
         (DATA_NEGOTIATING(d.commitments, localShutdown, remote, List(List(ClosingTxProposed(closingTx.tx, closingSigned))), bestUnpublishedClosingTxOpt = None), sendList :+ closingSigned)
       } else {
         // we are fundee, will wait for their closing_signed
@@ -290,7 +292,7 @@ trait Handlers { me: ChannelNormal =>
     doPublish(closingTx)
   }
 
-  def handleNegotiations(d: DATA_NEGOTIATING, m: ClosingSigned): Unit = {
+  def handleNegotiations(d: DATA_NEGOTIATING, m: ClosingSigned, conf: OnChainFeeConf): Unit = {
     val signedClosingTx = Closing.checkClosingSignature(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, m.feeSatoshis, m.signature)
     if (d.closingTxProposed.last.lastOption.map(_.localClosingSigned.feeSatoshis).contains(m.feeSatoshis) || d.closingTxProposed.flatten.size >= LNParams.maxNegotiationIterations) {
       handleMutualClose(signedClosingTx, Left(d.copy(bestUnpublishedClosingTxOpt = Some(signedClosingTx))))
@@ -302,7 +304,7 @@ trait Handlers { me: ChannelNormal =>
         m.feeSatoshis
       } else {
         Closing.nextClosingFee(localClosingFee = lastLocalClosingFee.getOrElse(Closing.firstClosingFee(d.commitments, d.localShutdown.scriptPubKey,
-          d.remoteShutdown.scriptPubKey, LNParams.onChainFeeConf.feeEstimator, LNParams.onChainFeeConf.feeTargets)), remoteClosingFee = m.feeSatoshis)
+          d.remoteShutdown.scriptPubKey, conf.feeEstimator, conf.feeTargets)), remoteClosingFee = m.feeSatoshis)
       }
       val (closingTx, closingSigned) = Closing.makeClosingTx(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nextClosingFee)
       if (lastLocalClosingFee.contains(nextClosingFee)) {

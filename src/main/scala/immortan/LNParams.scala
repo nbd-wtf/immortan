@@ -4,26 +4,22 @@ import fr.acinq.eclair._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
-import com.softwaremill.sttp._
 import fr.acinq.eclair.Features._
 import scala.concurrent.duration._
-import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.bitcoin.DeterministicWallet._
 import scodec.bits.{ByteVector, HexStringSyntax}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import scala.concurrent.{ExecutionContextExecutor, Future}
 import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
-import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import fr.acinq.eclair.channel.{LocalParams, PersistentChannelData}
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import fr.acinq.eclair.transactions.{DirectedHtlc, RemoteFulfill, Transactions}
-import immortan.utils.{Denomination, FiatRatesInfo, PaymentRequestExt, WalletEventsCatcher}
+import immortan.utils.{Denomination, FeeRatesInfo, FiatRatesInfo, PaymentRequestExt, WalletEventsCatcher}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
-import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
-import fr.acinq.eclair.blockchain.CurrentFeerates
+import scala.concurrent.ExecutionContextExecutor
 import fr.acinq.eclair.router.ChannelUpdateExt
+import java.util.concurrent.atomic.AtomicLong
 import immortan.SyncMaster.ShortChanIdSet
 import fr.acinq.eclair.crypto.Generators
 import immortan.crypto.Noise.KeyPair
@@ -101,6 +97,7 @@ object LNParams {
   var chainWallet: WalletExt = _
   var syncParams: SyncParams = _
   var fiatRatesInfo: FiatRatesInfo = _
+  var feeRatesInfo: FeeRatesInfo = _
   var denomination: Denomination = _
   var trampoline: TrampolineOn = _
 
@@ -109,45 +106,11 @@ object LNParams {
       mppMinPartAmount = MilliSatoshi(10000000L), maxRemoteAttempts = 12,
       maxChannelFailures = 12, maxStrangeNodeFailures = 12)
 
-  // Chain feerate utils
-
-  val defaultFeerates: FeeratesPerKB =
-    FeeratesPerKB(
-      block_1 = FeeratePerKB(210000.sat),
-      blocks_2 = FeeratePerKB(180000.sat),
-      blocks_6 = FeeratePerKB(150000.sat),
-      blocks_12 = FeeratePerKB(110000.sat),
-      blocks_36 = FeeratePerKB(50000.sat),
-      blocks_72 = FeeratePerKB(20000.sat),
-      blocks_144 = FeeratePerKB(15000.sat),
-      blocks_1008 = FeeratePerKB(5000.sat),
-      mempoolMinFee = FeeratePerKB(5000.sat)
-    )
-
   val blockCount: AtomicLong = new AtomicLong(0L)
-  val feeratesPerKB: AtomicReference[FeeratesPerKB] = new AtomicReference(defaultFeerates)
-  val currentFeerates: AtomicReference[CurrentFeerates] = new AtomicReference(CurrentFeerates(FeeratesPerKw(defaultFeerates)))
-
-  val feeEstimator: FeeEstimator = new FeeEstimator {
-    override def getFeeratePerKb(target: Int): FeeratePerKB = feeratesPerKB.get.feePerBlock(target)
-    override def getFeeratePerKw(target: Int): FeeratePerKw = currentFeerates.get.feeratesPerKw.feePerBlock(target)
-  }
-
-  val onChainFeeConf: OnChainFeeConf =
-    OnChainFeeConf(FeeTargets(fundingBlockTarget = 6, commitmentBlockTarget = 6, mutualCloseBlockTarget = 36, claimMainBlockTarget = 36),
-      feeEstimator, closeOnOfflineMismatch = false, updateFeeMinDiffRatio = 0.1, FeerateTolerance(0.2, 20), perNodeFeerateTolerance = Map.empty)
 
   implicit val timeout: Timeout = Timeout(30.seconds)
   implicit val system: ActorSystem = ActorSystem("immortan-actor-system")
   implicit val ec: ExecutionContextExecutor = scala.concurrent.ExecutionContext.Implicits.global
-  implicit val sttpBackend: SttpBackend[Future, Nothing] = OkHttpFutureBackend(SttpBackendOptions.Default)
-
-  val feerateProviders: List[FeeProvider] = List(
-    new EsploraFeeProvider(uri"https://mempool.space/api/fee-estimates", 15.seconds),
-    new EsploraFeeProvider(uri"https://blockstream.info/api/fee-estimates", 15.seconds),
-    new BitgoFeeProvider(chainHash, 15.seconds),
-    new EarnDotComFeeProvider(15.seconds)
-  )
 
   def createWallet(addresses: Set[ElectrumServerAddress], walletDb: WalletDb, seed: ByteVector): WalletExt = {
     val clientPool = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(blockCount, addresses)), "pool", SupervisorStrategy.Resume))

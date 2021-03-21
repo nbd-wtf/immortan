@@ -188,4 +188,12 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
   implicit val coinGeckoFmt: JsonFormat[CoinGecko] = jsonFormat[CoinGeckoItemMap, CoinGecko](CoinGecko.apply, "rates")
 
   implicit val bitpayFmt: JsonFormat[Bitpay] = jsonFormat[BitpayItemList, Bitpay](Bitpay.apply, "data")
+
+  // Chain feerates
+
+  implicit val bitGoFeeRateStructureFmt: JsonFormat[BitGoFeeRateStructure] = jsonFormat[Map[String, Long], Long, BitGoFeeRateStructure](BitGoFeeRateStructure.apply, "feeByBlockTarget", "feePerKb")
+
+  implicit val earnDotComFeeRateItemFmt: JsonFormat[EarnDotComFeeRateItem] = jsonFormat[Long, Long, Long, Long, Long, EarnDotComFeeRateItem](EarnDotComFeeRateItem.apply, "minFee", "maxFee", "memCount", "minDelay", "maxDelay")
+
+  implicit val earnDotComFeeRateStructureFmt: JsonFormat[EarnDotComFeeRateStructure] = jsonFormat[List[EarnDotComFeeRateItem], EarnDotComFeeRateStructure](EarnDotComFeeRateStructure.apply, "fees")
 }

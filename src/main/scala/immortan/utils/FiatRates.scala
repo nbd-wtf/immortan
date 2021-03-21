@@ -46,6 +46,7 @@ case class CoinGecko(rates: FiatRates.CoinGeckoItemMap)
 
 case class FiatRatesInfo(rates: Fiat2Btc, oldRates: Fiat2Btc, stamp: Long) {
   def pctChange(fresh: Double, old: Double): Double = (fresh - old) / old * 100
+
   def pctDifference(code: String): String = List(rates get code, oldRates get code) match {
     case Some(fresh) :: Some(old) :: Nil if fresh > old => s"<font color=#5B8F36>▲ ${Denomination.formatFiat format pctChange(fresh, old).abs}%</font>"
     case Some(fresh) :: Some(old) :: Nil if fresh < old => s"<font color=#E35646>▼ ${Denomination.formatFiat format pctChange(fresh, old).abs}%</font>"

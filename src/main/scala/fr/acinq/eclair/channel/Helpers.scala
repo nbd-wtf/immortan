@@ -20,6 +20,7 @@ import fr.acinq.eclair._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.wire._
 import fr.acinq.bitcoin.Script._
+
 import scala.concurrent.duration._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.transactions.Scripts._
@@ -29,10 +30,11 @@ import fr.acinq.eclair.transactions.Transactions._
 import scala.util.{Success, Try}
 import immortan.{ChannelBag, LNParams, RemoteNodeInfo}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
-import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw, FeerateTolerance}
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw, FeerateTolerance, OnChainFeeConf}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.crypto.Generators
 import scodec.bits.ByteVector
+
 import scala.concurrent.Await
 
 
@@ -44,7 +46,7 @@ object Helpers {
   /**
    * Called by the fundee
    */
-  def validateParamsFundee(features: Features, open: OpenChannel, remoteNodeId: PublicKey): Unit = {
+  def validateParamsFundee(features: Features, open: OpenChannel, remoteNodeId: PublicKey, conf: OnChainFeeConf): Unit = {
     // BOLT #2: if the chain_hash value, within the open_channel, message is set to a hash of a chain that is unknown to the receiver:
     // MUST reject the channel.
     if (LNParams.chainHash != open.chainHash) throw InvalidChainHash(open.temporaryChannelId, local = LNParams.chainHash, remote = open.chainHash)
@@ -77,8 +79,8 @@ object Helpers {
     }
 
     // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing or unreasonably large.
-    val localFeeratePerKw = LNParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = LNParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
-    if (isFeeDiffTooHigh(localFeeratePerKw, open.feeratePerKw, LNParams.onChainFeeConf.maxFeerateMismatchFor(remoteNodeId))) throw FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw)
+    val localFeeratePerKw = conf.feeEstimator.getFeeratePerKw(target = conf.feeTargets.commitmentBlockTarget)
+    if (isFeeDiffTooHigh(localFeeratePerKw, open.feeratePerKw, conf.maxFeerateMismatchFor(remoteNodeId))) throw FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw)
     // only enforce dust limit check on mainnet
     if (LNParams.chainHash == Block.LivenetGenesisBlock.hash) {
       if (open.dustLimitSatoshis < LNParams.minDustLimit) throw DustLimitTooSmall(open.temporaryChannelId, open.dustLimitSatoshis, LNParams.minDustLimit)
