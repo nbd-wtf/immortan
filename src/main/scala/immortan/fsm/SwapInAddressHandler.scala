@@ -1,12 +1,15 @@
 package immortan.fsm
 
 import immortan.crypto.Tools._
+
 import scala.concurrent.duration._
 import immortan.fsm.SwapInAddressHandler._
-import immortan.{ChanAndCommits, CommsTower, ConnectionListener, RemoteNodeInfo}
+import immortan.{ChanAndCommits, CommsTower, ConnectionListener, LNParams, RemoteNodeInfo}
 import fr.acinq.eclair.wire.{Init, SwapIn, SwapInRequest, SwapInResponse}
+
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import java.util.concurrent.Executors
+
 import immortan.crypto.StateMachine
 import fr.acinq.eclair.Features
 import immortan.utils.Rx
@@ -27,15 +30,15 @@ object SwapInAddressHandler {
   case class CMDStart(capableCncs: Set[ChanAndCommits] = Set.empty)
 }
 
-abstract class SwapInAddressHandler(ourInit: Init) extends StateMachine[AddressData] { me =>
+abstract class SwapInAddressHandler extends StateMachine[AddressData] { me =>
   implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
   def process(changeMessage: Any): Unit = scala.concurrent.Future(me doProcess changeMessage)
 
   lazy private val swapInListener = new ConnectionListener {
     // Disconnect logic is already handled in ChannelMaster base listener
     override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = {
-      val swapSupported = Features.canUseFeature(ourInit.features, theirInit.features, Features.ChainSwap)
-      if (swapSupported) worker.handler process SwapInRequest else me process NoSwapInSupport(worker)
+      val isOk = Features.canUseFeature(LNParams.ourInit.features, theirInit.features, Features.ChainSwap)
+      if (isOk) worker.handler process SwapInRequest else me process NoSwapInSupport(worker)
     }
 
     override def onSwapInMessage(worker: CommsTower.Worker, msg: SwapIn): Unit =
@@ -69,7 +72,7 @@ abstract class SwapInAddressHandler(ourInit: Init) extends StateMachine[AddressD
 
     case (cmd: CMDStart, null) =>
       become(freshData = AddressData(results = cmd.capableCncs.map(_.commits.remoteInfo -> None).toMap, cmd), WAITING_FIRST_RESPONSE)
-      for (cnc <- cmd.capableCncs) CommsTower.listen(Set(swapInListener), cnc.commits.remoteInfo.nodeSpecificPair, cnc.commits.remoteInfo, ourInit)
+      for (cnc <- cmd.capableCncs) CommsTower.listen(Set(swapInListener), cnc.commits.remoteInfo.nodeSpecificPair, cnc.commits.remoteInfo)
       Rx.ioQueue.delay(30.seconds).foreach(_ => me doSearch true)
 
     case _ =>

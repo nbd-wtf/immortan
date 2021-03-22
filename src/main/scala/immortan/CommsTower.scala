@@ -24,14 +24,14 @@ object CommsTower {
   val workers: mutable.Map[KeyPairAndPubKey, Worker] = new ConcurrentHashMap[KeyPairAndPubKey, Worker].asScala
   val listeners: mutable.Map[KeyPairAndPubKey, Listeners] = new ConcurrentHashMap[KeyPairAndPubKey, Listeners].asScala withDefaultValue Set.empty
 
-  def listen(listeners1: Set[ConnectionListener], pair: KeyPairAndPubKey, info: RemoteNodeInfo, ourInit: Init): Unit = synchronized {
+  def listen(listeners1: Set[ConnectionListener], pair: KeyPairAndPubKey, info: RemoteNodeInfo): Unit = synchronized {
     // Update and either insert a new worker or fire onOperational on new listeners iff worker currently exists and is online
     // First add listeners, then try to add worker because we may already have a connected worker, but no listeners
     listeners(pair) ++= listeners1
 
     workers.get(pair) match {
       case Some(worker) => worker.theirInit.foreach(worker handleTheirRemoteInitMessage listeners1)
-      case None => workers(pair) = new Worker(pair, info, ourInit, new Bytes(1024), new Socket)
+      case None => workers(pair) = new Worker(pair, info, new Bytes(1024), new Socket)
     }
   }
 
@@ -46,7 +46,7 @@ object CommsTower {
   def sendMany(messages: Traversable[LightningMessage], pair: KeyPairAndPubKey): Unit =
     CommsTower.workers.get(pair).foreach(messages foreach _.handler.process)
 
-  class Worker(val pair: KeyPairAndPubKey, val info: RemoteNodeInfo, ourInit: Init, buffer: Bytes, sock: Socket) { me =>
+  class Worker(val pair: KeyPairAndPubKey, val info: RemoteNodeInfo, buffer: Bytes, sock: Socket) { me =>
     implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
 
     var lastMessage: Long = System.currentTimeMillis
@@ -61,8 +61,8 @@ object CommsTower {
       theirInit = Some(remoteInit)
 
       if (!thread.isCompleted) {
-        val areFeaturesOK = Features.areCompatible(ourInit.features, remoteInit.features)
-        val areNetworksOK = remoteInit.networks.nonEmpty && remoteInit.networks.intersect(ourInit.networks).isEmpty
+        val areFeaturesOK = Features.areCompatible(LNParams.ourInit.features, remoteInit.features)
+        val areNetworksOK = remoteInit.networks.nonEmpty && remoteInit.networks.intersect(LNParams.ourInit.networks).isEmpty
         if (areFeaturesOK && areNetworksOK) for (lst <- listeners1) lst.onOperational(me, remoteInit) // They have not disconnected yet
         else disconnect // Their features are not supported but they have not disconnected yet, so we disconnect right away
       }
@@ -105,7 +105,7 @@ object CommsTower {
           }
 
           // Send our node parameters
-          handler process ourInit
+          handler process LNParams.ourInit
         }
       }
 

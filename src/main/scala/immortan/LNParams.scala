@@ -43,7 +43,6 @@ object LNParams {
   val maxReserveToFundingRatio = 0.05
   val maxAcceptedHtlcs: Int = 483
 
-  val minCltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(18)
   val minHostedOnChainRefund: Satoshi = Satoshi(1000000L)
   val minPayment: MilliSatoshi = MilliSatoshi(5000L)
   val minFundingSatoshis: Satoshi = Satoshi(100000L)
@@ -60,34 +59,19 @@ object LNParams {
   private[this] val networks: InitTlv = InitTlv.Networks(chainHash :: Nil)
   private[this] val tlvStream: TlvStream[InitTlv] = TlvStream(networks)
 
-  val normInit: Init = Init(Features(
+  val ourInit: Init = Init(Features(
     (ChannelRangeQueries, FeatureSupport.Optional),
     (ChannelRangeQueriesExtended, FeatureSupport.Optional),
     (OptionDataLossProtect, FeatureSupport.Optional),
     (BasicMultiPartPayment, FeatureSupport.Optional),
     (VariableLengthOnion, FeatureSupport.Optional),
     (TrampolineRouting, FeatureSupport.Optional),
+    (StaticRemoteKey, FeatureSupport.Optional),
+    (HostedChannels, FeatureSupport.Optional),
     (AnchorOutputs, FeatureSupport.Optional),
     (PaymentSecret, FeatureSupport.Optional),
     (ChainSwap, FeatureSupport.Optional),
     (Wumbo, FeatureSupport.Optional)
-  ), tlvStream)
-
-  val phcSyncInit: Init = Init(Features(
-    (ChannelRangeQueries, FeatureSupport.Optional),
-    (ChannelRangeQueriesExtended, FeatureSupport.Optional),
-    (HostedChannels, FeatureSupport.Optional)
-  ), tlvStream)
-
-  val hcInit: Init = Init(Features(
-    (ChannelRangeQueries, FeatureSupport.Optional),
-    (ChannelRangeQueriesExtended, FeatureSupport.Optional),
-    (BasicMultiPartPayment, FeatureSupport.Optional),
-    (VariableLengthOnion, FeatureSupport.Optional),
-    (TrampolineRouting, FeatureSupport.Optional),
-    (HostedChannels, FeatureSupport.Optional),
-    (PaymentSecret, FeatureSupport.Optional),
-    (ChainSwap, FeatureSupport.Optional)
   ), tlvStream)
 
   // Variables to be assigned at runtime
@@ -182,7 +166,7 @@ case class RemoteNodeInfo(nodeId: PublicKey, address: NodeAddress, alias: String
 
   def newFundingKeyPath(isFunder: Boolean): KeyPath = {
     def nextHop: Long = secureRandom.nextInt & 0xFFFFFFFFL
-    val last = DeterministicWallet hardened { if (isFunder) 1 else 0 }
+    val last = if (isFunder) DeterministicWallet.hardened(1) else DeterministicWallet.hardened(0)
     val path = Seq(nextHop, nextHop, nextHop, nextHop, nextHop, nextHop, nextHop, nextHop, last)
     DeterministicWallet.KeyPath(path)
   }

@@ -59,8 +59,7 @@ case class INPUT_INIT_FUNDER(remoteInfo: RemoteNodeInfo, temporaryChannelId: Byt
                              initialFeeratePerKw: FeeratePerKw, fundingTxFeeratePerKw: FeeratePerKw, localParams: LocalParams, remoteInit: Init,
                              channelFlags: Byte, channelVersion: ChannelVersion)
 
-case class INPUT_INIT_FUNDEE(remoteInfo: RemoteNodeInfo, temporaryChannelId: ByteVector32, localParams: LocalParams,
-                             remoteInit: Init, channelVersion: ChannelVersion, theirOpen: OpenChannel)
+case class INPUT_INIT_FUNDEE(remoteInfo: RemoteNodeInfo, localParams: LocalParams, remoteInit: Init, channelVersion: ChannelVersion, theirOpen: OpenChannel)
 
 sealed trait BitcoinEvent
 case class BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId: ShortChannelId) extends BitcoinEvent

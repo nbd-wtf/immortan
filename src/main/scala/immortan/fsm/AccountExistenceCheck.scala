@@ -22,7 +22,7 @@ object AccountExistenceCheck {
   case class CMDStart(remoteInfos: Set[RemoteNodeInfo] = Set.empty)
 }
 
-abstract class AccountExistenceCheck(format: StorageFormat, chainHash: ByteVector32, init: Init) extends StateMachine[CheckData] { me =>
+abstract class AccountExistenceCheck(format: StorageFormat, chainHash: ByteVector32) extends StateMachine[CheckData] { me =>
   implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
   def process(changeMessage: Any): Unit = scala.concurrent.Future(me doProcess changeMessage)
 
@@ -52,7 +52,7 @@ abstract class AccountExistenceCheck(format: StorageFormat, chainHash: ByteVecto
 
     case (worker: CommsTower.Worker, OPERATIONAL) =>
       // We get previously scheduled worker and use its peer data to reconnect again
-      CommsTower.listen(Set(accountCheckListener), worker.pair, worker.info, init)
+      CommsTower.listen(Set(accountCheckListener), worker.pair, worker.info)
 
     case (PeerResponse(_: InitHostedChannel, worker), OPERATIONAL) =>
       // Remote node offers to create a new channel, no "account" there
@@ -73,7 +73,7 @@ abstract class AccountExistenceCheck(format: StorageFormat, chainHash: ByteVecto
 
     case (CMDStart(remoteInfos), null) =>
       become(CheckData(remoteInfos, remoteInfos.map(_ -> false).toMap, remoteInfos.size * 4), OPERATIONAL)
-      for (info <- remoteInfos) CommsTower.listen(Set(accountCheckListener), info.nodeSpecificPair, info, init)
+      for (info <- remoteInfos) CommsTower.listen(Set(accountCheckListener), info.nodeSpecificPair, info)
       Rx.ioQueue.delay(30.seconds).foreach(_ => me doSearch true)
 
     case _ =>

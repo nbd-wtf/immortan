@@ -86,11 +86,15 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
   // CHANNEL MANAGEMENT
 
+  def implantChannel(cs: Commitments, freshChannel: Channel): Unit = {
+    all += Tuple2(cs.channelId, freshChannel) // Put this channel to vector of established channels
+    freshChannel.listeners = Set(me) // Add standard channel listeners to new established channel
+    initConnect // Add standard connection listeners for this peer
+  }
+
   def initConnect: Unit =
-    all.values.filter(Channel.isOperationalOrWaiting).flatMap(Channel.chanAndCommitsOpt).map(_.commits).foreach {
-      case cs: NormalCommits => CommsTower.listen(connectionListeners, cs.remoteInfo.nodeSpecificPair, cs.remoteInfo, LNParams.normInit)
-      case cs: HostedCommits => CommsTower.listen(connectionListeners, cs.remoteInfo.nodeSpecificPair, cs.remoteInfo, LNParams.hcInit)
-      case _ => throw new RuntimeException
+    all.values.filter(Channel.isOperationalOrWaiting).flatMap(Channel.chanAndCommitsOpt).foreach { cnc =>
+      CommsTower.listen(connectionListeners, cnc.commits.remoteInfo.nodeSpecificPair, cnc.commits.remoteInfo)
     }
 
   def currentLocalSentPayments: Map[FullPaymentTag, OutgoingPaymentSender] = opm.data.payments.filterKeys(_.tag == PaymentTagTlv.LOCALLY_SENT)

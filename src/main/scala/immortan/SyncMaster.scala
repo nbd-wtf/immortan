@@ -104,7 +104,7 @@ case class SyncWorker(master: CanBeRepliedTo, keyPair: KeyPair, remoteInfo: Remo
 
   become(null, WAITING)
   // Connect to remote peer and start listening immediately
-  CommsTower.listen(Set(listener), pair, remoteInfo, ourInit)
+  CommsTower.listen(Set(listener), pair, remoteInfo)
 
   def doProcess(change: Any): Unit = (change, data, state) match {
     case (data1: SyncWorkerPHCData, null, WAITING) => become(data1, PHC_SYNC)
@@ -171,9 +171,9 @@ trait SyncMasterData extends {
 }
 
 trait GetNewSyncMachine extends CanBeRepliedTo { me =>
-  def getNewSync(data1: SyncMasterData, allNodes: Set[RemoteNodeInfo], ourInit: Init): SyncWorker = {
+  def getNewSync(data1: SyncMasterData, allNodes: Set[RemoteNodeInfo] = Set.empty): SyncWorker = {
     val goodAnnounces = data1.activeSyncs.foldLeft(allNodes) { case (nodes, sync) => nodes - sync.remoteInfo }
-    SyncWorker(me, randomKeyPair, shuffle(goodAnnounces.toList).head, ourInit)
+    SyncWorker(me, randomKeyPair, shuffle(goodAnnounces.toList).head, LNParams.ourInit)
   }
 }
 
@@ -206,7 +206,7 @@ abstract class SyncMaster(extraNodes: Set[RemoteNodeInfo], excluded: Set[Long], 
 
   def doProcess(change: Any): Unit = (change, data, state) match {
     case (CMDAddSync, data1: SyncMasterShortIdData, SHORT_ID_SYNC) if data1.activeSyncs.size < LNParams.syncParams.maxNodesToSyncFrom =>
-      val newSyncWorker = getNewSync(data1, LNParams.syncParams.syncNodes ++ extraNodes, LNParams.normInit)
+      val newSyncWorker: SyncWorker = getNewSync(data1, LNParams.syncParams.syncNodes ++ extraNodes)
       become(data1.copy(activeSyncs = data1.activeSyncs + newSyncWorker), SHORT_ID_SYNC)
       newSyncWorker process SyncWorkerShortIdsData(ranges = Nil, from = 0)
 
@@ -239,7 +239,7 @@ abstract class SyncMaster(extraNodes: Set[RemoteNodeInfo], excluded: Set[Long], 
 
     case (workerData: SyncWorkerGossipData, data1: SyncMasterGossipData, GOSSIP_SYNC) if data1.activeSyncs.size < LNParams.syncParams.maxNodesToSyncFrom =>
       // Turns out one of the workers has disconnected while getting gossip, create one with unused remote nodeId and track its progress
-      val newSyncWorker = getNewSync(data1, LNParams.syncParams.syncNodes ++ extraNodes, LNParams.normInit)
+      val newSyncWorker: SyncWorker = getNewSync(data1, LNParams.syncParams.syncNodes ++ extraNodes)
 
       // Worker is connecting, tell it to get the rest of gossip once connection is there
       become(data1.copy(activeSyncs = data1.activeSyncs + newSyncWorker), GOSSIP_SYNC)
@@ -341,7 +341,7 @@ abstract class PHCSyncMaster(extraNodes: Set[RemoteNodeInfo], routerData: Data) 
 
   def doProcess(change: Any): Unit = (change, state) match {
     case (CMDAddSync, PHC_SYNC) if data.activeSyncs.size < data.maxSyncs =>
-      val newSyncWorker = getNewSync(data, LNParams.syncParams.hostedSyncNodes ++ extraNodes, LNParams.phcSyncInit)
+      val newSyncWorker = getNewSync(data, LNParams.syncParams.hostedSyncNodes ++ extraNodes)
       become(data.copy(activeSyncs = data.activeSyncs + newSyncWorker), PHC_SYNC)
       newSyncWorker process SyncWorkerPHCData(me)
 

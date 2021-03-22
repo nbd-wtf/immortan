@@ -114,10 +114,10 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         val localFundingPubKey = init.remoteInfo.fundingPublicKey(init.localParams.fundingKeyPath).publicKey
         val emptyUpfrontShutdown: TlvStream[AcceptChannelTlv] = TlvStream(ChannelTlv UpfrontShutdownScript ByteVector.empty)
 
-        Helpers.validateParamsFundee(LNParams.normInit.features, init.theirOpen, init.remoteInfo.nodeId, LNParams.feeRatesInfo.onChainFeeConf)
+        Helpers.validateParamsFundee(LNParams.ourInit.features, init.theirOpen, init.remoteInfo.nodeId, LNParams.feeRatesInfo.onChainFeeConf)
 
         val basePoint = init.localParams.walletStaticPaymentBasepoint.getOrElse(init.remoteInfo.paymentPoint(channelKeyPath).publicKey)
-        val accept = AcceptChannel(init.temporaryChannelId, init.localParams.dustLimit, init.localParams.maxHtlcValueInFlightMsat, init.localParams.channelReserve, init.localParams.htlcMinimum,
+        val accept = AcceptChannel(init.theirOpen.temporaryChannelId, init.localParams.dustLimit, init.localParams.maxHtlcValueInFlightMsat, init.localParams.channelReserve, init.localParams.htlcMinimum,
           LNParams.minDepthBlocks, init.localParams.toSelfDelay, init.localParams.maxAcceptedHtlcs, localFundingPubKey, init.remoteInfo.revocationPoint(channelKeyPath).publicKey, basePoint,
           init.remoteInfo.delayedPaymentPoint(channelKeyPath).publicKey, init.remoteInfo.htlcPoint(channelKeyPath).publicKey,
           init.remoteInfo.commitmentPoint(channelKeyPath, index = 0L), emptyUpfrontShutdown)
@@ -133,8 +133,9 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
       case (wait: DATA_WAIT_FOR_FUNDING_CREATED, created: FundingCreated, WAIT_FOR_ACCEPT) =>
         val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Helpers.Funding.makeFirstCommitTxs(wait.initFundee.remoteInfo, wait.initFundee.channelVersion,
-          wait.initFundee.temporaryChannelId, wait.initFundee.localParams, wait.remoteParams, wait.initFundee.theirOpen.fundingSatoshis, wait.initFundee.theirOpen.pushMsat,
-          wait.initFundee.theirOpen.feeratePerKw, created.fundingTxid, created.fundingOutputIndex, wait.initFundee.theirOpen.firstPerCommitmentPoint).right.get
+          wait.initFundee.theirOpen.temporaryChannelId, wait.initFundee.localParams, wait.remoteParams, wait.initFundee.theirOpen.fundingSatoshis,
+          wait.initFundee.theirOpen.pushMsat, wait.initFundee.theirOpen.feeratePerKw, created.fundingTxid, created.fundingOutputIndex,
+          wait.initFundee.theirOpen.firstPerCommitmentPoint).right.get
 
         val fundingPubKey = wait.initFundee.remoteInfo.fundingPublicKey(wait.initFundee.localParams.fundingKeyPath)
         val localSigOfLocalTx = wait.initFundee.remoteInfo.sign(localCommitTx, fundingPubKey, TxOwner.Local, wait.initFundee.channelVersion.commitmentFormat)

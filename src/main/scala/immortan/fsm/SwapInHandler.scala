@@ -9,9 +9,9 @@ import rx.lang.scala.Subscription
 import immortan.utils.Rx
 
 
-abstract class SwapInHandler(cnc: ChanAndCommits, ourInit: Init, paymentRequest: PaymentRequest, id: Long) { me =>
+abstract class SwapInHandler(cnc: ChanAndCommits, paymentRequest: PaymentRequest, id: Long) { me =>
   def finish: Unit = runAnd(shutdownTimer.unsubscribe)(CommsTower.listeners(cnc.commits.remoteInfo.nodeSpecificPair) -= swapInListener)
-  CommsTower.listen(listeners1 = Set(swapInListener), cnc.commits.remoteInfo.nodeSpecificPair, cnc.commits.remoteInfo, ourInit)
+  CommsTower.listen(listeners1 = Set(swapInListener), cnc.commits.remoteInfo.nodeSpecificPair, cnc.commits.remoteInfo)
   val shutdownTimer: Subscription = Rx.ioQueue.delay(30.seconds).doOnCompleted(finish).subscribe(_ => onTimeout)
 
   lazy private val swapInListener = new ConnectionListener {
