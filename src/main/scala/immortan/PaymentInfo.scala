@@ -31,7 +31,6 @@ case class PaymentInfo(prString: String, preimageString: String, status: String,
 
   val isIncoming: Boolean = 1 == incoming
   lazy val pr: PaymentRequest = PaymentRequest.read(prString)
-  lazy val amountOrMin: MilliSatoshi = pr.amount.getOrElse(LNParams.minPayment)
   lazy val preimage: ByteVector32 = ByteVector32(ByteVector fromValidHex preimageString)
   lazy val paymentHash: ByteVector32 = ByteVector32(ByteVector fromValidHex paymentHashString)
   lazy val description: PaymentDescription = to[PaymentDescription](descriptionString)

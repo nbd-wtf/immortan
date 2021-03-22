@@ -20,9 +20,9 @@ import fr.acinq.eclair._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.wire._
 import fr.acinq.bitcoin.Script._
-
 import scala.concurrent.duration._
 import fr.acinq.eclair.transactions._
+import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Transactions._
@@ -30,13 +30,10 @@ import fr.acinq.eclair.transactions.Transactions._
 import scala.util.{Success, Try}
 import immortan.{ChannelBag, LNParams, RemoteNodeInfo}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
-import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw, FeerateTolerance, OnChainFeeConf}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.crypto.Generators
 import scodec.bits.ByteVector
-
 import scala.concurrent.Await
-
 
 /**
  * Created by PM on 20/05/2016.

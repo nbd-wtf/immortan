@@ -162,7 +162,7 @@ object RelayTable extends Table {
 }
 
 object PaymentTable extends Table {
-  import immortan.PaymentStatus.SUCCEEDED
+  private val ESCAPED_SUCCEEDED = s"'${immortan.PaymentStatus.SUCCEEDED}'"
   private val paymentTableFields = ("search", "payment", "pr", "preimage", "status", "stamp", "desc", "action", "hash", "received", "sent", "fee", "balance", "fiatrates", "chainfee", "incoming")
   val (search, table, pr, preimage, status, stamp, description, action, hash, receivedMsat, sentMsat, feeMsat, balanceMsat, fiatRates, chainFee, incoming) = paymentTableFields
   val inserts = s"$pr, $preimage, $status, $stamp, $description, $action, $hash, $receivedMsat, $sentMsat, $feeMsat, $balanceMsat, $fiatRates, $chainFee, $incoming"
@@ -173,13 +173,13 @@ object PaymentTable extends Table {
   // Selecting
   val selectByHashSql = s"SELECT * FROM $table WHERE $hash = ?"
   val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 3 WHERE $stamp > 0"
-  val selectSummarySql = s"SELECT SUM($feeMsat), SUM($receivedMsat), SUM($sentMsat), COUNT($id) FROM $table WHERE $status = $SUCCEEDED"
+  val selectSummarySql = s"SELECT SUM($feeMsat), SUM($receivedMsat), SUM($sentMsat), COUNT($id) FROM $table WHERE $status = $ESCAPED_SUCCEEDED"
   val searchSql = s"SELECT * FROM $table WHERE $hash IN (SELECT $hash FROM $fts$table WHERE $search MATCH ? LIMIT 25)"
 
   // Updating
-  val updOkOutgoingSql = s"UPDATE $table SET $status = $SUCCEEDED, $preimage = ?, $feeMsat = ? WHERE $hash = ? AND ($stamp > 0 AND status <> $SUCCEEDED) AND $incoming = 0"
-  val updOkIncomingSql = s"UPDATE $table SET $status = $SUCCEEDED, $receivedMsat = ?, $stamp = ? WHERE $hash = ? AND ($stamp > 0 AND status <> $SUCCEEDED) AND $incoming = 1"
-  val updStatusSql = s"UPDATE $table SET $status = ? WHERE $hash = ? AND ($stamp > 0 AND status <> $SUCCEEDED)"
+  val updOkOutgoingSql = s"UPDATE $table SET $status = $ESCAPED_SUCCEEDED, $preimage = ?, $feeMsat = ? WHERE $hash = ? AND ($stamp > 0 AND status <> $ESCAPED_SUCCEEDED) AND $incoming = 0"
+  val updOkIncomingSql = s"UPDATE $table SET $status = $ESCAPED_SUCCEEDED, $receivedMsat = ?, $stamp = ? WHERE $hash = ? AND ($stamp > 0 AND status <> $ESCAPED_SUCCEEDED) AND $incoming = 1"
+  val updStatusSql = s"UPDATE $table SET $status = ? WHERE $hash = ? AND ($stamp > 0 AND status <> $ESCAPED_SUCCEEDED)"
 
   def createStatements: Seq[String] = {
     val createTable = s"""CREATE TABLE IF NOT EXISTS $table(

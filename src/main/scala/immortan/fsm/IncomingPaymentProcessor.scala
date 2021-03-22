@@ -39,7 +39,7 @@ case class IncomingAborted(failure: Option[FailureMessage] = None) extends Incom
 
 class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster) extends IncomingPaymentProcessor {
   def gotSome(adds: ReasonableLocals): Boolean = adds.nonEmpty && amountIn(adds) >= adds.head.packet.payload.totalAmount
-  def askCovered(adds: ReasonableLocals, info: PaymentInfo): Boolean = amountIn(adds) >= info.amountOrMin
+  def askCovered(adds: ReasonableLocals, info: PaymentInfo): Boolean = info.pr.amount.exists(asked => amountIn(adds) >= asked)
   def amountIn(adds: ReasonableLocals): MilliSatoshi = adds.map(_.add.amountMsat).sum
 
   require(fullTag.tag == PaymentTagTlv.FINAL_INCOMING)
@@ -64,7 +64,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster) ex
         case Some(alreadyRevealed) if alreadyRevealed.isIncoming && PaymentStatus.SUCCEEDED == alreadyRevealed.status => becomeRevealed(alreadyRevealed.preimage, adds)
         case _ if adds.exists(_.add.cltvExpiry.toLong < LNParams.blockCount.get + LNParams.cltvRejectThreshold) => becomeAborted(IncomingAborted(None), adds)
         case Some(covered) if covered.isIncoming && covered.pr.amount.isDefined && askCovered(adds, covered) => becomeRevealed(covered.preimage, adds)
-        case _ => // Do nothing, wait for more parts with a timeout
+        case _ => // Do nothing, wait for more parts or a timeout
       }
 
     case (_: ReasonableLocal, null, RECEIVING) =>

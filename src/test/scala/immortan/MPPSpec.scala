@@ -52,7 +52,7 @@ class MPPSpec extends AnyFunSuite {
     cm.opm process send
     synchronized(wait(200))
 
-    val List(part1, part2) = cm.opm.data.payments(tag).data.inFlightParts
+    val List(part1, part2) = cm.opm.data.payments(tag).data.inFlightParts.toList.sortBy(_.route.fee)
 
     assert(part1.route.hops.size == 1) // US -> A
     assert(part1.route.fee == 0L.msat)

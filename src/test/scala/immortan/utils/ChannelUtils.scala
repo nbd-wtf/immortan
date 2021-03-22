@@ -47,7 +47,7 @@ object ChannelUtils {
 
     val essentialInterface = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, ChannelTable, PreimageTable)
     val notEssentialInterface = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, PaymentTable, DataTable, ElectrumHeadersTable)
-    val payBag = new SQlitePayment(notEssentialInterface, essentialInterface)
+    val payBag = new SQLitePayment(notEssentialInterface, essentialInterface)
     val chanBag = new SQLiteChannel(essentialInterface)
     val dataBag = new SQLiteData(notEssentialInterface)
 

@@ -21,10 +21,9 @@ import immortan.Channel._
 import fr.acinq.eclair.wire._
 import immortan.{ChannelNormal, LNParams}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction}
-import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.blockchain.{PublishAsap, WatchConfirmed, WatchSpent}
+import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.channel.Helpers.Closing
-
 import scala.collection.immutable.Queue
 
 /**
