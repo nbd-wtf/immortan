@@ -9,16 +9,48 @@ class CommsTowerSpec extends AnyFunSuite {
   test("Successfully connect, send Ping, get Pong") {
     var responses = List.empty[LightningMessage]
 
-    val listener = new ConnectionListener {
+    val listener1 = new ConnectionListener {
       override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = worker.sendPing
       override def onMessage(worker: CommsTower.Worker, msg: LightningMessage): Unit = responses ::= msg
     }
 
     val remoteInfo = (new SyncParams).acinq
-    val kpap = KeyPairAndPubKey(Tools.randomKeyPair, remoteInfo.nodeId)
-    CommsTower.listen(Set(listener), kpap, remoteInfo)
+    val kpap1 = KeyPairAndPubKey(Tools.randomKeyPair, remoteInfo.nodeId)
+    CommsTower.listen(Set(listener1), kpap1, remoteInfo)
+    synchronized(wait(2000L))
 
-    synchronized(wait(5000L))
+    // We have connected, sent Ping, got Pong
     assert(responses.head.isInstanceOf[Pong])
+
+    //
+
+    val listener2 = new ConnectionListener {
+      override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = responses ::= theirInit
+      override def onMessage(worker: CommsTower.Worker, msg: LightningMessage): Unit = responses ::= msg
+    }
+
+    // Remote node is already connected with this local data
+    CommsTower.listen(Set(listener2), kpap1, remoteInfo)
+    synchronized(wait(1000L))
+
+    // Only listener2.onOperational was called
+    assert(responses.head.isInstanceOf[Init])
+    assert(responses.tail.head.isInstanceOf[Pong])
+    assert(responses.size == 2)
+
+    //
+
+    val listener3 = new ConnectionListener {
+      override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = worker.sendPing
+      override def onMessage(worker: CommsTower.Worker, msg: LightningMessage): Unit = responses ::= msg
+    }
+
+    // We connect as another local node to the same remote node (two socket connections)
+    val kpap2 = KeyPairAndPubKey(Tools.randomKeyPair, remoteInfo.nodeId)
+    CommsTower.listen(Set(listener3), kpap2, remoteInfo)
+    synchronized(wait(2000L))
+
+    // Only listener3.onOperational was called
+    assert(responses.size == 3)
   }
 }
