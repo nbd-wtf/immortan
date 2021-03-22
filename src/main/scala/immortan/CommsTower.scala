@@ -53,21 +53,6 @@ object CommsTower {
     var theirInit: Option[Init] = Option.empty
     var pinging: Subscription = _
 
-    def disconnect: Unit = try sock.close catch none
-
-    def handleTheirRemoteInitMessage(listeners1: Set[ConnectionListener] = Set.empty)(remoteInit: Init): Unit = {
-      // Use a separate variable for listeners here because a set of listeners provided to this method may be different
-      // Account for a case where they disconnect while we are deciding on their features (do nothing in this case)
-      theirInit = Some(remoteInit)
-
-      if (!thread.isCompleted) {
-        val areFeaturesOK = Features.areCompatible(LNParams.ourInit.features, remoteInit.features)
-        val areNetworksOK = remoteInit.networks.nonEmpty && remoteInit.networks.intersect(LNParams.ourInit.networks).isEmpty
-        if (areFeaturesOK && areNetworksOK) for (lst <- listeners1) lst.onOperational(me, remoteInit) // They have not disconnected yet
-        else disconnect // Their features are not supported but they have not disconnected yet, so we disconnect right away
-      }
-    }
-
     val handler: TransportHandler =
       new TransportHandler(pair.keyPair, info.nodeId.value) {
         def handleEncryptedOutgoingData(data: ByteVector): Unit =
@@ -96,12 +81,8 @@ object CommsTower {
 
         def handleEnterOperationalState: Unit = {
           pinging = Observable.interval(10.seconds) subscribe { _ =>
-            if (lastMessage < System.currentTimeMillis - 45 * 1000L) disconnect
-            else if (lastMessage < System.currentTimeMillis - 20 * 1000L) {
-              val payloadLength = secureRandom.nextInt(5) + 1
-              val data = randomBytes(length = payloadLength)
-              handler process Ping(payloadLength, data)
-            }
+            if (lastMessage < System.currentTimeMillis - 50 * 1000L) disconnect
+            else if (lastMessage < System.currentTimeMillis - 20 * 1000L) sendPing
           }
 
           // Send our node parameters
@@ -121,11 +102,33 @@ object CommsTower {
     }
 
     thread onComplete { _ =>
-      // Will also run after `forget`
+      // Will also run after forget
       try pinging.unsubscribe catch none
       listeners(pair).foreach(_ onDisconnect me)
       workers -= pair
     }
+
+    def handleTheirRemoteInitMessage(listeners1: Set[ConnectionListener] = Set.empty)(remoteInit: Init): Unit = {
+      // Use a separate variable for listeners here because a set of listeners provided to this method may be different
+      // Account for a case where they disconnect while we are deciding on their features (do nothing in this case)
+      theirInit = Some(remoteInit)
+
+      if (!thread.isCompleted) {
+        val areNetworksOK = remoteInit.networks.intersect(LNParams.ourInit.networks).nonEmpty
+        val areFeaturesOK = Features.areCompatible(LNParams.ourInit.features, remoteInit.features)
+        if (areNetworksOK && areFeaturesOK) for (lst <- listeners1) lst.onOperational(me, remoteInit) // They have not disconnected yet
+        else disconnect // Their features are not supported but they have not disconnected yet, so we disconnect right away
+      }
+    }
+
+    def sendPing: Unit = {
+      val payloadLength = secureRandom.nextInt(5) + 1
+      val data = randomBytes(length = payloadLength)
+      handler process Ping(payloadLength, data)
+    }
+
+    def disconnect: Unit =
+      try sock.close catch none
   }
 }
 
