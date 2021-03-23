@@ -2,18 +2,18 @@ package immortan.utils
 
 import fr.acinq.eclair._
 import immortan.utils.GraphUtils._
-import fr.acinq.eclair.wire.{Onion, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{Onion, OnionTlv, UpdateAddHtlc}
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
-import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop}
+import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, NodeHop}
 import fr.acinq.eclair.payment.{OutgoingPacket, PaymentRequest}
 import immortan.ChannelMaster.{OutgoingAdds, ReasonableResolutions}
 import immortan.{ChannelMaster, InFlightPayments, PaymentBag, PlainMetaDescription, RemoteNodeInfo, UpdateAddHtlcExt}
-
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.ReasonableLocal
 import fr.acinq.eclair.router.ChannelUpdateExt
 import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
+
 import scala.util.Failure
 
 
@@ -40,4 +40,30 @@ object PaymentUtils {
   }
 
   def makeInFlightPayments(out: OutgoingAdds, in: ReasonableResolutions): InFlightPayments = InFlightPayments(out.groupBy(_.fullTag), in.groupBy(_.fullTag))
+
+  //
+
+  def createInnerTrampoline(pr: PaymentRequest, from: PublicKey, toTrampoline: PublicKey, toFinal: PublicKey,
+                            trampolineExpiryDelta: CltvExpiryDelta, trampolineFees: MilliSatoshi): (MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets) = {
+
+    val trampolineRoute = Seq(
+      NodeHop(from, toTrampoline, CltvExpiryDelta(0), 0.msat), // a hop from us to our peer, only needed because of our NodeId
+      NodeHop(toTrampoline, toFinal, trampolineExpiryDelta, trampolineFees) // for now we only use a single trampoline hop
+    )
+
+    // We send to a receiver who does not support trampoline, so relay node will send a basic MPP with inner payment secret provided and revealed
+    val finalInnerPayload = Onion.createMultiPartPayload(pr.amount.get, pr.amount.get, CltvExpiry(144), pr.paymentSecret.get)
+    OutgoingPacket.buildTrampolineToLegacyPacket(randomKey, pr, trampolineRoute, finalInnerPayload)
+  }
+
+  def createTrampolineAdd(pr: PaymentRequest, outerPartAmount: MilliSatoshi, from: PublicKey, toTrampoline: PublicKey, trampolineAmountTotal: MilliSatoshi,
+                          trampolineExpiry: CltvExpiry, trampolineOnion: Sphinx.PacketAndSecrets, outerPaymentSecret: ByteVector32): UpdateAddHtlc = {
+
+    val update = makeUpdate(ShortChannelId("100x100x100"), from, toTrampoline, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 50000000.msat)
+    val finalHop = ChannelHop(GraphEdge(ChannelDesc(update.shortChannelId, from, toTrampoline), updExt = ChannelUpdateExt fromUpdate update))
+
+    val finalOuterPayload = Onion.createMultiPartPayload(outerPartAmount, trampolineAmountTotal, trampolineExpiry, outerPaymentSecret, OnionTlv.TrampolineOnion(trampolineOnion.packet) :: Nil)
+    val (firstAmount, firstExpiry, onion) = OutgoingPacket.buildPacket(Sphinx.PaymentPacket)(randomKey, pr.paymentHash, finalHop :: Nil, finalOuterPayload)
+    UpdateAddHtlc(randomBytes32, System.currentTimeMillis + secureRandom.nextInt(1000), firstAmount, pr.paymentHash, firstExpiry, onion.packet)
+  }
 }

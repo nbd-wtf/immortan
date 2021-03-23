@@ -144,7 +144,7 @@ object TrampolinePaymentRelayer {
   }
 
   def validateRelay(params: TrampolineOn, adds: ReasonableTrampolines, blockHeight: Long): Option[FailureMessage] =
-    if (first(adds).innerPayload.invoiceFeatures.isDefined && first(adds).innerPayload.paymentSecret.isEmpty) Some(TemporaryNodeFailure) // We do not deliver to non-trampoline, non-MPP recipients
+    if (first(adds).innerPayload.invoiceFeatures.isDefined && first(adds).innerPayload.paymentSecret.isEmpty) Some(TemporaryNodeFailure) // We do not deliver to legacy recepients
     else if (relayFee(first(adds).innerPayload, params) > amountIn(adds) - first(adds).innerPayload.amountToForward) Some(TrampolineFeeInsufficient) // Proposed trampoline fee is less than required by our node
     else if (adds.map(_.packet.innerPayload.amountToForward).toSet.size != 1) Some(LNParams incorrectDetails first(adds).add.amountMsat) // All incoming parts must have the same amount to be forwareded
     else if (adds.map(_.packet.outerPayload.totalAmount).toSet.size != 1) Some(LNParams incorrectDetails first(adds).add.amountMsat) // All incoming parts must have the same TotalAmount value
@@ -157,7 +157,7 @@ object TrampolinePaymentRelayer {
     val finalNodeFailure = failures.collectFirst { case remote: RemoteFailure if remote.packet.originNode == finalNodeId => remote.packet.failureMessage }
     val routingNodeFailure = failures.collectFirst { case remote: RemoteFailure if remote.packet.originNode != finalNodeId => remote.packet.failureMessage }
     val localNoRoutesFoundError = failures.collectFirst { case local: LocalFailure if local.status == PaymentFailure.NO_ROUTES_FOUND => TrampolineFeeInsufficient }
-    TrampolineAborted(finalNodeFailure orElse localNoRoutesFoundError orElse routingNodeFailure getOrElse TemporaryNodeFailure)
+    TrampolineAborted(finalNodeFailure orElse routingNodeFailure orElse localNoRoutesFoundError getOrElse TemporaryNodeFailure)
   }
 }
 
@@ -186,9 +186,14 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
       firstOption(ins).foreach { packet =>
         // First, we may not have incoming HTLCs at all in pathological states
         val reserve = packet.outerPayload.totalAmount - packet.innerPayload.amountToForward
-        val actualUsedFeeOpt = senderData.filter(_.inFlightParts.nonEmpty).map(reserve - _.usedFee)
+        val actualEarnings = senderData.filter(_.inFlightParts.nonEmpty).map(reserve - _.usedFee)
         // Second, used fee in sender data may be incorrect after restart, use fallback in that case
-        val finalEarnings = actualUsedFeeOpt getOrElse relayFee(packet.innerPayload, LNParams.trampoline)
+        val finalEarnings = actualEarnings getOrElse relayFee(packet.innerPayload, LNParams.trampoline)
+
+        println(s"sender reserve: $reserve")
+        println(s"used fee: $actualEarnings")
+        println(s"our earnings: $finalEarnings")
+
         cm.payBag.addRelayedPreimageInfo(fullTag, preimage, packet.innerPayload.amountToForward, finalEarnings)
       }
 
@@ -197,6 +202,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
       becomeInitRevealed(revealed)
 
     case (revealed: TrampolineRevealed, _, RECEIVING | SENDING) =>
+      // This specifically omits (TrampolineRevealed x FINALIZING) state
       // We have outgoing in-flight payments and just got a preimage
       becomeInitRevealed(revealed)
 

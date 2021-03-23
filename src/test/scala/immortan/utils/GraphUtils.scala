@@ -15,7 +15,8 @@ import scodec.bits.ByteVector
 object GraphUtils {
   val PlaceHolderSig: ByteVector64 = ByteVector64(ByteVector.fill(64)(0xaa))
 
-  val (a, b, c, d, s, e) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
+  val (aP, bP, cP, dP, sP, eP) = (randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
+  val (a, b, c, d, s, e) = (aP.publicKey, bP.publicKey, cP.publicKey, dP.publicKey, sP.publicKey, eP.publicKey)
 
   var routerConf: RouterConf =
     RouterConf(maxCltv = CltvExpiryDelta(2016), routeHopDistance = 6,
@@ -67,6 +68,10 @@ object GraphUtils {
     val channelAC: ChannelAnnouncement = makeAnnouncement(2L, a, c)
     val channelBD: ChannelAnnouncement = makeAnnouncement(3L, b, d)
     val channelCD: ChannelAnnouncement = makeAnnouncement(4L, c, d)
+
+    //     / b \
+    //    a     d
+    //     \ c /
 
     val updateABFromA: ChannelUpdate = makeUpdate(ShortChannelId(1L), a, b, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
     val updateABFromB: ChannelUpdate = makeUpdate(ShortChannelId(1L), b, a, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)

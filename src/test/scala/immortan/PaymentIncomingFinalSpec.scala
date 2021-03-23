@@ -10,8 +10,8 @@ import immortan.utils.ChannelUtils.makeChannelMasterWithBasicGraph
 import org.scalatest.funsuite.AnyFunSuite
 
 
-class IncomingFinalPaymentSpec extends AnyFunSuite {
-  test("Correctly parse HTLCs sent to our fake nodeIds") {
+class PaymentIncomingFinalSpec extends AnyFunSuite {
+  test("Correctly parse final payments sent to our fake nodeIds") {
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
     LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
 
