@@ -19,7 +19,7 @@ object GraphUtils {
   val (a, b, c, d, s, e) = (aP.publicKey, bP.publicKey, cP.publicKey, dP.publicKey, sP.publicKey, eP.publicKey)
 
   var routerConf: RouterConf =
-    RouterConf(maxCltv = CltvExpiryDelta(2016), routeHopDistance = 6,
+    RouterConf(maxCltvDelta = CltvExpiryDelta(2016), routeHopDistance = 6,
       mppMinPartAmount = MilliSatoshi(10000L), maxRemoteAttempts = 12,
       maxChannelFailures = 12, maxStrangeNodeFailures = 12)
 
@@ -55,7 +55,7 @@ object GraphUtils {
   }
 
   def getParams(conf: RouterConf, amount: MilliSatoshi, feeRatio: Double): RouteParams = {
-    RouteParams(feeReserve = amount * feeRatio, routeMaxLength = conf.routeHopDistance, routeMaxCltv = conf.maxCltv)
+    RouteParams(feeReserve = amount * feeRatio, routeMaxLength = conf.routeHopDistance, routeMaxCltv = conf.maxCltvDelta)
   }
 
   def makeRouteRequest(amount: MilliSatoshi, params: RouteParams, fromNode: PublicKey, fromLocalEdge: GraphEdge): RouteRequest = {
@@ -102,6 +102,30 @@ object GraphUtils {
 
       store.addChannelUpdateByPosition(updateCDFromC)
       store.addChannelUpdateByPosition(updateCDFromD)
+    }
+  }
+
+  def fillDirectGraph(store: SQLiteNetwork): Unit = {
+    val channelAD1: ChannelAnnouncement = makeAnnouncement(1L, a, d)
+    val channelAD2: ChannelAnnouncement = makeAnnouncement(2L, a, d)
+
+    //    a  =  d
+
+    val updateAD1FromA: ChannelUpdate = makeUpdate(ShortChannelId(1L), a, d, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val updateAD1FromD: ChannelUpdate = makeUpdate(ShortChannelId(1L), d, a, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+
+    val updateAD2FromA: ChannelUpdate = makeUpdate(ShortChannelId(2L), a, d, 1.msat, 10, cltvDelta = CltvExpiryDelta(134), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val updateAD2FromD: ChannelUpdate = makeUpdate(ShortChannelId(2L), d, a, 1.msat, 10, cltvDelta = CltvExpiryDelta(134), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+
+    store.db txWrap {
+      store.addChannelAnnouncement(channelAD1)
+      store.addChannelAnnouncement(channelAD2)
+
+      store.addChannelUpdateByPosition(updateAD1FromA)
+      store.addChannelUpdateByPosition(updateAD1FromD)
+
+      store.addChannelUpdateByPosition(updateAD2FromA)
+      store.addChannelUpdateByPosition(updateAD2FromD)
     }
   }
 }

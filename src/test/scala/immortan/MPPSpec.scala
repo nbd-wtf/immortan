@@ -246,8 +246,8 @@ class MPPSpec extends AnyFunSuite {
 
     val tag = FullPaymentTag(paymentHash = hash, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
     val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1L.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
-    val send = SendMultiPart(tag, routerConf, targetNodeId = s, onionTotal = 600000L.msat, actualTotal = 600000L.msat,
-      totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
+    val send = SendMultiPart(tag, routerConf, targetNodeId = s, onionTotal = 600000L.msat, actualTotal = 600000L.msat, totalFeeReserve = 6000L.msat,
+      targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
     val desc = ChannelDesc(ShortChannelId(3L), b, d)
     // B -> D channel is now unable to handle the first split, but still usable for second split

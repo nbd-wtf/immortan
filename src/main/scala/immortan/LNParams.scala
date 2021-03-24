@@ -5,6 +5,7 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
 import fr.acinq.eclair.Features._
+
 import scala.concurrent.duration._
 import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.bitcoin.DeterministicWallet._
@@ -17,16 +18,21 @@ import fr.acinq.eclair.transactions.{DirectedHtlc, RemoteFulfill, Transactions}
 import immortan.utils.{Denomination, FeeRatesInfo, FiatRatesInfo, PaymentRequestExt, WalletEventsCatcher}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
+
 import scala.concurrent.ExecutionContextExecutor
 import fr.acinq.eclair.router.ChannelUpdateExt
 import java.util.concurrent.atomic.AtomicLong
+
 import immortan.SyncMaster.ShortChanIdSet
 import fr.acinq.eclair.crypto.Generators
 import immortan.crypto.Noise.KeyPair
 import java.io.ByteArrayInputStream
-import immortan.sqlite.DBInterface
+
+import immortan.sqlite.{DBInterface, RichCursor}
 import java.nio.ByteOrder
+
 import akka.util.Timeout
+
 import scala.util.Try
 
 
@@ -86,7 +92,7 @@ object LNParams {
   var trampoline: TrampolineOn = _
 
   var routerConf: RouterConf =
-    RouterConf(maxCltv = CltvExpiryDelta(2016), routeHopDistance = 6,
+    RouterConf(maxCltvDelta = CltvExpiryDelta(2016), routeHopDistance = 6,
       mppMinPartAmount = MilliSatoshi(10000000L), maxRemoteAttempts = 12,
       maxChannelFailures = 12, maxStrangeNodeFailures = 12)
 
@@ -245,6 +251,11 @@ trait PaymentBag {
   def updOkIncoming(receivedAmount: MilliSatoshi, paymentHash: ByteVector32): Unit
   def updOkOutgoing(fulfill: RemoteFulfill, fee: MilliSatoshi): Unit
   def updAbortedOutgoing(paymentHash: ByteVector32): Unit
+
+  def listRecentRelays: RichCursor
+  def listRecentPayments: RichCursor
+  def toRelayedPreimageInfo(rc: RichCursor): RelayedPreimageInfo
+  def toPaymentInfo(rc: RichCursor): PaymentInfo
 }
 
 trait DataBag {

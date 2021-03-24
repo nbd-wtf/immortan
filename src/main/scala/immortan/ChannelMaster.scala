@@ -27,10 +27,10 @@ object ChannelMaster {
   type ReasonableTrampolines = Iterable[ReasonableTrampoline]
   type ReasonableLocals = Iterable[ReasonableLocal]
 
-  final val NO_CHANNEL =
+  var NO_CHANNEL: StateMachine[ChannelData] with CanBeRepliedTo =
+    // It's possible that user removes an HC from system at runtime
+    // or that peer sends a message targeted to non-exiting local channel
     new StateMachine[ChannelData] with CanBeRepliedTo {
-      // It's possible that user removes an HC from system at runtime
-      // or that peer sends a message targeted to non-exiting local channel
       def process(change: Any): Unit = doProcess(change)
       def doProcess(change: Any): Unit = none
     }

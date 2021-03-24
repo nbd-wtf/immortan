@@ -41,10 +41,8 @@ object ChannelUtils {
       startedAt = System.currentTimeMillis)
   }
 
-  def makeChannelMasterWithBasicGraph: (SQLiteNetwork, SQLiteNetwork, ChannelMaster) = {
+  def makeChannelMaster: (SQLiteNetwork, SQLiteNetwork, ChannelMaster) = {
     val (normalStore, hostedStore) = SQLiteUtils.getSQLiteNetworkStores
-    GraphUtils.fillBasicGraph(normalStore)
-
     val essentialInterface = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, ChannelTable, PreimageTable)
     val notEssentialInterface = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, PaymentTable, RelayTable, DataTable, ElectrumHeadersTable)
     val payBag = new SQLitePayment(notEssentialInterface, essentialInterface)
@@ -52,12 +50,17 @@ object ChannelUtils {
     val dataBag = new SQLiteData(notEssentialInterface)
 
     val pf = makePathFinder(normalStore, hostedStore)
-
     val cm = new ChannelMaster(payBag, chanBag, dataBag, pf) {
       val sockBrandingBridge: ConnectionListener = null
       val sockChannelBridge: ConnectionListener = null
     }
 
+    (normalStore, hostedStore, cm)
+  }
+
+  def makeChannelMasterWithBasicGraph: (SQLiteNetwork, SQLiteNetwork, ChannelMaster) = {
+    val (normalStore, hostedStore, cm) = makeChannelMaster
+    GraphUtils.fillBasicGraph(normalStore)
     (normalStore, hostedStore, cm)
   }
 }

@@ -117,7 +117,7 @@ class GraphSpec extends AnyFunSuite {
     val graph = DirectedGraph (
       makeEdge(ShortChannelId("600000x1x1"), s, a, 1000.msat, 100, cltvDelta = CltvExpiryDelta(144), minHtlc = 10000.msat, maxHtlc = 5000000000L.msat) ::
         makeEdge(ShortChannelId("600000x1x1"), a, b, 1000.msat, 100, cltvDelta = CltvExpiryDelta(144), minHtlc = 10000.msat, maxHtlc = 5000000000L.msat) ::
-        makeEdge(ShortChannelId("510000x1x1"), a, c, 1000.msat, 150, cltvDelta = CltvExpiryDelta(144), minHtlc = 10000.msat, maxHtlc = 5000000000L.msat) :: // Used despite higher fee because it's very old
+        makeEdge(ShortChannelId("500000x1x1"), a, c, 1000.msat, 150, cltvDelta = CltvExpiryDelta(144), minHtlc = 10000.msat, maxHtlc = 5000000000L.msat) :: // Used despite higher fee because it's very old
         makeEdge(ShortChannelId("600000x1x1"), b, d, 1000.msat, 100, cltvDelta = CltvExpiryDelta(144), minHtlc = 10000.msat, maxHtlc = 5000000000L.msat) ::
         makeEdge(ShortChannelId("600000x1x1"), c, d, 1000.msat, 100, cltvDelta = CltvExpiryDelta(144), minHtlc = 10000.msat, maxHtlc = 6000000000L.msat) ::
         Nil

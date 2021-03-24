@@ -17,7 +17,7 @@ class CommsTowerSpec extends AnyFunSuite {
     val remoteInfo = (new SyncParams).acinq
     val kpap1 = KeyPairAndPubKey(Tools.randomKeyPair, remoteInfo.nodeId)
     CommsTower.listen(Set(listener1), kpap1, remoteInfo)
-    synchronized(wait(2000L))
+    synchronized(wait(4000L))
 
     // We have connected, sent Ping, got Pong
     assert(responses.head.isInstanceOf[Pong])
@@ -31,7 +31,7 @@ class CommsTowerSpec extends AnyFunSuite {
 
     // Remote node is already connected with this local data
     CommsTower.listen(Set(listener2), kpap1, remoteInfo)
-    synchronized(wait(1000L))
+    synchronized(wait(2000L))
 
     // Only listener2.onOperational was called
     assert(responses.head.isInstanceOf[Init])

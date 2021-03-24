@@ -303,7 +303,7 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listener: OutgoingP
     case (CMDAskForRoute, PENDING) =>
       data.parts.values.collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isEmpty =>
         val fakeLocalEdge = mkFakeLocalEdge(LNParams.format.keys.ourNodePubKey, wait.cnc.commits.remoteInfo.nodeId)
-        val routeParams = RouteParams(feeReserve = feeLeftover, routeMaxLength = data.cmd.routerConf.routeHopDistance, routeMaxCltv = data.cmd.routerConf.maxCltv)
+        val routeParams = RouteParams(feeReserve = feeLeftover, routeMaxLength = data.cmd.routerConf.routeHopDistance, routeMaxCltv = data.cmd.routerConf.maxCltvDelta)
         opm process RouteRequest(fullTag, wait.partId, LNParams.format.keys.ourNodePubKey, data.cmd.targetNodeId, wait.amount, fakeLocalEdge, routeParams)
       }
 

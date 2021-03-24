@@ -4,45 +4,68 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
 import immortan.utils.GraphUtils._
 import immortan.utils.PaymentUtils._
-import fr.acinq.eclair.payment.PaymentRequest
-import immortan.fsm.{TrampolinePaymentRelayer, TrampolineRevealed}
-import org.scalatest.funsuite.AnyFunSuite
-import fr.acinq.eclair.wire.{TrampolineOn, UpdateAddHtlc}
+import immortan.utils.ChannelUtils._
 import fr.acinq.bitcoin.{Block, Crypto}
-import fr.acinq.eclair.transactions.RemoteFulfill
-import immortan.utils.ChannelUtils.{makeChannelMasterWithBasicGraph, makeHostedCommits}
-import immortan.crypto.Tools._
+import immortan.crypto.{CanBeRepliedTo, StateMachine}
+import fr.acinq.eclair.payment.{IncomingPacket, PaymentRequest}
+import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteUpdateFail}
+import immortan.fsm.{IncomingPaymentProcessor, OutgoingPaymentMaster, TrampolinePaymentRelayer, TrampolineRevealed, TrampolineStopping}
+import fr.acinq.eclair.wire.{PaymentTimeout, TemporaryNodeFailure, TrampolineFeeInsufficient, TrampolineOn, UpdateAddHtlc, UpdateFailHtlc}
+import fr.acinq.eclair.payment.IncomingPacket.FinalPacket
+import org.scalatest.funsuite.AnyFunSuite
+
 
 class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   test("Correctly parse trampoline routed payments sent to our fake nodeId") {
-    val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer)
-    val ourParams = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0D, logExponent = 0D, CltvExpiryDelta(72))
     LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
-
+    val ourParams = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0D, logExponent = 0D, CltvExpiryDelta(72))
     val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(100000L.msat), randomBytes32, dP, "Invoice", CltvExpiryDelta(18)) // Final payee
+    val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer)
     val outerPaymentSecret = randomBytes32
 
-    val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) =
-      createInnerTrampoline(pr, from = remoteNodeInfo.nodeId, toTrampoline = remoteNodeInfo.nodeSpecificPubKey,
-        toFinal = d, trampolineExpiryDelta = CltvExpiryDelta(720), trampolineFees = 1000L.msat)
-
-    val addFromRemote1 = createTrampolineAdd(pr, 11000L.msat, from = remoteNodeInfo.nodeId, toTrampoline = remoteNodeInfo.nodeSpecificPubKey, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret)
-    val addFromRemote2 = createTrampolineAdd(pr, 90000L.msat, from = remoteNodeInfo.nodeId, toTrampoline = remoteNodeInfo.nodeSpecificPubKey, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret)
-
-    val reasonableTrampoline1 = ChannelMaster.initResolve(UpdateAddHtlcExt(theirAdd = addFromRemote1, remoteInfo = remoteNodeInfo)).asInstanceOf[ReasonableTrampoline]
-    val reasonableTrampoline2 = ChannelMaster.initResolve(UpdateAddHtlcExt(theirAdd = addFromRemote2, remoteInfo = remoteNodeInfo)).asInstanceOf[ReasonableTrampoline]
+    val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, d, CltvExpiryDelta(720), trampolineFees = 1000L.msat)
+    val reasonableTrampoline1 = createResolution(pr, 11000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline2 = createResolution(pr, 90000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
     assert(TrampolinePaymentRelayer.validateRelay(ourParams, List(reasonableTrampoline1, reasonableTrampoline2), LNParams.blockCount.get).isEmpty)
-    assert(reasonableTrampoline1.packet.innerPayload.outgoingNodeId == d)
-    assert(reasonableTrampoline2.packet.innerPayload.outgoingNodeId == d)
+  }
 
-    val addFromRemote3 = createTrampolineAdd(pr, 90000L.msat, from = remoteNodeInfo.nodeId, toTrampoline = randomKey.publicKey, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret)
-    assert(ChannelMaster.initResolve(UpdateAddHtlcExt(theirAdd = addFromRemote3, remoteInfo = remoteNodeInfo)).isInstanceOf[CMD_FAIL_MALFORMED_HTLC])
+  test("Successfully parse a multipart trampoline-to-legacy payment on payee side") {
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
+    LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
+
+    // s -> us -> a
+
+    val preimage = randomBytes32
+    val paymentHash = Crypto.sha256(preimage)
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, aP, "Invoice", CltvExpiryDelta(18)) // Final payee is D which we do not have direct channels with
+    val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
+    val (_, _, cm) = makeChannelMasterWithBasicGraph
+
+    val outerPaymentSecret = randomBytes32
+    val feeReserve = 7000L.msat
+
+    // Private channel US -> A
+    val hcs1 = makeHostedCommits(nodeId = a, alias = "peer-2")
+    cm.chanBag.put(hcs1)
+    cm.all = Channel.load(Set(cm), cm.chanBag)
+    cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
+
+    val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, a, CltvExpiryDelta(720), feeReserve)
+    val reasonableTrampoline1 = createResolution(pr, 707000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+
+    val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
+    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
+    synchronized(wait(500L))
+
+    val List(add1) = cm.allInChannelOutgoing.values.flatten.toList
+    IncomingPacket.decrypt(add1, aP).right.get.isInstanceOf[FinalPacket]
   }
 
   test("Successfully route a multipart trampoline payment") {
     LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
-    LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0D, logExponent = 0D, CltvExpiryDelta(72))
-    LNParams.routerConf = routerConf // Replace with the one which allows for
+    LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
+    LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 
     //             / b \
     // s -> us -> a     d
@@ -53,35 +76,395 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18)) // Final payee is D which we do not have direct channels with
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
+    val outerPaymentSecret = randomBytes32
+    val feeReserve = 7000L.msat
 
-    val hcs1 = makeHostedCommits(nodeId = a, alias = "peer-2") // Private channel US -> A
+    // Private channel US -> A
+    val hcs1 = makeHostedCommits(nodeId = a, alias = "peer-2")
     cm.chanBag.put(hcs1)
     cm.all = Channel.load(Set(cm), cm.chanBag)
     cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
 
-    val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) =
-      createInnerTrampoline(pr, from = remoteNodeInfo.nodeId, toTrampoline = remoteNodeInfo.nodeSpecificPubKey,
-        toFinal = d, trampolineExpiryDelta = CltvExpiryDelta(720), trampolineFees = 7000L.msat)
-
-    val outerPaymentSecret = randomBytes32
-    val addFromRemote1 = createTrampolineAdd(pr, 107000L.msat, from = remoteNodeInfo.nodeId, toTrampoline = remoteNodeInfo.nodeSpecificPubKey, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret)
-    val addFromRemote2 = createTrampolineAdd(pr, 400000L.msat, from = remoteNodeInfo.nodeId, toTrampoline = remoteNodeInfo.nodeSpecificPubKey, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret)
-    val addFromRemote3 = createTrampolineAdd(pr, 400000L.msat, from = remoteNodeInfo.nodeId, toTrampoline = remoteNodeInfo.nodeSpecificPubKey, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret)
-    val reasonableTrampoline1 = ChannelMaster.initResolve(UpdateAddHtlcExt(theirAdd = addFromRemote1, remoteInfo = remoteNodeInfo)).asInstanceOf[ReasonableTrampoline]
-    val reasonableTrampoline2 = ChannelMaster.initResolve(UpdateAddHtlcExt(theirAdd = addFromRemote2, remoteInfo = remoteNodeInfo)).asInstanceOf[ReasonableTrampoline]
-    val reasonableTrampoline3 = ChannelMaster.initResolve(UpdateAddHtlcExt(theirAdd = addFromRemote3, remoteInfo = remoteNodeInfo)).asInstanceOf[ReasonableTrampoline]
+    val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, d, CltvExpiryDelta(720), feeReserve)
+    val reasonableTrampoline1 = createResolution(pr, 105000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline2 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline3 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
 
     val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
-    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
-    synchronized(wait(400L))
-
-    val List(p1, p2) = cm.opm.data.payments(reasonableTrampoline1.fullTag).data.inFlightParts.toList
-    cm.opm process RemoteFulfill(preimage, UpdateAddHtlc(null, 1, null, paymentHash, null, p1.cmd.packetAndSecrets.packet, null))
+    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
     synchronized(wait(100L))
-    fsm doProcess TrampolineRevealed(preimage, cm.opm.data.payments(reasonableTrampoline1.fullTag).data.toSome)
+
+    assert(fsm.state == IncomingPaymentProcessor.RECEIVING)
+
+    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
+    synchronized(wait(500L))
+
+    assert(fsm.state == IncomingPaymentProcessor.SENDING)
+    val senderDataSnapshot = cm.opm.data.payments(reasonableTrampoline1.fullTag).data
+    val fulfill = UpdateAddHtlc(null, 1, null, paymentHash, null, senderDataSnapshot.inFlightParts.head.cmd.packetAndSecrets.packet, null)
+    synchronized(wait(100L))
+
+    assert(senderDataSnapshot.cmd.actualTotal == pr.amount.get) // With trampoline-to-legacy we find out a final amount
+    val ourMinimalFee = TrampolinePaymentRelayer.relayFee(reasonableTrampoline3.packet.innerPayload, LNParams.trampoline)
+    assert(senderDataSnapshot.cmd.totalFeeReserve == feeReserve - ourMinimalFee) // At the very least we collect base trampoline fee
+
+    // Sender FSM in turn notifies relay FSM, meanwhile we simulate multiple incoming messages
+    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
+    cm.opm process RemoteFulfill(preimage, fulfill)
+    synchronized(wait(100L))
+    // We are guaranteed to receiver InFlightPayments in a same thread after fulfill because FSM asks for it
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
     fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
     synchronized(wait(100L))
-    println(fsm.state)
+
+    assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
+    val history = cm.payBag.listRecentRelays.headTry(cm.payBag.toRelayedPreimageInfo).get
+    assert(history.relayed == pr.amount.get)
+    assert(history.earned == 6984L.msat)
+  }
+
+  test("Reject on incoming timeout") {
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
+    LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
+
+    val preimage = randomBytes32
+    val paymentHash = Crypto.sha256(preimage)
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18)) // Final payee is D which we do not have direct channels with
+    val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
+    val (_, _, cm) = makeChannelMasterWithBasicGraph
+    val outerPaymentSecret = randomBytes32
+    val feeReserve = 7000L.msat
+
+    var replies = List.empty[Any]
+    ChannelMaster.NO_CHANNEL = new StateMachine[ChannelData] with CanBeRepliedTo {
+      def process(change: Any): Unit = doProcess(change)
+      def doProcess(change: Any): Unit = replies ::= change
+    }
+
+    val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, d, CltvExpiryDelta(720), feeReserve)
+    val reasonableTrampoline1 = createResolution(pr, 105000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+
+    val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
+    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
+    synchronized(wait(100L))
+
+    assert(fsm.state == IncomingPaymentProcessor.RECEIVING)
+
+    fsm doProcess IncomingPaymentProcessor.CMDTimeout
+    assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    // FSM asks channel master to provide current HTLC data right away
+    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
+    synchronized(wait(100L))
+
+    assert(replies.head.asInstanceOf[CMD_FAIL_HTLC].reason == Right(PaymentTimeout))
+    fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
+    assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
+    synchronized(wait(100L))
+    // Sender FSM has been removed
+    assert(cm.opm.data.payments.isEmpty)
+  }
+
+  test("Reject on outgoing timeout") {
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
+    LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
+
+    val preimage = randomBytes32
+    val paymentHash = Crypto.sha256(preimage)
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18)) // Final payee is D which we do not have direct channels with
+    val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
+    val (_, _, cm) = makeChannelMasterWithBasicGraph
+    val outerPaymentSecret = randomBytes32
+    val feeReserve = 7000L.msat
+
+    var replies = List.empty[Any]
+    ChannelMaster.NO_CHANNEL = new StateMachine[ChannelData] with CanBeRepliedTo {
+      def process(change: Any): Unit = doProcess(change)
+      def doProcess(change: Any): Unit = replies ::= change
+    }
+
+    // Private channel US -> A
+    val hcs1 = makeHostedCommits(nodeId = a, alias = "peer-2")
+    cm.chanBag.put(hcs1)
+    cm.all = Channel.load(Set(cm), cm.chanBag)
+
+    val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, d, CltvExpiryDelta(720), feeReserve)
+    val reasonableTrampoline1 = createResolution(pr, 707000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+
+    val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
+    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
+    synchronized(wait(500L))
+
+    assert(fsm.state == IncomingPaymentProcessor.SENDING)
+    // Channels are not open so outgoing payments are waiting for timeout
+    cm.opm.data.payments(reasonableTrampoline1.fullTag) doProcess OutgoingPaymentMaster.CMDAbort
+    synchronized(wait(100L))
+    assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    // FSM asks channel master to provide current HTLC data right away
+    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
+    synchronized(wait(100L))
+    assert(replies.head.asInstanceOf[CMD_FAIL_HTLC].reason == Right(TemporaryNodeFailure))
+    fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
+    assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
+    synchronized(wait(100L))
+    // Sender FSM has been removed
+    assert(cm.opm.data.payments.isEmpty)
+  }
+
+  test("Fail to relay with outgoing channel getting SUSPENDED") {
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
+    LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
+
+    val preimage = randomBytes32
+    val paymentHash = Crypto.sha256(preimage)
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18)) // Final payee is D which we do not have direct channels with
+    val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
+    val (_, _, cm) = makeChannelMasterWithBasicGraph
+    val outerPaymentSecret = randomBytes32
+    val feeReserve = 7000L.msat
+
+    var replies = List.empty[Any]
+    ChannelMaster.NO_CHANNEL = new StateMachine[ChannelData] with CanBeRepliedTo {
+      def process(change: Any): Unit = doProcess(change)
+      def doProcess(change: Any): Unit = replies ::= change
+    }
+
+    // Private channel US -> A
+    val hcs1 = makeHostedCommits(nodeId = a, alias = "peer-2")
+    cm.chanBag.put(hcs1)
+    cm.all = Channel.load(Set(cm), cm.chanBag)
+    // Our only outgoing channel got SUSPENDED while we were collecting payment parts
+    cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.SUSPENDED))
+
+    val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, d, CltvExpiryDelta(720), feeReserve)
+    val reasonableTrampoline1 = createResolution(pr, 707000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+
+    val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
+    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
+    synchronized(wait(500L))
+
+    assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    // FSM asks channel master to provide current HTLC data right away
+    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
+    synchronized(wait(100L))
+    assert(replies.head.asInstanceOf[CMD_FAIL_HTLC].reason == Right(TemporaryNodeFailure))
+    fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
+    assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
+    synchronized(wait(100L))
+    // Sender FSM has been removed
+    assert(cm.opm.data.payments.isEmpty)
+  }
+
+  test("Fail to relay with no route found") {
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
+    LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
+
+    val preimage = randomBytes32
+    val paymentHash = Crypto.sha256(preimage)
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, eP, "Invoice", CltvExpiryDelta(18)) // Final payee is E which is not in a graph!
+    val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
+    val (_, _, cm) = makeChannelMasterWithBasicGraph
+    val outerPaymentSecret = randomBytes32
+    val feeReserve = 7000L.msat
+
+    var replies = List.empty[Any]
+    ChannelMaster.NO_CHANNEL = new StateMachine[ChannelData] with CanBeRepliedTo {
+      def process(change: Any): Unit = doProcess(change)
+      def doProcess(change: Any): Unit = replies ::= change
+    }
+
+    // Private channel US -> A
+    val hcs1 = makeHostedCommits(nodeId = a, alias = "peer-2")
+    cm.chanBag.put(hcs1)
+    cm.all = Channel.load(Set(cm), cm.chanBag)
+    cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
+
+    val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, e, CltvExpiryDelta(720), feeReserve)
+    val reasonableTrampoline1 = createResolution(pr, 707000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+
+    val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
+    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
+    synchronized(wait(500L))
+
+    assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    // FSM asks channel master to provide current HTLC data right away
+    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
+    synchronized(wait(100L))
+    assert(replies.head.asInstanceOf[CMD_FAIL_HTLC].reason == Right(TrampolineFeeInsufficient))
+    fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
+    assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
+    synchronized(wait(100L))
+    // Sender FSM has been removed
+    assert(cm.opm.data.payments.isEmpty)
+  }
+
+  test("Restart after first fail, wind down on second fail") {
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
+    LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
+
+    val preimage = randomBytes32
+    val paymentHash = Crypto.sha256(preimage)
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18)) // Final payee is D which we do not have direct channels with
+    val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
+    val (normalStore, _, cm) = makeChannelMaster
+    fillDirectGraph(normalStore)
+
+    // s -> us -> a == d
+
+    val outerPaymentSecret = randomBytes32
+    val feeReserve = 7000L.msat
+
+    // Private channel US -> A
+    val hcs1 = makeHostedCommits(nodeId = a, alias = "peer-2")
+    cm.chanBag.put(hcs1)
+    cm.all = Channel.load(Set(cm), cm.chanBag)
+    cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
+
+    val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, d, CltvExpiryDelta(720), feeReserve)
+    val reasonableTrampoline1 = createResolution(pr, 105000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline2 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline3 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+
+    val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
+    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
+    synchronized(wait(500L))
+
+    // Simulate making new FSM on restart
+    fsm.become(null, IncomingPaymentProcessor.RECEIVING)
+    val List(out1, out2) = cm.allInChannelOutgoing(reasonableTrampoline1.fullTag).toList
+    fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
+    assert(fsm.data.asInstanceOf[TrampolineStopping].retryOnceFinalized)
+
+    cm.all = Map.empty // Make it appear as if all outoing leftovers have been cleared (needed for sender FSM to fire an event)
+    cm.opm process RemoteUpdateFail(UpdateFailHtlc(out1.channelId, out1.id, randomBytes32.bytes), out1)
+    cm.opm process RemoteUpdateFail(UpdateFailHtlc(out2.channelId, out2.id, randomBytes32.bytes), out2)
+    synchronized(wait(200L))
+
+    // All outgoing parts have been cleared, but we still have incoming parts and maybe can try again (unless CLTV delta has expired)
+    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
+    assert(fsm.state == IncomingPaymentProcessor.SENDING)
+    synchronized(wait(200L))
+    assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
+    assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
+  }
+
+  test("Wind down after pathologc fail") {
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
+    LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
+
+    val preimage = randomBytes32
+    val paymentHash = Crypto.sha256(preimage)
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18)) // Final payee is D which we do not have direct channels with
+    val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
+    val (normalStore, _, cm) = makeChannelMaster
+    fillDirectGraph(normalStore)
+
+    // s -> us -> a == d
+
+    val outerPaymentSecret = randomBytes32
+    val feeReserve = 7000L.msat
+
+    // Private channel US -> A
+    val hcs1 = makeHostedCommits(nodeId = a, alias = "peer-2")
+    cm.chanBag.put(hcs1)
+    cm.all = Channel.load(Set(cm), cm.chanBag)
+    cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
+
+    val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, d, CltvExpiryDelta(720), feeReserve)
+    val reasonableTrampoline1 = createResolution(pr, 105000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline2 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline3 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+
+    val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
+    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
+    synchronized(wait(500L))
+
+    // Simulate making new FSM on restart
+    fsm.become(null, IncomingPaymentProcessor.RECEIVING)
+    val List(out1, out2) = cm.allInChannelOutgoing(reasonableTrampoline1.fullTag).toList
+    fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = reasonableTrampoline2 :: Nil)
+    // Pathologic state: we do not have enough incoming payments, yet have outgoing payments (user removed an HC?)
+    assert(!fsm.data.asInstanceOf[TrampolineStopping].retryOnceFinalized)
+
+    cm.all = Map.empty // Make it appear as if all outoing leftovers have been cleared (needed for sender FSM to fire an event)
+    cm.opm process RemoteUpdateFail(UpdateFailHtlc(out1.channelId, out1.id, randomBytes32.bytes), out1)
+    cm.opm process RemoteUpdateFail(UpdateFailHtlc(out2.channelId, out2.id, randomBytes32.bytes), out2)
+    synchronized(wait(200L))
+
+    var replies = List.empty[Any]
+    ChannelMaster.NO_CHANNEL = new StateMachine[ChannelData] with CanBeRepliedTo {
+      def process(change: Any): Unit = doProcess(change)
+      def doProcess(change: Any): Unit = replies ::= change
+    }
+
+    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline2 :: Nil)
+    assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
+    assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
+    assert(replies.head.asInstanceOf[CMD_FAIL_HTLC].reason == Right(TemporaryNodeFailure))
+  }
+
+  test("Fulfill in a pathologic fail state") {
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
+    LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
+
+    val preimage = randomBytes32
+    val paymentHash = Crypto.sha256(preimage)
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18)) // Final payee is D which we do not have direct channels with
+    val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
+    val (normalStore, _, cm) = makeChannelMaster
+    fillDirectGraph(normalStore)
+
+    // s -> us -> a == d
+
+    val outerPaymentSecret = randomBytes32
+    val feeReserve = 7000L.msat
+
+    // Private channel US -> A
+    val hcs1 = makeHostedCommits(nodeId = a, alias = "peer-2")
+    cm.chanBag.put(hcs1)
+    cm.all = Channel.load(Set(cm), cm.chanBag)
+    cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
+
+    val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, d, CltvExpiryDelta(720), feeReserve)
+    val reasonableTrampoline1 = createResolution(pr, 105000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline2 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline3 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+
+    val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
+    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
+    synchronized(wait(500L))
+
+    // Simulate making new FSM on restart
+    fsm.become(null, IncomingPaymentProcessor.RECEIVING)
+    val List(out1, out2) = cm.allInChannelOutgoing(reasonableTrampoline1.fullTag).toList
+    fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = reasonableTrampoline2 :: Nil)
+    // Pathologic state: we do not have enough incoming payments, yet have outgoing payments (user removed an HC?)
+    assert(!fsm.data.asInstanceOf[TrampolineStopping].retryOnceFinalized)
+
+    val senderDataSnapshot = cm.opm.data.payments(reasonableTrampoline1.fullTag).data
+    val fulfill = UpdateAddHtlc(null, 1, null, paymentHash, null, senderDataSnapshot.inFlightParts.head.cmd.packetAndSecrets.packet, null)
+    cm.opm process RemoteFulfill(preimage, fulfill)
+    synchronized(wait(200L))
+    fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = reasonableTrampoline2 :: Nil)
+    assert(fsm.data.asInstanceOf[TrampolineRevealed].preimage == preimage)
+    fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = Nil)
+    assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
+
+    fsm.become(null, IncomingPaymentProcessor.RECEIVING)
+    assert(cm.payBag.getPreimage(paymentHash).toOption.contains(preimage))
+    // All incoming have been fulfilled, but we still have outgoing (channel offline?)
+    // This is fine since we have a preiamge in case of what, but FSM is kept working
+    fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = Nil)
+    assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
+    assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
   }
 }
