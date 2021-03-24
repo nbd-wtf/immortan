@@ -5,11 +5,11 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
 import fr.acinq.eclair.Features._
-
 import scala.concurrent.duration._
 import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.bitcoin.DeterministicWallet._
 import scodec.bits.{ByteVector, HexStringSyntax}
+import immortan.sqlite.{DBInterface, RichCursor}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
 import fr.acinq.eclair.channel.{LocalParams, PersistentChannelData}
@@ -18,21 +18,15 @@ import fr.acinq.eclair.transactions.{DirectedHtlc, RemoteFulfill, Transactions}
 import immortan.utils.{Denomination, FeeRatesInfo, FiatRatesInfo, PaymentRequestExt, WalletEventsCatcher}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
-
 import scala.concurrent.ExecutionContextExecutor
 import fr.acinq.eclair.router.ChannelUpdateExt
 import java.util.concurrent.atomic.AtomicLong
-
 import immortan.SyncMaster.ShortChanIdSet
 import fr.acinq.eclair.crypto.Generators
 import immortan.crypto.Noise.KeyPair
 import java.io.ByteArrayInputStream
-
-import immortan.sqlite.{DBInterface, RichCursor}
 import java.nio.ByteOrder
-
 import akka.util.Timeout
-
 import scala.util.Try
 
 
@@ -44,9 +38,9 @@ object LNParams {
   val maxCltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(1008)
   val maxToLocalDelay: CltvExpiryDelta = CltvExpiryDelta(2016)
   val maxFundingSatoshis: Satoshi = Satoshi(10000000000L)
+  val maxReserveToFundingRatio: Double = 0.05
   val maxNegotiationIterations: Int = 20
   val maxChainConnectionsCount: Int = 5
-  val maxReserveToFundingRatio = 0.05
   val maxAcceptedHtlcs: Int = 483
 
   val minHostedOnChainRefund: Satoshi = Satoshi(1000000L)
@@ -57,8 +51,8 @@ object LNParams {
   val minDepthBlocks: Int = 3
 
   val chainHash: ByteVector32 = Block.LivenetGenesisBlock.hash
-  val reserveToFundingRatio = 0.0025 // %
-  val offChainFeeRatio = 0.01 // %
+  val reserveToFundingRatio: Double = 0.0025 // %
+  val offChainFeeRatio: Double = 0.01 // %
 
   // Init messages + features
 
