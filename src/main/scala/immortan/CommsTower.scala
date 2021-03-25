@@ -25,7 +25,7 @@ object CommsTower {
   val listeners: mutable.Map[KeyPairAndPubKey, Listeners] = new ConcurrentHashMap[KeyPairAndPubKey, Listeners].asScala withDefaultValue Set.empty
 
   def listen(listeners1: Set[ConnectionListener], pair: KeyPairAndPubKey, info: RemoteNodeInfo): Unit = synchronized {
-    // Update and either insert a new worker or fire onOperational on new listeners iff worker currently exists and is online
+    // Update and either insert a new worker or fire onOperational on new listeners if worker currently exists and online
     // First add listeners, then try to add worker because we may already have a connected worker, but no listeners
     listeners(pair) ++= listeners1
 
@@ -35,6 +35,11 @@ object CommsTower {
     }
   }
 
+  def sendMany(messages: Traversable[LightningMessage], pair: KeyPairAndPubKey): Unit = CommsTower.workers.get(pair).foreach(messages foreach _.handler.process)
+  // Add or remove listeners to a connection where our nodeId is stable, not a randomly generated one (one which makes us seen as a constant peer by remote)
+  def addListenersNative(listeners1: Set[ConnectionListener], info: RemoteNodeInfo): Unit = listen(listeners1, info.nodeSpecificPair, info)
+  def rmListenerNative(info: RemoteNodeInfo, listener: ConnectionListener): Unit = listeners(info.nodeSpecificPair) -= listener
+
   def forget(pair: KeyPairAndPubKey): Unit = {
     // First remove all listeners, then disconnect
     // this ensures listeners won't try to reconnect
@@ -42,9 +47,6 @@ object CommsTower {
     listeners.remove(pair)
     workers.get(pair).foreach(_.disconnect)
   }
-
-  def sendMany(messages: Traversable[LightningMessage], pair: KeyPairAndPubKey): Unit =
-    CommsTower.workers.get(pair).foreach(messages foreach _.handler.process)
 
   class Worker(val pair: KeyPairAndPubKey, val info: RemoteNodeInfo, buffer: Bytes, sock: Socket) { me =>
     implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
@@ -105,6 +107,7 @@ object CommsTower {
       // Will also run after forget
       try pinging.unsubscribe catch none
       listeners(pair).foreach(_ onDisconnect me)
+      // Once disconnected, worker gets removed
       workers -= pair
     }
 
@@ -127,8 +130,9 @@ object CommsTower {
       handler process Ping(payloadLength, data)
     }
 
-    def disconnect: Unit =
+    def disconnect: Unit = {
       try sock.close catch none
+    }
   }
 }
 

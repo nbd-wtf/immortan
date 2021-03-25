@@ -10,13 +10,18 @@ import immortan.utils.Rx
 
 
 abstract class SwapInHandler(cnc: ChanAndCommits, paymentRequest: PaymentRequest, id: Long) { me =>
-  def finish: Unit = runAnd(shutdownTimer.unsubscribe)(CommsTower.listeners(cnc.commits.remoteInfo.nodeSpecificPair) -= swapInListener)
-  CommsTower.listen(listeners1 = Set(swapInListener), cnc.commits.remoteInfo.nodeSpecificPair, cnc.commits.remoteInfo)
   val shutdownTimer: Subscription = Rx.ioQueue.delay(30.seconds).doOnCompleted(finish).subscribe(_ => onTimeout)
+  CommsTower.addListenersNative(Set(swapInListener), cnc.commits.remoteInfo)
+
+  def finish: Unit = {
+    // It is assumed that this FSM is established with a peer which has an HC with us
+    // This FSM has a hardcoded timeout which will eventually remove its connection listener
+    // OTOH this FSM should survive reconnects so there is no local disconnect logic here
+    CommsTower.rmListenerNative(cnc.commits.remoteInfo, swapInListener)
+    shutdownTimer.unsubscribe
+  }
 
   lazy private val swapInListener = new ConnectionListener {
-    // Disconnect logic is already handled in ChannelMaster base listener
-    // We don't check if SwapOut is supported here, it has already been done
     override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = {
       val swapInRequest = SwapInPaymentRequest(PaymentRequest.write(paymentRequest), id)
       worker.handler process swapInRequest

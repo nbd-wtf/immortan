@@ -103,7 +103,7 @@ case class SyncWorker(master: CanBeRepliedTo, keyPair: KeyPair, remoteInfo: Remo
   }
 
   become(null, WAITING)
-  // Connect to remote peer and start listening immediately
+  // Note that our keyPair is always ranom here
   CommsTower.listen(Set(listener), pair, remoteInfo)
 
   def doProcess(change: Any): Unit = (change, data, state) match {

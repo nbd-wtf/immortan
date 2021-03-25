@@ -33,8 +33,11 @@ abstract class SwapOutFeeratesHandler extends StateMachine[FeeratesData] { me =>
   implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
   def process(changeMessage: Any): Unit = scala.concurrent.Future(me doProcess changeMessage)
 
+  // It is assumed that this FSM is established with a peer which has an HC with us
+  // This FSM has a hardcoded timeout which will eventually remove its connection listeners
+  // OTOH this FSM should survive reconnects so there is no local disconnect logic here
+
   lazy private val swapOutListener = new ConnectionListener {
-    // Disconnect logic is already handled in ChannelMaster base listener
     override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = {
       val isOk = Features.canUseFeature(LNParams.ourInit.features, theirInit.features, Features.ChainSwap)
       if (isOk) worker.handler process SwapOutRequest else me process NoSwapOutSupport(worker)
@@ -72,12 +75,12 @@ abstract class SwapOutFeeratesHandler extends StateMachine[FeeratesData] { me =>
 
     case (CMDCancel, WAITING_FIRST_RESPONSE | WAITING_REST_OF_RESPONSES) =>
       // Do not disconnect from remote peer because we have a channel with them, but remove this exact SwapIn listener
-      for (cnc <- data.cmdStart.capableCncs) CommsTower.listeners(cnc.commits.remoteInfo.nodeSpecificPair) -= swapOutListener
+      for (cnc <- data.cmdStart.capableCncs) CommsTower.rmListenerNative(cnc.commits.remoteInfo, swapOutListener)
       become(data, FINALIZED)
 
     case (cmd: CMDStart, null) =>
-      become(freshData = FeeratesData(results = cmd.capableCncs.map(_.commits.remoteInfo -> None).toMap, cmd), WAITING_FIRST_RESPONSE)
-      for (cnc <- cmd.capableCncs) CommsTower.listen(Set(swapOutListener), cnc.commits.remoteInfo.nodeSpecificPair, cnc.commits.remoteInfo)
+      become(FeeratesData(results = cmd.capableCncs.map(_.commits.remoteInfo -> None).toMap, cmd), WAITING_FIRST_RESPONSE)
+      for (cnc <- cmd.capableCncs) CommsTower.addListenersNative(Set(swapOutListener), cnc.commits.remoteInfo)
       Rx.ioQueue.delay(30.seconds).foreach(_ => me doSearch true)
 
     case _ =>

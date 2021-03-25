@@ -31,9 +31,10 @@ abstract class AccountExistenceCheck(format: StorageFormat, chainHash: ByteVecto
     override def onHostedMessage(worker: CommsTower.Worker, msg: HostedChannelMessage): Unit = me process PeerResponse(msg, worker)
 
     override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = {
-      val peerSpecificSecret = format.keys.refundPubKey(theirNodeId = worker.info.nodeId)
-      val peerSpecificRefundPubKey = format.attachedChannelSecret(theirNodeId = worker.info.nodeId)
-      worker.handler process InvokeHostedChannel(chainHash, peerSpecificSecret, peerSpecificRefundPubKey)
+      val peerSpecificSecret = format.attachedChannelSecret(theirNodeId = worker.info.nodeId)
+      val peerSpecificRefundPubKey = format.keys.refundPubKey(theirNodeId = worker.info.nodeId)
+      val invokeMsg = InvokeHostedChannel(chainHash, peerSpecificRefundPubKey, peerSpecificSecret)
+      worker.handler process invokeMsg
     }
   }
 
@@ -51,8 +52,8 @@ abstract class AccountExistenceCheck(format: StorageFormat, chainHash: ByteVecto
       doSearch(force = true)
 
     case (worker: CommsTower.Worker, OPERATIONAL) =>
-      // We get previously scheduled worker and use its peer data to reconnect again
-      CommsTower.listen(Set(accountCheckListener), worker.pair, worker.info)
+      // We get previously scheduled worker, use its peer data to reconnect again
+      CommsTower.addListenersNative(Set(accountCheckListener), worker.info)
 
     case (PeerResponse(_: InitHostedChannel, worker), OPERATIONAL) =>
       // Remote node offers to create a new channel, no "account" there
@@ -68,12 +69,12 @@ abstract class AccountExistenceCheck(format: StorageFormat, chainHash: ByteVecto
 
     case (CMDCancel, OPERATIONAL) =>
       // User has manually cancelled a check, disconnect all peers
-      data.hosts.foreach(CommsTower forget _.nodeSpecificPair)
+      for (info <- data.hosts) CommsTower forget info.nodeSpecificPair
       become(data, FINALIZED)
 
     case (CMDStart(remoteInfos), null) =>
       become(CheckData(remoteInfos, remoteInfos.map(_ -> false).toMap, remoteInfos.size * 4), OPERATIONAL)
-      for (info <- remoteInfos) CommsTower.listen(Set(accountCheckListener), info.nodeSpecificPair, info)
+      for (info <- remoteInfos) CommsTower.addListenersNative(Set(accountCheckListener), info)
       Rx.ioQueue.delay(30.seconds).foreach(_ => me doSearch true)
 
     case _ =>

@@ -1,6 +1,6 @@
 package immortan.fsm
 
-import immortan.{ChannelHosted, ChannelListener, ChannelMaster, CommsTower, ConnectionListener, HostedCommits, RemoteNodeInfo, StorageFormat, WaitRemoteHostedReply}
+import immortan.{ChannelHosted, ChannelListener, ChannelMaster, CommsTower, ConnectionListener, HostedCommits, RemoteNodeInfo, WaitRemoteHostedReply}
 import fr.acinq.eclair.wire.{HasChannelId, HasTemporaryChannelId, HostedChannelMessage, Init, LightningMessage, LightningMessageCodecs}
 import fr.acinq.eclair.channel.{CMD_SOCKET_ONLINE, PersistentChannelData}
 import immortan.Channel.{OPEN, SUSPENDED, WAIT_FOR_ACCEPT}
@@ -10,11 +10,9 @@ import scodec.bits.ByteVector
 import immortan.crypto.Tools
 
 
-// Important: this must be initiated when chain tip is actually known
-abstract class HCOpenHandler(info: RemoteNodeInfo, format: StorageFormat, cm: ChannelMaster) {
+// Secret and refund pubKey are supplied externally because they may be different depending if we have a chain wallet or not
+abstract class HCOpenHandler(info: RemoteNodeInfo, peerSpecificSecret: ByteVector32, peerSpecificRefundPubKey: ByteVector, cm: ChannelMaster) {
   val channelId: ByteVector32 = Tools.hostedChanId(info.nodeSpecificPubKey.value, info.nodeId.value)
-  val peerSpecificSecret: ByteVector32 = format.attachedChannelSecret(theirNodeId = info.nodeId)
-  val peerSpecificRefundPubKey: ByteVector = format.keys.refundPubKey(theirNodeId = info.nodeId)
 
   val freshChannel: ChannelHosted = new ChannelHosted {
     def SEND(msgs: LightningMessage*): Unit = CommsTower.sendMany(msgs.map(LightningMessageCodecs.prepareNormal), info.nodeSpecificPair)
@@ -25,7 +23,7 @@ abstract class HCOpenHandler(info: RemoteNodeInfo, format: StorageFormat, cm: Ch
   def onEstablished(channel: ChannelHosted): Unit
   def onFailure(err: Throwable): Unit
 
-  private val makeChanListener = new ConnectionListener with ChannelListener {
+  private val makeChanListener = new ConnectionListener with ChannelListener { me =>
     override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = freshChannel process CMD_SOCKET_ONLINE
     override def onHostedMessage(worker: CommsTower.Worker, message: HostedChannelMessage): Unit = freshChannel process message
 
@@ -37,29 +35,28 @@ abstract class HCOpenHandler(info: RemoteNodeInfo, format: StorageFormat, cm: Ch
 
     override def onDisconnect(worker: CommsTower.Worker): Unit = {
       // Peer has disconnected during HC opening process
+      CommsTower.rmListenerNative(info, me)
       onPeerDisconnect(worker)
-      rmTempListener
     }
 
     override def onBecome: PartialFunction[Transition, Unit] = {
       case (_, _, commits: HostedCommits, WAIT_FOR_ACCEPT, OPEN | SUSPENDED) =>
         // It is up to HC to store itself and communicate successful opening
         cm.implantChannel(commits, freshChannel)
+        CommsTower.rmListenerNative(info, me)
         onEstablished(freshChannel)
-        rmTempListener
     }
 
     override def onException: PartialFunction[Malfunction, Unit] = {
       // Something went wrong while trying to establish a channel
 
-      case (_, error) =>
+      case (_, error: Throwable) =>
+        CommsTower.rmListenerNative(info, me)
         onFailure(error)
-        rmTempListener
     }
   }
 
   freshChannel.listeners = Set(makeChanListener)
   freshChannel doProcess WaitRemoteHostedReply(info, peerSpecificRefundPubKey, peerSpecificSecret) // Prepare empty HC with appropriate data
-  CommsTower.listen(Set(makeChanListener, cm.sockBrandingBridge), info.nodeSpecificPair, info) // Connect or fire listeners if connected already
-  def rmTempListener: Unit = CommsTower.listeners(info.nodeSpecificPair) -= makeChanListener
+  CommsTower.addListenersNative(Set(makeChanListener, cm.sockBrandingBridge), info) // Connect or fire listeners if connected already
 }
