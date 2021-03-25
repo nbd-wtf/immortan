@@ -71,7 +71,14 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
   val initResolveMemo: LoadingCache[UpdateAddHtlcExt, IncomingResolution] = memoize(initResolve)
   val getPreimageMemo: LoadingCache[ByteVector32, PreimageTry] = memoize(payBag.getPreimage)
 
-  val sockBrandingBridge: ConnectionListener
+  val sockBrandingBridge: ConnectionListener = new ConnectionListener {
+    // This listener must be separate because we may use it to listen to new channels
+    override def onHostedMessage(worker: CommsTower.Worker, msg: HostedChannelMessage): Unit = msg match {
+      case branding: HostedChannelBranding => dataBag.putBranding(worker.info.nodeId, branding)
+      case _ => // Do nothing
+    }
+  }
+
   val sockChannelBridge: ConnectionListener
 
   val opm: OutgoingPaymentMaster = new OutgoingPaymentMaster(me)

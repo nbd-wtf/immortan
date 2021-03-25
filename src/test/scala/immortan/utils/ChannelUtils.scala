@@ -51,7 +51,6 @@ object ChannelUtils {
 
     val pf = makePathFinder(normalStore, hostedStore)
     val cm = new ChannelMaster(payBag, chanBag, dataBag, pf) {
-      val sockBrandingBridge: ConnectionListener = null
       val sockChannelBridge: ConnectionListener = null
     }
 
