@@ -59,6 +59,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
           accept.maxAcceptedHtlcs, accept.fundingPubkey, accept.revocationBasepoint, accept.paymentBasepoint, accept.delayedPaymentBasepoint, accept.htlcBasepoint)
 
         Helpers.validateParamsFunder(wait.lastSent, accept)
+
         val multisig = Script pay2wsh Scripts.multiSig2of2(wait.lastSent.fundingPubkey, remoteParams.fundingPubKey)
         chainWallet.wallet.makeFundingTx(Script.write(multisig), wait.initFunder.fundingAmount, wait.initFunder.fundingTxFeeratePerKw).foreach(process)
         BECOME(DATA_WAIT_FOR_FUNDING_INTERNAL(wait.initFunder, remoteParams, accept.firstPerCommitmentPoint, wait.lastSent), WAIT_FOR_ACCEPT)
@@ -75,9 +76,9 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         val localSigOfRemoteTx = wait.initFunder.remoteInfo.sign(remoteCommitTx, extendedFundingPubKey, TxOwner.Remote, wait.initFunder.channelVersion.commitmentFormat)
         val fundingCreated = FundingCreated(wait.initFunder.temporaryChannelId, fundingTxid = fundingTx.hash, fundingTxOutputIndex, localSigOfRemoteTx)
 
-        val data1 = DATA_WAIT_FOR_FUNDING_SIGNED(wait.initFunder.remoteInfo, channelId = toLongId(fundingTx.hash, fundingTxOutputIndex), wait.initFunder.localParams, wait.remoteParams,
-          fundingTx, fundingTxFee, localSpec, localCommitTx, RemoteCommit(index = 0L, remoteSpec, remoteCommitTx.tx.txid, wait.remoteFirstPerCommitmentPoint), wait.lastSent.channelFlags,
-          wait.initFunder.channelVersion, fundingCreated)
+        val data1 = DATA_WAIT_FOR_FUNDING_SIGNED(wait.initFunder.remoteInfo, channelId = toLongId(fundingTx.hash, fundingTxOutputIndex), wait.initFunder.localParams,
+          wait.remoteParams, fundingTx, fundingTxFee, localSpec, localCommitTx, RemoteCommit(index = 0L, remoteSpec, remoteCommitTx.tx.txid, wait.remoteFirstPerCommitmentPoint),
+          wait.lastSent.channelFlags, wait.initFunder.channelVersion, fundingCreated)
 
         BECOME(data1, WAIT_FOR_ACCEPT)
         SEND(fundingCreated)

@@ -56,7 +56,7 @@ case class FeeRatesInfo(perKb: FeeratesPerKB, stamp: Long) {
   }
 
   val onChainFeeConf: OnChainFeeConf =
-    OnChainFeeConf(FeeTargets(fundingBlockTarget = 6, commitmentBlockTarget = 6, mutualCloseBlockTarget = 36, claimMainBlockTarget = 36),
+    OnChainFeeConf(FeeTargets(fundingBlockTarget = 12, commitmentBlockTarget = 6, mutualCloseBlockTarget = 36, claimMainBlockTarget = 36),
       feeEstimator, closeOnOfflineMismatch = false, updateFeeMinDiffRatio = 0.1, FeerateTolerance(0.2, 20), perNodeFeerateTolerance = Map.empty)
 }
 

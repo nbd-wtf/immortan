@@ -92,10 +92,10 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
     initConnect // Add standard connection listeners for this peer
   }
 
-  def initConnect: Unit =
-    all.values.filter(Channel.isOperationalOrWaiting).flatMap(Channel.chanAndCommitsOpt).foreach { cnc =>
-      CommsTower.listenNative(connectionListeners, cnc.commits.remoteInfo)
-    }
+  def initConnect: Unit = {
+    val eligibleForConnect = all.values.filter(Channel.isOperationalOrWaiting).flatMap(Channel.chanAndCommitsOpt)
+    for (cnc <- eligibleForConnect) CommsTower.listenNative(connectionListeners, cnc.commits.remoteInfo)
+  }
 
   def currentLocalSentPayments: Map[FullPaymentTag, OutgoingPaymentSender] = opm.data.payments.filterKeys(_.tag == PaymentTagTlv.LOCALLY_SENT)
   def currentFinalIncomingPayments: Map[FullPaymentTag, IncomingPaymentProcessor] = inProcessors.filterKeys(_.tag == PaymentTagTlv.FINAL_INCOMING)
