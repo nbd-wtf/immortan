@@ -339,6 +339,12 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listener: OutgoingP
         }
       }
 
+    case (reject: RemoteReject, PENDING) if CltvExpiry(LNParams.blockCount.get) >= data.cmd.targetExpiry =>
+      // Too many blocks have passed since we started trying to send a payment, we now know for sure that payee will fail it on receiving
+      data.parts.values.collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isDefined && wait.partId == reject.ourAdd.partId =>
+        me abortAndNotify data.withoutPartId(wait.partId).withLocalFailure(PAYMENT_NOT_SENDABLE, wait.amount)
+      }
+
     case (reject: RemoteUpdateMalform, PENDING) =>
       data.parts.values.collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isDefined && wait.partId == reject.ourAdd.partId =>
         val singleCapableCncCandidates = opm.rightNowSendable(data.cmd.allowedChans diff wait.localFailedChans, feeLeftover)

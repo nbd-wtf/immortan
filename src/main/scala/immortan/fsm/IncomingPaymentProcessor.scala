@@ -151,7 +151,7 @@ object TrampolinePaymentRelayer {
     else if (adds.map(_.packet.innerPayload.amountToForward).toSet.size != 1) Some(LNParams incorrectDetails first(adds).add.amountMsat) // All incoming parts must have the same amount to be forwareded
     else if (adds.map(_.packet.outerPayload.totalAmount).toSet.size != 1) Some(LNParams incorrectDetails first(adds).add.amountMsat) // All incoming parts must have the same TotalAmount value
     else if (expiryIn(adds) - first(adds).innerPayload.outgoingCltv < params.cltvExpiryDelta) Some(TrampolineExpiryTooSoon) // Proposed delta is less than required by our node
-    else if (CltvExpiry(blockHeight) > first(adds).innerPayload.outgoingCltv) Some(TrampolineExpiryTooSoon) // Recepient's CLTV expiry is below current chain height
+    else if (CltvExpiry(blockHeight) >= first(adds).innerPayload.outgoingCltv) Some(TrampolineExpiryTooSoon) // Recepient's CLTV expiry is below current chain height
     else if (first(adds).innerPayload.amountToForward < params.minimumMsat) Some(TemporaryNodeFailure)
     else None
 
@@ -167,8 +167,6 @@ case class TrampolineProcessing(finalNodeId: PublicKey) extends IncomingProcesso
 case class TrampolineStopping(retryOnceFinalized: Boolean) extends IncomingProcessorData // SENDING
 case class TrampolineRevealed(preimage: ByteVector32, senderData: Option[OutgoingPaymentSenderData] = None) extends IncomingProcessorData // SENDING | FINALIZING
 case class TrampolineAborted(failure: FailureMessage) extends IncomingProcessorData // FINALIZING
-
-// TODO: stop retrying outgoing payments if we are close to CLTV reserve?
 
 class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) extends IncomingPaymentProcessor with OutgoingPaymentEvents { self =>
   // Important: we may have outgoing leftovers on restart, so we always need to create a sender FSM right away, which will be firing events once leftovers get finalized
