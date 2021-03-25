@@ -56,5 +56,5 @@ abstract class NCFundeeOpenHandler(info: RemoteNodeInfo, theirOpen: OpenChannel,
   }
 
   freshChannel.listeners = Set(makeChanListener)
-  CommsTower.addListenersNative(Set(makeChanListener), info)
+  CommsTower.listenNative(Set(makeChanListener), info)
 }

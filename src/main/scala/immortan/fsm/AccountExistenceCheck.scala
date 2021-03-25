@@ -53,7 +53,7 @@ abstract class AccountExistenceCheck(format: StorageFormat, chainHash: ByteVecto
 
     case (worker: CommsTower.Worker, OPERATIONAL) =>
       // We get previously scheduled worker, use its peer data to reconnect again
-      CommsTower.addListenersNative(Set(accountCheckListener), worker.info)
+      CommsTower.listenNative(Set(accountCheckListener), worker.info)
 
     case (PeerResponse(_: InitHostedChannel, worker), OPERATIONAL) =>
       // Remote node offers to create a new channel, no "account" there
@@ -74,7 +74,7 @@ abstract class AccountExistenceCheck(format: StorageFormat, chainHash: ByteVecto
 
     case (CMDStart(remoteInfos), null) =>
       become(CheckData(remoteInfos, remoteInfos.map(_ -> false).toMap, remoteInfos.size * 4), OPERATIONAL)
-      for (info <- remoteInfos) CommsTower.addListenersNative(Set(accountCheckListener), info)
+      for (info <- remoteInfos) CommsTower.listenNative(Set(accountCheckListener), info)
       Rx.ioQueue.delay(30.seconds).foreach(_ => me doSearch true)
 
     case _ =>

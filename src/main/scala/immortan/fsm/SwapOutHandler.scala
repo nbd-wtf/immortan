@@ -11,7 +11,7 @@ import immortan.utils.Rx
 
 abstract class SwapOutHandler(cnc: ChanAndCommits, amount: Satoshi, btcAddress: String, blockTarget: Int, feerateKey: ByteVector32) { me =>
   val shutdownTimer: Subscription = Rx.ioQueue.delay(30.seconds).doOnCompleted(finish).subscribe(_ => onTimeout)
-  CommsTower.addListenersNative(Set(swapOutListener), cnc.commits.remoteInfo)
+  CommsTower.listenNative(Set(swapOutListener), cnc.commits.remoteInfo)
 
   def finish: Unit = {
     // It is assumed that this FSM is established with a peer which has an HC with us

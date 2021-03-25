@@ -11,7 +11,7 @@ import immortan.utils.Rx
 
 abstract class SwapInHandler(cnc: ChanAndCommits, paymentRequest: PaymentRequest, id: Long) { me =>
   val shutdownTimer: Subscription = Rx.ioQueue.delay(30.seconds).doOnCompleted(finish).subscribe(_ => onTimeout)
-  CommsTower.addListenersNative(Set(swapInListener), cnc.commits.remoteInfo)
+  CommsTower.listenNative(Set(swapInListener), cnc.commits.remoteInfo)
 
   def finish: Unit = {
     // It is assumed that this FSM is established with a peer which has an HC with us

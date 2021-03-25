@@ -80,7 +80,7 @@ abstract class SwapOutFeeratesHandler extends StateMachine[FeeratesData] { me =>
 
     case (cmd: CMDStart, null) =>
       become(FeeratesData(results = cmd.capableCncs.map(_.commits.remoteInfo -> None).toMap, cmd), WAITING_FIRST_RESPONSE)
-      for (cnc <- cmd.capableCncs) CommsTower.addListenersNative(Set(swapOutListener), cnc.commits.remoteInfo)
+      for (cnc <- cmd.capableCncs) CommsTower.listenNative(Set(swapOutListener), cnc.commits.remoteInfo)
       Rx.ioQueue.delay(30.seconds).foreach(_ => me doSearch true)
 
     case _ =>

@@ -94,7 +94,7 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
   def initConnect: Unit =
     all.values.filter(Channel.isOperationalOrWaiting).flatMap(Channel.chanAndCommitsOpt).foreach { cnc =>
-      CommsTower.addListenersNative(connectionListeners, cnc.commits.remoteInfo)
+      CommsTower.listenNative(connectionListeners, cnc.commits.remoteInfo)
     }
 
   def currentLocalSentPayments: Map[FullPaymentTag, OutgoingPaymentSender] = opm.data.payments.filterKeys(_.tag == PaymentTagTlv.LOCALLY_SENT)

@@ -72,7 +72,7 @@ abstract class SwapInAddressHandler extends StateMachine[AddressData] { me =>
 
     case (cmd: CMDStart, null) =>
       become(AddressData(results = cmd.capableCncs.map(_.commits.remoteInfo -> None).toMap, cmd), WAITING_FIRST_RESPONSE)
-      for (cnc <- cmd.capableCncs) CommsTower.addListenersNative(Set(swapInListener), cnc.commits.remoteInfo)
+      for (cnc <- cmd.capableCncs) CommsTower.listenNative(Set(swapInListener), cnc.commits.remoteInfo)
       Rx.ioQueue.delay(30.seconds).foreach(_ => me doSearch true)
 
     case _ =>
