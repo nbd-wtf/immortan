@@ -43,8 +43,9 @@ object PaymentUtils {
 
   //
 
-  def createInnerTrampoline(pr: PaymentRequest, from: PublicKey, toTrampoline: PublicKey, toFinal: PublicKey, trampolineExpiryDelta: CltvExpiryDelta,
-                            trampolineFees: MilliSatoshi): (MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets) = {
+  def createInnerLegacyTrampoline(pr: PaymentRequest,
+                                  from: PublicKey, toTrampoline: PublicKey, toFinal: PublicKey, trampolineExpiryDelta: CltvExpiryDelta,
+                                  trampolineFees: MilliSatoshi): (MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets) = {
 
     val trampolineRoute = Seq(
       NodeHop(from, toTrampoline, CltvExpiryDelta(0), 0.msat), // a hop from us to our peer, only needed because of our NodeId
@@ -54,6 +55,20 @@ object PaymentUtils {
     // We send to a receiver who does not support trampoline, so relay node will send a basic MPP with inner payment secret provided and revealed
     val finalInnerPayload = Onion.createSinglePartPayload(pr.amount.get, CltvExpiry(18), pr.paymentSecret) // Final CLTV is supposed to be taken from invoice (+ assuming tip = 0 when testing)
     OutgoingPacket.buildTrampolineToLegacyPacket(randomKey, pr, trampolineRoute, finalInnerPayload)
+  }
+
+  def createInnerNativeTrampoline(partAmount: MilliSatoshi, pr: PaymentRequest,
+                                  from: PublicKey, toTrampoline: PublicKey, toFinal: PublicKey, trampolineExpiryDelta: CltvExpiryDelta,
+                                  trampolineFees: MilliSatoshi): (MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets) = {
+
+    val trampolineRoute = Seq(
+      NodeHop(from, toTrampoline, CltvExpiryDelta(0), 0.msat), // a hop from us to our peer, only needed because of our NodeId
+      NodeHop(toTrampoline, toFinal, trampolineExpiryDelta, trampolineFees) // for now we only use a single trampoline hop
+    )
+
+    // We send to a receiver who does not support trampoline, so relay node will send a basic MPP with inner payment secret provided and revealed
+    val finalInnerPayload = Onion.createMultiPartPayload(partAmount, pr.amount.get, CltvExpiry(18), pr.paymentSecret.get) // Final CLTV is supposed to be taken from invoice (+ assuming tip = 0 when testing)
+    OutgoingPacket.buildPacket(Sphinx.TrampolinePacket)(randomKey, pr.paymentHash, trampolineRoute, finalInnerPayload)
   }
 
   def createTrampolineAdd(pr: PaymentRequest, outerPartAmount: MilliSatoshi, from: PublicKey, toTrampoline: PublicKey, trampolineAmountTotal: MilliSatoshi,
