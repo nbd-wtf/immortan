@@ -8,7 +8,7 @@ import com.softwaremill.quicklens._
 import immortan.utils.ChannelUtils._
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.CMD_SOCKET_OFFLINE
-import fr.acinq.eclair.transactions.RemoteFulfill
+import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteUpdateFail}
 import fr.acinq.eclair.router.Router.ChannelDesc
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -58,6 +58,15 @@ class MPPSpec extends AnyFunSuite {
     assert(part1.route.fee == 0L.msat)
     assert(part2.route.hops.size == 2) // US -> C -> A
     assert(part2.route.fee == 920L.msat)
+
+    LNParams.blockCount.set(10) // One more than receiver CLTV
+    val out1 = cm.allInChannelOutgoing.values.flatten.head
+    cm.opm process RemoteUpdateFail(UpdateFailHtlc(out1.channelId, out1.id, randomBytes32.bytes), out1)
+    synchronized(wait(200))
+
+    assert(cm.opm.data.payments(tag).state == PaymentStatus.ABORTED)
+    assert(cm.opm.data.payments(tag).data.inFlightParts.size == 1)
+    LNParams.blockCount.set(0)
   }
 
   test("Split after no route found on first attempt") {
