@@ -49,12 +49,11 @@ object RouteCalculation {
   }
 
   def toFakeUpdate(extraHop: ExtraHop): ChannelUpdateExt = {
+    // Lets assume this fake channel's capacity is 1000 BTC, it will be corrected by failed-at-amount mechanism
     val update = ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId,
       System.currentTimeMillis.milliseconds.toSeconds, messageFlags = 1, channelFlags = 0, extraHop.cltvExpiryDelta,
-      LNParams.minPayment, extraHop.feeBase, extraHop.feeProportionalMillionths, Long.MaxValue.msat.toSome)
+      LNParams.minPayment, extraHop.feeBase, extraHop.feeProportionalMillionths, 1000000000000000L.msat.toSome)
 
-    // Lets assume this fake channel's capacity is infinite
-    // it will be corrected by failed-at-amount mechanism
     ChannelUpdateExt.fromUpdate(update)
   }
 

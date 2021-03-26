@@ -116,12 +116,10 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
   // RECEIVE/SEND UTILITIES
 
-  def maxReceivable: Option[CommitsAndMax] = {
+  def receivables: Seq[ChanAndCommits] = {
     val canReceive = all.values.filter(Channel.isOperational).flatMap(Channel.chanAndCommitsOpt).filter(_.commits.updateOpt.isDefined).toList.sortBy(_.commits.availableForReceive)
-    // Example: (5, 50, 60, 100) -> (50, 60, 100), receivable = 50*3 = 150 (the idea is for smallest remaining operational channel to be able to handle an evenly split amount)
-    val withoutSmall = canReceive.dropWhile(_.commits.availableForReceive * canReceive.size < canReceive.last.commits.availableForReceive).takeRight(4)
-    val candidates = for (cs <- withoutSmall.indices map withoutSmall.drop) yield CommitsAndMax(cs, cs.head.commits.availableForReceive * cs.size)
-    if (candidates.isEmpty) None else candidates.maxBy(_.maxReceivable).toSome
+    // Example: (5, 50, 60, 100) -> (50, 60, 100), receivable will be 50 (the idea is for any remaining channel to be able to get a smallest remaining channel receivable)
+    canReceive.dropWhile(_.commits.availableForReceive * canReceive.size < canReceive.last.commits.availableForReceive).takeRight(4)
   }
 
   def maxSendable: MilliSatoshi = {

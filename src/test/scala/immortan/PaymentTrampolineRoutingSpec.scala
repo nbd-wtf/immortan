@@ -1,13 +1,11 @@
 package immortan
 
-import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
 import immortan.utils.GraphUtils._
 import immortan.utils.PaymentUtils._
 import immortan.utils.ChannelUtils._
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
-import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.bitcoin.{Block, Crypto}
 import immortan.crypto.{CanBeRepliedTo, StateMachine}
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentRequest}
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteUpdateFail}

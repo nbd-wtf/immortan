@@ -2,12 +2,11 @@ package immortan.crypto
 
 import fr.acinq.eclair._
 import fr.acinq.bitcoin._
-
 import scala.concurrent.duration._
 import immortan.utils.{Rx, ThrottledWork}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, ShortChannelId}
-import com.google.common.cache.{Cache, CacheBuilder, CacheLoader, LoadingCache}
+import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import immortan.wire.ExtCodecs.channelBackupCodec
@@ -17,16 +16,13 @@ import fr.acinq.eclair.crypto.ChaCha20Poly1305
 import immortan.crypto.Noise.KeyPair
 import java.util.concurrent.TimeUnit
 import java.io.ByteArrayInputStream
-
 import language.implicitConversions
 import immortan.wire.ChannelBackup
 import immortan.crypto.Tools.none
-
 import scala.collection.mutable
 import rx.lang.scala.Observable
 import scodec.bits.ByteVector
 import java.nio.ByteOrder
-
 import scala.util.Try
 
 

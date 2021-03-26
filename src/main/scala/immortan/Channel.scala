@@ -113,5 +113,3 @@ trait ChannelListener {
 }
 
 case class ChanAndCommits(chan: Channel, commits: Commitments)
-
-case class CommitsAndMax(commits: List[ChanAndCommits], maxReceivable: MilliSatoshi)
