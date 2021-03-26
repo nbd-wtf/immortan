@@ -74,12 +74,12 @@ trait Channel extends StateMachine[ChannelData] with CanBeRepliedTo { me =>
     events.onBecome(trans)
   }
 
-  def StoreSendBecome(data1: PersistentChannelData, state1: String, lnMessage: LightningMessage*): Unit = {
+  def StoreBecomeSend(data1: PersistentChannelData, state1: String, lnMessage: LightningMessage*): Unit = {
     // Storing goes first to ensure we retain an updated data before revealing it if anything goes wrong
 
     STORE(data1)
-    SEND(lnMessage:_*)
     BECOME(data1, state1)
+    SEND(lnMessage:_*)
   }
 
   var listeners = Set.empty[ChannelListener]

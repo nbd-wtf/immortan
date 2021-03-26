@@ -103,7 +103,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
           chainWallet.watcher ! WatchSpent(receiver, commits.commitInput.outPoint.txid, commits.commitInput.outPoint.index.toInt, commits.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
           chainWallet.watcher ! WatchConfirmed(receiver, commits.commitInput.outPoint.txid, commits.commitInput.txOut.publicKeyScript, LNParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
-          StoreSendBecome(DATA_WAIT_FOR_FUNDING_CONFIRMED(commits, Some(wait.fundingTx), System.currentTimeMillis, Left(wait.lastSent), deferred = None), WAIT_FUNDING_DONE)
+          StoreBecomeSend(DATA_WAIT_FOR_FUNDING_CONFIRMED(commits, Some(wait.fundingTx), System.currentTimeMillis, Left(wait.lastSent), deferred = None), WAIT_FUNDING_DONE)
 
           chainWallet.wallet.commit(wait.fundingTx) onComplete {
             case Success(false) => process(BITCOIN_FUNDING_PUBLISH_FAILED)
@@ -158,7 +158,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
         chainWallet.watcher ! WatchSpent(receiver, commits.commitInput.outPoint.txid, commits.commitInput.outPoint.index.toInt, commits.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
         chainWallet.watcher ! WatchConfirmed(receiver, commits.commitInput.outPoint.txid, commits.commitInput.txOut.publicKeyScript, LNParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
-        StoreSendBecome(DATA_WAIT_FOR_FUNDING_CONFIRMED(commits, None, System.currentTimeMillis, Right(fundingSigned), deferred = None), WAIT_FUNDING_DONE, fundingSigned)
+        StoreBecomeSend(DATA_WAIT_FOR_FUNDING_CONFIRMED(commits, None, System.currentTimeMillis, Right(fundingSigned), deferred = None), WAIT_FUNDING_DONE, fundingSigned)
 
       // Convert remote error into local exception in opening phase, it should be dealt with upstream
 
@@ -180,7 +180,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
           val fundingLocked = FundingLocked(wait.channelId, nextPerCommitmentPoint)
 
           val data1 = DATA_WAIT_FOR_FUNDING_LOCKED(wait.commitments, shortChannelId, fundingLocked)
-          StoreSendBecome(data1, WAIT_FUNDING_DONE, fundingLocked)
+          StoreBecomeSend(data1, WAIT_FUNDING_DONE, fundingLocked)
           wait.deferred.foreach(process)
         }
 
@@ -192,7 +192,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
       case (wait: DATA_WAIT_FOR_FUNDING_LOCKED, locked: FundingLocked, WAIT_FUNDING_DONE) =>
         val commits1 = wait.commitments.modify(_.remoteNextCommitInfo) setTo Right(locked.nextPerCommitmentPoint)
-        StoreSendBecome(DATA_NORMAL(commits1, wait.shortChannelId), OPEN)
+        StoreBecomeSend(DATA_NORMAL(commits1, wait.shortChannelId), OPEN)
 
       // MAIN LOOP
 
@@ -231,7 +231,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         if (!isValidFinalScriptPubkey) throw CMDException(new RuntimeException, cmd)
         else if (norm.localShutdown.isDefined) throw CMDException(new RuntimeException, cmd)
         else if (hasLocalHasUnsignedOutgoingHtlcs) throw CMDException(new RuntimeException, cmd)
-        else StoreSendBecome(norm.copy(localShutdown = shutdown.toSome), state, shutdown)
+        else StoreBecomeSend(norm.copy(localShutdown = shutdown.toSome), state, shutdown)
 
 
       case (norm: DATA_NORMAL, cmd: CMD_ADD_HTLC, OPEN) if norm.localShutdown.isEmpty && norm.remoteShutdown.isEmpty =>
@@ -280,13 +280,13 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         val in = Transactions.trimReceivedHtlcs(norm.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, norm.commitments.channelVersion.commitmentFormat)
         // This includes hashing and db calls on potentially dozens of in-flight HTLCs, do this in separate thread but throw if it fails to know early
         Rx.ioQueue.foreach(_ => bag.putHtlcInfos(out ++ in, norm.shortChannelId, nextRemoteCommit.index), throw _)
-        StoreSendBecome(norm.copy(commitments = commits1), OPEN, commitSigMessage)
+        StoreBecomeSend(norm.copy(commitments = commits1), OPEN, commitSigMessage)
 
 
       // We have nothing to sign so check for valid shutdown state, only consider when we have nothing in-flight
       case (norm: DATA_NORMAL, CMD_SIGN, OPEN) if norm.remoteShutdown.isDefined && !norm.commitments.localHasUnsignedOutgoingHtlcs =>
         val (data1, replies) = maybeStartNegotiations(norm, norm.remoteShutdown.get, LNParams.feeRatesInfo.onChainFeeConf)
-        StoreSendBecome(data1, OPEN, replies:_*)
+        StoreBecomeSend(data1, OPEN, replies:_*)
 
 
       case (norm: DATA_NORMAL, add: UpdateAddHtlc, OPEN) =>
@@ -315,7 +315,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
       case (norm: DATA_NORMAL, commitSig: CommitSig, OPEN) =>
         val (commits1, revocation) = norm.commitments.receiveCommit(commitSig)
-        StoreSendBecome(norm.copy(commitments = commits1), OPEN, revocation)
+        StoreBecomeSend(norm.copy(commitments = commits1), OPEN, revocation)
         // We may have fulfilled some incoming HTLCs, check feerate again
         process(CMD_CHECK_FEERATE)
         doProcess(CMD_SIGN)
@@ -328,7 +328,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
           case malform: UpdateFailMalformedHtlc => RemoteUpdateMalform(malform, norm.commitments.remoteCommit.spec.findIncomingHtlcById(malform.id).get.add)
         }
 
-        StoreSendBecome(norm.copy(commitments = commits1), OPEN)
+        StoreBecomeSend(norm.copy(commitments = commits1), OPEN)
         events.stateUpdated(lastRemoteRejects)
 
 
@@ -339,7 +339,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
       case (norm: DATA_NORMAL, remote: Shutdown, OPEN) =>
         val (data1, replies) = handleRemoteShutdown(norm, remote, LNParams.feeRatesInfo.onChainFeeConf)
-        StoreSendBecome(data1, OPEN, replies:_*)
+        StoreBecomeSend(data1, OPEN, replies:_*)
 
       // NEGOTIATIONS
 
