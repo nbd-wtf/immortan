@@ -140,6 +140,15 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
       become(data, EXPECTING_PAYMENTS)
       me process CMDAskForRoute
 
+      // TODO: pathfinder should have a cache of assisted edges?
+
+      /*TODO
+        what if:
+        - target node is only reachable via assisted edges
+        - sum(used caps / edges failed at amount) < total - sum(in flights)
+        - fail early
+       */
+
     case (ChannelFailed(descAndCapacity, increment), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
       // At this point an affected InFlight status IS STILL PRESENT so failedAtAmount = sum(inFlight)
       val newChanFailedAtAmount = data.chanFailedAtAmount(descAndCapacity.desc) min usedCapacities(descAndCapacity)

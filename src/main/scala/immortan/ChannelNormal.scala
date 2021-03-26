@@ -37,6 +37,9 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
   def doProcess(change: Any): Unit =
     Tuple3(data, change, state) match {
+
+      // OPENING PHASE: FUNDER FLOW
+
       case (null, init: INPUT_INIT_FUNDER, null) =>
         val channelKeyPath = init.remoteInfo.keyPath(init.localParams)
         val localFundingPubKey = init.remoteInfo.fundingPublicKey(init.localParams.fundingKeyPath).publicKey
@@ -108,7 +111,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
           }
         }
 
-      // FUNDEE FLOW
+      // OPENING PHASE: FUNDEE FLOW
 
       case (null, init: INPUT_INIT_FUNDEE, null) =>
         val channelKeyPath = init.remoteInfo.keyPath(init.localParams)
@@ -156,6 +159,14 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         chainWallet.watcher ! WatchSpent(receiver, commits.commitInput.outPoint.txid, commits.commitInput.outPoint.index.toInt, commits.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
         chainWallet.watcher ! WatchConfirmed(receiver, commits.commitInput.outPoint.txid, commits.commitInput.txOut.publicKeyScript, LNParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
         StoreBecomeSend(DATA_WAIT_FOR_FUNDING_CONFIRMED(commits, None, System.currentTimeMillis, Right(fundingSigned), deferred = None), WAIT_FUNDING_DONE, fundingSigned)
+
+      // Convert remote error into local exception in opening phase, it should be dealt with upstream
+
+      case (_: INPUT_INIT_FUNDER | _: DATA_WAIT_FOR_ACCEPT_CHANNEL | _: DATA_WAIT_FOR_FUNDING_INTERNAL | _: DATA_WAIT_FOR_FUNDING_SIGNED, remote: Error, _) =>
+        throw new RuntimeException(ErrorExt extractDescription remote)
+
+      case (_: INPUT_INIT_FUNDEE | _: DATA_WAIT_FOR_FUNDING_CREATED, remote: Error, _) =>
+        throw new RuntimeException(ErrorExt extractDescription remote)
 
       // AWAITING CONFIRMATION
 

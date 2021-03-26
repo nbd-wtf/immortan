@@ -26,6 +26,7 @@ import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrde
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.router.Announcements
+import java.nio.charset.StandardCharsets
 import com.google.common.base.Charsets
 import immortan.crypto.Tools
 import scodec.DecodeResult
@@ -58,7 +59,9 @@ object Error {
   }
 }
 
-case class Error(channelId: ByteVector32, data: ByteVector) extends SetupMessage with HasChannelId
+case class Error(channelId: ByteVector32, data: ByteVector) extends SetupMessage with HasChannelId {
+  def toAscii: String = new String(data.toArray, StandardCharsets.US_ASCII)
+}
 
 case class Ping(pongLength: Int, data: ByteVector) extends SetupMessage
 

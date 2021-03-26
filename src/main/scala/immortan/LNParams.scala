@@ -88,7 +88,7 @@ object LNParams {
   var routerConf: RouterConf =
     RouterConf(maxCltvDelta = CltvExpiryDelta(2016), routeHopDistance = 6,
       mppMinPartAmount = MilliSatoshi(10000000L), maxRemoteAttempts = 12,
-      maxChannelFailures = 12, maxStrangeNodeFailures = 12)
+      maxChannelFailures = 6, maxStrangeNodeFailures = 12)
 
   val blockCount: AtomicLong = new AtomicLong(0L)
 
