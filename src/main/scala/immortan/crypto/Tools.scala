@@ -4,7 +4,7 @@ import fr.acinq.eclair._
 import fr.acinq.bitcoin._
 import scala.concurrent.duration._
 import immortan.crypto.StateMachine._
-import immortan.utils.{Rx, ThrottledWork}
+import immortan.crypto.Tools.{none, runAnd}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, ShortChannelId}
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
@@ -18,8 +18,8 @@ import immortan.crypto.Noise.KeyPair
 import java.util.concurrent.TimeUnit
 import java.io.ByteArrayInputStream
 import language.implicitConversions
+import immortan.utils.ThrottledWork
 import immortan.wire.ChannelBackup
-import immortan.crypto.Tools.none
 import scala.collection.mutable
 import rx.lang.scala.Observable
 import scodec.bits.ByteVector
@@ -32,7 +32,6 @@ object Tools {
   type Fiat2Btc = Map[String, Double]
 
   def none: PartialFunction[Any, Unit] = { case _ => }
-
   def runAnd[T](result: T)(action: Any): T = result
 
   implicit class Any2Some[T](underlying: T) {
@@ -113,7 +112,7 @@ object StateMachine {
   var INTERVAL: Int = 90
 }
 
-abstract class StateMachine[T] {
+abstract class StateMachine[T] { me =>
   def become(freshData: T, freshState: String): StateMachine[T] = {
     // Update state, data and return itself for easy chaining operations
     state = freshState
@@ -131,10 +130,9 @@ abstract class StateMachine[T] {
     def work(cmd: String): Observable[Long] = Observable.interval(1.second).doOnSubscribe { secondsLeft = INTERVAL }
     def error(canNotHappen: Throwable): Unit = none
 
-    def process(cmd: String, tick: Long): Unit = {
-      secondsLeft = INTERVAL - math.min(INTERVAL, tick + 1)
-      if (secondsLeft <= 0L) unsubscribeCurrentWork
-      if (secondsLeft <= 0L) doProcess(cmd)
+    def process(cmd: String, tickInterval: Long): Unit = {
+      secondsLeft = INTERVAL - math.min(INTERVAL, tickInterval + 1)
+      if (secondsLeft <= 0L) runAnd(unsubscribeCurrentWork)(me doProcess cmd)
     }
   }
 }
