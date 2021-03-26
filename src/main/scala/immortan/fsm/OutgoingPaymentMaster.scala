@@ -355,6 +355,10 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listener: OutgoingP
         }
       }
 
+    // TODO: this is only viable for base and trampoline-to-legacy MPP
+    // TODO: when we send TMPP remote errors from targetNodeId have different meaning (since targetNodeId is not payee)
+    // TODO: when we send TMPP remote errors may NOT have a corresponding hop in our route (originated beyond trampoline node)
+
     case (reject: RemoteUpdateFail, PENDING) =>
       data.parts.values.collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isDefined && wait.partId == reject.ourAdd.partId =>
         Sphinx.FailurePacket.decrypt(reject.fail.reason, wait.flight.get.cmd.packetAndSecrets.sharedSecrets) map {
@@ -401,9 +405,10 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listener: OutgoingP
             resolveRemoteFail(data.withRemoteFailure(wait.flight.get.route, pkt), wait)
 
           case pkt @ Sphinx.DecryptedFailurePacket(nodeId, _) =>
+            // TODO: absent if error happened beyond trampoline node in TMPP
             wait.flight.get.route.getEdgeForNode(nodeId).map(_.toDescAndCapacity) match {
-              case Some(dnc) => opm doProcess ChannelFailed(dnc, data.cmd.routerConf.maxChannelFailures * 2) // Generic channel failure, ignore for rest of attempts
-              case None => opm doProcess NodeFailed(nodeId, data.cmd.routerConf.maxStrangeNodeFailures) // Trampoline node failure, will be better addressed later
+              case Some(dnc) => opm doProcess ChannelFailed(dnc, data.cmd.routerConf.maxChannelFailures * 2)
+              case None => opm doProcess NodeFailed(nodeId, data.cmd.routerConf.maxStrangeNodeFailures)
             }
 
             // Record a remote error and keep trying the rest of routes

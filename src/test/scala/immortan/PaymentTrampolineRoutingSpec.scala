@@ -146,9 +146,12 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     val ourMinimalFee = TrampolinePaymentRelayer.relayFee(reasonableTrampoline3.packet.innerPayload, LNParams.trampoline)
     assert(senderDataSnapshot.cmd.totalFeeReserve == feeReserve - ourMinimalFee) // At the very least we collect base trampoline fee
 
-    // Sender FSM in turn notifies relay FSM, meanwhile we simulate multiple incoming messages
+    // Sender FSM in turn notifies relay FSM, meanwhile we simulate multiple noisy incoming messages
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
     cm.opm process RemoteFulfill(preimage, fulfill)
+    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline2 :: Nil)
+    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
+    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
     synchronized(wait(100L))
     // We are guaranteed to receiver InFlightPayments in a same thread after fulfill because FSM asks for it
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)

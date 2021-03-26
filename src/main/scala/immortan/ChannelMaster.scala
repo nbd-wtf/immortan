@@ -116,11 +116,9 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
 
   // RECEIVE/SEND UTILITIES
 
-  def receivables: Seq[ChanAndCommits] = {
-    val canReceive = all.values.filter(Channel.isOperational).flatMap(Channel.chanAndCommitsOpt).filter(_.commits.updateOpt.isDefined).toList.sortBy(_.commits.availableForReceive)
-    // Example: (5, 50, 60, 100) -> (50, 60, 100), receivable will be 50 (the idea is for any remaining channel to be able to get a smallest remaining channel receivable)
-    canReceive.dropWhile(_.commits.availableForReceive * canReceive.size < canReceive.last.commits.availableForReceive).takeRight(4)
-  }
+  // Example: (5, 30, 50, 60, 100) -> (50, 60, 100), receivable will be 50 (the idea is for any remaining channel to be able to get a smallest remaining channel receivable)
+  def maxSortedReceivables(sorted: Seq[ChanAndCommits] = Nil): Seq[ChanAndCommits] = sorted.dropWhile(_.commits.availableForReceive * Math.max(sorted.size - 2, 1) <= sorted.last.commits.availableForReceive).takeRight(4)
+  def sortedReceivables: Seq[ChanAndCommits] = all.values.filter(Channel.isOperational).flatMap(Channel.chanAndCommitsOpt).filter(_.commits.updateOpt.isDefined).toList.sortBy(_.commits.availableForReceive)
 
   def maxSendable: MilliSatoshi = {
     val chans = all.values.filter(Channel.isOperational)
