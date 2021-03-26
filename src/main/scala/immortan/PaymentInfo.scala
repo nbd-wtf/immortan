@@ -4,6 +4,7 @@ import immortan.utils.ImplicitJsonFormats._
 import immortan.crypto.Tools.{Bytes, Fiat2Btc}
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
+import fr.acinq.eclair.wire.{FullPaymentTag, PaymentTagTlv}
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.bitcoin.Crypto.PublicKey
 import scodec.bits.ByteVector
@@ -25,17 +26,20 @@ object PaymentStatus {
   final val SUCCEEDED = "state-succeeded"
 }
 
-case class PaymentInfo(prString: String, preimageString: String, status: String, stamp: Long, descriptionString: String, actionString: String,
-                       paymentHashString: String, received: MilliSatoshi, sent: MilliSatoshi, fee: MilliSatoshi, balanceSnapshot: MilliSatoshi,
-                       fiatRatesString: String, chainFee: MilliSatoshi, incoming: Long) {
+case class PaymentInfo(prString: String, preimage: ByteVector32, status: String, stamp: Long, descriptionString: String, actionString: String,
+                       paymentHash: ByteVector32, paymentSecret: ByteVector32, received: MilliSatoshi, sent: MilliSatoshi, fee: MilliSatoshi,
+                       balanceSnapshot: MilliSatoshi, fiatRatesString: String, chainFee: MilliSatoshi, incoming: Long) {
 
   val isIncoming: Boolean = 1 == incoming
   lazy val pr: PaymentRequest = PaymentRequest.read(prString)
-  lazy val preimage: ByteVector32 = ByteVector32(ByteVector fromValidHex preimageString)
-  lazy val paymentHash: ByteVector32 = ByteVector32(ByteVector fromValidHex paymentHashString)
   lazy val description: PaymentDescription = to[PaymentDescription](descriptionString)
   lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
   lazy val action: PaymentAction = to[PaymentAction](actionString)
+
+  val fullTag: FullPaymentTag = {
+    val tag = if (isIncoming) PaymentTagTlv.FINAL_INCOMING else PaymentTagTlv.LOCALLY_SENT
+    FullPaymentTag(paymentHash, paymentSecret, tag)
+  }
 }
 
 // Payment actions
@@ -79,8 +83,8 @@ case class SwapOutDescription(invoiceText: String, btcAddress: String, chainFee:
 // Relayed preimages
 
 case class RelayedPreimageInfo(paymentHashString: String, preimageString: String, relayed: MilliSatoshi, earned: MilliSatoshi, stamp: Long) {
-  lazy val paymentHash: ByteVector32 = ByteVector32(ByteVector fromValidHex paymentHashString)
-  lazy val preimage: ByteVector32 = ByteVector32(ByteVector fromValidHex preimageString)
+  lazy val paymentHash: ByteVector32 = ByteVector32.fromValidHex(paymentHashString)
+  lazy val preimage: ByteVector32 = ByteVector32.fromValidHex(preimageString)
 }
 
 // Tx descriptions
@@ -95,7 +99,7 @@ case class TxInfo(txidString: String, depth: Long, receivedMsat: MilliSatoshi, s
   val isConfirmed: Boolean = depth >= LNParams.minDepthBlocks
   lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
   lazy val description: TxDescription = to[TxDescription](descriptionString)
-  lazy val txid: ByteVector32 = ByteVector32(ByteVector fromValidHex txidString)
+  lazy val txid: ByteVector32 = ByteVector32.fromValidHex(txidString)
 }
 
 sealed trait TxDescription { val txid: String }

@@ -47,16 +47,17 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface) extends PaymentBag
     db txWrap {
       db.change(PaymentTable.deleteSql, prex.pr.paymentHash.toHex)
       db.change(PaymentTable.newSql, prex.raw, ChannelMaster.NO_PREIMAGE.toHex, PaymentStatus.PENDING, System.currentTimeMillis: JLong, description.toJson.compactPrint,
-        action.map(_.toJson.compactPrint).getOrElse(new String), prex.pr.paymentHash.toHex, 0L: JLong /* RECEIVED = 0 MSAT */, finalAmount.toLong: JLong /* SENT IS KNOWN */,
-        0L: JLong /* FEE IS UNCERTAIN YET */, balanceSnap.toLong: JLong, fiatRateSnap.toJson.compactPrint, chainFee.toLong: JLong, 0: java.lang.Integer /* INCOMING = 0 */)
+        action.map(_.toJson.compactPrint).getOrElse(new String), prex.pr.paymentHash.toHex, prex.pr.paymentSecret.get.toHex, 0L: JLong /* RECEIVED = 0 MSAT */,
+        finalAmount.toLong: JLong /* SENT IS KNOWN */, 0L: JLong /* FEE IS UNCERTAIN YET */, balanceSnap.toLong: JLong, fiatRateSnap.toJson.compactPrint,
+        chainFee.toLong: JLong, 0: java.lang.Integer /* INCOMING = 0 */)
     }
 
   def replaceIncomingPayment(prex: PaymentRequestExt, preimage: ByteVector32, description: PaymentDescription,
                              balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc, chainFee: MilliSatoshi): Unit =
     db txWrap {
       db.change(PaymentTable.deleteSql, prex.pr.paymentHash.toHex)
-      db.change(PaymentTable.newSql, prex.raw, preimage.toHex, PaymentStatus.PENDING, System.currentTimeMillis: JLong, description.toJson.compactPrint,
-        new String /* NO ACTION */, prex.pr.paymentHash.toHex, prex.pr.amount.getOrElse(0L.msat).toLong: JLong /* MUST COME FROM PR! NO AMOUNT IF RECEIVED = 0 */,
+      db.change(PaymentTable.newSql, prex.raw, preimage.toHex, PaymentStatus.PENDING, System.currentTimeMillis: JLong, description.toJson.compactPrint, new String /* NO ACTION */,
+        prex.pr.paymentHash.toHex, prex.pr.paymentSecret.get.toHex, prex.pr.amount.getOrElse(0L.msat).toLong: JLong /* MUST COME FROM PR! NO EXACT AMOUNT IF RECEIVED = 0 */,
         0L: JLong /* SENT = 0 MSAT, NOTHING TO SEND */, 0L: JLong /* NO FEE FOR INCOMING PAYMENT */, balanceSnap.toLong: JLong, fiatRateSnap.toJson.compactPrint,
         chainFee.toLong: JLong, 1: java.lang.Integer /* INCOMING = 1 */)
     }
@@ -70,15 +71,17 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface) extends PaymentBag
   }
 
   def toPaymentInfo(rc: RichCursor): PaymentInfo =
-    PaymentInfo(prString = rc string PaymentTable.pr, preimageString = rc string PaymentTable.preimage,
+    PaymentInfo(prString = rc string PaymentTable.pr, preimage = ByteVector32.fromValidHex(rc string PaymentTable.preimage),
       status = rc string PaymentTable.status, stamp = rc long PaymentTable.stamp, descriptionString = rc string PaymentTable.description,
-      actionString = rc string PaymentTable.action, paymentHashString = rc string PaymentTable.hash, received = MilliSatoshi(rc long PaymentTable.receivedMsat),
-      sent = MilliSatoshi(rc long PaymentTable.sentMsat), fee = MilliSatoshi(rc long PaymentTable.feeMsat), balanceSnapshot = MilliSatoshi(rc long PaymentTable.balanceMsat),
-      fiatRatesString = rc string PaymentTable.fiatRates, chainFee = MilliSatoshi(rc long PaymentTable.chainFee), incoming = rc long PaymentTable.incoming)
+      actionString = rc string PaymentTable.action, paymentHash = ByteVector32.fromValidHex(rc string PaymentTable.hash), paymentSecret = ByteVector32.fromValidHex(rc string PaymentTable.secret),
+      received = MilliSatoshi(rc long PaymentTable.receivedMsat), sent = MilliSatoshi(rc long PaymentTable.sentMsat), fee = MilliSatoshi(rc long PaymentTable.feeMsat),
+      balanceSnapshot = MilliSatoshi(rc long PaymentTable.balanceMsat), fiatRatesString = rc string PaymentTable.fiatRates,
+      chainFee = MilliSatoshi(rc long PaymentTable.chainFee), incoming = rc long PaymentTable.incoming)
 
   def toRelayedPreimageInfo(rc: RichCursor): RelayedPreimageInfo =
     RelayedPreimageInfo(paymentHashString = rc string RelayTable.hash, preimageString = rc string RelayTable.preimage,
-      relayed = MilliSatoshi(rc long RelayTable.relayed), earned = MilliSatoshi(rc long RelayTable.earned), stamp = rc long RelayTable.stamp)
+      relayed = MilliSatoshi(rc long RelayTable.relayed), earned = MilliSatoshi(rc long RelayTable.earned),
+      stamp = rc long RelayTable.stamp)
 }
 
 abstract class SQLitePaymentCached(db: DBInterface, preimageDb: DBInterface) extends SQLitePayment(db, preimageDb) {

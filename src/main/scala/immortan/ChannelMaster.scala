@@ -79,12 +79,12 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
     }
   }
 
+  var inProcessors: Map[FullPaymentTag, IncomingPaymentProcessor] = Map.empty
+  var all: Map[ByteVector32, Channel] = Map.empty
   val sockChannelBridge: ConnectionListener
 
   val opm: OutgoingPaymentMaster = new OutgoingPaymentMaster(me)
   val connectionListeners = Set(sockBrandingBridge, sockChannelBridge)
-  var inProcessors = Map.empty[FullPaymentTag, IncomingPaymentProcessor]
-  var all = Map.empty[ByteVector32, Channel]
 
   pf.listeners += opm
 
@@ -103,10 +103,6 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
     val eligibleForConnect = all.values.filter(Channel.isOperationalOrWaiting).flatMap(Channel.chanAndCommitsOpt)
     for (cnc <- eligibleForConnect) CommsTower.listenNative(connectionListeners, cnc.commits.remoteInfo)
   }
-
-  def currentLocalSentPayments: Map[FullPaymentTag, OutgoingPaymentSender] = opm.data.payments.filterKeys(_.tag == PaymentTagTlv.LOCALLY_SENT)
-  def currentFinalIncomingPayments: Map[FullPaymentTag, IncomingPaymentProcessor] = inProcessors.filterKeys(_.tag == PaymentTagTlv.FINAL_INCOMING)
-  def currentTrampolineRoutedPayments: Map[FullPaymentTag, IncomingPaymentProcessor] = inProcessors.filterKeys(_.tag == PaymentTagTlv.TRAMPLOINE_ROUTED)
 
   def allIncomingResolutions: Iterable[IncomingResolution] = all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.crossSignedIncoming).map(initResolveMemo.get)
   def allInChannelOutgoing: Map[FullPaymentTag, OutgoingAdds] = all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).groupBy(_.fullTag)
