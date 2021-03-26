@@ -76,7 +76,7 @@ abstract class ChannelHosted extends Channel { me =>
         if (!isRemoteSigOk) localSuspend(hc, ERR_HOSTED_WRONG_REMOTE_SIG)
         else if (!isLocalSigOk) localSuspend(hc, ERR_HOSTED_WRONG_LOCAL_SIG)
         else {
-          StoreBecomeSend(hc, OPEN, hc.lastCrossSignedState)
+          StoreSendBecome(hc, OPEN, hc.lastCrossSignedState)
           // We may have incoming HTLCs to fail or fulfill
           events.stateUpdated(Nil)
         }
@@ -121,7 +121,7 @@ abstract class ChannelHosted extends Channel { me =>
 
       case (hc: HostedCommits, cmd: CMD_ADD_HTLC, OPEN) =>
         val (hc1, msg) = hc.sendAdd(cmd, LNParams.blockCount.get)
-        StoreBecomeSend(hc1, OPEN, msg)
+        StoreSendBecome(hc1, OPEN, msg)
         doProcess(CMD_SIGN)
 
 
@@ -137,17 +137,17 @@ abstract class ChannelHosted extends Channel { me =>
 
       case (hc: HostedCommits, cmd: CMD_FULFILL_HTLC, OPEN) if !hc.alreadyReplied(cmd.theirAdd.id) =>
         val msg = UpdateFulfillHtlc(hc.channelId, cmd.theirAdd.id, cmd.preimage)
-        StoreBecomeSend(hc.addLocalProposal(msg), OPEN, msg)
+        StoreSendBecome(hc.addLocalProposal(msg), OPEN, msg)
 
 
       case (hc: HostedCommits, cmd: CMD_FAIL_HTLC, OPEN) if !hc.alreadyReplied(cmd.theirAdd.id) =>
         val msg = OutgoingPacket.buildHtlcFailure(cmd, theirAdd = cmd.theirAdd)
-        StoreBecomeSend(hc.addLocalProposal(msg), OPEN, msg)
+        StoreSendBecome(hc.addLocalProposal(msg), OPEN, msg)
 
 
       case (hc: HostedCommits, cmd: CMD_FAIL_MALFORMED_HTLC, OPEN) if !hc.alreadyReplied(cmd.theirAdd.id) =>
         val msg = UpdateFailMalformedHtlc(hc.channelId, cmd.theirAdd.id, cmd.onionHash, cmd.failureCode)
-        StoreBecomeSend(hc.addLocalProposal(msg), OPEN, msg)
+        StoreSendBecome(hc.addLocalProposal(msg), OPEN, msg)
 
 
       case (hc: HostedCommits, CMD_SOCKET_ONLINE, SLEEPING | SUSPENDED) =>
@@ -188,8 +188,8 @@ abstract class ChannelHosted extends Channel { me =>
           val hc2 = hc1.copy(nextLocalUpdates = localUpdatesAccounted, nextRemoteUpdates = remoteUpdatesAccounted)
           val syncedLCSS = hc2.nextLocalUnsignedLCSS(remoteLCSS.blockDay).copy(localSigOfRemote = remoteLCSS.remoteSigOfLocal, remoteSigOfLocal = remoteLCSS.localSigOfRemote)
           val syncedCommits = hc2.copy(lastCrossSignedState = syncedLCSS, localSpec = hc2.nextLocalSpec, nextLocalUpdates = localUpdatesLeftover, nextRemoteUpdates = Nil)
-          if (syncedLCSS.reverse != remoteLCSS) StoreBecomeSend(restoreCommits(remoteLCSS.reverse, hc2.remoteInfo), OPEN, remoteLCSS.reverse) // We are too far behind, restore from their data
-          else StoreBecomeSend(syncedCommits, OPEN, List(syncedLCSS) ++ hc2.resizeProposal ++ localUpdatesLeftover:_*) // We are behind but our own future cross-signed state is reachable
+          if (syncedLCSS.reverse != remoteLCSS) StoreSendBecome(restoreCommits(remoteLCSS.reverse, hc2.remoteInfo), OPEN, remoteLCSS.reverse) // We are too far behind, restore from their data
+          else StoreSendBecome(syncedCommits, OPEN, List(syncedLCSS) ++ hc2.resizeProposal ++ localUpdatesLeftover:_*) // We are behind but our own future cross-signed state is reachable
         }
 
 
@@ -201,7 +201,7 @@ abstract class ChannelHosted extends Channel { me =>
       case (hc: HostedCommits, cmd: HC_CMD_RESIZE, OPEN | SLEEPING) if hc.resizeProposal.isEmpty =>
         val capacitySat = hc.lastCrossSignedState.initHostedChannel.channelCapacityMsat.truncateToSatoshi
         val resize = ResizeChannel(capacitySat + cmd.delta).sign(hc.remoteInfo.nodeSpecificPrivKey)
-        StoreBecomeSend(hc.copy(resizeProposal = resize.toSome), state, resize)
+        StoreSendBecome(hc.copy(resizeProposal = resize.toSome), state, resize)
         doProcess(CMD_SIGN)
 
 
@@ -230,7 +230,7 @@ abstract class ChannelHosted extends Channel { me =>
         if (remoteSO.remoteUpdates < hc.lastCrossSignedState.localUpdates) throw new RuntimeException("Provided remote update number from remote host is wrong")
         if (remoteSO.blockDay < hc.lastCrossSignedState.blockDay) throw new RuntimeException("Provided override blockday from remote host is not acceptable")
         require(completeLocalLCSS.verifyRemoteSig(hc.remoteInfo.nodeId), "Provided override signature from remote host is wrong")
-        StoreBecomeSend(restoreCommits(completeLocalLCSS, hc.remoteInfo), OPEN, completeLocalLCSS.stateUpdate)
+        StoreSendBecome(restoreCommits(completeLocalLCSS, hc.remoteInfo), OPEN, completeLocalLCSS.stateUpdate)
 
       case (null, wait: WaitRemoteHostedReply, null) => super.become(wait, WAIT_FOR_INIT)
       case (null, hc: HostedCommits, null) if hc.getError.isDefined => super.become(hc, SUSPENDED)
@@ -247,7 +247,7 @@ abstract class ChannelHosted extends Channel { me =>
   def localSuspend(hc: HostedCommits, errCode: String): Unit = {
     val localError = Error(hc.channelId, ByteVector fromValidHex errCode)
     val hc1 = if (hc.localError.isDefined) hc else hc.copy(localError = localError.toSome)
-    StoreBecomeSend(hc1, SUSPENDED, localError)
+    StoreSendBecome(hc1, SUSPENDED, localError)
   }
 
   def attemptStateUpdate(remoteSU: StateUpdate, hc: HostedCommits): Unit = {
@@ -273,7 +273,7 @@ abstract class ChannelHosted extends Channel { me =>
         case malform: UpdateFailMalformedHtlc => RemoteUpdateMalform(malform, hc.localSpec.findOutgoingHtlcById(malform.id).get.add)
       }
 
-      StoreBecomeSend(hc1, OPEN, lcss1.stateUpdate)
+      StoreSendBecome(hc1, OPEN, lcss1.stateUpdate)
       events.stateUpdated(lastRemoteRejects)
     }
   }

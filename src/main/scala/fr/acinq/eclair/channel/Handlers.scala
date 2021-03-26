@@ -123,7 +123,7 @@ trait Handlers { me: ChannelNormal =>
           // their data checks out, we indeed seem to be using an old revoked commitment, and must absolutely *NOT* publish it, because that would be a cheating attempt and they
           // would punish us by taking all the funds in the channel
           val error = Error(d.channelId, "please publish your local commitment")
-          StoreBecomeSend(DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish), CLOSING, error)
+          StoreSendBecome(DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish), CLOSING, error)
         } else {
           // they lied! the last per_commitment_secret they claimed to have received from us is invalid
           throw new RuntimeException
@@ -134,7 +134,7 @@ trait Handlers { me: ChannelNormal =>
         // maybe they will publish their commitment, in that case we need to remember their commitment point in order to be able to claim our outputs
         // not that if they don't comply, we could publish our own commitment (it is not stale, otherwise we would be in the case above)
         val error = Error(d.channelId, "please publish your local commitment")
-        StoreBecomeSend(DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish), CLOSING, error)
+        StoreSendBecome(DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish), CLOSING, error)
       case _ =>
         // normal case, our data is up-to-date
         if (channelReestablish.nextLocalCommitmentNumber == 1 && d.commitments.localCommit.index == 0) {
@@ -157,11 +157,11 @@ trait Handlers { me: ChannelNormal =>
   def handleNegotiationsSync(d: DATA_NEGOTIATING, conf: OnChainFeeConf): Unit = if (d.commitments.localParams.isFunder) {
     // we could use the last closing_signed we sent, but network fees may have changed while we were offline so it is better to restart from scratch
     val (closingTx, closingSigned) = Closing.makeFirstClosingTx(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, conf.feeEstimator, conf.feeTargets)
-    StoreBecomeSend(d.copy(closingTxProposed = d.closingTxProposed :+ List(ClosingTxProposed(closingTx.tx, closingSigned))), OPEN, d.localShutdown, closingSigned)
+    StoreSendBecome(d.copy(closingTxProposed = d.closingTxProposed :+ List(ClosingTxProposed(closingTx.tx, closingSigned))), OPEN, d.localShutdown, closingSigned)
   } else {
     // we start a new round of negotiation
     val closingTxProposed1 = if (d.closingTxProposed.last.isEmpty) d.closingTxProposed else d.closingTxProposed :+ Nil
-    StoreBecomeSend(d.copy(closingTxProposed = closingTxProposed1), OPEN, d.localShutdown)
+    StoreSendBecome(d.copy(closingTxProposed = closingTxProposed1), OPEN, d.localShutdown)
   }
 
   def handleSync(channelReestablish: ChannelReestablish, d: HasNormalCommitments): (NormalCommits, Queue[LightningMessage]) = {
@@ -320,7 +320,7 @@ trait Handlers { me: ChannelNormal =>
         val closingTxProposed1 = d.closingTxProposed match {
           case previousNegotiations :+ currentNegotiation => previousNegotiations :+ (currentNegotiation :+ ClosingTxProposed(closingTx.tx, closingSigned))
         }
-        StoreBecomeSend(d.copy(closingTxProposed = closingTxProposed1, bestUnpublishedClosingTxOpt = Some(signedClosingTx)), OPEN, closingSigned)
+        StoreSendBecome(d.copy(closingTxProposed = closingTxProposed1, bestUnpublishedClosingTxOpt = Some(signedClosingTx)), OPEN, closingSigned)
       }
     }
   }
