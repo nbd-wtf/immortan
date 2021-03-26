@@ -2,8 +2,8 @@ package immortan
 
 import fr.acinq.eclair._
 import immortan.Channel._
+import immortan.ErrorCodes._
 import fr.acinq.eclair.wire._
-import immortan.HCErrorCodes._
 import immortan.crypto.Tools._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions._

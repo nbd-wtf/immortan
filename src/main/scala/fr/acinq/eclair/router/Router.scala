@@ -107,7 +107,7 @@ object Router {
 
   case class RouteFound(route: Route, fullTag: FullPaymentTag, partId: ByteVector) extends RouteResponse
 
-  case class Data(channels: Map[ShortChannelId, PublicChannel], hostedChannels: Map[ShortChannelId, PublicChannel], extraEdges: Map[ShortChannelId, GraphEdge], graph: DirectedGraph)
+  case class Data(channels: Map[ShortChannelId, PublicChannel], hostedChannels: Map[ShortChannelId, PublicChannel], graph: DirectedGraph)
 
   def getDesc(cu: ChannelUpdate, ann: ChannelAnnouncement): ChannelDesc = {
     if (Announcements isNode1 cu.channelFlags) ChannelDesc(cu.shortChannelId, ann.nodeId1, ann.nodeId2)

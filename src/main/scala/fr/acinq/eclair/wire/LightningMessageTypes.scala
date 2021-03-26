@@ -214,6 +214,8 @@ case class UpdateCore(position: java.lang.Integer,
                       shortChannelId: ShortChannelId, feeBase: MilliSatoshi, feeProportionalMillionths: Long,
                       cltvExpiryDelta: CltvExpiryDelta, htlcMaximumMsat: Option[MilliSatoshi] = None)
 
+case class ShortIdAndPosition(sid: ShortChannelId, position: java.lang.Integer)
+
 case class ChannelUpdate(signature: ByteVector64, chainHash: ByteVector32, shortChannelId: ShortChannelId, timestamp: Long, messageFlags: Byte, channelFlags: Byte,
                          cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, htlcMaximumMsat: Option[MilliSatoshi],
                          unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp with HasChainHash {
@@ -224,6 +226,8 @@ case class ChannelUpdate(signature: ByteVector64, chainHash: ByteVector32, short
 
   // Point useless fields to same object, db-restored should be the same, make sure it does not erase channelUpdateChecksumCodec fields
   def lite: ChannelUpdate = copy(signature = ByteVector64.Zeroes, LNParams.chainHash, unknownFields = ByteVector.empty)
+
+  def toShortIdAndPosition: ShortIdAndPosition = ShortIdAndPosition(shortChannelId, position)
 }
 
 sealed trait EncodingType

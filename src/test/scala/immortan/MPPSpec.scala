@@ -100,7 +100,7 @@ class MPPSpec extends AnyFunSuite {
     val parts2 = cm.opm.data.payments(tag).data.parts.values
     // Channel got online so part now awaits for a route, but graph is not loaded (debug mode = true)
     assert(parts2.head.asInstanceOf[WaitForRouteOrInFlight].amount == send.actualTotal)
-    assert(cm.pf.data.extraEdges.size == 1)
+    assert(cm.pf.extraEdgesMap.size == 1)
 
     // Payment is not yet in channel, but it is waiting in sender so amount without fees is taken into account
     val sendable2 = cm.opm.getSendable(cm.all.values, maxFee = 1000000L.msat).values.head
