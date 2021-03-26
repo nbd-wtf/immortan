@@ -3,6 +3,7 @@ package immortan.crypto
 import fr.acinq.eclair._
 import fr.acinq.bitcoin._
 import scala.concurrent.duration._
+import immortan.crypto.StateMachine._
 import immortan.utils.{Rx, ThrottledWork}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, ShortChannelId}
@@ -95,7 +96,8 @@ object Tools {
   }
 
   def encryptBackup(backup: ChannelBackup, seed: ByteVector): ByteVector = {
-    chaChaEncrypt(Crypto.sha256(seed), randomBytes(12), channelBackupCodec.encode(backup).require.toByteVector)
+    val encoded = channelBackupCodec.encode(backup).require.toByteVector
+    chaChaEncrypt(Crypto.sha256(seed), randomBytes(12), encoded)
   }
 
   def decryptBackup(backup: ByteVector, seed: ByteVector): Try[ChannelBackup] = {
@@ -105,6 +107,10 @@ object Tools {
 
 trait CanBeRepliedTo {
   def process(reply: Any): Unit
+}
+
+object StateMachine {
+  var INTERVAL: Int = 90
 }
 
 abstract class StateMachine[T] {
@@ -119,9 +125,16 @@ abstract class StateMachine[T] {
   var state: String = _
   var data: T = _
 
-  lazy val delayedCMDWorker: ThrottledWork[String, Any] = new ThrottledWork[String, Any] {
-    def work(cmd: String): Observable[Null] = Rx.ioQueue.delay(60.seconds)
-    def process(cmd: String, res: Any): Unit = doProcess(cmd)
+  var secondsLeft: Long = INTERVAL
+
+  lazy val delayedCMDWorker: ThrottledWork[String, Long] = new ThrottledWork[String, Long] {
+    def work(cmd: String): Observable[Long] = Observable.interval(1.second).doOnSubscribe { secondsLeft = INTERVAL }
     def error(canNotHappen: Throwable): Unit = none
+
+    def process(cmd: String, tick: Long): Unit = {
+      secondsLeft = INTERVAL - math.min(INTERVAL, tick + 1)
+      if (secondsLeft <= 0L) unsubscribeCurrentWork
+      if (secondsLeft <= 0L) doProcess(cmd)
+    }
   }
 }

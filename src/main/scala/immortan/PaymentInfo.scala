@@ -30,12 +30,14 @@ case class PaymentInfo(prString: String, preimage: ByteVector32, status: String,
                        paymentHash: ByteVector32, paymentSecret: ByteVector32, received: MilliSatoshi, sent: MilliSatoshi, fee: MilliSatoshi,
                        balanceSnapshot: MilliSatoshi, fiatRatesString: String, chainFee: MilliSatoshi, incoming: Long) {
 
-  val isIncoming: Boolean = 1 == incoming
   lazy val pr: PaymentRequest = PaymentRequest.read(prString)
   lazy val description: PaymentDescription = to[PaymentDescription](descriptionString)
   lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
   lazy val action: PaymentAction = to[PaymentAction](actionString)
 
+  val isIncoming: Boolean = 1 == incoming
+  val isCrowdfund: Boolean = 0L == received.toLong
+  
   val fullTag: FullPaymentTag = {
     val tag = if (isIncoming) PaymentTagTlv.FINAL_INCOMING else PaymentTagTlv.LOCALLY_SENT
     FullPaymentTag(paymentHash, paymentSecret, tag)
