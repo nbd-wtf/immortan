@@ -35,22 +35,8 @@ class SQLiteTx(db: DBInterface) {
       if (event.received >= event.sent) 1L: JLong else 0L: JLong /* INCOMING? */, 0L: JLong /* NOT DOUBLE SPENT */)
 
   def toTxInfo(rc: RichCursor): TxInfo =
-    TxInfo(txidString = rc string TxTable.txid, depth = rc long TxTable.depth, receivedMsat = MilliSatoshi(rc long TxTable.receivedMsat),
-      sentMsat = MilliSatoshi(rc long TxTable.sentMsat), feeMsat = MilliSatoshi(rc long TxTable.feeMsat), seenAt = rc long TxTable.firstSeen,
-      completedAt = rc long TxTable.completedAt, descriptionString = rc string TxTable.description, balanceSnapshot = MilliSatoshi(rc long TxTable.balanceMsat),
-      fiatRatesString = rc string TxTable.fiatRates, incoming = rc long TxTable.incoming, doubleSpent = rc long TxTable.doubleSpent)
-}
-
-abstract class SQLiteTxCached(db: DBInterface) extends SQLiteTx(db) {
-  override def putTx(event: TransactionReceived, description: TxDescription, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc): Unit = {
-    super.putTx(event, description, balanceSnap, fiatRateSnap)
-    invalidateCache
-  }
-
-  override def updDoubleSpent(txid: ByteVector32): Unit = {
-    super.updDoubleSpent(txid)
-    invalidateCache
-  }
-
-  def invalidateCache: Unit
+    TxInfo(rc string TxTable.txid, rc long TxTable.depth, MilliSatoshi(rc long TxTable.receivedMsat),
+      MilliSatoshi(rc long TxTable.sentMsat), MilliSatoshi(rc long TxTable.feeMsat), rc long TxTable.firstSeen,
+      rc long TxTable.completedAt, rc string TxTable.description, MilliSatoshi(rc long TxTable.balanceMsat),
+      rc string TxTable.fiatRates, rc long TxTable.incoming, rc long TxTable.doubleSpent)
 }

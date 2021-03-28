@@ -87,6 +87,7 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
     def write(internal: PaymentDescription): JsValue = internal match {
       case paymentDescription: PlainDescription => paymentDescription.toJson
       case paymentDescription: PlainMetaDescription => paymentDescription.toJson
+      case paymentDescription: KeysendDescription => paymentDescription.toJson
       case paymentDescription: SwapInDescription => paymentDescription.toJson
       case paymentDescription: SwapOutDescription => paymentDescription.toJson
       case _ => throw new Exception
@@ -95,6 +96,7 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
     def read(raw: JsValue): PaymentDescription = raw.asJsObject.fields(TAG) match {
       case JsString("PlainDescription") => raw.convertTo[PlainDescription]
       case JsString("PlainMetaDescription") => raw.convertTo[PlainMetaDescription]
+      case JsString("KeysendDescription") => raw.convertTo[KeysendDescription]
       case JsString("SwapInDescription") => raw.convertTo[SwapInDescription]
       case JsString("SwapOutDescription") => raw.convertTo[SwapOutDescription]
       case _ => throw new Exception
@@ -106,6 +108,9 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
 
   implicit val plainMetaDescriptionFmt: JsonFormat[PlainMetaDescription] = taggedJsonFmt(jsonFormat[String, String,
     PlainMetaDescription](PlainMetaDescription.apply, "invoiceText", "meta"), tag = "PlainMetaDescription")
+
+  implicit val keysendDescriptionFmt: JsonFormat[KeysendDescription] = taggedJsonFmt(jsonFormat[String, String,
+    KeysendDescription](KeysendDescription.apply, "invoiceText", "groupId"), tag = "KeysendDescription")
 
   implicit val swapInDescriptionFmt: JsonFormat[SwapInDescription] = taggedJsonFmt(jsonFormat[String, String, Long, PublicKey,
     SwapInDescription](SwapInDescription.apply, "invoiceText", "txid", "internalId", "nodeId"), tag = "SwapInDescription")

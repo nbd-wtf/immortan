@@ -162,7 +162,10 @@ object RelayTable extends Table {
 }
 
 object PaymentTable extends Table {
-  private val ESCAPED_SUCCEEDED = s"'${immortan.PaymentStatus.SUCCEEDED}'"
+  import immortan.PaymentStatus.{SUCCEEDED, ABORTED}
+  private val ESCAPED_SUCCEEDED = s"'$SUCCEEDED'"
+  private val ESCAPED_ABORTED = s"'$ABORTED'"
+
   private val paymentTableFields = ("search", "payment", "pr", "preimage", "status", "stamp", "desc", "action", "hash", "secret", "received", "sent", "fee", "balance", "fiatrates", "chainfee", "incoming")
   val (search, table, pr, preimage, status, stamp, description, action, hash, secret, receivedMsat, sentMsat, feeMsat, balanceMsat, fiatRates, chainFee, incoming) = paymentTableFields
   val inserts = s"$pr, $preimage, $status, $stamp, $description, $action, $hash, $secret, $receivedMsat, $sentMsat, $feeMsat, $balanceMsat, $fiatRates, $chainFee, $incoming"
@@ -172,7 +175,8 @@ object PaymentTable extends Table {
 
   // Selecting
   val selectByHashSql = s"SELECT * FROM $table WHERE $hash = ?"
-  val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 3 WHERE $stamp > 0"
+  // Select payments which have been aborted within a given timespan OR all non-aborted payments (the idea is to reduce payment list cluttering with failed payments)
+  val selectRecentSql = s"SELECT * FROM $table WHERE ($stamp > ? AND $status = $ESCAPED_ABORTED) OR ($stamp > 0 AND $status <> $ESCAPED_ABORTED) ORDER BY $id DESC LIMIT 3"
   val selectSummarySql = s"SELECT SUM($feeMsat), SUM($receivedMsat), SUM($sentMsat), COUNT($id) FROM $table WHERE $status = $ESCAPED_SUCCEEDED"
   val searchSql = s"SELECT * FROM $table WHERE $hash IN (SELECT $hash FROM $fts$table WHERE $search MATCH ? LIMIT 25)"
 
@@ -196,6 +200,32 @@ object PaymentTable extends Table {
   }
 }
 
+object PayMarketTable extends Table {
+  val (table, search, lnurl, text, lastMsat, lastDate, hash, image) = ("paymarket", "search", "lnurl", "text", "lastmsat", "lastdate", "hash", "image")
+  val newSql = s"INSERT OR IGNORE INTO $table ($lnurl, $text, $lastMsat, $lastDate, $hash, $image) VALUES (?, ?, ?, ?, ?, ?)"
+  val newVirtualSql = s"INSERT INTO $fts$table ($search, $lnurl) VALUES (?, ?)"
+
+  val selectRecentSql = s"SELECT * FROM $table ORDER BY $lastDate DESC LIMIT 50"
+  val searchSql = s"SELECT * FROM $table WHERE $lnurl IN (SELECT $lnurl FROM $fts$table WHERE $search MATCH ?) LIMIT 100"
+  val updInfoSql = s"UPDATE $table SET $text = ?, $lastMsat = ?, $lastDate = ?, $hash = ?, $image = ? WHERE $lnurl = ?"
+  val killSql = s"DELETE FROM $table WHERE $lnurl = ?"
+
+  def createStatements: Seq[String] = {
+    val createTable = s"""CREATE TABLE IF NOT EXISTS $table(
+      $id INTEGER PRIMARY KEY AUTOINCREMENT, $lnurl STRING NOT NULL UNIQUE,
+      $text STRING NOT NULL, $lastMsat INTEGER NOT NULL, $lastDate INTEGER NOT NULL,
+      $hash STRING NOT NULL, $image STRING NOT NULL
+    )"""
+
+    // Payment links are searchable by their text descriptions (text metadata + domain name)
+    val addIndex1 = s"CREATE VIRTUAL TABLE IF NOT EXISTS $fts$table USING $fts($search, $lnurl)"
+    val addIndex2 = s"CREATE INDEX IF NOT EXISTS idx1$table ON $table ($lastDate)"
+    createTable :: addIndex1 :: addIndex2 :: Nil
+  }
+}
+
+// Chain wallet / misc
+
 object TxTable extends Table {
   private val paymentTableFields = ("txs", "txid", "depth", "received", "sent", "fee", "seen", "completed", "desc", "balance", "fiatrates", "incoming", "doublespent")
   val (table, txid, depth, receivedMsat, sentMsat, feeMsat, firstSeen, completedAt, description, balanceMsat, fiatRates, incoming, doubleSpent) = paymentTableFields
@@ -204,7 +234,7 @@ object TxTable extends Table {
 
   // Selecting
   val selectSummarySql = s"SELECT SUM($feeMsat), SUM($receivedMsat), SUM($sentMsat), COUNT($id) FROM $table WHERE $doubleSpent = 0"
-  val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 3"
+  val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 3 LIMIT 10000"
 
   // Updating
   val updDoubleSpentSql = s"UPDATE $table SET $doubleSpent = ? WHERE $txid = ?"
@@ -253,26 +283,40 @@ object ElectrumHeadersTable extends Table {
     )""" :: Nil
 }
 
-object PayMarketTable extends Table {
-  val (table, search, lnurl, text, lastMsat, lastDate, hash, image) = ("paymarket", "search", "lnurl", "text", "lastmsat", "lastdate", "hash", "image")
-  val newSql = s"INSERT OR IGNORE INTO $table ($lnurl, $text, $lastMsat, $lastDate, $hash, $image) VALUES (?, ?, ?, ?, ?, ?)"
-  val newVirtualSql = s"INSERT INTO $fts$table ($search, $lnurl) VALUES (?, ?)"
+// Keysend
 
-  val selectRecentSql = s"SELECT * FROM $table ORDER BY $lastDate DESC LIMIT 50"
-  val searchSql = s"SELECT * FROM $table WHERE $lnurl IN (SELECT $lnurl FROM $fts$table WHERE $search MATCH ?) LIMIT 100"
-  val updInfoSql = s"UPDATE $table SET $text = ?, $lastMsat = ?, $lastDate = ?, $hash = ?, $image = ? WHERE $lnurl = ?"
-  val killSql = s"DELETE FROM $table WHERE $lnurl = ?"
+object KeysendRequestsTable extends Table {
+  val (table, ksPr, description, groupId, totalAmount, totalPayments, lastStamp) = ("ksrequests", "kspr", "description", "groupid", "totalamount", "totalpayments", "laststamp")
+  val newSql = s"INSERT OR IGNORE INTO $table ($ksPr, $description, $groupId, $totalAmount, $totalPayments, $lastStamp) VALUES (?, ?, ?, ?, ?, ?)"
+  val updSql = s"UPDATE $table SET $totalAmount = $totalAmount + ?, $totalPayments = $totalPayments + 1, $lastStamp = ? WHERE $groupId = ?"
+  val selectRecentSql = s"SELECT * FROM $table ORDER BY $lastStamp DESC LIMIT 3"
 
   def createStatements: Seq[String] = {
     val createTable = s"""CREATE TABLE IF NOT EXISTS $table(
-      $id INTEGER PRIMARY KEY AUTOINCREMENT, $lnurl STRING NOT NULL UNIQUE,
-      $text STRING NOT NULL, $lastMsat INTEGER NOT NULL, $lastDate INTEGER NOT NULL,
-      $hash STRING NOT NULL, $image STRING NOT NULL
+      $id INTEGER PRIMARY KEY AUTOINCREMENT, $ksPr TEXT NOT NULL, $description TEXT NOT NULL,
+      $groupId TEXT NOT NULL UNIQUE, $totalAmount INTEGER NOT NULL, $totalPayments INTEGER NOT NULL,
+      $lastStamp INTEGER NOT NULL
     )"""
 
-    // Payment links are searchable by their text descriptions (text metadata + domain name)
-    val addIndex1 = s"CREATE VIRTUAL TABLE IF NOT EXISTS $fts$table USING $fts($search, $lnurl)"
-    val addIndex2 = s"CREATE INDEX IF NOT EXISTS idx1$table ON $table ($lastDate)"
-    createTable :: addIndex1 :: addIndex2 :: Nil
+    val addIndex1 = s"CREATE INDEX IF NOT EXISTS idx1$table ON $table ($lastStamp)"
+    createTable :: addIndex1 :: Nil
+  }
+}
+
+object KeysendReceivedTable extends Table {
+  val (table, preimage, groupId, senderPubKey, senderSignature, senderMessage, signatureChecksOut, amount, stamp) = ("ksreceived", "preimage", "groupid", "pub", "sig", "msg", "sigok", "amount", "stamp")
+  val newSql = s"INSERT INTO $table ($preimage, $groupId, $senderPubKey, $senderSignature, $senderMessage, $signatureChecksOut, $amount, $stamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+  val selectByGroupIdSql = s"SELECT * FROM $table WHERE $groupId = ? ORDER BY $id DESC LIMIT 10000"
+  val selectSummarySql = s"SELECT SUM($amount), COUNT($id) FROM $table"
+
+  def createStatements: Seq[String] = {
+    val createTable = s"""CREATE TABLE IF NOT EXISTS $table(
+      $id INTEGER PRIMARY KEY AUTOINCREMENT, $preimage TEXT NOT NULL, $groupId TEXT NOT NULL,
+      $senderPubKey TEXT NOT NULL, $senderSignature BLOB NOT NULL, $senderMessage TEXT NOT NULL,
+      $signatureChecksOut INTEGER NOT NULL, $amount INTEGER NOT NULL, $stamp INTEGER NOT NULL
+    )"""
+
+    val addIndex1 = s"CREATE INDEX IF NOT EXISTS idx1$table ON $table ($groupId)"
+    createTable :: addIndex1 :: Nil
   }
 }
