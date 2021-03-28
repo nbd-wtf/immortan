@@ -23,7 +23,7 @@ class SQLiteTx(db: DBInterface) {
     db.change(TxTable.updDepthSql, event.txid.toHex, event.depth: JLong)
   }
 
-  def listRecentTxs: RichCursor = db.select(TxTable.selectRecentSql)
+  def listRecentTxs(limit: Int): RichCursor = db.select(TxTable.selectRecentSql, limit.toString)
 
   def txSummary: Try[TxSummary] = db.select(TxTable.selectSummarySql).headTry { rc =>
     TxSummary(fees = MilliSatoshi(rc long 0), received = MilliSatoshi(rc long 1), sent = MilliSatoshi(rc long 2), count = rc long 3)

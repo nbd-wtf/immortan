@@ -4,8 +4,7 @@ import immortan._
 import spray.json._
 import fr.acinq.eclair._
 import immortan.utils.ImplicitJsonFormats._
-import java.lang.{Long => JLong}
-
+import java.lang.{Long => JLong, Integer => JInt}
 import fr.acinq.eclair.transactions.RemoteFulfill
 import fr.acinq.eclair.wire.FullPaymentTag
 import immortan.utils.PaymentRequestExt
@@ -27,9 +26,9 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface) extends PaymentBag
 
   def searchPayments(rawSearchQuery: String): RichCursor = db.search(PaymentTable.searchSql, rawSearchQuery)
 
-  def listRecentPayments: RichCursor = db.select(PaymentTable.selectRecentSql, (System.currentTimeMillis - 60 * 60 * 24 * 1000L).toString)
+  def listRecentPayments(limit: Int): RichCursor = db.select(PaymentTable.selectRecentSql, (System.currentTimeMillis - 60 * 60 * 24 * 1000L).toString, limit.toString)
 
-  def listRecentRelays: RichCursor = db.select(RelayTable.selectRecentSql)
+  def listRecentRelays(limit: Int): RichCursor = db.select(RelayTable.selectRecentSql, limit.toString)
 
   def addPreimage(paymentHash: ByteVector32, preimage: ByteVector32): Unit = preimageDb.change(PreimageTable.newSql, paymentHash.toHex, preimage.toHex)
 

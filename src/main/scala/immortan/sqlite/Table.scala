@@ -5,6 +5,10 @@ trait Table {
   def createStatements: Seq[String]
 }
 
+object Table {
+  val DEFAULT_LIMIT = 3
+}
+
 // Database #1, essential data, exportable to backup
 
 object ChannelTable extends Table {
@@ -146,7 +150,7 @@ object RelayTable extends Table {
   val (table, hash, secret, preimage, stamp, relayed, earned) = ("relay", "hash", "secret", "preimage", "stamp", "relayed", "earned")
   val newSql = s"INSERT OR IGNORE INTO $table ($hash, $secret, $preimage, $stamp, $relayed, $earned) VALUES (?, ?, ?, ?, ?, ?)"
   val selectSummarySql = s"SELECT SUM($relayed), SUM($earned), COUNT($id) FROM $table"
-  val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 3"
+  val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT ?"
 
   def createStatements: Seq[String] = {
     val createTable = s"""CREATE TABLE IF NOT EXISTS $table(
@@ -176,9 +180,9 @@ object PaymentTable extends Table {
   // Selecting
   val selectByHashSql = s"SELECT * FROM $table WHERE $hash = ?"
   // Select payments which have been aborted within a given timespan OR all non-aborted payments (the idea is to reduce payment list cluttering with failed payments)
-  val selectRecentSql = s"SELECT * FROM $table WHERE ($stamp > ? AND $status = $ESCAPED_ABORTED) OR ($stamp > 0 AND $status <> $ESCAPED_ABORTED) ORDER BY $id DESC LIMIT 3"
+  val selectRecentSql = s"SELECT * FROM $table WHERE ($stamp > ? AND $status = $ESCAPED_ABORTED) OR ($stamp > 0 AND $status <> $ESCAPED_ABORTED) ORDER BY $id DESC LIMIT ?"
   val selectSummarySql = s"SELECT SUM($feeMsat), SUM($receivedMsat), SUM($sentMsat), COUNT($id) FROM $table WHERE $status = $ESCAPED_SUCCEEDED"
-  val searchSql = s"SELECT * FROM $table WHERE $hash IN (SELECT $hash FROM $fts$table WHERE $search MATCH ? LIMIT 25)"
+  val searchSql = s"SELECT * FROM $table WHERE $hash IN (SELECT $hash FROM $fts$table WHERE $search MATCH ? LIMIT 50)"
 
   // Updating
   val updOkOutgoingSql = s"UPDATE $table SET $status = $ESCAPED_SUCCEEDED, $preimage = ?, $feeMsat = ? WHERE $hash = ? AND ($stamp > 0 AND status <> $ESCAPED_SUCCEEDED) AND $incoming = 0"
@@ -234,7 +238,7 @@ object TxTable extends Table {
 
   // Selecting
   val selectSummarySql = s"SELECT SUM($feeMsat), SUM($receivedMsat), SUM($sentMsat), COUNT($id) FROM $table WHERE $doubleSpent = 0"
-  val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 3 LIMIT 10000"
+  val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT ?"
 
   // Updating
   val updDoubleSpentSql = s"UPDATE $table SET $doubleSpent = ? WHERE $txid = ?"
@@ -289,7 +293,7 @@ object KeysendRequestsTable extends Table {
   val (table, ksPr, description, groupId, totalAmount, totalPayments, lastStamp) = ("ksrequests", "kspr", "description", "groupid", "totalamount", "totalpayments", "laststamp")
   val newSql = s"INSERT OR IGNORE INTO $table ($ksPr, $description, $groupId, $totalAmount, $totalPayments, $lastStamp) VALUES (?, ?, ?, ?, ?, ?)"
   val updSql = s"UPDATE $table SET $totalAmount = $totalAmount + ?, $totalPayments = $totalPayments + 1, $lastStamp = ? WHERE $groupId = ?"
-  val selectRecentSql = s"SELECT * FROM $table ORDER BY $lastStamp DESC LIMIT 3"
+  val selectRecentSql = s"SELECT * FROM $table ORDER BY $lastStamp DESC LIMIT ?"
 
   def createStatements: Seq[String] = {
     val createTable = s"""CREATE TABLE IF NOT EXISTS $table(

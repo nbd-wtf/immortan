@@ -13,6 +13,7 @@ import immortan.fsm.{IncomingPaymentProcessor, OutgoingPaymentMaster, Trampoline
 import fr.acinq.eclair.wire.{PaymentTimeout, TemporaryNodeFailure, TrampolineFeeInsufficient, TrampolineOn, UpdateAddHtlc, UpdateFailHtlc}
 import fr.acinq.eclair.payment.IncomingPacket.FinalPacket
 import org.scalatest.funsuite.AnyFunSuite
+import immortan.sqlite.Table
 
 
 class PaymentTrampolineRoutingSpec extends AnyFunSuite {
@@ -159,7 +160,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     synchronized(wait(100L))
 
     assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
-    val history = cm.payBag.listRecentRelays.headTry(cm.payBag.toRelayedPreimageInfo).get
+    val history = cm.payBag.listRecentRelays(Table.DEFAULT_LIMIT).headTry(cm.payBag.toRelayedPreimageInfo).get
     assert(history.relayed == pr.amount.get)
     assert(history.earned == 6984L.msat)
   }

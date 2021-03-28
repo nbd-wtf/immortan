@@ -16,7 +16,7 @@ class SQLiteKeysendRequests(db: DBInterface) {
     db.change(KeysendRequestsTable.updSql, amountIncrease.toLong: JLong,
       System.currentTimeMillis: JLong, groupId.toHex)
 
-  def listRecent: RichCursor = db.select(KeysendRequestsTable.selectRecentSql)
+  def listRecent(limit: Int): RichCursor = db.select(KeysendRequestsTable.selectRecentSql, limit.toString)
 
   def toKeysendRequestInfo(rc: RichCursor): KeysendRequestInfo =
     KeysendRequestInfo(rc string KeysendRequestsTable.ksPr, rc string KeysendRequestsTable.description, ByteVector32.fromValidHex(rc string KeysendRequestsTable.groupId),
