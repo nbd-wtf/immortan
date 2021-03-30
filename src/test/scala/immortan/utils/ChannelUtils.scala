@@ -50,9 +50,7 @@ object ChannelUtils {
     val dataBag = new SQLiteData(notEssentialInterface)
 
     val pf = makePathFinder(normalStore, hostedStore)
-    val cm = new ChannelMaster(payBag, chanBag, dataBag, pf) {
-      val sockChannelBridge: ConnectionListener = null
-    }
+    val cm = new ChannelMaster(payBag, chanBag, dataBag, pf)
 
     (normalStore, hostedStore, cm)
   }
