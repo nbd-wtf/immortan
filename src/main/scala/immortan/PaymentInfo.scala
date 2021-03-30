@@ -41,17 +41,6 @@ case class PaymentInfo(prString: String, preimage: ByteVector32, status: String,
   lazy val pr: PaymentRequest = PaymentRequest.read(prString)
 }
 
-// Represents an incoming cumulative keysend request (with all completed payment amounts)
-case class KeysendRequestInfo(ksPrString: String, description: String, groupId: ByteVector32, totalAmount: MilliSatoshi, totalPayments: Long, lastStamp: Long) {
-  def fullTag(paymentHash: ByteVector32): FullPaymentTag = FullPaymentTag(paymentHash, paymentSecret = groupId, PaymentTagTlv.FINAL_INCOMING)
-  lazy val ksPr: PaymentRequest = PaymentRequest.read(ksPrString)
-}
-
-// Represents a single successful incoming keysend payment
-case class KeysendReceivedInfo(preimage: ByteVector32, groupId: ByteVector32, senderPubKey: Option[PublicKey],
-                               senderSignature: Option[ByteVector64], senderMessage: Option[String],
-                               sigOK: Int, amount: MilliSatoshi, stamp: Long)
-
 // Payment actions
 
 sealed trait PaymentAction {
@@ -85,8 +74,6 @@ sealed trait PaymentDescription {
 case class PlainDescription(invoiceText: String) extends PaymentDescription { val queryText: String = invoiceText }
 
 case class PlainMetaDescription(invoiceText: String, meta: String) extends PaymentDescription { val queryText: String = s"$invoiceText $meta" }
-
-case class KeysendDescription(invoiceText: String, groupId: String) extends PaymentDescription { val queryText: String = s"$invoiceText $groupId" }
 
 case class SwapInDescription(invoiceText: String, txid: String, internalId: Long, nodeId: PublicKey) extends PaymentDescription { val queryText: String = s"$invoiceText $txid ${nodeId.toString}" }
 

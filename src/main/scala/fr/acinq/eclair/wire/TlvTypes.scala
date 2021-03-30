@@ -63,16 +63,4 @@ object TlvStream {
   // Payment type
 
   final val paymentTag = UInt64(4127926135L)
-
-  // Keysend
-
-  final val keysendPreimageTag = UInt64(5482373484L)
-
-  final val keysendGroupingIdTag = UInt64(5482373481L)
-
-  final val keysendSenderPubKeyTag = UInt64(34349339L)
-
-  final val keysendSenderSignatureTag = UInt64(34349337L)
-
-  final val keysendSenderMessageTag = UInt64(34349334L)
 }
