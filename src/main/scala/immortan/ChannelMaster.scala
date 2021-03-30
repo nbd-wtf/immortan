@@ -8,6 +8,7 @@ import immortan.crypto.Tools._
 import immortan.PaymentStatus._
 import immortan.ChannelMaster._
 import fr.acinq.eclair.channel._
+import scala.concurrent.duration._
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteReject}
 import immortan.ChannelListener.{Malfunction, Transition}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -15,6 +16,7 @@ import immortan.crypto.{CanBeRepliedTo, StateMachine}
 import fr.acinq.eclair.payment.IncomingPacket
 import com.google.common.cache.LoadingCache
 import fr.acinq.bitcoin.ByteVector32
+import immortan.utils.Rx
 import scala.util.Try
 
 
@@ -66,36 +68,48 @@ case class InFlightPayments(out: Map[FullPaymentTag, OutgoingAdds], in: Map[Full
   val allTags: Set[FullPaymentTag] = out.keySet ++ in.keySet
 }
 
-abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag: DataBag, val pf: PathFinder) extends ChannelListener { me =>
+class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag: DataBag, val pf: PathFinder) extends ChannelListener { me =>
   val getPaymentInfoMemo: LoadingCache[ByteVector32, PaymentInfoTry] = memoize(payBag.getPaymentInfo)
   val initResolveMemo: LoadingCache[UpdateAddHtlcExt, IncomingResolution] = memoize(initResolve)
   val getPreimageMemo: LoadingCache[ByteVector32, PreimageTry] = memoize(payBag.getPreimage)
 
-  val sockBrandingBridge: ConnectionListener = new ConnectionListener {
-    // This listener must be separate because we may use it to listen to new channels
+  val sockChannelBridge: ConnectionListener = new ConnectionListener {
+    override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit =
+      fromNode(worker.info.nodeId).foreach(_.chan process CMD_SOCKET_ONLINE)
+
+    override def onMessage(worker: CommsTower.Worker, msg: LightningMessage): Unit = msg match {
+      case nodeError: Error if nodeError.channelId == ByteVector32.Zeroes => fromNode(worker.info.nodeId).foreach(_.chan process nodeError)
+      case channelUpdate: ChannelUpdate => fromNode(worker.info.nodeId).foreach(_.chan process channelUpdate)
+      case message: HasChannelId => sendTo(message, message.channelId)
+      case _ => // Do nothing
+    }
+
     override def onHostedMessage(worker: CommsTower.Worker, msg: HostedChannelMessage): Unit = msg match {
       case branding: HostedChannelBranding => dataBag.putBranding(worker.info.nodeId, branding)
-      case _ => // Do nothing
+      case _ => hostedFromNode(worker.info.nodeId).foreach(_ process msg)
+    }
+
+    override def onDisconnect(worker: CommsTower.Worker): Unit = {
+      fromNode(worker.info.nodeId).foreach(_.chan process CMD_SOCKET_OFFLINE)
+      relayedReconnect(worker)
     }
   }
 
-  var inProcessors: Map[FullPaymentTag, IncomingPaymentProcessor] = Map.empty
-  var all: Map[ByteVector32, Channel] = Map.empty
-  val sockChannelBridge: ConnectionListener
-
+  val connectionListeners = Set(sockChannelBridge)
   val opm: OutgoingPaymentMaster = new OutgoingPaymentMaster(me)
-  val connectionListeners = Set(sockBrandingBridge, sockChannelBridge)
-
+  var inProcessors = Map.empty[FullPaymentTag, IncomingPaymentProcessor]
+  var all = Map.empty[ByteVector32, Channel]
   pf.listeners += opm
-
-  // Initial run to create FSMs for in-flight payments, including locally initiated outgoing payments
-  notifyFSMs(allInChannelOutgoing, allIncomingResolutions, rejects = Nil, makeMissingOutgoingFSM = true)
 
   // CHANNEL MANAGEMENT
 
+  def relayedReconnect(worker: CommsTower.Worker): Unit =
+    // Reconnect by default, but may be overridden if needed
+    Rx.ioQueue.delay(5.seconds).foreach(_ => initConnect)
+
   def implantChannel(cs: Commitments, freshChannel: Channel): Unit = {
     all += Tuple2(cs.channelId, freshChannel) // Put this channel to vector of established channels
-    freshChannel.listeners = Set(me) // Add standard channel listeners to new established channel
+    freshChannel.listeners = Set(me) // REPLACE with standard channel listeners to new established channel
     initConnect // Add standard connection listeners for this peer
   }
 
@@ -108,6 +122,7 @@ abstract class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, va
   def allInChannelOutgoing: Map[FullPaymentTag, OutgoingAdds] = all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).groupBy(_.fullTag)
 
   def fromNode(nodeId: PublicKey): Iterable[ChanAndCommits] = all.values.flatMap(Channel.chanAndCommitsOpt).filter(_.commits.remoteInfo.nodeId == nodeId)
+  def hostedFromNode(nodeId: PublicKey): Option[ChannelHosted] = fromNode(nodeId: PublicKey).collectFirst { case ChanAndCommits(chan: ChannelHosted, _) => chan }
   def sendTo(change: Any, chanId: ByteVector32): Unit = all.getOrElse(chanId, NO_CHANNEL) process change
 
   // RECEIVE/SEND UTILITIES

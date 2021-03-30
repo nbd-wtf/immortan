@@ -56,7 +56,10 @@ abstract class HCOpenHandler(info: RemoteNodeInfo, peerSpecificSecret: ByteVecto
     }
   }
 
+  // Initialize HC
   freshChannel.listeners = Set(makeChanListener)
-  freshChannel doProcess WaitRemoteHostedReply(info, peerSpecificRefundPubKey, peerSpecificSecret) // Prepare empty HC with appropriate data
-  CommsTower.listenNative(Set(makeChanListener, cm.sockBrandingBridge), info) // Connect or fire listeners if connected already
+  freshChannel doProcess WaitRemoteHostedReply(info, peerSpecificRefundPubKey, peerSpecificSecret)
+
+  // Connect or fire listeners if connected already
+  CommsTower.listenNative(Set(makeChanListener), info)
 }

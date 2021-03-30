@@ -67,16 +67,20 @@ object CommsTower {
           val ourListeners: Listeners = listeners(pair)
           lastMessage = System.currentTimeMillis
 
+          // UnknownMessage is typically a wrapper for non-standard message
+          // BUT it may wrap standard messages, too, so call `onMessage` on those
           lightningMessageCodecWithFallback.decode(data.bits).require.value match {
-            case message: UnknownMessage => LightningMessageCodecs.decode(message) match {
-              case message: HostedChannelMessage => for (lst <- ourListeners) lst.onHostedMessage(me, message)
-              case message: SwapOut => for (lst <- ourListeners) lst.onSwapOutMessage(me, message)
-              case message: SwapIn => for (lst <- ourListeners) lst.onSwapInMessage(me, message)
-              case message => for (lst <- ourListeners) lst.onMessage(me, message)
-            }
-
             case message: Init => handleTheirRemoteInitMessage(ourListeners)(remoteInit = message)
             case message: Ping => handler process Pong(ByteVector fromValidHex "00" * message.pongLength)
+
+            case message: UnknownMessage =>
+              LightningMessageCodecs.decode(message) match {
+                case message: HostedChannelMessage => for (lst <- ourListeners) lst.onHostedMessage(me, message)
+                case message: SwapOut => for (lst <- ourListeners) lst.onSwapOutMessage(me, message)
+                case message: SwapIn => for (lst <- ourListeners) lst.onSwapInMessage(me, message)
+                case message => for (lst <- ourListeners) lst.onMessage(me, message)
+              }
+
             case message => for (lst <- ourListeners) lst.onMessage(me, message)
           }
         }

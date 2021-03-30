@@ -31,5 +31,3 @@ libraryDependencies += "com.google.guava" % "guava" % "29.0-android"
 libraryDependencies += "org.scalatest" % "scalatest_2.11" % "3.1.1"
 
 libraryDependencies += "org.xerial" % "sqlite-jdbc" % "3.27.2.1"
-
-enablePlugins(ReproducibleBuildsPlugin)

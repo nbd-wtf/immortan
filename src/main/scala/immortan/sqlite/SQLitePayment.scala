@@ -4,8 +4,7 @@ import immortan._
 import spray.json._
 import fr.acinq.eclair._
 import immortan.utils.ImplicitJsonFormats._
-import java.lang.{Long => JLong}
-
+import java.lang.{Long => JLong, Integer => JInt}
 import fr.acinq.eclair.transactions.RemoteFulfill
 import fr.acinq.eclair.wire.FullPaymentTag
 import immortan.utils.PaymentRequestExt
@@ -27,9 +26,9 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface) extends PaymentBag
 
   def searchPayments(rawSearchQuery: String): RichCursor = db.search(PaymentTable.searchSql, rawSearchQuery)
 
-  def listRecentPayments: RichCursor = db.select(PaymentTable.selectRecentSql)
+  def listRecentPayments(limit: Int): RichCursor = db.select(PaymentTable.selectRecentSql, (System.currentTimeMillis - 60 * 60 * 24 * 1000L).toString, limit.toString)
 
-  def listRecentRelays: RichCursor = db.select(RelayTable.selectRecentSql)
+  def listRecentRelays(limit: Int): RichCursor = db.select(RelayTable.selectRecentSql, limit.toString)
 
   def addPreimage(paymentHash: ByteVector32, preimage: ByteVector32): Unit = preimageDb.change(PreimageTable.newSql, paymentHash.toHex, preimage.toHex)
 
@@ -71,35 +70,13 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface) extends PaymentBag
   }
 
   def toPaymentInfo(rc: RichCursor): PaymentInfo =
-    PaymentInfo(prString = rc string PaymentTable.pr, preimage = ByteVector32.fromValidHex(rc string PaymentTable.preimage),
-      status = rc string PaymentTable.status, stamp = rc long PaymentTable.stamp, descriptionString = rc string PaymentTable.description,
-      actionString = rc string PaymentTable.action, paymentHash = ByteVector32.fromValidHex(rc string PaymentTable.hash), paymentSecret = ByteVector32.fromValidHex(rc string PaymentTable.secret),
-      received = MilliSatoshi(rc long PaymentTable.receivedMsat), sent = MilliSatoshi(rc long PaymentTable.sentMsat), fee = MilliSatoshi(rc long PaymentTable.feeMsat),
-      balanceSnapshot = MilliSatoshi(rc long PaymentTable.balanceMsat), fiatRatesString = rc string PaymentTable.fiatRates,
-      chainFee = MilliSatoshi(rc long PaymentTable.chainFee), incoming = rc long PaymentTable.incoming)
+    PaymentInfo(rc string PaymentTable.pr, ByteVector32.fromValidHex(rc string PaymentTable.preimage), rc string PaymentTable.status, rc long PaymentTable.stamp,
+      rc string PaymentTable.description, rc string PaymentTable.action, ByteVector32.fromValidHex(rc string PaymentTable.hash), ByteVector32.fromValidHex(rc string PaymentTable.secret),
+      MilliSatoshi(rc long PaymentTable.receivedMsat), MilliSatoshi(rc long PaymentTable.sentMsat), MilliSatoshi(rc long PaymentTable.feeMsat), MilliSatoshi(rc long PaymentTable.balanceMsat),
+      rc string PaymentTable.fiatRates, MilliSatoshi(rc long PaymentTable.chainFee), rc long PaymentTable.incoming)
 
   def toRelayedPreimageInfo(rc: RichCursor): RelayedPreimageInfo =
-    RelayedPreimageInfo(paymentHashString = rc string RelayTable.hash, preimageString = rc string RelayTable.preimage,
-      relayed = MilliSatoshi(rc long RelayTable.relayed), earned = MilliSatoshi(rc long RelayTable.earned),
-      stamp = rc long RelayTable.stamp)
-}
-
-abstract class SQLitePaymentCached(db: DBInterface, preimageDb: DBInterface) extends SQLitePayment(db, preimageDb) {
-  override def addRelayedPreimageInfo(fullTag: FullPaymentTag, preimage: ByteVector32, relayed: MilliSatoshi, earned: MilliSatoshi): Unit = {
-    super.addRelayedPreimageInfo(fullTag, preimage, relayed, earned)
-    invalidateRelayCache
-  }
-
-  override def updOkOutgoing(fulfill: RemoteFulfill, fee: MilliSatoshi): Unit = {
-    super.updOkOutgoing(fulfill, fee)
-    invalidatePaymentCache
-  }
-
-  override def updOkIncoming(receivedAmount: MilliSatoshi, paymentHash: ByteVector32): Unit = {
-    super.updOkIncoming(receivedAmount, paymentHash)
-    invalidatePaymentCache
-  }
-
-  def invalidatePaymentCache: Unit
-  def invalidateRelayCache: Unit
+    RelayedPreimageInfo(rc string RelayTable.hash, rc string RelayTable.preimage,
+      MilliSatoshi(rc long RelayTable.relayed), MilliSatoshi(rc long RelayTable.earned),
+      rc long RelayTable.stamp)
 }

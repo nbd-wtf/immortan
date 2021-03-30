@@ -319,13 +319,9 @@ case class AnnouncementSignature(nodeSignature: ByteVector64, wantsReply: Boolea
 
 case class ResizeChannel(newCapacity: Satoshi, clientSig: ByteVector64 = ByteVector64.Zeroes) extends HostedChannelMessage {
   def isRemoteResized(remote: LastCrossSignedState): Boolean = newCapacity.toMilliSatoshi == remote.initHostedChannel.channelCapacityMsat
-
   def sign(priv: PrivateKey): ResizeChannel = ResizeChannel(clientSig = Crypto.sign(Crypto.sha256(sigMaterial), priv), newCapacity = newCapacity)
-
   def verifyClientSig(pubKey: PublicKey): Boolean = Crypto.verifySignature(Crypto.sha256(sigMaterial), clientSig, pubKey)
-
   lazy val sigMaterial: ByteVector = Protocol.writeUInt64(newCapacity.toLong, ByteOrder.LITTLE_ENDIAN)
-
   lazy val newCapacityMsatU64: UInt64 = UInt64(newCapacity.toMilliSatoshi.toLong)
 }
 

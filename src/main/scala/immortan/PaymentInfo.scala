@@ -2,9 +2,9 @@ package immortan
 
 import immortan.utils.ImplicitJsonFormats._
 import immortan.crypto.Tools.{Bytes, Fiat2Btc}
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.wire.{FullPaymentTag, PaymentTagTlv}
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.bitcoin.Crypto.PublicKey
 import scodec.bits.ByteVector
@@ -30,18 +30,15 @@ case class PaymentInfo(prString: String, preimage: ByteVector32, status: String,
                        paymentHash: ByteVector32, paymentSecret: ByteVector32, received: MilliSatoshi, sent: MilliSatoshi, fee: MilliSatoshi,
                        balanceSnapshot: MilliSatoshi, fiatRatesString: String, chainFee: MilliSatoshi, incoming: Long) {
 
-  lazy val pr: PaymentRequest = PaymentRequest.read(prString)
+  val isIncoming: Boolean = 1 == incoming
+  val isCrowdfund: Boolean = 0L == received.toLong
+  val tag: Int = if (isIncoming) PaymentTagTlv.FINAL_INCOMING else PaymentTagTlv.LOCALLY_SENT
+  val fullTag: FullPaymentTag = FullPaymentTag(paymentHash, paymentSecret, tag)
+
   lazy val description: PaymentDescription = to[PaymentDescription](descriptionString)
   lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
   lazy val action: PaymentAction = to[PaymentAction](actionString)
-
-  val isIncoming: Boolean = 1 == incoming
-  val isCrowdfund: Boolean = 0L == received.toLong
-  
-  val fullTag: FullPaymentTag = {
-    val tag = if (isIncoming) PaymentTagTlv.FINAL_INCOMING else PaymentTagTlv.LOCALLY_SENT
-    FullPaymentTag(paymentHash, paymentSecret, tag)
-  }
+  lazy val pr: PaymentRequest = PaymentRequest.read(prString)
 }
 
 // Payment actions

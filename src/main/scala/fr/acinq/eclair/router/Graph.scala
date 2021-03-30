@@ -103,41 +103,47 @@ object Graph {
                                    ignoredEdges: Set[ChannelDesc], ignoredVertices: Set[PublicKey], initialWeight: RichWeight,
                                    boundaries: RichWeight => Boolean, latestBlockExpectedStampMsecs: Long): Seq[GraphEdge] = {
 
-    // The graph does not contain source/destination nodes
     val sourceNotInGraph = !g.containsVertex(sourceNode)
     val targetNotInGraph = !g.containsVertex(targetNode)
+
+    // the graph does not contain source/destination nodes
     if (sourceNotInGraph || targetNotInGraph) return Seq.empty
 
-    // conservative estimation to avoid over-allocating memory: this is not the actual optimal size for the maps,
-    // because in the worst case scenario we will insert all the vertices.
+    // conservative estimation to avoid over-allocating memory
     val initialCapacity = 100
 
     val bestWeights = new DefaultHashMap[PublicKey, RichWeight](RichWeight(List(Long.MaxValue.msat), Int.MaxValue, CltvExpiryDelta(Int.MaxValue), Double.MaxValue), initialCapacity)
     val bestEdges = new java.util.HashMap[PublicKey, GraphEdge](initialCapacity)
 
-    // NB: we want the elements with smallest weight first, hence the `reverse`
+    // NB: we want the elements with smallest weight first, hence the `reverse`.
     val toExplore = mutable.PriorityQueue.empty[WeightedNode](NodeComparator.reverse)
+    val visitedNodes = mutable.HashSet.empty[PublicKey]
+    var targetFound = false
 
     // initialize the queue and cost array with the initial weight
-    bestWeights.put(targetNode, initialWeight)
     toExplore.enqueue(WeightedNode(targetNode, initialWeight))
-
-    var targetFound = false
+    bestWeights.put(targetNode, initialWeight)
 
     while (toExplore.nonEmpty && !targetFound) {
       // node with the smallest distance from the target
-      val current = toExplore.dequeue() // O(log(n))
-      if (current.key != sourceNode) {
-        val currentWeight = bestWeights.get(current.key) // NB: there is always an entry for the current in the 'bestWeights' map
+
+      val current = toExplore.dequeue
+      targetFound = current.key == sourceNode
+
+      if (!targetFound && !visitedNodes.contains(current.key)) {
+        visitedNodes += current.key
+
         // build the neighbors with optional extra edges
         g.getIncomingEdgesOf(current.key).foreach { edge =>
-          val neighbor = edge.desc.from
-
-          val neighborWeight = addEdgeWeight(sender, edge, currentWeight, latestBlockExpectedStampMsecs)
+          val currentWeight = current.weight
 
           val currentCost = currentWeight.costs.head
 
+          val neighborWeight = addEdgeWeight(sender, edge, currentWeight, latestBlockExpectedStampMsecs)
+
           val canRelayAmount = currentCost <= edge.updExt.capacity && currentCost >= edge.updExt.update.htlcMinimumMsat
+
+          val neighbor = edge.desc.from
 
           if (canRelayAmount && boundaries(neighborWeight) && !ignoredEdges.contains(edge.desc) && !ignoredVertices.contains(neighbor)) {
             val previousNeighborWeight = bestWeights.getOrDefaultValue(neighbor)

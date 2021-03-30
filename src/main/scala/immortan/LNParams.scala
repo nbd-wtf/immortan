@@ -246,8 +246,8 @@ trait PaymentBag {
   def updOkOutgoing(fulfill: RemoteFulfill, fee: MilliSatoshi): Unit
   def updAbortedOutgoing(paymentHash: ByteVector32): Unit
 
-  def listRecentRelays: RichCursor
-  def listRecentPayments: RichCursor
+  def listRecentRelays(limit: Int): RichCursor
+  def listRecentPayments(limit: Int): RichCursor
   def toRelayedPreimageInfo(rc: RichCursor): RelayedPreimageInfo
   def toPaymentInfo(rc: RichCursor): PaymentInfo
 }

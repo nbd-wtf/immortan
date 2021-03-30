@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.wire
 
-import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.UInt64
 import scodec.bits.ByteVector
 import scala.reflect.ClassTag
@@ -61,7 +60,7 @@ object TlvStream {
 
   def apply[T <: Tlv](records: T*): TlvStream[T] = TlvStream(records, Nil)
 
-  def keySendTlv(paymentPreimage: ByteVector32): Seq[GenericTlv] = GenericTlv(UInt64(5482373484L), paymentPreimage) :: Nil
+  // Payment type
 
   final val paymentTag = UInt64(4127926135L)
 }
