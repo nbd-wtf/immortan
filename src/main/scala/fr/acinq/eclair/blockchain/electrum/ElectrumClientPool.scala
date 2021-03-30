@@ -27,7 +27,7 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import immortan.LNParams
 import org.json4s.JsonAST.{JObject, JString}
-import org.json4s.jackson.JsonMethods
+import org.json4s.native.JsonMethods
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._

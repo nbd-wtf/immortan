@@ -36,7 +36,7 @@ import io.netty.handler.ssl.SslContextBuilder
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory
 import io.netty.util.CharsetUtil
 import org.json4s.JsonAST._
-import org.json4s.jackson.JsonMethods
+import org.json4s.native.JsonMethods
 import org.json4s.{DefaultFormats, Formats, JInt, JLong, JString}
 import scodec.bits.ByteVector
 
@@ -175,7 +175,6 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
     override def encode(ctx: ChannelHandlerContext, request: JsonRPCRequest, out: util.List[AnyRef]): Unit = {
       import org.json4s.JsonDSL._
       import org.json4s._
-      import org.json4s.jackson.JsonMethods._
 
       log.debug("sending {} to {}", request, serverAddress)
       val json = ("method" -> request.method) ~ ("params" -> request.params.map {
@@ -187,7 +186,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
         case t: Long => new JLong(t)
         case t: Double => new JDouble(t)
       }) ~ ("id" -> request.id) ~ ("jsonrpc" -> request.jsonrpc)
-      val serialized = compact(render(json))
+      val serialized = JsonMethods.compact(JsonMethods.render(json))
       out.add(serialized)
     }
   }
