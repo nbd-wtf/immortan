@@ -31,3 +31,8 @@ libraryDependencies += "org.scalatest" % "scalatest_2.11" % "3.1.1"
 libraryDependencies += "com.typesafe.akka" % "akka-testkit_2.11" % "2.5.32"
 
 libraryDependencies += "org.xerial" % "sqlite-jdbc" % "3.27.2.1"
+
+assemblyMergeStrategy in assembly := {
+  case n if n.startsWith("META-INF") => MergeStrategy.discard
+  case _ => MergeStrategy.first
+}
