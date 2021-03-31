@@ -29,15 +29,15 @@ class WalletEventsCatcher extends Actor {
 
     case event: WalletReady => for (lst <- listeners) lst.onWalletReady(event)
 
-    case event: CurrentBlockCount => for (lst <- listeners) lst.onCurrentBlockCount(event)
+    case event: CurrentBlockCount => for (lst <- listeners) lst.onCurrentBlockCount(event) // Inform about block count
 
-    case event: TransactionReceived => for (lst <- listeners) lst.onTransactionReceived(event)
+    case event: TransactionReceived => for (lst <- listeners) lst.onTransactionReceived(event) // Try to extract a preimage
 
     case event: TransactionConfidenceChanged => for (lst <- listeners) lst.onTransactionConfidenceChanged(event)
 
-    case event: NewWalletReceiveAddress => for (lst <- listeners) lst.onNewWalletReceiveAddress(event)
+    case event: NewWalletReceiveAddress => for (lst <- listeners) lst.onNewWalletReceiveAddress(event) // Update cache
 
-    case event: ElectrumReady => for (lst <- listeners) lst.onElectrumReady(event)
+    case event: ElectrumReady => for (lst <- listeners) lst.onElectrumReady(event) // Start connecting channels, inform about block count
 
     case ElectrumDisconnected => for (lst <- listeners) lst.onElectrumDisconnected
   }
