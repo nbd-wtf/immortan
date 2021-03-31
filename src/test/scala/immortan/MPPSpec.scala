@@ -272,7 +272,7 @@ class MPPSpec extends AnyFunSuite {
 
     var results = List.empty[OutgoingPaymentSenderData]
     val listener: OutgoingPaymentEvents = new OutgoingPaymentEvents {
-      override def preimageRevealed(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = results ::= data
+      override def preimageObtained(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = results ::= data
     }
 
     cm.opm process CreateSenderFSM(tag, listener) // Create since FSM is missing

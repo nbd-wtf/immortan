@@ -17,7 +17,7 @@ import immortan.crypto.Tools
 object ChannelUtils {
   val noopListener: OutgoingPaymentEvents = new OutgoingPaymentEvents {
     override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = Tools.none
-    override def preimageRevealed(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = Tools.none
+    override def preimageObtained(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = Tools.none
   }
 
   def makePathFinder(normalStore: SQLiteNetwork, hostedStore: SQLiteNetwork): PathFinder =
