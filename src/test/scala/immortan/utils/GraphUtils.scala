@@ -85,11 +85,13 @@ object GraphUtils {
     val updateCDFromC: ChannelUpdate = makeUpdate(ShortChannelId(4L), c, d, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
     val updateCDFromD: ChannelUpdate = makeUpdate(ShortChannelId(4L), d, c, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
 
+    val addChannelAnnouncementNewSqlPQ = store.db.makePreparedQuery(store.announceTable.newSql)
+
     store.db txWrap {
-      store.addChannelAnnouncement(channelAB)
-      store.addChannelAnnouncement(channelAC)
-      store.addChannelAnnouncement(channelBD)
-      store.addChannelAnnouncement(channelCD)
+      store.addChannelAnnouncement(channelAB, addChannelAnnouncementNewSqlPQ)
+      store.addChannelAnnouncement(channelAC, addChannelAnnouncementNewSqlPQ)
+      store.addChannelAnnouncement(channelBD, addChannelAnnouncementNewSqlPQ)
+      store.addChannelAnnouncement(channelCD, addChannelAnnouncementNewSqlPQ)
 
       store.addChannelUpdateByPosition(updateABFromA)
       store.addChannelUpdateByPosition(updateABFromB)
@@ -103,6 +105,8 @@ object GraphUtils {
       store.addChannelUpdateByPosition(updateCDFromC)
       store.addChannelUpdateByPosition(updateCDFromD)
     }
+
+    addChannelAnnouncementNewSqlPQ.close
   }
 
   def fillDirectGraph(store: SQLiteNetwork): Unit = {
@@ -117,9 +121,11 @@ object GraphUtils {
     val updateAD2FromA: ChannelUpdate = makeUpdate(ShortChannelId(2L), a, d, 1.msat, 10, cltvDelta = CltvExpiryDelta(134), minHtlc = 10L.msat, maxHtlc = 500000.msat)
     val updateAD2FromD: ChannelUpdate = makeUpdate(ShortChannelId(2L), d, a, 1.msat, 10, cltvDelta = CltvExpiryDelta(134), minHtlc = 10L.msat, maxHtlc = 500000.msat)
 
+    val addChannelAnnouncementNewSqlPQ = store.db.makePreparedQuery(store.announceTable.newSql)
+
     store.db txWrap {
-      store.addChannelAnnouncement(channelAD1)
-      store.addChannelAnnouncement(channelAD2)
+      store.addChannelAnnouncement(channelAD1, addChannelAnnouncementNewSqlPQ)
+      store.addChannelAnnouncement(channelAD2, addChannelAnnouncementNewSqlPQ)
 
       store.addChannelUpdateByPosition(updateAD1FromA)
       store.addChannelUpdateByPosition(updateAD1FromD)
@@ -127,5 +133,7 @@ object GraphUtils {
       store.addChannelUpdateByPosition(updateAD2FromA)
       store.addChannelUpdateByPosition(updateAD2FromD)
     }
+
+    addChannelAnnouncementNewSqlPQ.close
   }
 }

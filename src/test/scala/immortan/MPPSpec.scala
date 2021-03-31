@@ -24,9 +24,17 @@ class MPPSpec extends AnyFunSuite {
     val updateCAFromC = makeUpdate(ShortChannelId(5L), c, a, 1L.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 100000000L.msat)
     val updateCAFromA = makeUpdate(ShortChannelId(5L), a, c, 1L.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 100000000L.msat)
 
-    normalStore.addChannelAnnouncement(channelCAAnn)
-    normalStore.addChannelUpdateByPosition(updateCAFromC)
+    val addChannelAnnouncementNewSqlPQ = normalStore.db.makePreparedQuery(normalStore.announceTable.newSql)
+    val addChannelUpdateByPositionNewSqlPQ = normalStore.db.makePreparedQuery(normalStore.updateTable.newSql)
+    val addChannelUpdateByPositionUpdSqlPQ = normalStore.db.makePreparedQuery(normalStore.updateTable.updSQL)
+
+    normalStore.addChannelAnnouncement(channelCAAnn, addChannelAnnouncementNewSqlPQ)
+    normalStore.addChannelUpdateByPosition(updateCAFromC, addChannelUpdateByPositionNewSqlPQ, addChannelUpdateByPositionUpdSqlPQ)
     normalStore.addChannelUpdateByPosition(updateCAFromA)
+
+    addChannelAnnouncementNewSqlPQ.close
+    addChannelUpdateByPositionNewSqlPQ.close
+    addChannelUpdateByPositionUpdSqlPQ.close
 
     // Add direct channels with A and C
 

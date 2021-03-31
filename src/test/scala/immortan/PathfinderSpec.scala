@@ -24,14 +24,22 @@ class PathfinderSpec extends AnyFunSuite {
 
     val update2ASFromSOneSide: ChannelUpdate = makeUpdate(ShortChannelId(6L), s, a, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
 
+    val addChannelAnnouncementNewSqlPQ = normalStore.db.makePreparedQuery(normalStore.announceTable.newSql)
+    val addChannelUpdateByPositionNewSqlPQ = normalStore.db.makePreparedQuery(normalStore.updateTable.newSql)
+    val addChannelUpdateByPositionUpdSqlPQ = normalStore.db.makePreparedQuery(normalStore.updateTable.updSQL)
+
     // Ghost channel (peer does not have it)
-    normalStore.addChannelAnnouncement(channel1AS)
-    normalStore.addChannelUpdateByPosition(update1ASFromA)
+    normalStore.addChannelAnnouncement(channel1AS, addChannelAnnouncementNewSqlPQ)
+    normalStore.addChannelUpdateByPosition(update1ASFromA, addChannelUpdateByPositionNewSqlPQ, addChannelUpdateByPositionUpdSqlPQ)
     normalStore.addChannelUpdateByPosition(update1ASFromS)
 
     // One-sided channel
-    normalStore.addChannelAnnouncement(channel2ASOneSideUpdate)
+    normalStore.addChannelAnnouncement(channel2ASOneSideUpdate, addChannelAnnouncementNewSqlPQ)
     normalStore.addChannelUpdateByPosition(update2ASFromSOneSide)
+
+    addChannelAnnouncementNewSqlPQ.close
+    addChannelUpdateByPositionNewSqlPQ.close
+    addChannelUpdateByPositionUpdSqlPQ.close
 
     val oneSideShortIds = normalStore.listChannelsWithOneUpdate
     normalStore.removeGhostChannels(Set(update1ASFromA.shortChannelId), oneSideShortIds)
