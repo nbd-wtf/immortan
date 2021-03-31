@@ -1,31 +1,16 @@
 package immortan.sqlite
 
-import java.lang.{Double => JDouble, Integer => JInt, Long => JLong}
-import java.sql.{Connection, PreparedStatement}
-import immortan.crypto.Tools.Bytes
 
+case class DBInterfaceSQLiteGeneral(connection: java.sql.Connection) extends DBInterface {
+  def change(sql: String, params: Object*): Unit = change(makePreparedQuery(sql), params:_*)
 
-case class DBInterfaceSQLiteGeneral(connection: Connection) extends DBInterface {
-  def change(sql: String, params: Object*): Unit = change(connection.prepareStatement(sql), params:_*)
+  def change(stmt: PreparedQuery, params: Object*): Unit = stmt.bound(params:_*).executeUpdate
 
-  def change(stmt: PreparedStatement, params: Object*): Unit = bindParameters(params, stmt).executeUpdate
+  def select(sql: String, params: String*): RichCursor = select(makePreparedQuery(sql), params:_*)
 
-  def select(sql: String, params: String*): RichCursor = select(connection.prepareStatement(sql), params:_*)
+  def select(stmt: PreparedQuery, params: String*): RichCursor = stmt.bound(params:_*).executeQuery
 
-  def select(stmt: PreparedStatement, params: String*): RichCursor = RichCursorSQLiteGeneral(bindParameters(params, stmt).executeQuery)
-
-  def bindParameters(params: Seq[Object], stmt: PreparedStatement): PreparedStatement = {
-    params.zipWithIndex.foreach {
-      case (queryParameter: JDouble, positionIndex) => stmt.setDouble(positionIndex + 1, queryParameter)
-      case (queryParameter: String, positionIndex) => stmt.setString(positionIndex + 1, queryParameter)
-      case (queryParameter: Bytes, positionIndex) => stmt.setBytes(positionIndex + 1, queryParameter)
-      case (queryParameter: JLong, positionIndex) => stmt.setLong(positionIndex + 1, queryParameter)
-      case (queryParameter: JInt, positionIndex) => stmt.setInt(positionIndex + 1, queryParameter)
-      case _ => throw new RuntimeException
-    }
-
-    stmt
-  }
+  def makePreparedQuery(sql: String): PreparedQuery = PreparedQuerySQLiteGeneral(connection prepareStatement sql)
 
   def txWrap[T](run: => T): T = {
     val old = connection.getAutoCommit
