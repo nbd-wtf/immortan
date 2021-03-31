@@ -1,7 +1,5 @@
 package immortan.sqlite
 
-import java.sql.PreparedStatement
-
 
 trait DBInterface {
   def txWrap[T](run: => T): T

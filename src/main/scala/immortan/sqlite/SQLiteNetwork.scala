@@ -95,12 +95,7 @@ class SQLiteNetwork(val db: DBInterface, updateTable: ChannelUpdateTable, announ
   def processPureData(pure: PureRoutingData): Unit = db txWrap {
     for (announce <- pure.announces) addChannelAnnouncement(announce)
     for (update <- pure.updates) addChannelUpdateByPosition(update)
-
-    for (core <- pure.excluded) {
-      // If max is empty then peer uses an old software and may update it soon, otherwise capacity is unlikely to increase
-      val untilStamp = if (core.htlcMaximumMsat.isEmpty) 1000L * 3600 * 24 * 30 else 1000L * 3600 * 24 * 300
-      addExcludedChannel(core.shortChannelId, untilStamp)
-    }
+    for (core <- pure.excluded) addExcludedChannel(core.shortChannelId, 1000L * 3600 * 24 * 300)
   }
 
   def processCompleteHostedData(pure: CompleteHostedRoutingData): Unit = db txWrap {

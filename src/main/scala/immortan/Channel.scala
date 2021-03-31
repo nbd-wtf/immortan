@@ -9,7 +9,6 @@ import fr.acinq.eclair.wire.LightningMessage
 import immortan.Channel.channelContext
 import java.util.concurrent.Executors
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.MilliSatoshi
 import immortan.crypto.Tools.none
 import scala.concurrent.Future
 import scala.util.Failure

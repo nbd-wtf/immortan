@@ -5,7 +5,7 @@ import java.sql.ResultSet
 import scala.util.Try
 
 
-case class RichCursorSqliteGeneral(rs: ResultSet) extends RichCursor { me =>
+case class RichCursorSQLiteGeneral(rs: ResultSet) extends RichCursor { me =>
   def iterable[T](transform: RichCursor => T): Iterable[T] = try map(transform) finally rs.close
 
   def set[T](transform: RichCursor => T): Set[T] = try map(transform).toSet finally rs.close
