@@ -186,13 +186,13 @@ case class RemoteNodeInfo(nodeId: PublicKey, address: NodeAddress, alias: String
   def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): PublicKey = Generators.perCommitPoint(shaSeed(channelKeyPath), index)
 
   def sign(tx: Transactions.TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: Transactions.TxOwner, commitmentFormat: Transactions.CommitmentFormat): ByteVector64 =
-    Transactions.sign(tx, channelPrivateKeysMemo(publicKey.path).privateKey, txOwner, commitmentFormat)
+    Transactions.sign(tx, channelPrivateKeysMemo.get(publicKey.path).privateKey, txOwner, commitmentFormat)
 
   def sign(tx: Transactions.TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: Transactions.TxOwner, commitmentFormat: Transactions.CommitmentFormat): ByteVector64 =
-    Transactions.sign(tx, Generators.derivePrivKey(channelPrivateKeysMemo(publicKey.path).privateKey, remotePoint), txOwner, commitmentFormat)
+    Transactions.sign(tx, Generators.derivePrivKey(channelPrivateKeysMemo.get(publicKey.path).privateKey, remotePoint), txOwner, commitmentFormat)
 
   def sign(tx: Transactions.TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey, txOwner: Transactions.TxOwner, commitmentFormat: Transactions.CommitmentFormat): ByteVector64 =
-    Transactions.sign(tx, Generators.revocationPrivKey(channelPrivateKeysMemo(publicKey.path).privateKey, remoteSecret), txOwner, commitmentFormat)
+    Transactions.sign(tx, Generators.revocationPrivKey(channelPrivateKeysMemo.get(publicKey.path).privateKey, remoteSecret), txOwner, commitmentFormat)
 }
 
 case class WalletExt(wallet: ElectrumEclairWallet, eventsCatcher: ActorRef, clientPool: ActorRef, watcher: ActorRef)
