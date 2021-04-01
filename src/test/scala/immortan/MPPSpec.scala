@@ -144,7 +144,7 @@ class MPPSpec extends AnyFunSuite {
       totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
     var failures = List.empty[OutgoingPaymentSenderData]
-    val failedListener: OutgoingPaymentEvents = new OutgoingPaymentEvents {
+    val failedListener: OutgoingListener = new OutgoingListener {
       override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = failures ::= data
     }
 
@@ -271,7 +271,7 @@ class MPPSpec extends AnyFunSuite {
     cm.opm.data = cm.opm.data.copy(chanFailedAtAmount = Map(desc -> 200000L.msat))
 
     var results = List.empty[OutgoingPaymentSenderData]
-    val listener: OutgoingPaymentEvents = new OutgoingPaymentEvents {
+    val listener: OutgoingListener = new OutgoingListener {
       override def preimageObtained(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = results ::= data
     }
 
@@ -369,7 +369,7 @@ class MPPSpec extends AnyFunSuite {
       totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
     var results = List.empty[OutgoingPaymentSenderData]
-    val listener: OutgoingPaymentEvents = new OutgoingPaymentEvents {
+    val listener: OutgoingListener = new OutgoingListener {
       override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = results ::= data
     }
 
@@ -410,7 +410,7 @@ class MPPSpec extends AnyFunSuite {
       totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
     var failures = List.empty[OutgoingPaymentSenderData]
-    val failedListener: OutgoingPaymentEvents = new OutgoingPaymentEvents {
+    val failedListener: OutgoingListener = new OutgoingListener {
       override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = failures ::= data
     }
 

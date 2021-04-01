@@ -4,7 +4,7 @@ import fr.acinq.eclair._
 import immortan.sqlite._
 import fr.acinq.bitcoin.{ByteVector64, Satoshi}
 import fr.acinq.eclair.transactions.{CommitmentSpec, RemoteFulfill}
-import immortan.fsm.{OutgoingPaymentEvents, OutgoingPaymentSenderData}
+import immortan.fsm.{OutgoingListener, OutgoingPaymentSenderData}
 import fr.acinq.eclair.wire.{InitHostedChannel, LastCrossSignedState, NodeAddress}
 import immortan.{ChannelMaster, ConnectionListener, HostedCommits, PathFinder, RemoteNodeInfo}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -15,7 +15,7 @@ import immortan.crypto.Tools
 
 
 object ChannelUtils {
-  val noopListener: OutgoingPaymentEvents = new OutgoingPaymentEvents {
+  val noopListener: OutgoingListener = new OutgoingListener {
     override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = Tools.none
     override def preimageObtained(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = Tools.none
   }
