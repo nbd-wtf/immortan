@@ -6,7 +6,7 @@ import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import immortan.sqlite.{PaymentSummary, RelaySummary, TxSummary}
 import immortan.utils.FiatRates.{BitpayItemList, CoinGeckoItemMap}
-import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.WalletReady
+import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratesPerKB}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import immortan.crypto.Tools.Fiat2Btc
 import fr.acinq.eclair.MilliSatoshi
@@ -14,11 +14,13 @@ import scodec.bits.BitVector
 
 
 object ImplicitJsonFormats extends DefaultJsonProtocol {
-  def to[T : JsonFormat](raw: String): T = raw.parseJson.convertTo[T]
   val json2String: JsValue => String = (_: JsValue).convertTo[String]
+
   final val TAG = "tag"
 
   def writeExt[T](ext: (String, JsValue), base: JsValue): JsObject = JsObject(base.asJsObject.fields + ext)
+
+  def to[T : JsonFormat](raw: String): T = raw.parseJson.convertTo[T]
 
   def taggedJsonFmt[T](base: JsonFormat[T], tag: String): JsonFormat[T] = new JsonFormat[T] {
     def write(unserialized: T): JsValue = writeExt(TAG -> JsString(tag), base write unserialized)
@@ -76,10 +78,6 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
 
   implicit val penaltyTxDescriptionFmt: JsonFormat[PenaltyTxDescription] = taggedJsonFmt(jsonFormat[String, String, Long,
     PenaltyTxDescription](PenaltyTxDescription.apply, "txid", "nodeId", "sid"), tag = "PenaltyTxDescription")
-
-  // Last seen ready event
-
-  implicit val walletReadyFmt: JsonFormat[WalletReady] = jsonFormat[Satoshi, Satoshi, Long, Long, WalletReady](WalletReady.apply, "confirmedBalance", "unconfirmedBalance", "height", "timestamp")
 
   // Payment description
 
@@ -177,8 +175,6 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
 
   // Fiat feerates
 
-  implicit val fiatRatesInfoFmt: JsonFormat[FiatRatesInfo] = jsonFormat[Fiat2Btc, Fiat2Btc, Long, FiatRatesInfo](FiatRatesInfo.apply, "rates", "oldRates", "stamp")
-
   implicit val blockchainInfoItemFmt: JsonFormat[BlockchainInfoItem] = jsonFormat[Double, BlockchainInfoItem](BlockchainInfoItem.apply, "last")
 
   implicit val bitpayItemFmt: JsonFormat[BitpayItem] = jsonFormat[String, Double, BitpayItem](BitpayItem.apply, "code", "rate")
@@ -189,6 +185,8 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
 
   implicit val bitpayFmt: JsonFormat[Bitpay] = jsonFormat[BitpayItemList, Bitpay](Bitpay.apply, "data")
 
+  implicit val fiatRatesInfoFmt: JsonFormat[FiatRatesInfo] = jsonFormat[Fiat2Btc, Fiat2Btc, Long, FiatRatesInfo](FiatRatesInfo.apply, "rates", "oldRates", "stamp")
+
   // Chain feerates
 
   implicit val bitGoFeeRateStructureFmt: JsonFormat[BitGoFeeRateStructure] = jsonFormat[Map[String, Long], Long, BitGoFeeRateStructure](BitGoFeeRateStructure.apply, "feeByBlockTarget", "feePerKb")
@@ -196,4 +194,11 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
   implicit val earnDotComFeeRateItemFmt: JsonFormat[EarnDotComFeeRateItem] = jsonFormat[Long, Long, Long, Long, Long, EarnDotComFeeRateItem](EarnDotComFeeRateItem.apply, "minFee", "maxFee", "memCount", "minDelay", "maxDelay")
 
   implicit val earnDotComFeeRateStructureFmt: JsonFormat[EarnDotComFeeRateStructure] = jsonFormat[List[EarnDotComFeeRateItem], EarnDotComFeeRateStructure](EarnDotComFeeRateStructure.apply, "fees")
+
+  implicit val feeratePerKBFmt: JsonFormat[FeeratePerKB] = jsonFormat[Satoshi, FeeratePerKB](FeeratePerKB.apply, "feerate")
+
+  implicit val feeratesPerKBFmt: JsonFormat[FeeratesPerKB] = jsonFormat[FeeratePerKB, FeeratePerKB, FeeratePerKB, FeeratePerKB, FeeratePerKB, FeeratePerKB, FeeratePerKB, FeeratePerKB, FeeratePerKB,
+      FeeratesPerKB](FeeratesPerKB.apply, "mempoolMinFee", "block_1", "blocks_2", "blocks_6", "blocks_12", "blocks_36", "blocks_72", "blocks_144", "blocks_1008")
+
+  implicit val feeRatesInfoFmt: JsonFormat[FeeRatesInfo] = jsonFormat[FeeratesPerKB, Long, FeeRatesInfo](FeeRatesInfo.apply, "perKb", "stamp")
 }

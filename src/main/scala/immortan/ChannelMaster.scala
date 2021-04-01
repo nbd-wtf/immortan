@@ -135,7 +135,7 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
       chanBag.db txWrap {
         // First, unconditionally persist a preimage before doing anything else
         payBag.addPreimage(fulfill.ourAdd.paymentHash, fulfill.preimage)
-        // Should be silently disregarded if this is a routed payment
+        // Will be silently disregarded if this is a routed payment
         payBag.updOkOutgoing(fulfill, data.usedFee)
       }
 
