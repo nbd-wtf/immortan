@@ -13,8 +13,8 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import immortan.sqlite.{DBInterface, PreparedQuery, RichCursor}
 import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
 import fr.acinq.eclair.channel.{LocalParams, PersistentChannelData}
-import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import fr.acinq.eclair.transactions.{DirectedHtlc, RemoteFulfill, Transactions}
+import akka.actor.{ActorRef, ActorSystem, PoisonPill, Props, SupervisorStrategy}
 import immortan.utils.{Denomination, FeeRatesInfo, FiatRatesInfo, PaymentRequestExt, WalletEventsCatcher}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
@@ -76,26 +76,41 @@ object LNParams {
 
   // Variables to be assigned at runtime
 
-  var cm: ChannelMaster = _
   var format: StorageFormat = _
   var chainWallet: WalletExt = _
   var syncParams: SyncParams = _
-  var fiatRatesInfo: FiatRatesInfo = _
-  var feeRatesInfo: FeeRatesInfo = _
-  var denomination: Denomination = _
   var trampoline: TrampolineOn = _
+  var feeRatesInfo: FeeRatesInfo = _
+  var fiatRatesInfo: FiatRatesInfo = _
+  var denomination: Denomination = _
+  var routerConf: RouterConf = _
+  var cm: ChannelMaster = _
 
-  var routerConf: RouterConf =
-    RouterConf(maxCltvDelta = CltvExpiryDelta(2016), routeHopDistance = 6,
-      mppMinPartAmount = MilliSatoshi(10000000L), maxRemoteAttempts = 12,
-      maxChannelFailures = 6, maxStrangeNodeFailures = 12)
-
-  // Last known chain tip
+  // Last known chain tip (zero is unknown)
   val blockCount: AtomicLong = new AtomicLong(0L)
-
   // Chain wallet has lost connection this long time ago
   // this can only happen after wallet has initally connected
   var lastDisconnect: Option[Long] = None
+
+  def isOperational: Boolean =
+    null != format & null != chainWallet & null != syncParams & null != trampoline &
+      null != feeRatesInfo & null != fiatRatesInfo & null != denomination & null != cm &
+      null != routerConf
+
+  def shutDown: Unit = {
+    lastDisconnect = None
+    blockCount.set(0L)
+
+    format = null
+    chainWallet = null
+    syncParams = null
+    trampoline = null
+    feeRatesInfo = null
+    fiatRatesInfo = null
+    denomination = null
+    routerConf = null
+    cm = null
+  }
 
   implicit val timeout: Timeout = Timeout(30.seconds)
   implicit val system: ActorSystem = ActorSystem("immortan-actor-system")
@@ -138,6 +153,11 @@ class SyncParams {
   val acceptThreshold = 1 // ShortIds and updates are accepted if confirmed by more than this peers
   val messagesToAsk = 1000 // Ask for this many messages from peer before they say this chunk is done
   val chunksToWait = 4 // Wait for at least this much chunk iterations from any peer before recording results
+
+  val defaultRouterConf =
+    RouterConf(maxCltvDelta = CltvExpiryDelta(2016), routeHopDistance = 6,
+      mppMinPartAmount = MilliSatoshi(10000000L), maxRemoteAttempts = 12,
+      maxChannelFailures = 6, maxStrangeNodeFailures = 12)
 }
 
 // Important: LNParams.format must be defined
@@ -202,7 +222,9 @@ case class RemoteNodeInfo(nodeId: PublicKey, address: NodeAddress, alias: String
     Transactions.sign(tx, Generators.revocationPrivKey(channelPrivateKeysMemo.get(publicKey.path).privateKey, remoteSecret), txOwner, commitmentFormat)
 }
 
-case class WalletExt(wallet: ElectrumEclairWallet, eventsCatcher: ActorRef, clientPool: ActorRef, watcher: ActorRef)
+case class WalletExt(wallet: ElectrumEclairWallet, eventsCatcher: ActorRef, clientPool: ActorRef, watcher: ActorRef) {
+  def shutDown: Unit = List(eventsCatcher, clientPool, watcher).foreach(_ ! PoisonPill)
+}
 
 case class UpdateAddHtlcExt(theirAdd: UpdateAddHtlc, remoteInfo: RemoteNodeInfo)
 
