@@ -9,11 +9,10 @@ import immortan.PaymentStatus._
 import immortan.ChannelMaster._
 import fr.acinq.eclair.channel._
 import scala.concurrent.duration._
-
+import immortan.crypto.{CanBeRepliedTo, CanBeShutDown, StateMachine}
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteReject}
 import immortan.ChannelListener.{Malfunction, Transition}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import immortan.crypto.{CanBeRepliedTo, StateMachine}
 import immortan.utils.{Rx, WalletEventsListener}
 
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.WalletReady
@@ -73,7 +72,7 @@ case class InFlightPayments(out: Map[FullPaymentTag, OutgoingAdds], in: Map[Full
   val allTags: Set[FullPaymentTag] = out.keySet ++ in.keySet
 }
 
-class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag: DataBag, val pf: PathFinder) extends ChannelListener { me =>
+class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag: DataBag, val pf: PathFinder) extends ChannelListener with CanBeShutDown { me =>
   val getPaymentInfoMemo: LoadingCache[ByteVector32, PaymentInfoTry] = memoize(payBag.getPaymentInfo)
   val initResolveMemo: LoadingCache[UpdateAddHtlcExt, IncomingResolution] = memoize(initResolve)
   val getPreimageMemo: LoadingCache[ByteVector32, PreimageTry] = memoize(payBag.getPreimage)
@@ -159,9 +158,9 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
 
   // CHANNEL MANAGEMENT
 
-  def shutDown: Unit = {
+  override def becomeShutDown: Unit = {
     for (chan <- all.values) chan.listeners = Set.empty
-    for (fsm <- inProcessors.values) fsm.becomeShutdown
+    for (fsm <- inProcessors.values) fsm.becomeShutDown
     pf.listeners = Set.empty
   }
 

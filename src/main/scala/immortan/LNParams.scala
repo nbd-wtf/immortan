@@ -24,13 +24,14 @@ import java.util.concurrent.atomic.AtomicLong
 import immortan.SyncMaster.ShortChanIdSet
 import fr.acinq.eclair.crypto.Generators
 import immortan.crypto.Noise.KeyPair
+import immortan.crypto.CanBeShutDown
 import java.io.ByteArrayInputStream
 import java.nio.ByteOrder
 import akka.util.Timeout
 import scala.util.Try
 
 
-object LNParams {
+object LNParams extends CanBeShutDown {
   val blocksPerDay: Int = 144 // On average we can expect this many blocks per day
   val cltvRejectThreshold: Int = 144 // Reject incoming payment if CLTV expiry is closer than this to current chain tip when HTLC arrives
   val incomingPaymentCltvExpiry: Int = 144 + 72 // Ask payer to set final CLTV expiry to payer's current chain tip + this many blocks
@@ -102,7 +103,8 @@ object LNParams {
       null != feeRatesInfo & null != fiatRatesInfo & null != denomination & null != cm &
       null != routerConf
 
-  def shutDown: Unit = {
+  override def becomeShutDown: Unit = {
+    isRoutingDesired = true
     lastDisconnect = None
     blockCount.set(0L)
 
@@ -159,7 +161,7 @@ class SyncParams {
   val messagesToAsk = 1000 // Ask for this many messages from peer before they say this chunk is done
   val chunksToWait = 4 // Wait for at least this much chunk iterations from any peer before recording results
 
-  val defaultRouterConf =
+  val defaultRouterConf: RouterConf =
     RouterConf(maxCltvDelta = CltvExpiryDelta(2016), routeHopDistance = 6,
       mppMinPartAmount = MilliSatoshi(10000000L), maxRemoteAttempts = 12,
       maxChannelFailures = 6, maxStrangeNodeFailures = 12)
@@ -227,8 +229,8 @@ case class RemoteNodeInfo(nodeId: PublicKey, address: NodeAddress, alias: String
     Transactions.sign(tx, Generators.revocationPrivKey(channelPrivateKeysMemo.get(publicKey.path).privateKey, remoteSecret), txOwner, commitmentFormat)
 }
 
-case class WalletExt(wallet: ElectrumEclairWallet, eventsCatcher: ActorRef, clientPool: ActorRef, watcher: ActorRef) {
-  def shutDown: Unit = List(eventsCatcher, clientPool, watcher).foreach(_ ! PoisonPill)
+case class WalletExt(wallet: ElectrumEclairWallet, eventsCatcher: ActorRef, clientPool: ActorRef, watcher: ActorRef) extends CanBeShutDown {
+  override def becomeShutDown: Unit = List(eventsCatcher, clientPool, watcher).foreach(_ ! PoisonPill)
 }
 
 case class UpdateAddHtlcExt(theirAdd: UpdateAddHtlc, remoteInfo: RemoteNodeInfo)
