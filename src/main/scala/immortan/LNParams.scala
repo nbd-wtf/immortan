@@ -88,9 +88,14 @@ object LNParams {
 
   // Last known chain tip (zero is unknown)
   val blockCount: AtomicLong = new AtomicLong(0L)
+
   // Chain wallet has lost connection this long time ago
-  // this can only happen after wallet has initally connected
+  // can only happen if wallet has connected, then disconnected
   var lastDisconnect: Option[Long] = None
+
+  // A peer may always attempt to route something since the choice there might be between routing or force-closing
+  // but if undesired we should exclude HCs from routing since their trust assumtions are different from NCs
+  var isRoutingDesired: Boolean = true
 
   def isOperational: Boolean =
     null != format & null != chainWallet & null != syncParams & null != trampoline &
