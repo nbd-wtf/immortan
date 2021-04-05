@@ -119,8 +119,8 @@ class MPPSpec extends AnyFunSuite {
 
     val List(part1, part2) = cm.opm.data.payments(tag).data.inFlightParts
     // First chosen route can not handle a second part so another route is chosen
-    assert(part1.route.hops.map(_.nodeId) == Seq(LNParams.format.keys.ourNodePubKey, a, c, d))
-    assert(part2.route.hops.map(_.nodeId) == Seq(LNParams.format.keys.ourNodePubKey, a, b, d))
+    assert(part1.route.hops.map(_.nodeId) == Seq(invalidPubKey, a, c, d))
+    assert(part2.route.hops.map(_.nodeId) == Seq(invalidPubKey, a, b, d))
     assert(cm.opm.data.payments(tag).data.usedFee == 24L.msat)
     assert(part1.cmd.firstAmount == 300012L.msat)
     assert(part2.cmd.firstAmount == 300012L.msat)
@@ -272,7 +272,7 @@ class MPPSpec extends AnyFunSuite {
 
     var results = List.empty[OutgoingPaymentSenderData]
     val listener: OutgoingListener = new OutgoingListener {
-      override def preimageObtained(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = results ::= data
+      override def gotFirstPreimage(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = results ::= data
     }
 
     cm.opm process CreateSenderFSM(tag, listener) // Create since FSM is missing
@@ -288,10 +288,10 @@ class MPPSpec extends AnyFunSuite {
     synchronized(wait(500))
 
     val List(p1, p2, p3) = cm.opm.data.payments(tag).data.inFlightParts.toList
-    cm.opm process RemoteFulfill(preimage, UpdateAddHtlc(null, 1, null, hash, null, p1.cmd.packetAndSecrets.packet, null))
+    cm.opm process RemoteFulfill(UpdateAddHtlc(null, 1, null, hash, null, p1.cmd.packetAndSecrets.packet, null), preimage)
     synchronized(wait(200))
-    cm.opm process RemoteFulfill(preimage, UpdateAddHtlc(null, 1, null, hash, null, p2.cmd.packetAndSecrets.packet, null))
-    cm.opm process RemoteFulfill(preimage, UpdateAddHtlc(null, 1, null, hash, null, p3.cmd.packetAndSecrets.packet, null))
+    cm.opm process RemoteFulfill(UpdateAddHtlc(null, 1, null, hash, null, p2.cmd.packetAndSecrets.packet, null), preimage)
+    cm.opm process RemoteFulfill(UpdateAddHtlc(null, 1, null, hash, null, p3.cmd.packetAndSecrets.packet, null), preimage)
     synchronized(wait(200))
     // All in-flight parts have been cleared and won't interfere with used capacities
     assert(cm.opm.data.payments(tag).data.inFlightParts.isEmpty)

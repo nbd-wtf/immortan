@@ -140,7 +140,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     assert(fsm.state == IncomingPaymentProcessor.SENDING)
     val senderDataSnapshot = cm.opm.data.payments(reasonableTrampoline1.fullTag).data
-    val fulfill = UpdateAddHtlc(null, 1, null, paymentHash, null, senderDataSnapshot.inFlightParts.head.cmd.packetAndSecrets.packet, null)
+    val ourAdd = UpdateAddHtlc(null, 1, null, paymentHash, null, senderDataSnapshot.inFlightParts.head.cmd.packetAndSecrets.packet, null)
     synchronized(wait(100L))
 
     assert(senderDataSnapshot.cmd.actualTotal == pr.amount.get) // With trampoline-to-legacy we find out a final amount
@@ -149,7 +149,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     // Sender FSM in turn notifies relay FSM, meanwhile we simulate multiple noisy incoming messages
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
-    cm.opm process RemoteFulfill(preimage, fulfill)
+    cm.opm process RemoteFulfill(ourAdd, preimage)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline2 :: Nil)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
@@ -492,8 +492,8 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     assert(!fsm.data.asInstanceOf[TrampolineStopping].retryOnceFinalized)
 
     val senderDataSnapshot = cm.opm.data.payments(reasonableTrampoline1.fullTag).data
-    val fulfill = UpdateAddHtlc(null, 1, null, paymentHash, null, senderDataSnapshot.inFlightParts.head.cmd.packetAndSecrets.packet, null)
-    cm.opm process RemoteFulfill(preimage, fulfill)
+    val ourAdd = UpdateAddHtlc(null, 1, null, paymentHash, null, senderDataSnapshot.inFlightParts.head.cmd.packetAndSecrets.packet, null)
+    cm.opm process RemoteFulfill(ourAdd, preimage)
     synchronized(wait(200L))
     fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = reasonableTrampoline2 :: Nil)
     assert(fsm.data.asInstanceOf[TrampolineRevealed].preimage == preimage)
