@@ -26,6 +26,7 @@ object ChannelUtils {
       def getLastNormalResyncStamp: Long = System.currentTimeMillis // Won't resync
       def updateLastTotalResyncStamp(stamp: Long): Unit = Tools.none
       def updateLastNormalResyncStamp(stamp: Long): Unit = Tools.none
+      def getPHCExtraNodes: Set[RemoteNodeInfo] = Set.empty
       def getExtraNodes: Set[RemoteNodeInfo] = Set.empty
     }
 
@@ -51,6 +52,7 @@ object ChannelUtils {
 
     val pf = makePathFinder(normalStore, hostedStore)
     val cm = new ChannelMaster(payBag, chanBag, dataBag, pf)
+    pf.listeners += cm.opm
 
     (normalStore, hostedStore, cm)
   }

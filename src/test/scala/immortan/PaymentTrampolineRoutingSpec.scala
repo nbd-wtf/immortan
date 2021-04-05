@@ -18,7 +18,7 @@ import immortan.sqlite.Table
 
 class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   test("Correctly parse trampoline routed payments sent to our fake nodeId") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
     val ourParams = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0D, logExponent = 0D, CltvExpiryDelta(72))
     val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(100000L.msat), randomBytes32, dP, "Invoice", CltvExpiryDelta(18)) // Final payee
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer)
@@ -31,7 +31,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   }
 
   test("Successfully parse a trampoline-to-legacy payment on payee side") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
     LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
     LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 
@@ -65,7 +65,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
   test("Successfully parse a multipart native trampoline payment on payee side") {
     // In this case payer sends 400,000 sat through us while total requested amount is 700,000 sat
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
     LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
     LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 
@@ -102,7 +102,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   }
 
   test("Successfully route a multipart trampoline payment") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
     LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
     LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 
@@ -166,7 +166,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   }
 
   test("Reject on incoming timeout") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
     LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
     LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 
@@ -208,7 +208,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   }
 
   test("Reject on outgoing timeout") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
     LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
     LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 
@@ -255,7 +255,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   }
 
   test("Fail to relay with outgoing channel getting SUSPENDED") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
     LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
     LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 
@@ -300,7 +300,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   }
 
   test("Fail to relay with no route found") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
     LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
     LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 
@@ -344,7 +344,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   }
 
   test("Restart after first fail, wind down on second fail") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
     LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
     LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 
@@ -396,7 +396,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   }
 
   test("Wind down after pathologc fail") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
     LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
     LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 
@@ -453,7 +453,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   }
 
   test("Fulfill in a pathologic fail state") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
     LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
     LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 

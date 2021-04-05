@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 import akka.actor.{ActorRef, Props}
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.{ByteVector32, Crypto, Transaction}
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Transaction}
 import fr.acinq.eclair.TestKitBaseClass
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -57,12 +57,7 @@ class ElectrumClientPoolSpec extends TestKitBaseClass with AnyFunSuiteLike {
   }
 
   test("init an electrumx connection pool") {
-    val random = new Random()
-    val stream = classOf[ElectrumClientSpec].getResourceAsStream("/electrum/servers_mainnet.json")
-    val addresses = random.shuffle(serverAddresses.toSeq).take(2).toSet + ElectrumClientPool.ElectrumServerAddress(new InetSocketAddress("electrum.acinq.co", 50002), SSL.STRICT)
-    stream.close()
-    assert(addresses.nonEmpty)
-    pool = system.actorOf(Props(new ElectrumClientPool(new AtomicLong(), addresses)), "electrum-client")
+    pool = system.actorOf(Props(new ElectrumClientPool(new AtomicLong(), Block.LivenetGenesisBlock.hash)), "electrum-client")
   }
 
   test("connect to an electrumx mainnet server") {

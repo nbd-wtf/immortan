@@ -60,7 +60,7 @@ class WireSpec extends AnyFunSuite {
   }
 
   test("UpdateAddHtlc tag encryption and partId equivalence") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
 
     val payload = FinalLegacyPayload(MilliSatoshi(10000L), CltvExpiry(144))
     val packetAndSecrets = PaymentPacket.create(sessionKey, publicKeys, variableSizePayloadsFull, associatedData)

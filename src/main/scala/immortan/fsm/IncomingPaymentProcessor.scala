@@ -298,7 +298,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
           totalFeeReserve, targetExpiry = innerPayload.outgoingCltv, allowedChans.values.toSeq)
 
         become(TrampolineProcessing(innerPayload.outgoingNodeId), SENDING)
-        // If invoice features are present then sender is asking a relay to non-trampoline recipient, it is known that recipient supports MPP
+        // If invoice features are present then sender is asking for relay to non-trampoline recipient, it is known that recipient supports MPP
         if (innerPayload.invoiceFeatures.isDefined) cm.opm process send.copy(assistedEdges = extraEdges, outerPaymentSecret = innerPayload.paymentSecret.get)
         else cm.opm process send.copy(onionTlvs = OnionTlv.TrampolineOnion(adds.head.packet.nextPacket) :: Nil, outerPaymentSecret = randomBytes32)
     }

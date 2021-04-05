@@ -21,7 +21,7 @@ import org.scalatest.funsuite.AnyFunSuite
 
 class CheckPointSpec extends AnyFunSuite {
   test("load checkpoint") {
-    val checkpoints = CheckPoint.load(Block.LivenetGenesisBlock.hash)
+    val checkpoints = CheckPoint.loadFromChainHash(Block.LivenetGenesisBlock.hash)
     assert(checkpoints.nonEmpty)
   }
 }

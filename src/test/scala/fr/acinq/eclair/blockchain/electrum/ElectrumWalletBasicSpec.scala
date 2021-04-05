@@ -54,7 +54,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
   val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, DataTable, ElectrumHeadersTable)
   val params = ElectrumWallet.WalletParameters(Block.RegtestGenesisBlock.hash, new SQLiteData(connection))
 
-  val state = Data(params, Blockchain.fromCheckpoints(Block.RegtestGenesisBlock.hash, CheckPoint.load(Block.RegtestGenesisBlock.hash)), firstAccountKeys, firstChangeKeys)
+  val state = Data(params, Blockchain.fromCheckpoints(Block.RegtestGenesisBlock.hash, CheckPoint.loadFromChainHash(Block.RegtestGenesisBlock.hash)), firstAccountKeys, firstChangeKeys)
     .copy(status = (firstAccountKeys ++ firstChangeKeys).map(key => computeScriptHashFromPublicKey(key.publicKey) -> "").toMap)
 
   def addFunds(data: Data, key: ExtendedPrivateKey, amount: Satoshi): Data = {

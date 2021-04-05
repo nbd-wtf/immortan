@@ -15,7 +15,7 @@ import org.scalatest.funsuite.AnyFunSuite
 
 class MPPSpec extends AnyFunSuite {
   test("Split between direct and non-direct channel") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
     val (normalStore, _, cm) = makeChannelMasterWithBasicGraph
 
     // Add a US -> C -> A channel
@@ -78,7 +78,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Split after no route found on first attempt") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -127,7 +127,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Halt on excessive local failures") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1").modify(_.lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs).setTo(0) // Payments will fail locally
@@ -161,7 +161,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Switch channel on first one becoming SLEEPING") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -211,7 +211,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Correctly process failed-at-amount") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -249,7 +249,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Correctly process fulfilled payment") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -302,7 +302,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Handle multiple competing payments") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -351,7 +351,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Fail on local timeout") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -391,7 +391,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Halt fast on terminal failure") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     LNParams.blockCount.set(Int.MaxValue)
@@ -428,7 +428,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Smaller part takes disproportionally larger fee from reserve") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = None)
+    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
