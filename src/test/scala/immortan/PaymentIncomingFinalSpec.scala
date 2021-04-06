@@ -132,42 +132,6 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
     assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
   }
 
-  test("Fulfill a fast crowdfund payment") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
-    val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
-    val (_, _, cm) = makeChannelMasterWithBasicGraph
-
-    val preimage = randomBytes32
-    val invoice = recordIncomingPaymentToFakeNodeId(amount = None, preimage, cm.payBag, remoteNodeInfo) // Fast crowdfund payment (no amount)
-    val add1 = makeRemoteAddToFakeNodeId(partAmount = 100000.msat, totalAmount = 100000.msat, invoice.paymentHash, invoice.paymentSecret.get, remoteNodeInfo)
-    val add2 = makeRemoteAddToFakeNodeId(partAmount = 200000.msat, totalAmount = 200000.msat, invoice.paymentHash, invoice.paymentSecret.get, remoteNodeInfo)
-    val add3 = makeRemoteAddToFakeNodeId(partAmount = 300000.msat, totalAmount = 400000.msat, invoice.paymentHash, invoice.paymentSecret.get, remoteNodeInfo)
-
-    val fsm = new IncomingPaymentReceiver(add1.fullTag, cm)
-    fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: Nil)
-    fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: add2 :: Nil)
-    fsm doProcess makeInFlightPayments(out = Nil, in = add3 :: add1 :: add2 :: Nil)
-    synchronized(wait(50))
-
-    assert(fsm.state == IncomingPaymentProcessor.RECEIVING)
-    assert(fsm.data == null)
-
-    fsm doProcess IncomingPaymentProcessor.CMDTimeout
-    // FSM asks ChannelMaster for in-flight payments on getting timeout message
-    fsm doProcess makeInFlightPayments(out = Nil, in = add3 :: add1 :: add2 :: Nil)
-    synchronized(wait(50))
-
-    assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
-    assert(fsm.data.asInstanceOf[IncomingRevealed].preimage == preimage)
-    assert(cm.getPreimageMemo(invoice.paymentHash).get == preimage)
-    assert(cm.getPaymentInfoMemo(invoice.paymentHash).get.received == 600000.msat)
-
-    // All parts have been cleared in channels
-    fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
-    synchronized(wait(50))
-    assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
-  }
-
   test("Fail an unknown payment right away") {
     LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
