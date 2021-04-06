@@ -5,6 +5,7 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
 import fr.acinq.eclair.Features._
+
 import scala.concurrent.duration._
 import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.bitcoin.DeterministicWallet._
@@ -17,20 +18,24 @@ import fr.acinq.eclair.transactions.{DirectedHtlc, RemoteFulfill, Transactions}
 import akka.actor.{ActorRef, ActorSystem, PoisonPill, Props, SupervisorStrategy}
 import immortan.utils.{Denomination, FeeRatesInfo, FiatRatesInfo, PaymentRequestExt, WalletEventsCatcher}
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
+
 import scala.concurrent.ExecutionContextExecutor
 import fr.acinq.eclair.router.ChannelUpdateExt
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
+
 import immortan.SyncMaster.ShortChanIdSet
 import fr.acinq.eclair.crypto.Generators
 import immortan.crypto.Noise.KeyPair
 import immortan.crypto.CanBeShutDown
 import java.io.ByteArrayInputStream
 import java.nio.ByteOrder
+
 import akka.util.Timeout
+
 import scala.util.Try
 
 
-object LNParams extends CanBeShutDown {
+object LNParams {
   val blocksPerDay: Int = 144 // On average we can expect this many blocks per day
   val cltvRejectThreshold: Int = 144 // Reject incoming payment if CLTV expiry is closer than this to current chain tip when HTLC arrives
   val incomingPaymentCltvExpiry: Int = 144 + 72 // Ask payer to set final CLTV expiry to payer's current chain tip + this many blocks
@@ -94,34 +99,16 @@ object LNParams extends CanBeShutDown {
 
   // Chain wallet has lost connection this long time ago
   // can only happen if wallet has connected, then disconnected
-  var lastDisconnect: Option[Long] = None
+  val lastDisconnect: AtomicLong = new AtomicLong(Long.MaxValue)
 
   // A peer may always attempt to route something since the choice there might be between routing or force-closing
   // but if undesired we should exclude HCs from routing since their trust assumtions are different from NCs
-  var isRoutingDesired: Boolean = true
+  val isRoutingDesired: AtomicBoolean = new AtomicBoolean(true)
 
   def isOperational: Boolean =
     null != format && null != chainWallet && null != syncParams && null != trampoline &&
       null != feeRatesInfo && null != fiatRatesInfo && null != denomination && null != cm &&
       null != cm.inProcessors && null != routerConf
-
-  override def becomeShutDown: Unit = {
-    isRoutingDesired = true
-    lastDisconnect = None
-    blockCount.set(0L)
-
-    format = null
-    routerConf = null
-    syncParams = null
-    denomination = null
-    fiatRatesInfo = null
-    feeRatesInfo = null
-    trampoline = null
-    cm = null
-
-    // Better ne erased last
-    chainWallet = null
-  }
 
   implicit val timeout: Timeout = Timeout(30.seconds)
   implicit val system: ActorSystem = ActorSystem("immortan-actor-system")
@@ -138,11 +125,11 @@ object LNParams extends CanBeShutDown {
 
   def currentBlockDay: Long = blockCount.get / blocksPerDay
 
-  def chainDisconnectedForTooLong: Boolean = lastDisconnect.exists(_ < System.currentTimeMillis - 60 * 60 * 1000L * 2)
+  def chainDisconnectedForTooLong: Boolean = lastDisconnect.get < System.currentTimeMillis - 60 * 60 * 1000L * 2
 
   def incorrectDetails(amount: MilliSatoshi): FailureMessage = IncorrectOrUnknownPaymentDetails(amount, blockCount.get)
 
-  def peerSupportsExtQueries(theirInit: Init): Boolean = Features.canUseFeature(LNParams.ourInit.features, theirInit.features, ChannelRangeQueriesExtended)
+  def peerSupportsExtQueries(theirInit: Init): Boolean = Features.canUseFeature(ourInit.features, theirInit.features, ChannelRangeQueriesExtended)
 }
 
 class SyncParams {

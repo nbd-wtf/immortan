@@ -85,15 +85,15 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
 
     override def onWalletReady(event: WalletReady): Unit = {
       // Invalidate last disconnect stamp since we're up again
+      LNParams.lastDisconnect.set(Long.MaxValue)
       LNParams.blockCount.set(event.height)
-      LNParams.lastDisconnect = None
       // Connect sockets now
       initConnect
     }
 
     override def onElectrumDisconnected: Unit = {
-      // Remember when disconnect happened to eventually stop accepting payments
-      LNParams.lastDisconnect = System.currentTimeMillis.toSome
+      // Remember to eventually stop accepting payments
+      LNParams.lastDisconnect.set(System.currentTimeMillis)
     }
   }
 
