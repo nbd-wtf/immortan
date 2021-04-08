@@ -1,6 +1,7 @@
 package immortan
 
 import fr.acinq.eclair._
+import immortan.utils.TestUtils._
 import immortan.utils.GraphUtils._
 import immortan.utils.PaymentUtils._
 import fr.acinq.eclair.wire.PaymentTimeout
@@ -47,12 +48,11 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
 
     val fsm = new IncomingPaymentReceiver(add1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: Nil)
-    synchronized(wait(50))
 
-    assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
-    assert(fsm.data.asInstanceOf[IncomingRevealed].preimage == preimage)
-    assert(cm.getPreimageMemo(invoice.paymentHash).get == preimage)
-    assert(cm.getPaymentInfoMemo(invoice.paymentHash).get.status == PaymentStatus.SUCCEEDED)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    WAIT_UNTIL_TRUE(fsm.data.asInstanceOf[IncomingRevealed].preimage == preimage)
+    WAIT_UNTIL_TRUE(cm.getPreimageMemo(invoice.paymentHash).get == preimage)
+    WAIT_UNTIL_TRUE(cm.getPaymentInfoMemo(invoice.paymentHash).get.status == PaymentStatus.SUCCEEDED)
   }
 
   test("Fulfill multipart incoming payment") {
@@ -66,22 +66,20 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
 
     val fsm = new IncomingPaymentReceiver(add1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: Nil)
-    synchronized(wait(50))
 
-    assert(fsm.state == IncomingPaymentProcessor.RECEIVING)
-    assert(fsm.data == null)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.RECEIVING)
+    WAIT_UNTIL_TRUE(fsm.data == null)
 
     val add2 = makeRemoteAddToFakeNodeId(partAmount = 35000L.msat, totalAmount = 100000L.msat, invoice.paymentHash, invoice.paymentSecret.get, remoteNodeInfo)
     val add3 = makeRemoteAddToFakeNodeId(partAmount = 30000L.msat, totalAmount = 200000L.msat, invoice.paymentHash, invoice.paymentSecret.get, remoteNodeInfo)
 
     fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: add2 :: Nil)
     fsm doProcess makeInFlightPayments(out = Nil, in = add3 :: add1 :: add2 :: Nil)
-    synchronized(wait(50))
 
-    assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
-    assert(fsm.data.asInstanceOf[IncomingRevealed].preimage == preimage)
-    assert(cm.getPreimageMemo(invoice.paymentHash).get == preimage)
-    assert(cm.getPaymentInfoMemo(invoice.paymentHash).get.status == PaymentStatus.SUCCEEDED)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    WAIT_UNTIL_TRUE(fsm.data.asInstanceOf[IncomingRevealed].preimage == preimage)
+    WAIT_UNTIL_TRUE(cm.getPreimageMemo(invoice.paymentHash).get == preimage)
+    WAIT_UNTIL_TRUE(cm.getPaymentInfoMemo(invoice.paymentHash).get.status == PaymentStatus.SUCCEEDED)
 
     // Suppose user has restarted an app with only one part resolved in channels
 
@@ -90,12 +88,11 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
     assert(fsm2.data == null)
 
     fsm2 doProcess makeInFlightPayments(out = Nil, in = add1 :: add2 :: Nil)
-    synchronized(wait(50))
 
-    assert(fsm2.state == IncomingPaymentProcessor.FINALIZING)
-    assert(fsm2.data.asInstanceOf[IncomingRevealed].preimage == preimage)
-    assert(cm.getPreimageMemo(invoice.paymentHash).get == preimage)
-    assert(cm.getPaymentInfoMemo(invoice.paymentHash).get.received == 100000L.msat) // Original amount is retained
+    WAIT_UNTIL_TRUE(fsm2.state == IncomingPaymentProcessor.FINALIZING)
+    WAIT_UNTIL_TRUE(fsm2.data.asInstanceOf[IncomingRevealed].preimage == preimage)
+    WAIT_UNTIL_TRUE(cm.getPreimageMemo(invoice.paymentHash).get == preimage)
+    WAIT_UNTIL_TRUE(cm.getPaymentInfoMemo(invoice.paymentHash).get.received == 100000L.msat) // Original amount is retained
   }
 
   test("Do not react to incoming payment with same hash, but different secret") {
@@ -113,23 +110,20 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
     fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: Nil)
     fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: add2 :: Nil)
     fsm doProcess makeInFlightPayments(out = Nil, in = add3 :: add1 :: add2 :: Nil)
-    synchronized(wait(50))
 
-    assert(fsm.state == IncomingPaymentProcessor.RECEIVING)
-    assert(fsm.data == null)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.RECEIVING)
+    WAIT_UNTIL_TRUE(fsm.data == null)
 
     val add4 = makeRemoteAddToFakeNodeId(partAmount = 40000L.msat, totalAmount = 200000L.msat, invoice.paymentHash, invoice.paymentSecret.get, remoteNodeInfo) // A correct one
     fsm doProcess makeInFlightPayments(out = Nil, in = add3 :: add1 :: add4 :: add2 :: Nil)
-    synchronized(wait(50))
 
-    assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
-    assert(fsm.data.asInstanceOf[IncomingRevealed].preimage == preimage)
-    assert(cm.getPreimageMemo(invoice.paymentHash).get == preimage)
-    assert(cm.getPaymentInfoMemo(invoice.paymentHash).get.received == 110000.msat) // Sender has sent a bit more
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    WAIT_UNTIL_TRUE(fsm.data.asInstanceOf[IncomingRevealed].preimage == preimage)
+    WAIT_UNTIL_TRUE(cm.getPreimageMemo(invoice.paymentHash).get == preimage)
+    WAIT_UNTIL_TRUE(cm.getPaymentInfoMemo(invoice.paymentHash).get.received == 110000.msat) // Sender has sent a bit more
 
     fsm doProcess makeInFlightPayments(out = Nil, in = add3 :: Nil)
-    synchronized(wait(50))
-    assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
   }
 
   test("Fail an unknown payment right away") {
@@ -147,15 +141,13 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
     fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: Nil)
     fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: add2 :: Nil)
     fsm doProcess makeInFlightPayments(out = Nil, in = add3 :: add1 :: add2 :: Nil)
-    synchronized(wait(50))
 
-    assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
-    assert(fsm.data.asInstanceOf[IncomingAborted].failure.isEmpty)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    WAIT_UNTIL_TRUE(fsm.data.asInstanceOf[IncomingAborted].failure.isEmpty)
 
     // All parts have been cleared in channels
     fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
-    synchronized(wait(50))
-    assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
   }
 
   test("Fail if one of parts is too close to chain tip") {
@@ -173,10 +165,9 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
     fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: Nil)
     fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: add2 :: Nil)
     fsm doProcess makeInFlightPayments(out = Nil, in = add3 :: add1 :: add2 :: Nil)
-    synchronized(wait(50))
 
-    assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
-    assert(fsm.data.asInstanceOf[IncomingAborted].failure.isEmpty)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    WAIT_UNTIL_TRUE(fsm.data.asInstanceOf[IncomingAborted].failure.isEmpty)
   }
 
   test("Do not reveal a preimage on FSM entering failed state") {
@@ -196,17 +187,14 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
     fsm doProcess IncomingPaymentProcessor.CMDTimeout
     // FSM asks ChannelMaster for in-flight payments on getting timeout message
     fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: add2 :: Nil)
-    synchronized(wait(50))
     // In a moment we actually receive the last part, but preimage is still not revelaed
     fsm doProcess makeInFlightPayments(out = Nil, in = add3 :: add1 :: add2 :: Nil)
-    synchronized(wait(50))
 
-    assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
-    assert(fsm.data.asInstanceOf[IncomingAborted].failure.contains(PaymentTimeout))
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    WAIT_UNTIL_TRUE(fsm.data.asInstanceOf[IncomingAborted].failure.contains(PaymentTimeout))
 
     // All parts have been cleared in channels
     fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
-    synchronized(wait(50))
-    assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
   }
 }

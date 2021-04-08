@@ -5,12 +5,12 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
 import fr.acinq.eclair.Features._
-
 import scala.concurrent.duration._
 import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.bitcoin.DeterministicWallet._
 import scodec.bits.{ByteVector, HexStringSyntax}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
 import immortan.sqlite.{DBInterface, PreparedQuery, RichCursor}
 import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
 import fr.acinq.eclair.channel.{LocalParams, PersistentChannelData}
@@ -18,20 +18,15 @@ import fr.acinq.eclair.transactions.{DirectedHtlc, RemoteFulfill, Transactions}
 import akka.actor.{ActorRef, ActorSystem, PoisonPill, Props, SupervisorStrategy}
 import immortan.utils.{Denomination, FeeRatesInfo, FiatRatesInfo, PaymentRequestExt, WalletEventsCatcher}
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
-
 import scala.concurrent.ExecutionContextExecutor
 import fr.acinq.eclair.router.ChannelUpdateExt
-import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
-
 import immortan.SyncMaster.ShortChanIdSet
 import fr.acinq.eclair.crypto.Generators
 import immortan.crypto.Noise.KeyPair
 import immortan.crypto.CanBeShutDown
 import java.io.ByteArrayInputStream
 import java.nio.ByteOrder
-
 import akka.util.Timeout
-
 import scala.util.Try
 
 
@@ -125,7 +120,7 @@ object LNParams {
 
   def currentBlockDay: Long = blockCount.get / blocksPerDay
 
-  def chainDisconnectedForTooLong: Boolean = lastDisconnect.get < System.currentTimeMillis - 60 * 60 * 1000L * 2
+  def isChainDisconnectedTooLong: Boolean = lastDisconnect.get < System.currentTimeMillis - 60 * 60 * 1000L * 2
 
   def incorrectDetails(amount: MilliSatoshi): FailureMessage = IncorrectOrUnknownPaymentDetails(amount, blockCount.get)
 

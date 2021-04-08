@@ -2,6 +2,7 @@ package immortan
 
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
+import immortan.utils.TestUtils._
 import immortan.utils.GraphUtils._
 import immortan.utils.PaymentUtils._
 import immortan.utils.ChannelUtils._
@@ -57,10 +58,11 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
-    synchronized(wait(500L))
 
-    val List(add1) = cm.allInChannelOutgoing.values.flatten.toList
-    IncomingPacket.decrypt(add1, aP).right.get.isInstanceOf[FinalPacket]
+    WAIT_UNTIL_TRUE {
+      val List(add1) = cm.allInChannelOutgoing.values.flatten.toList
+      IncomingPacket.decrypt(add1, aP).right.get.isInstanceOf[FinalPacket]
+    }
   }
 
   test("Successfully parse a multipart native trampoline payment on payee side") {
@@ -92,13 +94,14 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
-    synchronized(wait(500L))
 
-    val List(add1) = cm.allInChannelOutgoing.values.flatten.toList
-    val finalPacket = IncomingPacket.decrypt(add1, aP).right.get.asInstanceOf[FinalPacket]
-    assert(finalPacket.payload.paymentSecret.get == pr.paymentSecret.get) // Payment secret is internal, payee will be able to group trampolines from various sources together
-    assert(finalPacket.payload.totalAmount == 700000L.msat) // Total amount was not seen by relaying trampoline node, but equal to requested by payee
-    assert(finalPacket.payload.amount == add1.amountMsat)
+    WAIT_UNTIL_TRUE {
+      val List(add1) = cm.allInChannelOutgoing.values.flatten.toList
+      val finalPacket = IncomingPacket.decrypt(add1, aP).right.get.asInstanceOf[FinalPacket]
+      assert(finalPacket.payload.paymentSecret.get == pr.paymentSecret.get) // Payment secret is internal, payee will be able to group trampolines from various sources together
+      assert(finalPacket.payload.totalAmount == 700000L.msat) // Total amount was not seen by relaying trampoline node, but equal to requested by payee
+      finalPacket.payload.amount == add1.amountMsat
+    }
   }
 
   test("Successfully route a multipart trampoline payment") {
@@ -131,21 +134,19 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
-    synchronized(wait(100L))
 
-    assert(fsm.state == IncomingPaymentProcessor.RECEIVING)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.RECEIVING)
 
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
-    synchronized(wait(500L))
 
-    assert(fsm.state == IncomingPaymentProcessor.SENDING)
-    val senderDataSnapshot = cm.opm.data.payments(reasonableTrampoline1.fullTag).data
-    val ourAdd = UpdateAddHtlc(null, 1, null, paymentHash, null, senderDataSnapshot.inFlightParts.head.cmd.packetAndSecrets.packet, null)
-    synchronized(wait(100L))
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.SENDING)
 
-    assert(senderDataSnapshot.cmd.actualTotal == pr.amount.get) // With trampoline-to-legacy we find out a final amount
+    val outPacket = WAIT_UNTIL_RESULT(cm.opm.data.payments(reasonableTrampoline1.fullTag).data.inFlightParts.head.cmd.packetAndSecrets.packet)
+    val ourAdd = UpdateAddHtlc(null, 1, null, paymentHash, null, outPacket, null)
+
     val ourMinimalFee = TrampolinePaymentRelayer.relayFee(reasonableTrampoline3.packet.innerPayload, LNParams.trampoline)
-    assert(senderDataSnapshot.cmd.totalFeeReserve == feeReserve - ourMinimalFee) // At the very least we collect base trampoline fee
+    WAIT_UNTIL_TRUE(cm.opm.data.payments(reasonableTrampoline1.fullTag).data.cmd.actualTotal == pr.amount.get) // With trampoline-to-legacy we find out a final amount
+    assert(cm.opm.data.payments(reasonableTrampoline1.fullTag).data.cmd.totalFeeReserve == feeReserve - ourMinimalFee) // At the very least we collect base trampoline fee
 
     // Sender FSM in turn notifies relay FSM, meanwhile we simulate multiple noisy incoming messages
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
@@ -153,16 +154,15 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline2 :: Nil)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
-    synchronized(wait(100L))
-    // We are guaranteed to receiver InFlightPayments in a same thread after fulfill because FSM asks for it
+    WAIT_UNTIL_TRUE(fsm.data.isInstanceOf[TrampolineRevealed])
+    // We are guaranteed to receive InFlightPayments in a same thread after fulfill because FSM asks for it
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
     fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
-    synchronized(wait(100L))
 
-    assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
     val history = cm.payBag.listRecentRelays(Table.DEFAULT_LIMIT).headTry(cm.payBag.toRelayedPreimageInfo).get
-    assert(history.relayed == pr.amount.get)
-    assert(history.earned == 6984L.msat)
+    WAIT_UNTIL_TRUE(history.relayed == pr.amount.get)
+    WAIT_UNTIL_TRUE(history.earned == 6984L.msat)
   }
 
   test("Reject on incoming timeout") {
@@ -189,22 +189,18 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
-    synchronized(wait(100L))
-
-    assert(fsm.state == IncomingPaymentProcessor.RECEIVING)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.RECEIVING)
 
     fsm doProcess IncomingPaymentProcessor.CMDTimeout
     assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
     // FSM asks channel master to provide current HTLC data right away
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
-    synchronized(wait(100L))
 
-    assert(replies.head.asInstanceOf[CMD_FAIL_HTLC].reason == Right(PaymentTimeout))
+    WAIT_UNTIL_TRUE(replies.head.asInstanceOf[CMD_FAIL_HTLC].reason == Right(PaymentTimeout))
     fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
-    assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
-    synchronized(wait(100L))
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
     // Sender FSM has been removed
-    assert(cm.opm.data.payments.isEmpty)
+    WAIT_UNTIL_TRUE(cm.opm.data.payments.isEmpty)
   }
 
   test("Reject on outgoing timeout") {
@@ -236,22 +232,18 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
-    synchronized(wait(500L))
 
-    assert(fsm.state == IncomingPaymentProcessor.SENDING)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.SENDING)
     // Channels are not open so outgoing payments are waiting for timeout
     cm.opm.data.payments(reasonableTrampoline1.fullTag) doProcess OutgoingPaymentMaster.CMDAbort
-    synchronized(wait(100L))
-    assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
     // FSM asks channel master to provide current HTLC data right away
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
-    synchronized(wait(100L))
-    assert(replies.head.asInstanceOf[CMD_FAIL_HTLC].reason == Right(TemporaryNodeFailure))
+    WAIT_UNTIL_TRUE(replies.head.asInstanceOf[CMD_FAIL_HTLC].reason == Right(TemporaryNodeFailure))
     fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
     assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
-    synchronized(wait(100L))
     // Sender FSM has been removed
-    assert(cm.opm.data.payments.isEmpty)
+    WAIT_UNTIL_TRUE(cm.opm.data.payments.isEmpty)
   }
 
   test("Fail to relay with outgoing channel getting SUSPENDED") {
@@ -285,18 +277,15 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
-    synchronized(wait(500L))
 
-    assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
     // FSM asks channel master to provide current HTLC data right away
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
-    synchronized(wait(100L))
-    assert(replies.head.asInstanceOf[CMD_FAIL_HTLC].reason == Right(TemporaryNodeFailure))
+    WAIT_UNTIL_TRUE(replies.head.asInstanceOf[CMD_FAIL_HTLC].reason == Right(TemporaryNodeFailure))
     fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
     assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
-    synchronized(wait(100L))
     // Sender FSM has been removed
-    assert(cm.opm.data.payments.isEmpty)
+    WAIT_UNTIL_TRUE(cm.opm.data.payments.isEmpty)
   }
 
   test("Fail to relay with no route found") {
@@ -329,18 +318,15 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
-    synchronized(wait(500L))
 
-    assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
     // FSM asks channel master to provide current HTLC data right away
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
-    synchronized(wait(100L))
-    assert(replies.head.asInstanceOf[CMD_FAIL_HTLC].reason == Right(TrampolineFeeInsufficient))
+    WAIT_UNTIL_TRUE(replies.head.asInstanceOf[CMD_FAIL_HTLC].reason == Right(TrampolineFeeInsufficient))
     fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
     assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
-    synchronized(wait(100L))
     // Sender FSM has been removed
-    assert(cm.opm.data.payments.isEmpty)
+    WAIT_UNTIL_TRUE(cm.opm.data.payments.isEmpty)
   }
 
   test("Restart after first fail, wind down on second fail") {
@@ -373,10 +359,10 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
-    synchronized(wait(500L))
 
     // Simulate making new FSM on restart
     fsm.become(null, IncomingPaymentProcessor.RECEIVING)
+    WAIT_UNTIL_TRUE(cm.allInChannelOutgoing(reasonableTrampoline1.fullTag).size == 2)
     val List(out1, out2) = cm.allInChannelOutgoing(reasonableTrampoline1.fullTag).toList
     fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
     assert(fsm.data.asInstanceOf[TrampolineStopping].retryOnceFinalized)
@@ -384,15 +370,14 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     cm.all = Map.empty // Make it appear as if all outoing leftovers have been cleared (needed for sender FSM to fire an event)
     cm.opm process RemoteUpdateFail(UpdateFailHtlc(out1.channelId, out1.id, randomBytes32.bytes), out1)
     cm.opm process RemoteUpdateFail(UpdateFailHtlc(out2.channelId, out2.id, randomBytes32.bytes), out2)
-    synchronized(wait(200L))
+    WAIT_UNTIL_TRUE(fsm.data == null && fsm.state == IncomingPaymentProcessor.RECEIVING)
 
     // All outgoing parts have been cleared, but we still have incoming parts and maybe can try again (unless CLTV delta has expired)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
-    assert(fsm.state == IncomingPaymentProcessor.SENDING)
-    synchronized(wait(200L))
-    assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.SENDING)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
     fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
-    assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
   }
 
   test("Wind down after pathologc fail") {
@@ -425,10 +410,10 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
-    synchronized(wait(500L))
 
     // Simulate making new FSM on restart
     fsm.become(null, IncomingPaymentProcessor.RECEIVING)
+    WAIT_UNTIL_TRUE(cm.allInChannelOutgoing(reasonableTrampoline1.fullTag).size == 2)
     val List(out1, out2) = cm.allInChannelOutgoing(reasonableTrampoline1.fullTag).toList
     fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = reasonableTrampoline2 :: Nil)
     // Pathologic state: we do not have enough incoming payments, yet have outgoing payments (user removed an HC?)
@@ -437,7 +422,6 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     cm.all = Map.empty // Make it appear as if all outoing leftovers have been cleared (needed for sender FSM to fire an event)
     cm.opm process RemoteUpdateFail(UpdateFailHtlc(out1.channelId, out1.id, randomBytes32.bytes), out1)
     cm.opm process RemoteUpdateFail(UpdateFailHtlc(out2.channelId, out2.id, randomBytes32.bytes), out2)
-    synchronized(wait(200L))
 
     var replies = List.empty[Any]
     ChannelMaster.NO_CHANNEL = new StateMachine[ChannelData] with CanBeRepliedTo {
@@ -445,11 +429,12 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
       def doProcess(change: Any): Unit = replies ::= change
     }
 
-    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline2 :: Nil)
-    assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline2 :: Nil) // Noisy event
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline2 :: Nil) // Got after `wholePaymentFailed` has fired
     fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
-    assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
-    assert(replies.head.asInstanceOf[CMD_FAIL_HTLC].reason == Right(TemporaryNodeFailure))
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
+    WAIT_UNTIL_TRUE(replies.head.asInstanceOf[CMD_FAIL_HTLC].reason == Right(TemporaryNodeFailure))
   }
 
   test("Fulfill in a pathologic fail state") {
@@ -482,10 +467,10 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
-    synchronized(wait(500L))
 
     // Simulate making new FSM on restart
     fsm.become(null, IncomingPaymentProcessor.RECEIVING)
+    WAIT_UNTIL_TRUE(cm.allInChannelOutgoing(reasonableTrampoline1.fullTag).size == 2)
     val List(out1, out2) = cm.allInChannelOutgoing(reasonableTrampoline1.fullTag).toList
     fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = reasonableTrampoline2 :: Nil)
     // Pathologic state: we do not have enough incoming payments, yet have outgoing payments (user removed an HC?)
@@ -494,19 +479,19 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     val senderDataSnapshot = cm.opm.data.payments(reasonableTrampoline1.fullTag).data
     val ourAdd = UpdateAddHtlc(null, 1, null, paymentHash, null, senderDataSnapshot.inFlightParts.head.cmd.packetAndSecrets.packet, null)
     cm.opm process RemoteFulfill(ourAdd, preimage)
-    synchronized(wait(200L))
+
     fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = reasonableTrampoline2 :: Nil)
-    assert(fsm.data.asInstanceOf[TrampolineRevealed].preimage == preimage)
+    WAIT_UNTIL_TRUE(fsm.data.asInstanceOf[TrampolineRevealed].preimage == preimage)
     fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = Nil)
-    assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
 
     fsm.become(null, IncomingPaymentProcessor.RECEIVING)
-    assert(cm.payBag.getPreimage(paymentHash).toOption.contains(preimage))
+    WAIT_UNTIL_TRUE(cm.payBag.getPreimage(paymentHash).toOption.contains(preimage))
     // All incoming have been fulfilled, but we still have outgoing (channel offline?)
     // This is fine since we have a preiamge in case of what, but FSM is kept working
     fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = Nil)
-    assert(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
     fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
-    assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
   }
 }

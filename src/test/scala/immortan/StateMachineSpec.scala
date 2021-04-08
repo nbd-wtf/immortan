@@ -1,7 +1,9 @@
 package immortan
 
+import immortan.utils.TestUtils._
 import immortan.crypto.StateMachine
 import org.scalatest.funsuite.AnyFunSuite
+
 
 class StateMachineSpec extends AnyFunSuite {
  test("State mechine interval correctly works") {
@@ -12,15 +14,12 @@ class StateMachineSpec extends AnyFunSuite {
      def doProcess(change: Any): Unit = result = change
    }
 
-   assert(sm.secondsLeft == StateMachine.INTERVAL)
+   WAIT_UNTIL_TRUE(sm.secondsLeft == StateMachine.INTERVAL)
    sm.delayedCMDWorker.replaceWork("hi")
-   synchronized(wait(3500L))
-   assert(sm.secondsLeft == 2) // 2 seconds have passed
+   WAIT_UNTIL_TRUE(sm.secondsLeft == 2) // 2 seconds have passed
    sm.delayedCMDWorker.replaceWork("hi2")
-   assert(sm.secondsLeft == StateMachine.INTERVAL) // Reset
-   synchronized(wait(4000L))
-   assert(result == null) // First assigned work was discarded, second one is not finished yet
-   synchronized(wait(1500L))
-   assert(result == "hi2") // Second work executed
+   WAIT_UNTIL_TRUE(sm.secondsLeft == StateMachine.INTERVAL) // Reset
+   WAIT_UNTIL_TRUE(result == null) // First assigned work was discarded, second one is not finished yet
+   WAIT_UNTIL_TRUE(result == "hi2") // Second work executed
  }
 }

@@ -3,6 +3,7 @@ package immortan
 import immortan.crypto.Tools
 import org.scalatest.funsuite.AnyFunSuite
 import fr.acinq.eclair.wire.{Init, LightningMessage, Pong}
+import immortan.utils.TestUtils._
 
 
 class CommsTowerSpec extends AnyFunSuite {
@@ -17,10 +18,9 @@ class CommsTowerSpec extends AnyFunSuite {
     val remoteInfo = (new SyncParams).acinq
     val kpap1 = KeyPairAndPubKey(Tools.randomKeyPair, remoteInfo.nodeId)
     CommsTower.listen(Set(listener1), kpap1, remoteInfo)
-    synchronized(wait(4000L))
 
     // We have connected, sent Ping, got Pong
-    assert(responses.head.isInstanceOf[Pong])
+    WAIT_UNTIL_TRUE(responses.head.isInstanceOf[Pong])
 
     //
 
@@ -31,12 +31,11 @@ class CommsTowerSpec extends AnyFunSuite {
 
     // Remote node is already connected with this local data
     CommsTower.listen(Set(listener2), kpap1, remoteInfo)
-    synchronized(wait(2000L))
 
     // Only listener2.onOperational was called
-    assert(responses.head.isInstanceOf[Init])
-    assert(responses.tail.head.isInstanceOf[Pong])
-    assert(responses.size == 2)
+    WAIT_UNTIL_TRUE(responses.head.isInstanceOf[Init])
+    WAIT_UNTIL_TRUE(responses.tail.head.isInstanceOf[Pong])
+    WAIT_UNTIL_TRUE(responses.size == 2)
 
     //
 
@@ -48,9 +47,8 @@ class CommsTowerSpec extends AnyFunSuite {
     // We connect as another local node to the same remote node (two socket connections)
     val kpap2 = KeyPairAndPubKey(Tools.randomKeyPair, remoteInfo.nodeId)
     CommsTower.listen(Set(listener3), kpap2, remoteInfo)
-    synchronized(wait(2000L))
 
     // Only listener3.onOperational was called
-    assert(responses.size == 3)
+    WAIT_UNTIL_TRUE(responses.size == 3)
   }
 }
