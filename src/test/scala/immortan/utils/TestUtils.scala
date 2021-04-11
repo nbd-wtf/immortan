@@ -21,7 +21,7 @@ object TestUtils {
     Try(provider) match {
       case Success(result) => result
 
-      case Failure(_) if left >= 0 =>
+      case _ if left >= 0 =>
         TestUtils synchronized wait(50L)
         WAIT_UNTIL_RESULT(provider, left - 1)
 
