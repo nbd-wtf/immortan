@@ -210,10 +210,10 @@ abstract class SyncMaster(excluded: Set[Long], routerData: Data) extends StateMa
   become(null, SHORT_ID_SYNC)
 
   def doProcess(change: Any): Unit = (change, data, state) match {
-    case (setupData: SyncMasterShortIdData, null, SHORT_ID_SYNC) =>
-      val range = 0 until LNParams.syncParams.maxNodesToSyncFrom
+    case (setupData: SyncMasterShortIdData, null, SHORT_ID_SYNC) if setupData.baseSyncs.nonEmpty =>
+      val rng = 0 until LNParams.syncParams.maxNodesToSyncFrom
       become(freshData = setupData, SHORT_ID_SYNC)
-      range.foreach(_ => me process CMDAddSync)
+      rng.foreach(_ => me process CMDAddSync)
 
     case (CMDAddSync, data1: SyncMasterShortIdData, SHORT_ID_SYNC) if data1.activeSyncs.size < LNParams.syncParams.maxNodesToSyncFrom =>
       // We are asked to create a new worker AND we don't have enough workers yet: create a new one and instruct it to sync right away
@@ -317,7 +317,7 @@ abstract class SyncMaster(excluded: Set[Long], routerData: Data) extends StateMa
 
   private def computeFlag(shortlId: ShortChannelId, theirTimestamps: ReplyChannelRangeTlv.Timestamps, theirChecksums: ReplyChannelRangeTlv.Checksums) =
     if (routerData.channels contains shortlId) {
-      val (stamps: ReplyChannelRangeTlv.Timestamps, checksums: ReplyChannelRangeTlv.Checksums) = Sync.getChannelDigestInfo(routerData.channels)(shortlId)
+      val (stamps, checksums) = Sync.getChannelDigestInfo(routerData.channels)(shortlId)
       val shouldRequestUpdate1 = Sync.shouldRequestUpdate(stamps.timestamp1, checksums.checksum1, theirTimestamps.timestamp1, theirChecksums.checksum1)
       val shouldRequestUpdate2 = Sync.shouldRequestUpdate(stamps.timestamp2, checksums.checksum2, theirTimestamps.timestamp2, theirChecksums.checksum2)
 
@@ -330,9 +330,7 @@ abstract class SyncMaster(excluded: Set[Long], routerData: Data) extends StateMa
 }
 
 case class CompleteHostedRoutingData(announces: Set[ChannelAnnouncement], updates: Set[ChannelUpdate] = Set.empty)
-case class SyncMasterPHCData(baseSyncs: Set[RemoteNodeInfo], extSyncs: Set[RemoteNodeInfo], activeSyncs: Set[SyncWorker], attemptsLeft: Int = 12) extends SyncMasterData {
-  final val maxSyncs: Int = 1
-}
+case class SyncMasterPHCData(baseSyncs: Set[RemoteNodeInfo], extSyncs: Set[RemoteNodeInfo], activeSyncs: Set[SyncWorker], attemptsLeft: Int = 12) extends SyncMasterData
 
 abstract class PHCSyncMaster(routerData: Data) extends StateMachine[SyncMasterData] with CanBeRepliedTo { me =>
   implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
@@ -349,12 +347,12 @@ abstract class PHCSyncMaster(routerData: Data) extends StateMachine[SyncMasterDa
   def onSyncComplete(pure: CompleteHostedRoutingData): Unit
 
   def doProcess(change: Any): Unit = (change, data, state) match {
-    case (setupData: SyncMasterPHCData, null, PHC_SYNC) =>
+    case (setupData: SyncMasterPHCData, null, PHC_SYNC) if setupData.baseSyncs.nonEmpty =>
       become(freshData = setupData, PHC_SYNC)
       me process CMDAddSync
 
-    case (CMDAddSync, data1: SyncMasterPHCData, PHC_SYNC) if data1.activeSyncs.size < data1.maxSyncs =>
-      // We are asked to create a new worker AND we don't have enough workers yet: create a new one
+    case (CMDAddSync, data1: SyncMasterPHCData, PHC_SYNC) if data1.activeSyncs.isEmpty =>
+      // We are asked to create a new worker AND we don't have a worker yet: create one
 
       val newSyncWorker = data1.getNewSync(me)
       become(data1.copy(activeSyncs = data1.activeSyncs + newSyncWorker), PHC_SYNC)
@@ -369,7 +367,7 @@ abstract class PHCSyncMaster(routerData: Data) extends StateMachine[SyncMasterDa
       become(null, SHUT_DOWN)
 
     case (d1: SyncWorkerPHCData, _, PHC_SYNC) =>
-      // Worker has informed us that PHC sync is complete, shut down
+      // Worker has informed us that PHC sync is complete, shut everything down
       val pure = CompleteHostedRoutingData(d1.announces.values.toSet, d1.updates)
       become(null, SHUT_DOWN)
       onSyncComplete(pure)
