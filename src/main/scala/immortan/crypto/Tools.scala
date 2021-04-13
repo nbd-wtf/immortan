@@ -13,7 +13,6 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Router.ChannelDesc
 import fr.acinq.eclair.router.RouteCalculation
 import fr.acinq.eclair.crypto.ChaCha20Poly1305
-import rx.lang.scala.schedulers.IOScheduler
 import immortan.crypto.Noise.KeyPair
 import java.util.concurrent.TimeUnit
 import java.io.ByteArrayInputStream
@@ -36,9 +35,6 @@ object Tools {
   implicit class Any2Some[T](underlying: T) {
     def toSome: Option[T] = Some(underlying)
   }
-
-  def uniqueFirstAndLastWithinWindow[T](obs: Observable[T], window: Duration): Observable[T] =
-    obs.throttleFirst(window).merge(obs debounce window).distinctUntilChanged.observeOn(IOScheduler.apply)
 
   def mapKeys[K, V, K1](items: mutable.Map[K, V], mapper: K => K1, defVal: V): mutable.Map[K1, V] =
     items.map { case (key, value) => mapper(key) -> value } withDefaultValue defVal
