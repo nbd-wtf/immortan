@@ -6,7 +6,7 @@ import fr.acinq.bitcoin.{ByteVector64, Satoshi}
 import fr.acinq.eclair.transactions.{CommitmentSpec, RemoteFulfill}
 import immortan.fsm.{OutgoingListener, OutgoingPaymentSenderData}
 import fr.acinq.eclair.wire.{InitHostedChannel, LastCrossSignedState, NodeAddress}
-import immortan.{ChannelMaster, ConnectionListener, HostedCommits, PathFinder, RemoteNodeInfo}
+import immortan.{ChannelMaster, HostedCommits, PathFinder, RemoteNodeInfo}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.bitcoin.Crypto.PublicKey
