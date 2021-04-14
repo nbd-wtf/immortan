@@ -677,9 +677,9 @@ object ElectrumWallet {
 
     lazy val changeKeyMap = changeKeys.map(key => computeScriptHashFromPublicKey(key.publicKey) -> key).toMap
 
-    lazy val firstUnusedAccountKeys = accountKeys.filter(key => status(computeScriptHashFromPublicKey(key.publicKey)).contains(""))
+    lazy val firstUnusedAccountKeys = accountKeys.filter(key => status.get(computeScriptHashFromPublicKey(key.publicKey)).contains(""))
 
-    lazy val firstUnusedChangeKeys = changeKeys.find(key => status(computeScriptHashFromPublicKey(key.publicKey)).contains(""))
+    lazy val firstUnusedChangeKeys = changeKeys.find(key => status.get(computeScriptHashFromPublicKey(key.publicKey)).contains(""))
 
     lazy val publicScriptMap = (accountKeys ++ changeKeys).map(key => Script.write(computePublicKeyScript(key.publicKey)) -> key).toMap
 
