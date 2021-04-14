@@ -9,9 +9,7 @@ import akka.actor.Actor
 
 class WalletEventsCatcher extends Actor {
   var listeners: Set[WalletEventsListener] = Set.empty
-
   context.system.eventStream.subscribe(channel = classOf[WalletEvent], subscriber = self)
-
   context.system.eventStream.subscribe(channel = classOf[ElectrumEvent], subscriber = self)
 
   override def receive: Receive = {
@@ -21,8 +19,6 @@ class WalletEventsCatcher extends Actor {
 
     case event: TransactionReceived => for (lst <- listeners) lst.onTransactionReceived(event)
 
-    case event: NewWalletReceiveAddress => for (lst <- listeners) lst.onNewWalletReceiveAddress(event)
-
     case ElectrumDisconnected => for (lst <- listeners) lst.onElectrumDisconnected
   }
 }
@@ -30,6 +26,5 @@ class WalletEventsCatcher extends Actor {
 class WalletEventsListener {
   def onWalletReady(event: WalletReady): Unit = none
   def onTransactionReceived(event: TransactionReceived): Unit = none
-  def onNewWalletReceiveAddress(event: NewWalletReceiveAddress): Unit = none
   def onElectrumDisconnected: Unit = none
 }

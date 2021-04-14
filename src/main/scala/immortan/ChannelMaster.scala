@@ -104,10 +104,6 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
     override def onTransactionReceived(event: ElectrumWallet.TransactionReceived): Unit = {
       println(s"-- $event")
     }
-
-    override def onNewWalletReceiveAddress(event: ElectrumWallet.NewWalletReceiveAddress): Unit = {
-      println(s"-- $event")
-    }
   }
 
   val feeRatesListener: FeeRatesListener = new FeeRatesListener {

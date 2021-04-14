@@ -80,7 +80,6 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
           val ready = data.readyMessage
           log.info(s"wallet is ready with $ready")
           context.system.eventStream.publish(ready)
-          context.system.eventStream.publish(NewWalletReceiveAddress(data.currentReceiveAddress))
           params.walletDb.persist(PersistentData(data))
           data.copy(lastReadyMessage = Some(ready))
       }
@@ -128,7 +127,6 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
         val firstChangeKeys = (0 until params.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
         Data(params, blockchain1, firstAccountKeys, firstChangeKeys)
     }
-    context.system.eventStream.publish(NewWalletReceiveAddress(data.currentReceiveAddress))
     log.info(s"restored wallet balance=${data.balance}")
     data
   })
@@ -452,7 +450,7 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
         lastReadyMessage = None
       )
 
-    case Event(GetCurrentReceiveAddress, data) => stay replying GetCurrentReceiveAddressResponse(data.currentReceiveAddress)
+    case Event(GetCurrentReceiveAddresses, data) => stay replying GetCurrentReceiveAddressesResponse(data.currentReceiveAddresses)
 
     case Event(GetBalance, data) =>
       val (confirmed, unconfirmed) = data.balance
@@ -474,7 +472,7 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
 object ElectrumWallet {
   def props(seed: ByteVector, client: ActorRef, params: WalletParameters): Props = Props(new ElectrumWallet(seed, client, params))
 
-  case class WalletParameters(chainHash: ByteVector32, walletDb: WalletDb, minimumFee: Satoshi = 2000 sat, dustLimit: Satoshi = 546 sat, swipeRange: Int = 10, allowSpendUnconfirmed: Boolean = true)
+  case class WalletParameters(chainHash: ByteVector32, walletDb: WalletDb, minimumFee: Satoshi = 2000.sat, dustLimit: Satoshi = 546.sat, swipeRange: Int = 10, allowSpendUnconfirmed: Boolean = true)
 
   // @formatter:off
   sealed trait State
@@ -492,8 +490,8 @@ object ElectrumWallet {
   case object GetXpub extends Request
   case class GetXpubResponse(xpub: String, path: String) extends Response
 
-  case object GetCurrentReceiveAddress extends Request
-  case class GetCurrentReceiveAddressResponse(address: String) extends Response
+  case object GetCurrentReceiveAddresses extends Request
+  case class GetCurrentReceiveAddressesResponse(addresses: Seq[String] = Nil) extends Response
 
   case object GetData extends Request
   case class GetDataResponse(state: Data) extends Response
@@ -524,7 +522,6 @@ object ElectrumWallet {
 
   sealed trait WalletEvent
   case class TransactionReceived(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi, feeOpt: Option[Satoshi], timestamp: Option[Long] = None) extends WalletEvent
-  case class NewWalletReceiveAddress(address: String) extends WalletEvent
   case class WalletReady(confirmedBalance: Satoshi, unconfirmedBalance: Satoshi, height: Long, timestamp: Long, heights: Map[ByteVector32, Int] = Map.empty) extends WalletEvent
 
   /**
@@ -680,9 +677,9 @@ object ElectrumWallet {
 
     lazy val changeKeyMap = changeKeys.map(key => computeScriptHashFromPublicKey(key.publicKey) -> key).toMap
 
-    lazy val firstUnusedAccountKeys = accountKeys.find(key => status.get(computeScriptHashFromPublicKey(key.publicKey)) == Some(""))
+    lazy val firstUnusedAccountKeys = accountKeys.filter(key => status(computeScriptHashFromPublicKey(key.publicKey)).contains(""))
 
-    lazy val firstUnusedChangeKeys = changeKeys.find(key => status.get(computeScriptHashFromPublicKey(key.publicKey)) == Some(""))
+    lazy val firstUnusedChangeKeys = changeKeys.find(key => status(computeScriptHashFromPublicKey(key.publicKey)).contains(""))
 
     lazy val publicScriptMap = (accountKeys ++ changeKeys).map(key => Script.write(computePublicKeyScript(key.publicKey)) -> key).toMap
 
@@ -717,13 +714,9 @@ object ElectrumWallet {
      *         unused keys and none is available yet. In this case we will return
      *         the latest account key.
      */
-    def currentReceiveKey = firstUnusedAccountKeys.getOrElse {
-      // bad luck we are still looking for unused keys
-      // use the first account key
-      accountKeys.head
-    }
+    def currentReceiveKeys: Seq[ExtendedPrivateKey] = if (firstUnusedAccountKeys.isEmpty) accountKeys else firstUnusedAccountKeys
 
-    def currentReceiveAddress = segwitAddress(currentReceiveKey, chainHash)
+    def currentReceiveAddresses: Seq[String] = currentReceiveKeys.map(currentReceiveKey => segwitAddress(currentReceiveKey, chainHash))
 
     /**
      *

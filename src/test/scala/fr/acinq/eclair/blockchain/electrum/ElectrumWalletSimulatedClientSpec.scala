@@ -76,9 +76,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
   val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, DataTable, ElectrumHeadersTable)
   val walletParameters = WalletParameters(Block.RegtestGenesisBlock.hash, new SQLiteData(connection), minimumFee = 5000 sat)
   val wallet = TestFSMRef(new ElectrumWallet(seed, client.ref, walletParameters))
-
-  // wallet sends a receive address notification as soon as it is created
-  listener.expectMsgType[NewWalletReceiveAddress]
+  listener.expectNoMessage
 
   def reconnect: WalletReady = {
     sender.send(wallet, ElectrumClient.ElectrumReady(wallet.stateData.blockchain.bestchain.last.height, wallet.stateData.blockchain.bestchain.last.header, InetSocketAddress.createUnresolved("0.0.0.0", 9735)))
@@ -97,7 +95,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
     sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(2016, headers(2015)))
     val ready = listener.expectMsgType[WalletReady]
     assert(ready.timestamp == headers.last.time)
-    listener.expectMsgType[NewWalletReceiveAddress]
+    listener.expectNoMessage
     listener.send(wallet, GetXpub)
     val GetXpubResponse(xpub, path) = listener.expectMsgType[GetXpubResponse]
     assert(xpub == "upub5DffbMENbUsLcJbhufWvy1jourQfXfC6SoYyxhy2gPKeTSGzYHB3wKTnKH2LYCDemSzZwqzNcHNjnQZJCDn7Jy2LvvQeysQ6hrcK5ogp11B")
@@ -111,8 +109,6 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
     headers = headers :+ header
     sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, header))
     assert(listener.expectMsgType[WalletReady].timestamp == header.time)
-    val NewWalletReceiveAddress(address) = listener.expectMsgType[NewWalletReceiveAddress]
-    assert(address == "2NDjBqJugL3gCtjWTToDgaWWogq9nYuYw31")
   }
 
   test("tell wallet is ready when it is reconnected, even if nothing has changed") {
@@ -129,7 +125,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
 
     // listener should be notified
     assert(listener.expectMsgType[WalletReady].timestamp == last.header.time)
-    listener.expectMsgType[NewWalletReceiveAddress]
+    listener.expectNoMessage
   }
 
   test("don't send the same ready message more then once") {
@@ -140,10 +136,10 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
     headers = headers :+ header
     sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, header))
     assert(listener.expectMsgType[WalletReady].timestamp == header.time)
-    listener.expectMsgType[NewWalletReceiveAddress]
+    listener.expectNoMessage
 
     sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, header))
-    listener.expectNoMsg(500 milliseconds)
+    listener.expectNoMessage(500.milliseconds)
   }
 
   test("disconnect if server sends a bad header") {
