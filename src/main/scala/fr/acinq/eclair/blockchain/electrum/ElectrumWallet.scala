@@ -525,7 +525,7 @@ object ElectrumWallet {
   sealed trait WalletEvent
   case class TransactionReceived(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi, feeOpt: Option[Satoshi], timestamp: Option[Long] = None) extends WalletEvent
   case class NewWalletReceiveAddress(address: String) extends WalletEvent
-  case class WalletReady(confirmedBalance: Satoshi, unconfirmedBalance: Satoshi, height: Long, timestamp: Long) extends WalletEvent
+  case class WalletReady(confirmedBalance: Satoshi, unconfirmedBalance: Satoshi, height: Long, timestamp: Long, heights: Map[ByteVector32, Int] = Map.empty) extends WalletEvent
 
   /**
    *
@@ -686,18 +686,18 @@ object ElectrumWallet {
 
     lazy val publicScriptMap = (accountKeys ++ changeKeys).map(key => Script.write(computePublicKeyScript(key.publicKey)) -> key).toMap
 
-    lazy val utxos = history.keys.toSeq.map(scriptHash => getUtxos(scriptHash)).flatten
+    lazy val utxos = history.keys.toSeq.flatMap(getUtxos)
 
     /**
      * The wallet is ready if all current keys have an empty status, and we don't have
      * any history/tx request pending
      * NB: swipeRange * 2 because we have account keys and change keys
      */
-    def isReady(swipeRange: Int) = status.filter(_._2 == "").size >= swipeRange * 2 && pendingHistoryRequests.isEmpty && pendingTransactionRequests.isEmpty
+    def isReady(swipeRange: Int) = status.count(_._2 == "") >= swipeRange * 2 && pendingHistoryRequests.isEmpty && pendingTransactionRequests.isEmpty
 
     def readyMessage: WalletReady = {
       val (confirmed, unconfirmed) = balance
-      WalletReady(confirmed, unconfirmed, blockchain.tip.height, blockchain.tip.header.time)
+      WalletReady(confirmed, unconfirmed, blockchain.tip.height, blockchain.tip.header.time, heights)
     }
 
     /**
@@ -706,7 +706,7 @@ object ElectrumWallet {
      *         and have no pending requests for.
      */
     def missingTransactions(scriptHash: ByteVector32): Set[ByteVector32] = {
-      val txids = history.getOrElse(scriptHash, List()).map(_.tx_hash).filterNot(txhash => transactions.contains(txhash)).toSet
+      val txids = history.getOrElse(scriptHash, Nil).map(_.tx_hash).filterNot(transactions.contains).toSet
       txids -- pendingTransactionRequests
     }
 
@@ -717,7 +717,7 @@ object ElectrumWallet {
      *         unused keys and none is available yet. In this case we will return
      *         the latest account key.
      */
-    def currentReceiveKey = firstUnusedAccountKeys.headOption.getOrElse {
+    def currentReceiveKey = firstUnusedAccountKeys.getOrElse {
       // bad luck we are still looking for unused keys
       // use the first account key
       accountKeys.head
@@ -732,7 +732,7 @@ object ElectrumWallet {
      *         unused keys and none is available yet. In this case we will return
      *         the latest change key.
      */
-    def currentChangeKey = firstUnusedChangeKeys.headOption.getOrElse {
+    def currentChangeKey = firstUnusedChangeKeys.getOrElse {
       // bad luck we are still looking for unused keys
       // use the first account key
       changeKeys.head

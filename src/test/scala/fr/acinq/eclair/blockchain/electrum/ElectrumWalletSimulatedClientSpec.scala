@@ -194,7 +194,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
     wallet ! GetTransactionResponse(tx, None)
     val TransactionReceived(_, _, Satoshi(100000), _, _, _) = listener.expectMsgType[TransactionReceived]
     // we think we have some unconfirmed funds
-    val WalletReady(Satoshi(100000), _, _, _) = listener.expectMsgType[WalletReady]
+    assert(listener.expectMsgType[WalletReady].confirmedBalance == Satoshi(100000))
 
     client.expectMsg(GetMerkle(tx.txid, 2))
 
