@@ -677,7 +677,7 @@ object ElectrumWallet {
 
     lazy val changeKeyMap = changeKeys.map(key => computeScriptHashFromPublicKey(key.publicKey) -> key).toMap
 
-    lazy val firstUnusedAccountKeys = accountKeys.filter(key => status.get(computeScriptHashFromPublicKey(key.publicKey)).contains(""))
+    lazy val firstUnusedAccountKeys = accountKeys.view.filter(key => status.get(computeScriptHashFromPublicKey(key.publicKey)).contains("")).take(4)
 
     lazy val firstUnusedChangeKeys = changeKeys.find(key => status.get(computeScriptHashFromPublicKey(key.publicKey)).contains(""))
 
@@ -840,7 +840,7 @@ object ElectrumWallet {
       // to another set-like structure that will remove duplicates, so if we have several script hashes with exactly the
       // same balance we don't return the correct aggregated balance
       val balances = (accountKeyMap.keys ++ changeKeyMap.keys).toList.map(scriptHash => balance(scriptHash))
-      balances.foldLeft((0 sat, 0 sat)) {
+      balances.foldLeft((0.sat, 0.sat)) {
         case ((confirmed, unconfirmed), (confirmed1, unconfirmed1)) => (confirmed + confirmed1, unconfirmed + unconfirmed1)
       }
     }
