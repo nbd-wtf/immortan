@@ -34,7 +34,7 @@ class ElectrumEclairWallet(val wallet: ActorRef, chainHash: ByteVector32)(implic
 
   override def getBalance: Future[OnChainBalance] = (wallet ? GetBalance).mapTo[GetBalanceResponse].map(balance => OnChainBalance(balance.confirmed, balance.unconfirmed))
 
-  override def getReceiveAddresses: Future[Addresses] = (wallet ? GetCurrentReceiveAddresses).mapTo[GetCurrentReceiveAddressesResponse].map(_.addresses.toList)
+  override def getReceiveAddresses: Future[Addresses] = (wallet ? GetCurrentReceiveAddresses).mapTo[GetCurrentReceiveAddressesResponse].map(_.addresses)
 
   override def getReceivePubkey(receiveAddress: Option[String] = None): Future[Crypto.PublicKey] = Future failed new RuntimeException("Not implemented")
 
@@ -76,10 +76,9 @@ class ElectrumEclairWallet(val wallet: ActorRef, chainHash: ByteVector32)(implic
       case CancelTransactionResponse(_) => false
     }
 
-  override def sendPreimageBroadcast(preimage: ByteVector32, feeRatePerKw: FeeratePerKw): Future[TxAndFee] = {
-    val publicKeyScript = Script.write(OP_RETURN :: OP_PUSHDATA(preimage.bytes) :: Nil)
-    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(0L), publicKeyScript) :: Nil, lockTime = 0)
-    val rbfRequest = CompleteTransaction(tx, feeRatePerKw, OPT_IN_FULL_RBF)
+  override def sendPreimageBroadcast(preimages: Set[ByteVector32], feeRatePerKw: FeeratePerKw): Future[TxAndFee] = {
+    val txOuts = preimages.toList.map(_.bytes).map(OP_PUSHDATA.apply).grouped(2).map(OP_RETURN :: _).map(Script.write).map(TxOut(Satoshi(0L), _))
+    val rbfRequest = CompleteTransaction(Transaction(version = 2, txIn = Nil, txOut = txOuts.toList, lockTime = 0), feeRatePerKw, OPT_IN_FULL_RBF)
 
     (wallet ? rbfRequest).mapTo[CompleteTransactionResponse].map {
       case CompleteTransactionResponse(Some(realTxAndFee)) => realTxAndFee
