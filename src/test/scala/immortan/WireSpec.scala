@@ -54,9 +54,16 @@ class WireSpec extends AnyFunSuite {
     val swapInState = SwapInState(pending = Nil, ready = Nil, processing = Nil)
     val msg1 @ UnknownMessage(LightningMessageCodecs.SWAP_IN_STATE_MESSAGE_TAG, _) = LightningMessageCodecs.prepare(swapInState)
 
-    val encoded = lightningMessageCodecWithFallback.encode(msg1).require
-    val decoded = lightningMessageCodecWithFallback.decode(encoded).require.value
-    assert(decoded == msg1)
+    val encoded1 = lightningMessageCodecWithFallback.encode(msg1).require
+    val decoded1 = lightningMessageCodecWithFallback.decode(encoded1).require.value
+    assert(decoded1 == msg1)
+
+    val queryPreimages = QueryPreimages(randomBytes32 :: randomBytes32 :: randomBytes32 :: Nil)
+    val msg2 @ UnknownMessage(LightningMessageCodecs.HC_QUERY_PREIMAGES_TAG, _) = LightningMessageCodecs.prepare(queryPreimages)
+
+    val encoded2 = lightningMessageCodecWithFallback.encode(msg2).require
+    val decoded2 = lightningMessageCodecWithFallback.decode(encoded2).require.value
+    assert(decoded2 == msg2)
   }
 
   test("UpdateAddHtlc tag encryption and partId equivalence") {
