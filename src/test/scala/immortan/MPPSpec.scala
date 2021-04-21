@@ -16,7 +16,7 @@ import org.scalatest.funsuite.AnyFunSuite
 
 class MPPSpec extends AnyFunSuite {
   test("Split between direct and non-direct channel") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (normalStore, _, cm) = makeChannelMasterWithBasicGraph
 
     // Add a US -> C -> A channel
@@ -77,7 +77,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Split after no route found on first attempt") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -123,12 +123,12 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Halt on excessive local failures") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1").modify(_.lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs).setTo(0) // Payments will fail locally
-    val hcs2 = makeHostedCommits(nodeId = b, alias = "peer1").modify(_.lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs).setTo(0) // Payments will fail locally
-    val hcs3 = makeHostedCommits(nodeId = c, alias = "peer1").modify(_.lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs).setTo(0) // Payments will fail locally
+    val hcs2 = makeHostedCommits(nodeId = b, alias = "peer2").modify(_.lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs).setTo(0) // Payments will fail locally
+    val hcs3 = makeHostedCommits(nodeId = c, alias = "peer3").modify(_.lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs).setTo(0) // Payments will fail locally
     cm.chanBag.put(hcs1)
     cm.chanBag.put(hcs2)
     cm.chanBag.put(hcs3)
@@ -139,9 +139,9 @@ class MPPSpec extends AnyFunSuite {
     val send = SendMultiPart(tag, routerConf, targetNodeId = s, onionTotal = 600000.msat, actualTotal = 600000.msat,
       totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
-    var failures = List.empty[OutgoingPaymentSenderData]
+    var senderDataWhenFailed = List.empty[OutgoingPaymentSenderData]
     val failedListener: OutgoingListener = new OutgoingListener {
-      override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = failures ::= data
+      override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = senderDataWhenFailed ::= data
     }
 
     // Payment is going to be split in two, both of them will fail locally
@@ -149,14 +149,13 @@ class MPPSpec extends AnyFunSuite {
     cm.opm process CreateSenderFSM(tag, failedListener)
     cm.opm process send
 
-    WAIT_UNTIL_TRUE(failures.size == 1) // We have got exactly one failure event
-    WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).data.failures.head.asInstanceOf[LocalFailure].status == PaymentFailure.RUN_OUT_OF_RETRY_ATTEMPTS)
-    WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).state == PaymentStatus.ABORTED)
-    WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).data.inFlightParts.isEmpty)
+    WAIT_UNTIL_TRUE(senderDataWhenFailed.size == 1) // We have got exactly one failure event
+    assert(senderDataWhenFailed.head.failures.head.asInstanceOf[LocalFailure].status == PaymentFailure.RUN_OUT_OF_RETRY_ATTEMPTS)
+    assert(senderDataWhenFailed.head.inFlightParts.isEmpty)
   }
 
   test("Switch channel on first one becoming SLEEPING") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -206,7 +205,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Correctly process failed-at-amount") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -244,7 +243,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Correctly process fulfilled payment") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -299,7 +298,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Handle multiple competing payments") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -348,7 +347,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Fail on local timeout") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -365,9 +364,9 @@ class MPPSpec extends AnyFunSuite {
     val send = SendMultiPart(tag, routerConf, targetNodeId = s, onionTotal = 600000L.msat, actualTotal = 600000L.msat,
       totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
-    var results = List.empty[OutgoingPaymentSenderData]
+    var senderDataWhenFailed = List.empty[OutgoingPaymentSenderData]
     val listener: OutgoingListener = new OutgoingListener {
-      override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = results ::= data
+      override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = senderDataWhenFailed ::= data
     }
 
     cm.opm process CreateSenderFSM(tag, listener)
@@ -383,14 +382,15 @@ class MPPSpec extends AnyFunSuite {
     cm.opm.data.payments(tag) doProcess OutgoingPaymentMaster.CMDAbort
 
     WAIT_UNTIL_TRUE {
-      assert(cm.opm.data.payments(tag).data.parts.isEmpty)
-      assert(cm.opm.data.payments(tag).state == PaymentStatus.ABORTED)
-      results.size == 1
+      assert(senderDataWhenFailed.head.parts.isEmpty)
+      assert(senderDataWhenFailed.head.failures.head.asInstanceOf[LocalFailure].status == PaymentFailure.TIMED_OUT)
+      assert(!cm.opm.data.payments.contains(tag))
+      senderDataWhenFailed.size == 1
     }
   }
 
   test("Halt fast on terminal failure") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     LNParams.blockCount.set(Int.MaxValue)
@@ -408,9 +408,9 @@ class MPPSpec extends AnyFunSuite {
     val send = SendMultiPart(tag, routerConf, targetNodeId = s, onionTotal = 600000.msat, actualTotal = 600000.msat,
       totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
-    var failures = List.empty[OutgoingPaymentSenderData]
+    var senderDataWhenFailed = List.empty[OutgoingPaymentSenderData]
     val failedListener: OutgoingListener = new OutgoingListener {
-      override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = failures ::= data
+      override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = senderDataWhenFailed ::= data
     }
 
     // Payment is going to be split in two, both of them will fail locally
@@ -419,17 +419,17 @@ class MPPSpec extends AnyFunSuite {
     cm.opm process send
 
     WAIT_UNTIL_TRUE {
-      assert(failures.size == 1) // We have got exactly one failure event
-      assert(cm.opm.data.payments(tag).data.failures.head.asInstanceOf[LocalFailure].status == PaymentFailure.PAYMENT_NOT_SENDABLE)
-      assert(cm.opm.data.payments(tag).state == PaymentStatus.ABORTED)
-      cm.opm.data.payments(tag).data.inFlightParts.isEmpty
+      assert(senderDataWhenFailed.size == 1) // We have got exactly one failure event
+      assert(senderDataWhenFailed.head.failures.head.asInstanceOf[LocalFailure].status == PaymentFailure.PAYMENT_NOT_SENDABLE)
+      assert(!cm.opm.data.payments.contains(tag))
+      senderDataWhenFailed.head.inFlightParts.isEmpty
     }
 
     LNParams.blockCount.set(0)
   }
 
   test("Smaller part takes disproportionally larger fee from reserve") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")

@@ -19,7 +19,7 @@ import immortan.sqlite.Table
 
 class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   test("Correctly parse trampoline routed payments sent to our fake nodeId") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val ourParams = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0D, logExponent = 0D, CltvExpiryDelta(72))
     val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(100000L.msat), randomBytes32, dP, "Invoice", CltvExpiryDelta(18)) // Final payee
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer)
@@ -32,7 +32,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   }
 
   test("Successfully parse a trampoline-to-legacy payment on payee side") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
     LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 
@@ -67,7 +67,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
   test("Successfully parse a multipart native trampoline payment on payee side") {
     // In this case payer sends 400,000 sat through us while total requested amount is 700,000 sat
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
     LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 
@@ -105,7 +105,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   }
 
   test("Successfully route a multipart trampoline payment") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
     LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 
@@ -166,7 +166,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   }
 
   test("Reject on incoming timeout") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
     LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 
@@ -204,7 +204,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   }
 
   test("Reject on outgoing timeout") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
     LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 
@@ -247,7 +247,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   }
 
   test("Fail to relay with outgoing channel getting SUSPENDED") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
     LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 
@@ -289,7 +289,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   }
 
   test("Fail to relay with no route found") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
     LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 
@@ -330,7 +330,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   }
 
   test("Restart after first fail, wind down on second fail") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
     LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 
@@ -367,21 +367,23 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
     assert(fsm.data.asInstanceOf[TrampolineStopping].retryOnceFinalized)
 
-    cm.all = Map.empty // Make it appear as if all outoing leftovers have been cleared (needed for sender FSM to fire an event)
     cm.opm process RemoteUpdateFail(UpdateFailHtlc(out1.channelId, out1.id, randomBytes32.bytes), out1)
     cm.opm process RemoteUpdateFail(UpdateFailHtlc(out2.channelId, out2.id, randomBytes32.bytes), out2)
+    cm.opm process makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
     WAIT_UNTIL_TRUE(fsm.data == null && fsm.state == IncomingPaymentProcessor.RECEIVING)
+    // User has removed an outgoing HC meanwhile
+    cm.all = Map.empty
 
     // All outgoing parts have been cleared, but we still have incoming parts and maybe can try again (unless CLTV delta has expired)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
-    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.SENDING)
+    assert(fsm.state == IncomingPaymentProcessor.SENDING)
     WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
     fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
-    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
+    assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
   }
 
   test("Wind down after pathologc fail") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
     LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 
@@ -419,9 +421,10 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     // Pathologic state: we do not have enough incoming payments, yet have outgoing payments (user removed an HC?)
     assert(!fsm.data.asInstanceOf[TrampolineStopping].retryOnceFinalized)
 
-    cm.all = Map.empty // Make it appear as if all outoing leftovers have been cleared (needed for sender FSM to fire an event)
     cm.opm process RemoteUpdateFail(UpdateFailHtlc(out1.channelId, out1.id, randomBytes32.bytes), out1)
+    cm.opm process makeInFlightPayments(out = out2 :: Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
     cm.opm process RemoteUpdateFail(UpdateFailHtlc(out2.channelId, out2.id, randomBytes32.bytes), out2)
+    cm.opm process makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
 
     var replies = List.empty[Any]
     ChannelMaster.NO_CHANNEL = new StateMachine[ChannelData] with CanBeRepliedTo {
@@ -438,7 +441,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   }
 
   test("Fulfill in a pathologic fail state") {
-    LNParams.format = MnemonicExtStorageFormat(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), seed = randomBytes32)
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
     LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 
