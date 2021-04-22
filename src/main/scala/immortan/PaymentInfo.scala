@@ -1,6 +1,7 @@
 package immortan
 
 import immortan.utils.ImplicitJsonFormats._
+import immortan.utils.{Denomination, LNUrl}
 import immortan.crypto.Tools.{Bytes, Fiat2Btc}
 import fr.acinq.eclair.channel.{DATA_CLOSING, DATA_NEGOTIATING, HasNormalCommitments}
 import fr.acinq.bitcoin.{ByteVector32, Satoshi, Transaction}
@@ -10,7 +11,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.MilliSatoshi
 import scodec.bits.ByteVector
 import immortan.utils.uri.Uri
-import immortan.utils.LNUrl
+import java.util.Date
 
 
 object PaymentInfo {
@@ -29,6 +30,7 @@ object PaymentStatus {
 }
 
 sealed trait TransactionDetails {
+  lazy val date: Date = new Date(seenAt)
   val seenAt: Long
 }
 
@@ -110,16 +112,21 @@ case class TxInfo(txString: String, txidString: String, depth: Long, receivedMsa
 
   val isIncoming: Boolean = 1L == incoming
   val isDoubleSpent: Boolean = 1L == doubleSpent
-  val isConfirmed: Boolean = depth >= LNParams.minDepthBlocks
+  val isDeeplyBuried: Boolean = depth >= LNParams.minDepthBlocks
   lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
   lazy val description: TxDescription = to[TxDescription](descriptionString)
   lazy val txid: ByteVector32 = ByteVector32.fromValidHex(txidString)
   lazy val tx: Transaction = Transaction.read(txString)
+
+  def directedParsedWithSign(denomination: Denomination, zeroColor: String): String = {
+    if (isIncoming) "+" + denomination.parsedWithSign(receivedMsat, zeroColor)
+    else "-" + denomination.parsedWithSign(receivedMsat, zeroColor)
+  }
 }
 
 sealed trait TxDescription
 
-case class PlainTxDescription(label: Option[String] = None) extends TxDescription
+case class PlainTxDescription(address: Option[String], label: Option[String] = None) extends TxDescription
 
 sealed trait ChanTxDescription extends TxDescription { def nodeId: PublicKey }
 
@@ -136,8 +143,8 @@ case class HtlcClaimTxDescription(nodeId: PublicKey) extends ChanTxDescription
 case class PenaltyTxDescription(nodeId: PublicKey) extends ChanTxDescription
 
 object TxDescription {
-  def defineDescription(chans: Iterable[Channel], tx: Transaction): TxDescription =
-    defineChannelRelation(chans, tx) getOrElse PlainTxDescription(None)
+  def defineDescription(chans: Iterable[Channel], walletAddressOpt: Option[String], tx: Transaction): TxDescription =
+    defineChannelRelation(chans, tx) getOrElse PlainTxDescription(walletAddressOpt, None)
 
   def defineChannelRelation(chans: Iterable[Channel], tx: Transaction): Option[TxDescription] = chans.map(_.data).collectFirst {
     case hasCommits: HasNormalCommitments if hasCommits.commitments.commitInput.outPoint.txid == tx.txid => ChanFundingTxDescription(hasCommits.commitments.remoteInfo.nodeId)
