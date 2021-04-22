@@ -525,7 +525,7 @@ object ElectrumWallet {
   case class IsDoubleSpentResponse(tx: Transaction, depth: Long, isDoubleSpent: Boolean) extends Response
 
   sealed trait WalletEvent
-  case class TransactionReceived(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi, walletAddressOpt: Option[String], feeOpt: Option[Satoshi] = None) extends WalletEvent
+  case class TransactionReceived(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi, walletAddreses: List[String], feeOpt: Option[Satoshi] = None) extends WalletEvent
   case class WalletReady(confirmedBalance: Satoshi, unconfirmedBalance: Satoshi, height: Long, timestamp: Long) extends WalletEvent {
     val totalBalance: Satoshi = confirmedBalance + unconfirmedBalance
   }
@@ -850,8 +850,8 @@ object ElectrumWallet {
     }
 
     def transactionReceived(tx: Transaction, feeOpt: Option[Satoshi], received: Satoshi, sent: Satoshi): TransactionReceived = {
-      val walletAddressOpt = tx.txOut.find(isMine).map(_.publicKeyScript).flatMap(publicScriptMap.get).map(segwitAddress(_, chainHash))
-      TransactionReceived(tx, computeTransactionDepth(tx.txid), received, sent, walletAddressOpt, feeOpt)
+      val walletAddresses = tx.txOut.filter(isMine).map(_.publicKeyScript).flatMap(publicScriptMap.get).map(segwitAddress(_, chainHash))
+      TransactionReceived(tx, computeTransactionDepth(tx.txid), received, sent, walletAddresses.toList, feeOpt)
     }
 
     /**

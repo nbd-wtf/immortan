@@ -1,5 +1,6 @@
 package immortan
 
+import fr.acinq.eclair._
 import immortan.utils.ImplicitJsonFormats._
 import immortan.utils.{Denomination, LNUrl}
 import immortan.crypto.Tools.{Bytes, Fiat2Btc}
@@ -106,9 +107,9 @@ case class RelayedPreimageInfo(paymentHashString: String, preimageString: String
 
 // Tx descriptions
 
-case class TxInfo(txString: String, txidString: String, depth: Long, receivedMsat: MilliSatoshi, sentMsat: MilliSatoshi,
-                  feeMsat: MilliSatoshi, seenAt: Long, descriptionString: String, balanceSnapshot: MilliSatoshi,
-                  fiatRatesString: String, incoming: Long, doubleSpent: Long) extends TransactionDetails {
+case class TxInfo(txString: String, txidString: String, depth: Long, receivedSat: Satoshi, sentSat: Satoshi, feeSat: Satoshi,
+                  seenAt: Long, descriptionString: String, balanceSnapshot: MilliSatoshi, fiatRatesString: String,
+                  incoming: Long, doubleSpent: Long) extends TransactionDetails {
 
   val isIncoming: Boolean = 1L == incoming
   val isDoubleSpent: Boolean = 1L == doubleSpent
@@ -119,14 +120,14 @@ case class TxInfo(txString: String, txidString: String, depth: Long, receivedMsa
   lazy val tx: Transaction = Transaction.read(txString)
 
   def directedParsedWithSign(denomination: Denomination, zeroColor: String): String = {
-    if (isIncoming) "+" + denomination.parsedWithSign(receivedMsat, zeroColor)
-    else "-" + denomination.parsedWithSign(receivedMsat, zeroColor)
+    if (isIncoming) "+" + denomination.parsedWithSign(receivedSat.toMilliSatoshi, zeroColor)
+    else "-" + denomination.parsedWithSign(sentSat.toMilliSatoshi, zeroColor)
   }
 }
 
 sealed trait TxDescription
 
-case class PlainTxDescription(address: Option[String], label: Option[String] = None) extends TxDescription
+case class PlainTxDescription(addresses: List[String], label: Option[String] = None) extends TxDescription
 
 sealed trait ChanTxDescription extends TxDescription { def nodeId: PublicKey }
 
@@ -143,8 +144,8 @@ case class HtlcClaimTxDescription(nodeId: PublicKey) extends ChanTxDescription
 case class PenaltyTxDescription(nodeId: PublicKey) extends ChanTxDescription
 
 object TxDescription {
-  def defineDescription(chans: Iterable[Channel], walletAddressOpt: Option[String], tx: Transaction): TxDescription =
-    defineChannelRelation(chans, tx) getOrElse PlainTxDescription(walletAddressOpt, None)
+  def defineDescription(chans: Iterable[Channel], walletAddresses: List[String], tx: Transaction): TxDescription =
+    defineChannelRelation(chans, tx) getOrElse PlainTxDescription(walletAddresses)
 
   def defineChannelRelation(chans: Iterable[Channel], tx: Transaction): Option[TxDescription] = chans.map(_.data).collectFirst {
     case hasCommits: HasNormalCommitments if hasCommits.commitments.commitInput.outPoint.txid == tx.txid => ChanFundingTxDescription(hasCommits.commitments.remoteInfo.nodeId)
