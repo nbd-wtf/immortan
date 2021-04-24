@@ -366,13 +366,12 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     val List(out1, out2) = cm.allInChannelOutgoing(reasonableTrampoline1.fullTag).toList
     fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
     assert(fsm.data.asInstanceOf[TrampolineStopping].retryOnceFinalized)
+    // User has removed an outgoing HC meanwhile
+    cm.all = Map.empty
 
     cm.opm process RemoteUpdateFail(UpdateFailHtlc(out1.channelId, out1.id, randomBytes32.bytes), out1)
     cm.opm process RemoteUpdateFail(UpdateFailHtlc(out2.channelId, out2.id, randomBytes32.bytes), out2)
-    cm.opm process makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
     WAIT_UNTIL_TRUE(fsm.data == null && fsm.state == IncomingPaymentProcessor.RECEIVING)
-    // User has removed an outgoing HC meanwhile
-    cm.all = Map.empty
 
     // All outgoing parts have been cleared, but we still have incoming parts and maybe can try again (unless CLTV delta has expired)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
@@ -420,11 +419,12 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = reasonableTrampoline2 :: Nil)
     // Pathologic state: we do not have enough incoming payments, yet have outgoing payments (user removed an HC?)
     assert(!fsm.data.asInstanceOf[TrampolineStopping].retryOnceFinalized)
+    // User has removed an outgoing HC meanwhile
+    cm.all = Map.empty
 
     cm.opm process RemoteUpdateFail(UpdateFailHtlc(out1.channelId, out1.id, randomBytes32.bytes), out1)
-    cm.opm process makeInFlightPayments(out = out2 :: Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
+    cm.opm process RemoteUpdateFail(UpdateFailHtlc(out1.channelId, out1.id, randomBytes32.bytes), out1) // Noisy event
     cm.opm process RemoteUpdateFail(UpdateFailHtlc(out2.channelId, out2.id, randomBytes32.bytes), out2)
-    cm.opm process makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
 
     var replies = List.empty[Any]
     ChannelMaster.NO_CHANNEL = new StateMachine[ChannelData] with CanBeRepliedTo {

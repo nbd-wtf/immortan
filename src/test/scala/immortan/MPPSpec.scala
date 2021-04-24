@@ -140,7 +140,7 @@ class MPPSpec extends AnyFunSuite {
       totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
     var senderDataWhenFailed = List.empty[OutgoingPaymentSenderData]
-    val failedListener: OutgoingListener = new OutgoingListener {
+    val failedListener: OutgoingPaymentListener = new OutgoingPaymentListener {
       override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = senderDataWhenFailed ::= data
     }
 
@@ -265,8 +265,9 @@ class MPPSpec extends AnyFunSuite {
     cm.opm.data = cm.opm.data.copy(chanFailedAtAmount = Map(desc -> 200000L.msat))
 
     var results = List.empty[OutgoingPaymentSenderData]
-    val listener: OutgoingListener = new OutgoingListener {
+    val listener: OutgoingPaymentListener = new OutgoingPaymentListener {
       override def gotFirstPreimage(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = results ::= data
+      override def wholePaymentSucceeded(data: OutgoingPaymentSenderData): Unit = cm.opm process RemoveSenderFSM(data.cmd.fullTag)
     }
 
     cm.opm process CreateSenderFSM(tag, listener) // Create since FSM is missing
@@ -279,21 +280,21 @@ class MPPSpec extends AnyFunSuite {
 
     cm.opm process send
 
-    WAIT_UNTIL_TRUE {
+    WAIT_UNTIL_RESULT {
       val List(p1, p2, p3) = cm.opm.data.payments(tag).data.inFlightParts.toList
       cm.opm process RemoteFulfill(UpdateAddHtlc(null, 1, null, hash, null, p1.cmd.packetAndSecrets.packet, null), preimage)
       cm.opm process RemoteFulfill(UpdateAddHtlc(null, 1, null, hash, null, p2.cmd.packetAndSecrets.packet, null), preimage)
       cm.opm process RemoteFulfill(UpdateAddHtlc(null, 1, null, hash, null, p3.cmd.packetAndSecrets.packet, null), preimage)
+      cm.opm process InFlightPayments(Map.empty, Map.empty)
+    }
 
-      WAIT_UNTIL_TRUE {
-        // Original data contains all successful routes
-        assert(results.head.inFlightParts.size == 3)
-        // We only got a single revealed message
-        results.size == 1
-      }
-
-      // All in-flight parts have been cleared and won't interfere with used capacities
-      cm.opm.data.payments(tag).data.inFlightParts.isEmpty
+    WAIT_UNTIL_TRUE {
+      // Original data contains all successful routes
+      assert(results.head.inFlightParts.size == 3)
+      // FSM has been removed on payment success
+      assert(cm.opm.data.payments.isEmpty)
+      // We got a single revealed message
+      results.size == 1
     }
   }
 
@@ -365,7 +366,7 @@ class MPPSpec extends AnyFunSuite {
       totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
     var senderDataWhenFailed = List.empty[OutgoingPaymentSenderData]
-    val listener: OutgoingListener = new OutgoingListener {
+    val listener: OutgoingPaymentListener = new OutgoingPaymentListener {
       override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = senderDataWhenFailed ::= data
     }
 
@@ -384,7 +385,6 @@ class MPPSpec extends AnyFunSuite {
     WAIT_UNTIL_TRUE {
       assert(senderDataWhenFailed.head.parts.isEmpty)
       assert(senderDataWhenFailed.head.failures.head.asInstanceOf[LocalFailure].status == PaymentFailure.TIMED_OUT)
-      assert(!cm.opm.data.payments.contains(tag))
       senderDataWhenFailed.size == 1
     }
   }
@@ -409,7 +409,7 @@ class MPPSpec extends AnyFunSuite {
       totalFeeReserve = 6000L.msat, targetExpiry = CltvExpiry(9), allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
     var senderDataWhenFailed = List.empty[OutgoingPaymentSenderData]
-    val failedListener: OutgoingListener = new OutgoingListener {
+    val failedListener: OutgoingPaymentListener = new OutgoingPaymentListener {
       override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = senderDataWhenFailed ::= data
     }
 
@@ -421,7 +421,6 @@ class MPPSpec extends AnyFunSuite {
     WAIT_UNTIL_TRUE {
       assert(senderDataWhenFailed.size == 1) // We have got exactly one failure event
       assert(senderDataWhenFailed.head.failures.head.asInstanceOf[LocalFailure].status == PaymentFailure.PAYMENT_NOT_SENDABLE)
-      assert(!cm.opm.data.payments.contains(tag))
       senderDataWhenFailed.head.inFlightParts.isEmpty
     }
 
