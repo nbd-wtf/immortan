@@ -450,8 +450,6 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listener: OutgoingP
 
   def canBeSplit(totalAmount: MilliSatoshi): Boolean = totalAmount / 2 >= data.cmd.routerConf.mppMinPartAmount
 
-  def noLeftoversPresent(data1: OutgoingPaymentSenderData): Boolean = data1.inFlightParts.isEmpty && !opm.cm.allInChannelOutgoing.contains(fullTag)
-
   def assignToChans(sendable: mutable.Map[ChanAndCommits, MilliSatoshi], data1: OutgoingPaymentSenderData, amount: MilliSatoshi): Unit = {
     val directChansFirst = shuffle(sendable.toSeq) sortBy { case (cnc, _) => if (cnc.commits.remoteInfo.nodeId == data1.cmd.targetNodeId) 0 else 1 }
     // This is a terminal method in a sense that it either successfully assigns a given amount to channels or turns a payment into failed state
@@ -507,7 +505,8 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listener: OutgoingP
     }
 
   def abortMaybeNotify(data1: OutgoingPaymentSenderData): Unit = {
-    if (me noLeftoversPresent data1) listener.wholePaymentFailed(data1)
+    val noLeftoversPresent = !opm.cm.allInChannelOutgoing.contains(fullTag)
+    if (data1.inFlightParts.isEmpty && noLeftoversPresent) listener.wholePaymentFailed(data1)
     become(data1, ABORTED)
   }
 }
