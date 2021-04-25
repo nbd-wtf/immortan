@@ -153,7 +153,7 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
         goto(RUNNING) using persistAndNotify(data)
       } else {
         client ! ElectrumClient.GetHeaders(data.blockchain.tip.height + 1, RETARGETING_PERIOD)
-        log.info(s"syncing headers from ${data.blockchain.height} to $height, ready=${data isReady params.swipeRange}")
+        log.info(s"syncing headers from ${data.blockchain.height} to $height, ready=${data.isReady(params.swipeRange)}")
         goto(SYNCING) using data
       }
   }
@@ -212,8 +212,8 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
         }
       }
 
-    case Event(response: ElectrumClient.ScriptHashSubscriptionResponse, data) if data.status.contains(response.scriptHash) =>
-      val missing = data.missingTransactions(response.scriptHash)
+    case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if data.status.get(scriptHash).contains(status) =>
+      val missing = data.missingTransactions(scriptHash)
       missing.foreach(txid => client ! GetTransaction(txid))
       stay using persistAndNotify(data.copy(pendingHistoryRequests = data.pendingTransactionRequests ++ missing))
 
@@ -221,7 +221,7 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
       log.warning(s"received status=$status for scriptHash=$scriptHash which does not match any of our keys")
       stay
 
-    case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if status == "" =>
+    case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if status.isEmpty =>
       val data1 = data.copy(status = data.status + (scriptHash -> status)) // empty status, nothing to do
       stay using persistAndNotify(data1)
 
@@ -549,18 +549,14 @@ object ElectrumWallet {
    * @param key public key
    * @return a p2sh-of-p2wpkh script for this key
    */
-  def computePublicKeyScript(key: PublicKey): Seq[ScriptElt] =
-    Script.pay2sh(Script pay2wpkh key)
+  def computePublicKeyScript(key: PublicKey) = Script.pay2sh(Script.pay2wpkh(key))
 
   /**
    *
    * @param key public key
    * @return the hash of the public key script for this key, as used by Electrum's hash-based methods
    */
-  def computeScriptHashFromPublicKey(key: PublicKey): ByteVector32 = {
-    val script = Script write computePublicKeyScript(key)
-    Crypto.sha256(script).reverse
-  }
+  def computeScriptHashFromPublicKey(key: PublicKey): ByteVector32 = Crypto.sha256(Script.write(computePublicKeyScript(key))).reverse
 
   def accountPath(chainHash: ByteVector32): List[Long] = (chainHash: @unchecked) match {
     case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => hardened(49) :: hardened(1) :: hardened(0) :: Nil
@@ -611,7 +607,7 @@ object ElectrumWallet {
    * @param feeRatePerKw fee rate
    * @return the fee for this tx weight
    */
-  def computeFee(weight: Int, feeRatePerKw: Long): Satoshi = Satoshi(weight * feeRatePerKw / 1000)
+  def computeFee(weight: Int, feeRatePerKw: Long): Satoshi = Satoshi((weight * feeRatePerKw) / 1000)
 
   /**
    *
@@ -762,7 +758,8 @@ object ElectrumWallet {
 
           // find all tx outputs that send to our script hash
           val unspents = items.collect { case item if transactions.contains(item.tx_hash) =>
-            val outputs = transactions(item.tx_hash).txOut.zipWithIndex.filter { case (txOut, _) => isReceive(txOut, scriptHash) }
+            val tx = transactions(item.tx_hash)
+            val outputs = tx.txOut.zipWithIndex.filter { case (txOut, index) => isReceive(txOut, scriptHash) }
             outputs.map { case (txOut, index) => Utxo(key, ElectrumClient.UnspentItem(item.tx_hash, index, txOut.amount.toLong, item.height)) }
           }.flatten
 
@@ -813,7 +810,7 @@ object ElectrumWallet {
      *         be up-to-date if we have not received all data we've asked for yet.
      */
     lazy val balance: (Satoshi, Satoshi) = {
-      // toList is very important here: keys are returned in a Set-like structure, without the .toList we map
+      // .toList is very important here: keys are returned in a Set-like structure, without the .toList we map
       // to another set-like structure that will remove duplicates, so if we have several script hashes with exactly the
       // same balance we don't return the correct aggregated balance
       val balances = (accountKeyMap.keys ++ changeKeyMap.keys).toList.map(scriptHash => balance(scriptHash))
