@@ -572,9 +572,8 @@ object Helpers {
       require(commitTx.txIn.size == 1, "commitment tx should have 1 input")
       val channelKeyPath = commitments.remoteInfo.keyPath(commitments.localParams)
       val obscuredTxNumber = Transactions.decodeTxNumber(commitTx.txIn.head.sequence, commitTx.lockTime)
-      val localPaymentPoint = commitments.localParams.walletStaticPaymentBasepoint.getOrElse(commitments.remoteInfo.paymentPoint(channelKeyPath).publicKey)
       // this tx has been published by remote, so we need to invert local/remote params
-      val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !commitments.localParams.isFunder, commitments.remoteParams.paymentBasepoint, localPaymentPoint)
+      val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !commitments.localParams.isFunder, commitments.remoteParams.paymentBasepoint, commitments.localParams.walletStaticPaymentBasepoint)
       require(txnumber <= 0xffffffffffffL, "txnumber must be lesser than 48 bits long")
       // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
       commitments.remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFL - txnumber)
@@ -596,7 +595,7 @@ object Helpers {
             case v if v.paysDirectlyToWallet =>
               None
             case v if v.hasAnchorOutputs => generateTx("claim-remote-delayed-output") {
-              Transactions.makeClaimRemoteDelayedOutputTx(commitTx, commitments.localParams.dustLimit, localPaymentPoint, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain).right.map(claimMain => {
+              Transactions.makeClaimRemoteDelayedOutputTx(commitTx, commitments.localParams.dustLimit, commitments.localParams.walletStaticPaymentBasepoint, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain).right.map(claimMain => {
                 val sig = commitments.remoteInfo.sign(claimMain, commitments.remoteInfo.paymentPoint(channelKeyPath), TxOwner.Local, commitments.channelVersion.commitmentFormat)
                 Transactions.addSigs(claimMain, sig)
               })
@@ -665,9 +664,8 @@ object Helpers {
         import commitments._
         val tx = revokedCommitPublished.commitTx
         val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn.head.sequence, tx.lockTime)
-        val localPaymentPoint = localParams.walletStaticPaymentBasepoint.getOrElse(commitments.remoteInfo.paymentPoint(channelKeyPath).publicKey)
         // this tx has been published by remote, so we need to invert local/remote params
-        val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isFunder, remoteParams.paymentBasepoint, localPaymentPoint)
+        val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isFunder, remoteParams.paymentBasepoint, localParams.walletStaticPaymentBasepoint)
         // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
         remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFL - txnumber)
           .map(d => PrivateKey(d))
@@ -689,9 +687,9 @@ object Helpers {
               })
             }
           } match {
-          case Some(tx) =>
-            val revokedCommitPublished1 = revokedCommitPublished.copy(claimHtlcDelayedPenaltyTxs = revokedCommitPublished.claimHtlcDelayedPenaltyTxs :+ tx.tx)
-            (revokedCommitPublished1, Some(tx.tx))
+          case Some(penaltyTx) =>
+            val revokedCommitPublished1 = revokedCommitPublished.copy(claimHtlcDelayedPenaltyTxs = revokedCommitPublished.claimHtlcDelayedPenaltyTxs :+ penaltyTx.tx)
+            (revokedCommitPublished1, Some(penaltyTx.tx))
           case None =>
             (revokedCommitPublished, None)
         }

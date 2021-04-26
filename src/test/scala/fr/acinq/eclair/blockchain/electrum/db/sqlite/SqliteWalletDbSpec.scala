@@ -61,8 +61,7 @@ class SqliteWalletDbSpec extends AnyFunSuite {
       heights = transactions.map(tx => tx.hash -> randomHeight).toMap,
       history = (for (i <- 0 until random.nextInt(100)) yield randomBytes32 -> randomHistoryItems).toMap,
       proofs = (for (i <- 0 until random.nextInt(100)) yield randomBytes32 -> randomProof).toMap,
-      pendingTransactions = transactions.toList,
-      locks = (for (i <- 0 until random.nextInt(10)) yield randomTransaction).toSet
+      pendingTransactions = transactions.toList
     )
   }
 
@@ -99,7 +98,7 @@ class SqliteWalletDbSpec extends AnyFunSuite {
       val data = randomPersistentData
       db.persist(data)
       val Some(check) = db.readPersistentData
-      assert(check === data.copy(locks = Set.empty[Transaction]))
+      assert(check === data)
     }
   }
 }

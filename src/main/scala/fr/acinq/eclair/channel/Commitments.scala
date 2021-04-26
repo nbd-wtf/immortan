@@ -412,13 +412,11 @@ object NormalCommits {
     val localFundingPubkey = remoteInfo.fundingPublicKey(localParams.fundingKeyPath).publicKey
     val localDelayedPaymentPubkey = Generators.derivePubKey(remoteInfo.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
     val localHtlcPubkey = Generators.derivePubKey(remoteInfo.htlcPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
-    val remotePaymentPubkey = if (channelVersion.hasStaticRemotekey) remoteParams.paymentBasepoint else Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
     val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
-    val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(remoteInfo.paymentPoint(channelKeyPath).publicKey)
     val outputs = makeCommitTxOutputs(localParams.isFunder, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey,
-      remotePaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, localFundingPubkey, remoteParams.fundingPubKey, spec, channelVersion.commitmentFormat)
-    val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, localPaymentBasepoint, remoteParams.paymentBasepoint, localParams.isFunder, outputs)
+      remotePaymentPubkey = localParams.walletStaticPaymentBasepoint, localHtlcPubkey, remoteHtlcPubkey, localFundingPubkey, remoteParams.fundingPubKey, spec, channelVersion.commitmentFormat)
+    val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, localParams.walletStaticPaymentBasepoint, remoteParams.paymentBasepoint, localParams.isFunder, outputs)
     val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay,
       localDelayedPaymentPubkey, spec.feeratePerKw, outputs, channelVersion.commitmentFormat)
     (commitTx, htlcTimeoutTxs, htlcSuccessTxs)
@@ -428,15 +426,13 @@ object NormalCommits {
                     commitmentInput: InputInfo, remotePerCommitmentPoint: PublicKey, spec: CommitmentSpec): (CommitTx, HtlcTimeoutTxSeq, HtlcSuccessTxSeq) = {
     val channelKeyPath = remoteInfo.keyPath(localParams)
     val localFundingPubkey = remoteInfo.fundingPublicKey(localParams.fundingKeyPath).publicKey
-    val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(remoteInfo.paymentPoint(channelKeyPath).publicKey)
-    val localPaymentPubkey = if (channelVersion.hasStaticRemotekey) localPaymentBasepoint else Generators.derivePubKey(localPaymentBasepoint, remotePerCommitmentPoint)
     val localHtlcPubkey = Generators.derivePubKey(remoteInfo.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
     val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)
     val remoteRevocationPubkey = Generators.revocationPubKey(remoteInfo.revocationPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
     val outputs = makeCommitTxOutputs(!localParams.isFunder, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey,
-      localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, remoteParams.fundingPubKey, localFundingPubkey, spec, channelVersion.commitmentFormat)
-    val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, localPaymentBasepoint, !localParams.isFunder, outputs)
+      localParams.walletStaticPaymentBasepoint, remoteHtlcPubkey, localHtlcPubkey, remoteParams.fundingPubKey, localFundingPubkey, spec, channelVersion.commitmentFormat)
+    val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, localParams.walletStaticPaymentBasepoint, !localParams.isFunder, outputs)
     val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay,
       remoteDelayedPaymentPubkey, spec.feeratePerKw, outputs, channelVersion.commitmentFormat)
     (commitTx, htlcTimeoutTxs, htlcSuccessTxs)

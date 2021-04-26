@@ -243,7 +243,7 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
   override def fulfillReceived(fulfill: RemoteFulfill): Unit = opm process fulfill
 
   override def onException: PartialFunction[Malfunction, Unit] = {
-    case (_, commandError: CMDException) => opm process commandError
+    case (_, _, commandError: CMDException) => opm process commandError
   }
 
   override def onBecome: PartialFunction[Transition, Unit] = {
