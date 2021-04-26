@@ -180,9 +180,27 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
 
   // RECEIVE/SEND UTILITIES
 
-  // Example: (5, 30, 50, 60, 100) -> (50, 60, 100), receivable will be 50 (the idea is for any remaining channel to be able to get a smallest remaining channel receivable)
-  def maxSortedReceivables(sorted: Seq[ChanAndCommits] = Nil): Seq[ChanAndCommits] = sorted.dropWhile(_.commits.availableForReceive * Math.max(sorted.size - 2, 1) <= sorted.last.commits.availableForReceive)
-  def sortedReceivables: Seq[ChanAndCommits] = all.values.filter(Channel.isOperational).flatMap(Channel.chanAndCommitsOpt).filter(_.commits.updateOpt.isDefined).toList.sortBy(_.commits.availableForReceive)
+  // It is correct to only use availableForReceive for both HC/NC and not take their maxHtlcValueInFlightMsat into account because:
+  // - in NC case we always set local NC.maxHtlcValueInFlightMsat to channel capacity so NC.availableForReceive is always less than NC.maxHtlcValueInFlightMsat
+  // - in HC case we don't have local HC.maxHtlcValueInFlightMsat at all and only look at HC.availableForReceive
+
+  def receivableSorted: Seq[ChanAndCommits] = all.values
+    .filter(Channel.isOperational).flatMap(Channel.chanAndCommitsOpt)
+    .filter(_.commits.updateOpt.isDefined).toList.sortBy(_.commits.availableForReceive)
+
+  def maxReceivableSingle(sorted: Seq[ChanAndCommits] = Nil): Seq[ChanAndCommits] = receivableSorted
+    // Example: (5/O, 30/O, 50/C, 60/O, 100/O) -> (50/Close, 60/Open, 100/Open), receivable will be 60
+    // the idea is for any remaining OPEN channel to be able to get a smallest remaining channel receivable
+    .dropWhile(_.commits.availableForReceive * Math.max(sorted.size - 2, 1) <= sorted.last.commits.availableForReceive)
+    .sortBy(cnc => Channel isOperationalAndOpen cnc.chan compare false)
+
+  type CommitsAndTotal = (Seq[ChanAndCommits], MilliSatoshi)
+  def maxReceivableMany(sorted: Seq[ChanAndCommits], takeAtMostChannels: Int): Option[CommitsAndTotal] = {
+    // Example: (5, 50, 60, 100) -> (50, 60, 100), receivable = 50*3 = 150 (the idea is for smallest remaining operational channel to be able to handle an evenly split amount)
+    val withoutSmall = sorted.dropWhile(_.commits.availableForReceive * sorted.size < sorted.last.commits.availableForReceive).takeRight(takeAtMostChannels)
+    val candidates = for (cs <- withoutSmall.indices map withoutSmall.drop) yield (cs, cs.head.commits.availableForReceive * cs.size)
+    if (candidates.isEmpty) None else candidates.maxBy { case (_, totalReceivable) => totalReceivable }.toSome
+  }
 
   def maxSendable: MilliSatoshi = {
     val chans = all.values.filter(Channel.isOperational)

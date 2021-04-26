@@ -125,6 +125,7 @@ object LNParams {
   def makeChannelParams(remoteInfo: RemoteNodeInfo, defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: Option[PublicKey], isFunder: Boolean, fundingAmount: Satoshi): LocalParams =
     makeChannelParams(defaultFinalScriptPubkey, walletStaticPaymentBasepoint, isFunder, fundingAmount, remoteInfo newFundingKeyPath isFunder)
 
+  // Note: we send local maxHtlcValueInFlightMsat to channel capacity to simplify calculations
   def makeChannelParams(defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: Option[PublicKey], isFunder: Boolean, fundingAmount: Satoshi, fundingKeyPath: DeterministicWallet.KeyPath): LocalParams =
     LocalParams(fundingKeyPath, minDustLimit, maxHtlcValueInFlightMsat = UInt64(fundingAmount.toMilliSatoshi.toLong), channelReserve = (fundingAmount * reserveToFundingRatio).max(minDustLimit),
       htlcMinimum = minPayment, toSelfDelay = maxToLocalDelay, maxAcceptedHtlcs = maxAcceptedHtlcs, isFunder = isFunder, defaultFinalScriptPubKey = defaultFinalScriptPubkey,

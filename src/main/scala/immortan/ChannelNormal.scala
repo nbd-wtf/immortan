@@ -70,8 +70,8 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
       case (wait: DATA_WAIT_FOR_FUNDING_INTERNAL, MakeFundingTxResponse(fundingTx, fundingTxOutputIndex, fundingTxFee), WAIT_FOR_ACCEPT) =>
         val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Helpers.Funding.makeFirstCommitTxs(wait.initFunder.remoteInfo, wait.initFunder.channelVersion,
-          wait.initFunder.temporaryChannelId, wait.initFunder.localParams, wait.remoteParams, wait.initFunder.fundingAmount, wait.initFunder.pushAmount,
-          wait.initFunder.initialFeeratePerKw, fundingTx.hash, fundingTxOutputIndex, wait.remoteFirstPerCommitmentPoint).right.get
+          wait.initFunder.localParams, wait.remoteParams, wait.initFunder.fundingAmount, wait.initFunder.pushAmount, wait.initFunder.initialFeeratePerKw,
+          fundingTx.hash, fundingTxOutputIndex, wait.remoteFirstPerCommitmentPoint)
 
         require(fundingTx.txOut(fundingTxOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript)
 
@@ -137,9 +137,8 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
       case (wait: DATA_WAIT_FOR_FUNDING_CREATED, created: FundingCreated, WAIT_FOR_ACCEPT) =>
         val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Helpers.Funding.makeFirstCommitTxs(wait.initFundee.remoteInfo, wait.initFundee.channelVersion,
-          wait.initFundee.theirOpen.temporaryChannelId, wait.initFundee.localParams, wait.remoteParams, wait.initFundee.theirOpen.fundingSatoshis,
-          wait.initFundee.theirOpen.pushMsat, wait.initFundee.theirOpen.feeratePerKw, created.fundingTxid, created.fundingOutputIndex,
-          wait.initFundee.theirOpen.firstPerCommitmentPoint).right.get
+          wait.initFundee.localParams, wait.remoteParams, wait.initFundee.theirOpen.fundingSatoshis, wait.initFundee.theirOpen.pushMsat, wait.initFundee.theirOpen.feeratePerKw,
+          created.fundingTxid, created.fundingOutputIndex, wait.initFundee.theirOpen.firstPerCommitmentPoint)
 
         val fundingPubKey = wait.initFundee.remoteInfo.fundingPublicKey(wait.initFundee.localParams.fundingKeyPath)
         val localSigOfLocalTx = wait.initFundee.remoteInfo.sign(localCommitTx, fundingPubKey, TxOwner.Local, wait.initFundee.channelVersion.commitmentFormat)

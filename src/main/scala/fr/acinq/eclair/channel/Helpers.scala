@@ -173,9 +173,9 @@ object Helpers {
      *
      * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
      */
-    def makeFirstCommitTxs(remoteInfo: RemoteNodeInfo, channelVersion: ChannelVersion, temporaryChannelId: ByteVector32, localParams: LocalParams,
+    def makeFirstCommitTxs(remoteInfo: RemoteNodeInfo, channelVersion: ChannelVersion, localParams: LocalParams,
                            remoteParams: RemoteParams, fundingAmount: Satoshi, pushMsat: MilliSatoshi, initialFeeratePerKw: FeeratePerKw, fundingTxHash: ByteVector32,
-                           fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: PublicKey): Either[RuntimeException, (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx)] = {
+                           fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: PublicKey): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
 
       val toLocalMsat = if (localParams.isFunder) fundingAmount.toMilliSatoshi - pushMsat else pushMsat
       val toRemoteMsat = if (localParams.isFunder) pushMsat else fundingAmount.toMilliSatoshi - pushMsat
@@ -184,20 +184,19 @@ object Helpers {
       val remoteSpec = CommitmentSpec(feeratePerKw = initialFeeratePerKw, toLocal = toRemoteMsat, toRemote = toLocalMsat)
 
       if (!localParams.isFunder) {
-        // they are funder, therefore they pay the fee: we need to make sure they can afford it!
         val toRemoteMsat = remoteSpec.toLocal
         val fees = commitTxFee(remoteParams.dustLimit, remoteSpec, channelVersion.commitmentFormat)
         val missing = toRemoteMsat.truncateToSatoshi - localParams.channelReserve - fees
-        if (missing < 0L.sat) return Left(new RuntimeException)
+        if (missing < 0L.sat) throw new RuntimeException
       }
 
       val channelKeyPath = remoteInfo.keyPath(localParams)
+      val localPerCommitmentPoint = remoteInfo.commitmentPoint(channelKeyPath, 0)
       val fundingPubKey = remoteInfo.fundingPublicKey(localParams.fundingKeyPath)
       val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, fundingAmount, fundingPubKey.publicKey, remoteParams.fundingPubKey)
-      val localPerCommitmentPoint = remoteInfo.commitmentPoint(channelKeyPath, 0)
       val (localCommitTx, _, _) = NormalCommits.makeLocalTxs(remoteInfo, channelVersion, 0, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
       val (remoteCommitTx, _, _) = NormalCommits.makeRemoteTxs(remoteInfo, channelVersion, 0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
-      Right(localSpec, localCommitTx, remoteSpec, remoteCommitTx)
+      (localSpec, localCommitTx, remoteSpec, remoteCommitTx)
     }
 
   }
@@ -417,17 +416,14 @@ object Helpers {
       }
 
       // those are the preimages to existing received htlcs
-      val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }
+      val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentHash -> u.paymentPreimage }.toMap
 
       val htlcTxes = localCommit.publishableTxs.htlcTxsAndSigs.collect {
         // incoming htlc for which we have the preimage: we spend it directly
-        case HtlcTxAndSigs(txinfo@HtlcSuccessTx(_, _, paymentHash), localSig, remoteSig) if preimages.exists(r => sha256(r) == paymentHash) =>
+        case HtlcTxAndSigs(txinfo@HtlcSuccessTx(_, _, paymentHash), localSig, remoteSig) if preimages.contains(paymentHash) =>
           generateTx("htlc-success") {
-            val preimage = preimages.find(r => sha256(r) == paymentHash).get
-            Right(Transactions.addSigs(txinfo, localSig, remoteSig, preimage, channelVersion.commitmentFormat))
+            Right(Transactions.addSigs(txinfo, localSig, remoteSig, preimages(paymentHash), channelVersion.commitmentFormat))
           }
-
-        // (incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back)
 
         // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
         case HtlcTxAndSigs(txinfo: HtlcTimeoutTx, localSig, remoteSig) =>
