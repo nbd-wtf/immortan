@@ -60,7 +60,7 @@ class ElectrumClientSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   test("connect to an electrumx mainnet server") {
     probe.send(client, AddStatusListener(probe.ref))
-    probe.expectMsgType[ElectrumReady](15 seconds)
+    probe.expectMsgType[ElectrumReady](15.seconds)
   }
 
   test("get transaction id from position") {
@@ -88,7 +88,7 @@ class ElectrumClientSpec extends TestKitBaseClass with AnyFunSuiteLike {
   test("get headers") {
     val start = (500000 / 2016) * 2016
     probe.send(client, GetHeaders(start, 2016))
-    val GetHeadersResponse(start1, headers, _) = probe.expectMsgType[GetHeadersResponse]
+    val GetHeadersResponse(start1, headers, _) = probe.expectMsgType[GetHeadersResponse](30.seconds)
     assert(start1 == start)
     assert(headers.size == 2016)
   }
