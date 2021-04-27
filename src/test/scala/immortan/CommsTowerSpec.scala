@@ -9,6 +9,7 @@ import immortan.utils.TestUtils._
 class CommsTowerSpec extends AnyFunSuite {
   test("Successfully connect, send Ping, get Pong") {
     var responses = List.empty[LightningMessage]
+    LNParams.ourInit = LNParams.createInit
 
     val listener1 = new ConnectionListener {
       override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = worker.sendPing
