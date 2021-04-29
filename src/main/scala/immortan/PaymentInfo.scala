@@ -16,11 +16,10 @@ import java.util.Date
 
 
 object PaymentInfo {
-  final val SENDABLE = 0
-  final val NOT_SENDABLE_CHAIN_DISCONNECT = 1
-  final val NOT_SENDABLE_LOW_FUNDS = 2
-  final val NOT_SENDABLE_IN_FLIGHT = 3
-  final val NOT_SENDABLE_SUCCESS = 4
+  final val NOT_SENDABLE_CHAIN_DISCONNECT = 0
+  final val NOT_SENDABLE_LOW_FUNDS = 1
+  final val NOT_SENDABLE_IN_FLIGHT = 2
+  final val NOT_SENDABLE_SUCCESS = 3
 }
 
 object PaymentStatus {
@@ -129,15 +128,15 @@ sealed trait TxDescription
 
 case class PlainTxDescription(addresses: List[String], label: Option[String] = None) extends TxDescription
 
-sealed trait ChanTxDescription extends TxDescription { def nodeId: PublicKey }
+sealed trait ChanTxDescription extends TxDescription {
+  def nodeId: PublicKey
+}
 
 case class OpReturnTxDescription(nodeId: PublicKey, preimage: ByteVector32) extends ChanTxDescription
 
 case class ChanFundingTxDescription(nodeId: PublicKey) extends ChanTxDescription
 
 case class ChanRefundingTxDescription(nodeId: PublicKey) extends ChanTxDescription
-
-case class CommitClaimTxDescription(nodeId: PublicKey) extends ChanTxDescription
 
 case class HtlcClaimTxDescription(nodeId: PublicKey) extends ChanTxDescription
 
@@ -152,8 +151,7 @@ object TxDescription {
     case closing: DATA_CLOSING if closing.revokedCommitPublished.flatMap(_.penaltyTxs).exists(_.txid == tx.txid) => PenaltyTxDescription(closing.commitments.remoteInfo.nodeId)
     case negs: DATA_NEGOTIATING if negs.closingTxProposed.flatten.exists(_.unsignedTx.txid == tx.txid) => ChanRefundingTxDescription(negs.commitments.remoteInfo.nodeId)
     case negs: DATA_NEGOTIATING if negs.bestUnpublishedClosingTxOpt.exists(_.txid == tx.txid) => ChanRefundingTxDescription(negs.commitments.remoteInfo.nodeId)
-    case closing: DATA_CLOSING if closing.mutualCloseProposed.exists(_.txid == tx.txid) => ChanRefundingTxDescription(closing.commitments.remoteInfo.nodeId)
-    case closing: DATA_CLOSING if closing.secondTierTxs.exists(_.txid == tx.txid) => HtlcClaimTxDescription(closing.commitments.remoteInfo.nodeId)
-    case closing: DATA_CLOSING if closing.commitTxes.exists(_.txid == tx.txid) => CommitClaimTxDescription(closing.commitments.remoteInfo.nodeId)
+    case closing: DATA_CLOSING if closing.balanceLeftoverRefunds.exists(_.txid == tx.txid) => ChanRefundingTxDescription(closing.commitments.remoteInfo.nodeId)
+    case closing: DATA_CLOSING if closing.paymentLeftoverRefunds.exists(_.txid == tx.txid) => HtlcClaimTxDescription(closing.commitments.remoteInfo.nodeId)
   }
 }
