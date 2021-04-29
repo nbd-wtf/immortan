@@ -92,10 +92,18 @@ trait Channel extends StateMachine[ChannelData] with CanBeRepliedTo { me =>
   var listeners = Set.empty[ChannelListener]
 
   val events: ChannelListener = new ChannelListener {
-    override def onException: PartialFunction[ChannelListener.Malfunction, Unit] = { case failure => for (lst <- listeners if lst.onException isDefinedAt failure) lst onException failure }
-    override def onBecome: PartialFunction[ChannelListener.Transition, Unit] = { case transition => for (lst <- listeners if lst.onBecome isDefinedAt transition) lst onBecome transition }
+    override def onException: PartialFunction[ChannelListener.Malfunction, Unit] = {
+      case failure => for (lst <- listeners if lst.onException isDefinedAt failure) lst onException failure
+    }
+
+    override def onBecome: PartialFunction[ChannelListener.Transition, Unit] = {
+      case transition => for (lst <- listeners if lst.onBecome isDefinedAt transition) lst onBecome transition
+    }
+
     override def stateUpdated(rejects: Seq[RemoteReject] = Nil): Unit = for (lst <- listeners) lst.stateUpdated(rejects)
+
     override def fulfillReceived(fulfill: RemoteFulfill): Unit = for (lst <- listeners) lst.fulfillReceived(fulfill)
+
     override def addReceived(add: UpdateAddHtlcExt): Unit = for (lst <- listeners) lst.addReceived(add)
   }
 
