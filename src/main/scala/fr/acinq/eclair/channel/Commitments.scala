@@ -315,7 +315,7 @@ case class NormalCommits(channelVersion: ChannelVersion, remoteInfo: RemoteNodeI
         // remote commitment will includes all local changes + remote acked changes
         val spec = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
         val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = NormalCommits.makeRemoteTxs(remoteInfo, channelVersion, remoteCommit.index + 1, localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
-        val sig = localParams.keys.sign(remoteCommitTx, localParams.keys.fundingKey.privateKey, TxOwner.Remote, channelVersion.commitmentFormat)
+        val sig = Transactions.sign(remoteCommitTx, localParams.keys.fundingKey.privateKey, TxOwner.Remote, channelVersion.commitmentFormat)
 
         val sortedHtlcTxs: Seq[TransactionWithInputInfo] = (htlcTimeoutTxs ++ htlcSuccessTxs).sortBy(_.input.outPoint.index)
         val htlcSigs = sortedHtlcTxs.map(localParams.keys.sign(_, localParams.keys.htlcKey.privateKey, remoteNextPerCommitmentPoint, TxOwner.Remote, channelVersion.commitmentFormat))
@@ -343,7 +343,7 @@ case class NormalCommits(channelVersion: ChannelVersion, remoteInfo: RemoteNodeI
     val spec = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
     val localPerCommitmentPoint = localParams.keys.commitmentPoint(localCommit.index + 1)
     val (localCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = NormalCommits.makeLocalTxs(remoteInfo, channelVersion, localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
-    val sig = localParams.keys.sign(localCommitTx, localParams.keys.fundingKey.privateKey, TxOwner.Local, channelVersion.commitmentFormat)
+    val sig = Transactions.sign(localCommitTx, localParams.keys.fundingKey.privateKey, TxOwner.Local, channelVersion.commitmentFormat)
 
     // no need to compute htlc sigs if commit sig doesn't check out
     val signedCommitTx = Transactions.addSigs(localCommitTx, localParams.keys.fundingKey.publicKey, remoteParams.fundingPubKey, sig, commit.signature)

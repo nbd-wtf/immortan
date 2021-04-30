@@ -5,7 +5,6 @@ import immortan.Channel._
 import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
 import fr.acinq.eclair.channel._
-import scala.concurrent.duration._
 import fr.acinq.eclair.blockchain._
 import com.softwaremill.quicklens._
 import fr.acinq.eclair.transactions._
@@ -18,7 +17,6 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.eclair.crypto.ShaChain
 import scodec.bits.ByteVector
-import scala.concurrent.Await
 import immortan.utils.Rx
 import scala.util.Try
 
@@ -73,7 +71,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         require(realFunding.fundingAmount == wait.initFunder.fakeFunding.fundingAmount)
         require(realFunding.fundingPubkeyScript == localCommitTx.input.txOut.publicKeyScript)
 
-        val localSigOfRemoteTx = wait.initFunder.localParams.keys.sign(remoteCommitTx, wait.initFunder.localParams.keys.fundingKey.privateKey, TxOwner.Remote, wait.initFunder.channelVersion.commitmentFormat)
+        val localSigOfRemoteTx = Transactions.sign(remoteCommitTx, wait.initFunder.localParams.keys.fundingKey.privateKey, TxOwner.Remote, wait.initFunder.channelVersion.commitmentFormat)
         val fundingCreated = FundingCreated(wait.initFunder.temporaryChannelId, realFunding.fundingTx.hash, realFunding.fundingTxOutputIndex, localSigOfRemoteTx)
 
         val data1 = DATA_WAIT_FOR_FUNDING_SIGNED(wait.initFunder.remoteInfo, channelId = toLongId(realFunding.fundingTx.hash, realFunding.fundingTxOutputIndex), wait.initFunder.localParams,
@@ -85,7 +83,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
 
       case (wait: DATA_WAIT_FOR_FUNDING_SIGNED, signed: FundingSigned, WAIT_FOR_ACCEPT) =>
-        val localSigOfLocalTx = wait.localParams.keys.sign(wait.localCommitTx, wait.localParams.keys.fundingKey.privateKey, TxOwner.Local, wait.channelVersion.commitmentFormat)
+        val localSigOfLocalTx = Transactions.sign(wait.localCommitTx, wait.localParams.keys.fundingKey.privateKey, TxOwner.Local, wait.channelVersion.commitmentFormat)
         val signedLocalCommitTx = Transactions.addSigs(wait.localCommitTx, wait.localParams.keys.fundingKey.publicKey, wait.remoteParams.fundingPubKey, localSigOfLocalTx, signed.signature)
 
         // Make sure their supplied signature is correct before committing
@@ -98,9 +96,9 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
         chainWallet.watcher ! WatchSpent(receiver, commits.commitInput.outPoint.txid, commits.commitInput.outPoint.index.toInt, commits.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
         chainWallet.watcher ! WatchConfirmed(receiver, commits.commitInput.outPoint.txid, commits.commitInput.txOut.publicKeyScript, LNParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
+        // Persist a channel unconditionally, try to re-publish a funding tx on restart unconditionally (don't react to commit=false, we can't trust remote servers on this)
         StoreBecomeSend(DATA_WAIT_FOR_FUNDING_CONFIRMED(commits, wait.fundingTx.toSome, System.currentTimeMillis, Left(wait.lastSent), deferred = None), WAIT_FUNDING_DONE)
-        val isDefinitelyFailed = !Await.result(awaitable = chainWallet.wallet.commit(wait.fundingTx), 60.seconds)
-        if (isDefinitelyFailed) StoreBecomeSend(DATA_CLOSING(commits, wait.fundingTx.toSome), CLOSING)
+        chainWallet.wallet.commit(wait.fundingTx)
 
       // OPENING PHASE: FUNDEE FLOW
 
@@ -127,14 +125,13 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
           wait.initFundee.localParams, wait.remoteParams, wait.initFundee.theirOpen.fundingSatoshis, wait.initFundee.theirOpen.pushMsat, wait.initFundee.theirOpen.feeratePerKw,
           created.fundingTxid, created.fundingOutputIndex, wait.initFundee.theirOpen.firstPerCommitmentPoint)
 
-        val localSigOfLocalTx = wait.initFundee.localParams.keys.sign(localCommitTx, wait.initFundee.localParams.keys.fundingKey.privateKey, TxOwner.Local, wait.initFundee.channelVersion.commitmentFormat)
+        val localSigOfLocalTx = Transactions.sign(localCommitTx, wait.initFundee.localParams.keys.fundingKey.privateKey, TxOwner.Local, wait.initFundee.channelVersion.commitmentFormat)
         val signedLocalCommitTx = Transactions.addSigs(localCommitTx, wait.initFundee.localParams.keys.fundingKey.publicKey, wait.remoteParams.fundingPubKey, localSigOfLocalTx, created.signature)
+        val localSigOfRemoteTx = Transactions.sign(remoteCommitTx, wait.initFundee.localParams.keys.fundingKey.privateKey, TxOwner.Remote, wait.initFundee.channelVersion.commitmentFormat)
+        val fundingSigned = FundingSigned(channelId = toLongId(created.fundingTxid, created.fundingOutputIndex), signature = localSigOfRemoteTx)
 
         // Make sure their supplied signature is correct before proceeding
         require(Transactions.checkSpendable(signedLocalCommitTx).isSuccess)
-
-        val localSigOfRemoteTx = wait.initFundee.localParams.keys.sign(remoteCommitTx, wait.initFundee.localParams.keys.fundingKey.privateKey, TxOwner.Remote, wait.initFundee.channelVersion.commitmentFormat)
-        val fundingSigned = FundingSigned(channelId = toLongId(created.fundingTxid, created.fundingOutputIndex), signature = localSigOfRemoteTx)
 
         val publishableTxs = PublishableTxs(signedLocalCommitTx, Nil)
         val remoteCommit = RemoteCommit(index = 0L, remoteSpec, remoteCommitTx.tx.txid, remotePerCommitmentPoint = wait.initFundee.theirOpen.firstPerCommitmentPoint)
@@ -157,16 +154,13 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
       // AWAITING CONFIRMATION
 
       case (wait: DATA_WAIT_FOR_FUNDING_CONFIRMED, event: WatchEventConfirmed, WAIT_FUNDING_DONE) =>
-        // Remote peer may send a tx which is unrelated to our agreed upon channel funding, that is, we won't be able to spend our commit tx, check this right away
+        // Remote peer may send a tx which is unrelated to our agreed upon channel funding, that is, we won't be able to spend our commit tx, check this right away!
         def correct: Unit = Transaction.correctlySpends(wait.commitments.localCommit.publishableTxs.commitTx.tx, Seq(event.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
-        if (Try(correct).isFailure && wait.lastSent.isRight) BECOME(wait, CLOSING) else {
+        if (Try(correct).isFailure) StoreBecomeSend(DATA_CLOSING(wait.commitments, wait.fundingTx), CLOSING) else {
           val shortChannelId = ShortChannelId(event.blockHeight, event.txIndex, wait.commitments.commitInput.outPoint.index.toInt)
-          val nextPerCommitmentPoint = wait.commitments.localParams.keys.commitmentPoint(index = 1L)
-          val fundingLocked = FundingLocked(wait.channelId, nextPerCommitmentPoint)
-
-          val data1 = DATA_WAIT_FOR_FUNDING_LOCKED(wait.commitments, shortChannelId, fundingLocked)
-          StoreBecomeSend(data1, WAIT_FUNDING_DONE, fundingLocked)
+          val fundingLocked = FundingLocked(nextPerCommitmentPoint = wait.commitments.localParams.keys.commitmentPoint(1L), channelId = wait.channelId)
+          StoreBecomeSend(DATA_WAIT_FOR_FUNDING_LOCKED(wait.commitments, shortChannelId, fundingLocked), WAIT_FUNDING_DONE, fundingLocked)
           wait.deferred.foreach(process)
         }
 
@@ -356,15 +350,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
                 for (close <- data1.revokedCommitPublished) doPublish(close)
                 for (close <- data1.nextRemoteCommitPublished) doPublish(close)
                 for (close <- data1.futureRemoteCommitPublished) doPublish(close)
-
-                // if commitment number is zero, we also need to make sure that the funding tx has been published
-                if (data1.commitments.localCommit.index == 0 && data1.commitments.remoteCommit.index == 0)
-                  chainWallet.watcher ! GetTxWithMeta(commitInput.outPoint.txid)
             }
-
-          case data1: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
-            chainWallet.watcher ! GetTxWithMeta(commitInput.outPoint.txid)
-            BECOME(data1, SLEEPING)
 
           case data1 =>
             BECOME(data1, SLEEPING)
@@ -396,14 +382,16 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
 
       case (wait: DATA_WAIT_FOR_FUNDING_CONFIRMED, _: ChannelReestablish, SLEEPING) =>
-        // We put back the watch (operation is idempotent) because corresponding event may have been already fired while we were in SLEEPING
+        // We put back the watch (operation is idempotent) because corresponding event may have been already fired while we were in SLEEPING state
         chainWallet.watcher ! WatchConfirmed(receiver, wait.commitments.commitInput.outPoint.txid, wait.commitments.commitInput.txOut.publicKeyScript, LNParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
-        BECOME(wait, OPEN)
+        // Getting remote ChannelReestablish means our chain wallet is online (since we start connecting channels only after it becomes online), it makes sense to retry a funding broadcast here
+        wait.fundingTx.foreach(chainWallet.wallet.commit)
+        BECOME(wait, WAIT_FUNDING_DONE)
 
 
       case (wait: DATA_WAIT_FOR_FUNDING_LOCKED, _: ChannelReestablish, SLEEPING) =>
+        BECOME(wait, WAIT_FUNDING_DONE)
         SEND(wait.lastSent)
-        BECOME(wait, OPEN)
 
 
       case (_: HasNormalCommitments, _: CurrentBlockCount, OPEN | SLEEPING) => ??? // May need to force-close

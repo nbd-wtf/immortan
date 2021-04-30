@@ -346,7 +346,7 @@ object Helpers {
       require(isValidFinalScriptPubkey(remoteScriptPubkey), "invalid remoteScriptPubkey")
       val dustLimitSatoshis = localParams.dustLimit.max(remoteParams.dustLimit)
       val closingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, dustLimitSatoshis, closingFee, localCommit.spec)
-      val localClosingSig = commitments.localParams.keys.sign(closingTx, localParams.keys.fundingKey.privateKey, TxOwner.Local, channelVersion.commitmentFormat)
+      val localClosingSig = Transactions.sign(closingTx, localParams.keys.fundingKey.privateKey, TxOwner.Local, channelVersion.commitmentFormat)
       val closingSigned = ClosingSigned(channelId, closingFee, localClosingSig)
       (closingTx, closingSigned)
     }
@@ -522,7 +522,7 @@ object Helpers {
         }
         case AnchorOutputsCommitmentFormat => generateTx("claim-remote-delayed-output") {
           Transactions.makeClaimRemoteDelayedOutputTx(tx, commitments.localParams.dustLimit, localPaymentPoint, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain).right.map(claimMain => {
-            val sig = commitments.localParams.keys.sign(claimMain, commitments.localParams.keys.paymentKey.privateKey, TxOwner.Local, commitments.channelVersion.commitmentFormat)
+            val sig = Transactions.sign(claimMain, commitments.localParams.keys.paymentKey.privateKey, TxOwner.Local, commitments.channelVersion.commitmentFormat)
             Transactions.addSigs(claimMain, sig)
           })
         }
@@ -573,7 +573,7 @@ object Helpers {
               None
             case v if v.hasAnchorOutputs => generateTx("claim-remote-delayed-output") {
               Transactions.makeClaimRemoteDelayedOutputTx(commitTx, commitments.localParams.dustLimit, commitments.localParams.walletStaticPaymentBasepoint, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain).right.map(claimMain => {
-                val sig = commitments.localParams.keys.sign(claimMain, commitments.localParams.keys.paymentKey.privateKey, TxOwner.Local, commitments.channelVersion.commitmentFormat)
+                val sig = Transactions.sign(claimMain, commitments.localParams.keys.paymentKey.privateKey, TxOwner.Local, commitments.channelVersion.commitmentFormat)
                 Transactions.addSigs(claimMain, sig)
               })
             }

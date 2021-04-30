@@ -21,7 +21,8 @@ class SQLiteChannel(val db: DBInterface) extends ChannelBag {
     db.select(ChannelTable.selectAllSql).iterable(_ byteVec ChannelTable.data)
       .map(bits => ChannelCodecs.persistentDataCodec.decode(bits.toBitVector).require.value)
 
-  override def delete(channelId: ByteVector32): Unit = db.change(ChannelTable.killSql, channelId.toHex)
+  override def delete(channelId: ByteVector32): Unit =
+    db.change(ChannelTable.killSql, channelId.toHex)
 
   // HTLC infos
 
@@ -39,5 +40,6 @@ class SQLiteChannel(val db: DBInterface) extends ChannelBag {
     for (htlc <- htlcs) putHtlcInfo(sid, commitNumber, htlc.add.paymentHash, htlc.add.cltvExpiry)
   }
 
-  override def rmHtlcInfos(sid: ShortChannelId): Unit = db.change(HtlcInfoTable.killSql, sid.toLong: JLong)
+  override def rmHtlcInfos(sid: ShortChannelId): Unit =
+    db.change(HtlcInfoTable.killSql, sid.toLong: JLong)
 }
