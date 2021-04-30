@@ -283,21 +283,12 @@ object ChannelKeys {
   }
 }
 
-case class ChannelKeys(path: KeyPath, shaSeed: ByteVector32, fundingKey: ExtendedPrivateKey, revocationKey: ExtendedPrivateKey,
-                       paymentKey: ExtendedPrivateKey, delayedPaymentKey: ExtendedPrivateKey, htlcKey: ExtendedPrivateKey) {
-
+case class ChannelKeys(path: KeyPath, shaSeed: ByteVector32, fundingKey: ExtendedPrivateKey, revocationKey: ExtendedPrivateKey, paymentKey: ExtendedPrivateKey, delayedPaymentKey: ExtendedPrivateKey, htlcKey: ExtendedPrivateKey) {
+  def sign(tx: TransactionWithInputInfo, key: PrivateKey, remoteSecret: PrivateKey, txOwner: TxOwner, format: CommitmentFormat): ByteVector64 = sign(tx, Generators.revocationPrivKey(key, remoteSecret), txOwner, format)
+  def sign(tx: TransactionWithInputInfo, key: PrivateKey, remotePoint: PublicKey, txOwner: TxOwner, format: CommitmentFormat): ByteVector64 = sign(tx, Generators.derivePrivKey(key, remotePoint), txOwner, format)
+  def sign(tx: TransactionWithInputInfo, key: PrivateKey, txOwner: TxOwner, format: CommitmentFormat): ByteVector64 = sign(tx, key, txOwner, format)
   def commitmentSecret(index: Long): PrivateKey = Generators.perCommitSecret(shaSeed, index)
-
   def commitmentPoint(index: Long): PublicKey = Generators.perCommitPoint(shaSeed, index)
-
-  def sign(tx: Transactions.TransactionWithInputInfo, key: PrivateKey, txOwner: Transactions.TxOwner, format: Transactions.CommitmentFormat): ByteVector64 =
-    Transactions.sign(tx, key, txOwner, format)
-
-  def sign(tx: Transactions.TransactionWithInputInfo, key: PrivateKey, remotePoint: PublicKey, txOwner: Transactions.TxOwner, format: Transactions.CommitmentFormat): ByteVector64 =
-    Transactions.sign(tx, Generators.derivePrivKey(key, remotePoint), txOwner, format)
-
-  def sign(tx: Transactions.TransactionWithInputInfo, key: PrivateKey, remoteSecret: PrivateKey, txOwner: Transactions.TxOwner, format: Transactions.CommitmentFormat): ByteVector64 =
-    Transactions.sign(tx, Generators.revocationPrivKey(key, remoteSecret), txOwner, format)
 }
 
 final case class LocalParams(keys: ChannelKeys, dustLimit: Satoshi, maxHtlcValueInFlightMsat: UInt64, channelReserve: Satoshi, htlcMinimum: MilliSatoshi,

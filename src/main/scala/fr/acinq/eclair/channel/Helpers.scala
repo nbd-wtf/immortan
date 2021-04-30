@@ -560,7 +560,7 @@ object Helpers {
           val remoteDelayedPaymentPubkey = Generators.derivePubKey(commitments.remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
           val remoteRevocationPubkey = Generators.revocationPubKey(commitments.localParams.keys.revocationKey.publicKey, remotePerCommitmentPoint)
           val remoteHtlcPubkey = Generators.derivePubKey(commitments.remoteParams.htlcBasepoint, remotePerCommitmentPoint)
-          val localPaymentPubkey = Generators.derivePubKey(commitments.localParams.keys.revocationKey.publicKey, remotePerCommitmentPoint)
+          val localPaymentPubkey = Generators.derivePubKey(commitments.localParams.keys.paymentKey.publicKey, remotePerCommitmentPoint)
           val localHtlcPubkey = Generators.derivePubKey(commitments.localParams.keys.htlcKey.publicKey, remotePerCommitmentPoint)
 
           val feeratePerKwMain = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
