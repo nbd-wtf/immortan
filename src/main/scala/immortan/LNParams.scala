@@ -52,18 +52,18 @@ object LNParams {
 
   // Variables to be assigned at runtime
 
-  var chainHash: ByteVector32 = Block.LivenetGenesisBlock.hash
-
   var secret: WalletSecret = _
-  var routerConf: RouterConf = _
-  var syncParams: SyncParams = _
-  var denomination: Denomination = _
-  var fiatRatesInfo: FiatRatesInfo = _
-  var feeRatesInfo: FeeRatesInfo = _
-  var trampoline: TrampolineOn = _
+  var chainHash: ByteVector32 = _
   var chainWallet: WalletExt = _
   var cm: ChannelMaster = _
+
   var ourInit: Init = _
+  var routerConf: RouterConf = _
+  var syncParams: SyncParams = _
+  var trampoline: TrampolineOn = _
+  var denomination: Denomination = _
+  var feeRatesInfo: FeeRatesInfo = _
+  var fiatRatesInfo: FiatRatesInfo = _
 
   // Last known chain tip (zero is unknown)
   val blockCount: AtomicLong = new AtomicLong(0L)
@@ -183,9 +183,8 @@ case class UpdateAddHtlcExt(theirAdd: UpdateAddHtlc, remoteInfo: RemoteNodeInfo)
 case class SwapInStateExt(state: SwapInState, nodeId: PublicKey)
 
 case class LastChainBalance(confirmed: Satoshi, unconfirmed: Satoshi, stamp: Long) {
-  def isTooLongAgo: Boolean = System.currentTimeMillis - 3600 * 24 * 14 * 1000L < stamp
+  def isTooLongAgo: Boolean = System.currentTimeMillis - 3600 * 24 * 7 * 1000L < stamp
   val totalBalance: MilliSatoshi = confirmed.toMilliSatoshi + unconfirmed
-  val totalSatLong: Long = confirmed.toLong + unconfirmed.toLong
 }
 
 // Interfaces
