@@ -267,7 +267,7 @@ case class InitHostedChannel(maxHtlcValueInFlightMsat: UInt64, htlcMinimumMsat: 
                              liabilityDeadlineBlockdays: Int, minimalOnchainRefundAmountSatoshis: Satoshi, initialClientBalanceMsat: MilliSatoshi,
                              version: ChannelVersion) extends HostedChannelMessage
 
-case class HostedChannelBranding(rgbColor: Color, pngIcon: Option[ByteVector], pngBackground: Option[ByteVector], contactInfo: String) extends HostedChannelMessage
+case class HostedChannelBranding(rgbColor: Color, pngIcon: Option[ByteVector], contactInfo: String) extends HostedChannelMessage
 
 case class LastCrossSignedState(isHost: Boolean, refundScriptPubKey: ByteVector, initHostedChannel: InitHostedChannel, blockDay: Long, localBalanceMsat: MilliSatoshi,
                                 remoteBalanceMsat: MilliSatoshi, localUpdates: Long, remoteUpdates: Long, incomingHtlcs: List[UpdateAddHtlc], outgoingHtlcs: List[UpdateAddHtlc],

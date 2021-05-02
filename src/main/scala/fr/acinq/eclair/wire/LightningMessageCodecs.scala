@@ -302,7 +302,6 @@ object LightningMessageCodecs {
   val hostedChannelBrandingCodec = {
     (rgb withContext "rgbColor") ::
       (optional(bool8, varsizebinarydata) withContext "pngIcon") ::
-      (optional(bool8, varsizebinarydata) withContext "pngBackground") ::
       (variableSizeBytes(uint16, utf8) withContext "contactInfo")
   }.as[HostedChannelBranding]
 
