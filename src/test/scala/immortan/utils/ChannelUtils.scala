@@ -31,7 +31,7 @@ object ChannelUtils {
     }
 
   def makeHostedCommits(nodeId: PublicKey, alias: String, toLocal: MilliSatoshi = 100000000L.msat): HostedCommits = {
-    val initMessage = InitHostedChannel(UInt64(toLocal.underlying + 100000000L), 10.msat, 20, 200000000L.msat, 5000, Satoshi(1000000), 0.msat, ChannelVersion.STANDARD)
+    val initMessage = InitHostedChannel(UInt64(toLocal.underlying + 100000000L), 10.msat, 20, 200000000L.msat, 0.msat, ChannelVersion.STANDARD)
 
     val lcss: LastCrossSignedState = LastCrossSignedState(isHost = false, refundScriptPubKey = randomBytes(119), initMessage, blockDay = 100, localBalanceMsat = toLocal,
       remoteBalanceMsat = 100000000L.msat, localUpdates = 201, remoteUpdates = 101, incomingHtlcs = Nil, outgoingHtlcs = Nil, remoteSigOfLocal = ByteVector64.Zeroes,

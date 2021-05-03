@@ -1,6 +1,7 @@
 package immortan
 
 import immortan.crypto.Tools
+import fr.acinq.bitcoin.Block
 import org.scalatest.funsuite.AnyFunSuite
 import fr.acinq.eclair.wire.{Init, LightningMessage, Pong}
 import immortan.utils.TestUtils._
@@ -9,6 +10,7 @@ import immortan.utils.TestUtils._
 class CommsTowerSpec extends AnyFunSuite {
   test("Successfully connect, send Ping, get Pong") {
     var responses = List.empty[LightningMessage]
+    LNParams.chainHash = Block.LivenetGenesisBlock.hash
     LNParams.ourInit = LNParams.createInit
 
     val listener1 = new ConnectionListener {

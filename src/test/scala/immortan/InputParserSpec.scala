@@ -2,6 +2,7 @@ package immortan
 
 import immortan.utils._
 import fr.acinq.eclair._
+import fr.acinq.bitcoin.Block
 import org.scalatest.funsuite.AnyFunSuite
 
 
@@ -24,6 +25,7 @@ class InputParserSpec extends AnyFunSuite {
   }
 
   test("Parse chain uri") {
+    LNParams.chainHash = Block.LivenetGenesisBlock.hash
     val raw1 = "bitcoin://mjSk1Ny9spzU2fouzYgLqGUD8U41iR35QN?amount=0.01&label=Example+Merchant&message=Order+of+flowers+%26+chocolates"
     val uri1 = BitcoinUri.fromRaw(raw1)
     assert(uri1.address == "mjSk1Ny9spzU2fouzYgLqGUD8U41iR35QN")
