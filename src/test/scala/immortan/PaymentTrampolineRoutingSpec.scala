@@ -21,7 +21,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   test("Correctly parse trampoline routed payments sent to our fake nodeId") {
     LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val ourParams = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0D, logExponent = 0D, CltvExpiryDelta(72))
-    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(100000L.msat), randomBytes32, dP, "Invoice", CltvExpiryDelta(18)) // Final payee
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(100000L.msat), randomBytes32, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer)
     val outerPaymentSecret = randomBytes32
 
@@ -40,7 +40,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
-    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, aP, "Invoice", CltvExpiryDelta(18)) // Final payee is A which we do not have direct channels with
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, aP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is A which we do not have direct channels with
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
@@ -75,7 +75,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
-    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, aP, "Invoice", CltvExpiryDelta(18)) // Final payee is A which we do not have direct channels with
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, aP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is A which we do not have direct channels with
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
@@ -115,7 +115,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
-    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18)) // Final payee is D which we do not have direct channels with
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is D which we do not have direct channels with
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
     val outerPaymentSecret = randomBytes32
@@ -172,7 +172,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
-    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18)) // Final payee is D which we do not have direct channels with
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is D which we do not have direct channels with
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
     val outerPaymentSecret = randomBytes32
@@ -210,7 +210,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
-    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18)) // Final payee is D which we do not have direct channels with
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is D which we do not have direct channels with
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
     val outerPaymentSecret = randomBytes32
@@ -253,7 +253,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
-    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18)) // Final payee is D which we do not have direct channels with
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is D which we do not have direct channels with
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
     val outerPaymentSecret = randomBytes32
@@ -295,7 +295,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
-    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, eP, "Invoice", CltvExpiryDelta(18)) // Final payee is E which is not in a graph!
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, eP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is E which is not in a graph!
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
     val outerPaymentSecret = randomBytes32
@@ -336,7 +336,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
-    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18)) // Final payee is D which we do not have direct channels with
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is D which we do not have direct channels with
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
     val (normalStore, _, cm) = makeChannelMaster
     fillDirectGraph(normalStore)
@@ -388,7 +388,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
-    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18)) // Final payee is D which we do not have direct channels with
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is D which we do not have direct channels with
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
     val (normalStore, _, cm) = makeChannelMaster
     fillDirectGraph(normalStore)
@@ -447,7 +447,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
-    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18)) // Final payee is D which we do not have direct channels with
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is D which we do not have direct channels with
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
     val (normalStore, _, cm) = makeChannelMaster
     fillDirectGraph(normalStore)

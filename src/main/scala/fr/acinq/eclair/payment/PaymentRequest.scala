@@ -124,17 +124,19 @@ object PaymentRequest {
 
   val prefixes = Map(Block.RegtestGenesisBlock.hash -> "lnbcrt", Block.TestnetGenesisBlock.hash -> "lntb", Block.LivenetGenesisBlock.hash -> "lnbc")
 
+  val basicFeatures: PaymentRequestFeatures = PaymentRequestFeatures(Features.VariableLengthOnion.optional, Features.PaymentSecret.optional)
+
   def apply(chainHash: ByteVector32,
             amount: Option[MilliSatoshi],
             paymentHash: ByteVector32,
             privateKey: PrivateKey,
             description: String,
             minFinalCltvExpiryDelta: CltvExpiryDelta,
+            extraHops: List[ExtraHops],
+            features: Option[PaymentRequestFeatures] = Some(basicFeatures),
             fallbackAddress: Option[String] = None,
-            expirySeconds: Option[Long] = None,
-            extraHops: List[ExtraHops] = Nil,
-            timestamp: Long = System.currentTimeMillis() / 1000L,
-            features: Option[PaymentRequestFeatures] = Some(PaymentRequestFeatures(Features.VariableLengthOnion.optional, Features.PaymentSecret.optional))): PaymentRequest = {
+            expirySeconds: Option[Long] = Some(3600 * 24 * 7),
+            timestamp: Long = System.currentTimeMillis() / 1000L): PaymentRequest = {
 
     val prefix = prefixes(chainHash)
     val tags = {
