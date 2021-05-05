@@ -190,11 +190,11 @@ abstract class ChannelHosted extends Channel { me =>
 
           val hc2 = hc1.copy(nextLocalUpdates = localUpdatesAccounted, nextRemoteUpdates = remoteUpdatesAccounted)
           val syncedLCSS = hc2.nextLocalUnsignedLCSS(remoteLCSS.blockDay).copy(localSigOfRemote = remoteLCSS.remoteSigOfLocal, remoteSigOfLocal = remoteLCSS.localSigOfRemote)
-          val syncedCommits = hc2.copy(lastCrossSignedState = syncedLCSS, localSpec = hc2.nextLocalSpec, nextLocalUpdates = localUpdatesLeftover, nextRemoteUpdates = Nil)
 
           if (syncedLCSS.reverse == remoteLCSS) {
-            // We have fallen behind a bit but have all the data required to successfully reach an updated state
-            StoreBecomeSend(syncedCommits, OPEN, List(syncedLCSS) ++ hc2.resizeProposal ++ localUpdatesLeftover:_*)
+            // We have fallen behind a bit but have all the data required to successfully synchronize such that an updated state is reached
+            val hc3 = hc2.copy(lastCrossSignedState = syncedLCSS, localSpec = hc2.nextLocalSpec, nextLocalUpdates = localUpdatesLeftover, nextRemoteUpdates = Nil)
+            StoreBecomeSend(hc3, OPEN, List(syncedLCSS) ++ hc2.resizeProposal ++ localUpdatesLeftover:_*)
             process(CMD_SIGN)
           } else {
             // We are too far behind, restore from their data
