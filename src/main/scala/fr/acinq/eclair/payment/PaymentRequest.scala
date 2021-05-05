@@ -124,7 +124,7 @@ object PaymentRequest {
 
   val prefixes = Map(Block.RegtestGenesisBlock.hash -> "lnbcrt", Block.TestnetGenesisBlock.hash -> "lntb", Block.LivenetGenesisBlock.hash -> "lnbc")
 
-  val basicFeatures: PaymentRequestFeatures = PaymentRequestFeatures(Features.VariableLengthOnion.optional, Features.PaymentSecret.optional)
+  val basicFeatures: PaymentRequestFeatures = PaymentRequestFeatures(Features.VariableLengthOnion.optional, Features.PaymentSecret.optional, Features.BasicMultiPartPayment.optional)
 
   def apply(chainHash: ByteVector32,
             amount: Option[MilliSatoshi],
