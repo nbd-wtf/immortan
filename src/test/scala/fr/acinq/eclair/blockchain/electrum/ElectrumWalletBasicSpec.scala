@@ -101,7 +101,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
 
     val pub = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5.btc, Script.pay2pkh(pub)) :: Nil, lockTime = 0)
-    val TxAndFee(tx1, fee1, _) = state1.completeTransaction(tx, feerate, dustLimit, allowSpendUnconfirmed = false, TxIn.SEQUENCE_FINAL)
+    val TxAndFee(tx1, fee1) = state1.completeTransaction(tx, feerate, dustLimit, allowSpendUnconfirmed = false, TxIn.SEQUENCE_FINAL)
     val Some((_, _, Some(fee))) = state1.computeTransactionDelta(tx1)
     assert(fee == fee1)
 
@@ -122,7 +122,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
   test("compute the effect of tx") {
     val state1 = addFunds(state, state.accountKeys.head, 1.btc)
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5.btc, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
-    val TxAndFee(tx1, fee1, _) = state1.completeTransaction(tx, feerate, dustLimit, allowSpendUnconfirmed = false, TxIn.SEQUENCE_FINAL)
+    val TxAndFee(tx1, fee1) = state1.completeTransaction(tx, feerate, dustLimit, allowSpendUnconfirmed = false, TxIn.SEQUENCE_FINAL)
 
     val Some((received, sent, Some(fee))) = state1.computeTransactionDelta(tx1)
     assert(fee == fee1)
@@ -134,7 +134,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
 
     {
       val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(5000000.sat, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
-      val TxAndFee(tx1, fee1, _) = state1.completeTransaction(tx, feerate, dustLimit, allowSpendUnconfirmed = true, TxIn.SEQUENCE_FINAL)
+      val TxAndFee(tx1, fee1) = state1.completeTransaction(tx, feerate, dustLimit, allowSpendUnconfirmed = true, TxIn.SEQUENCE_FINAL)
       val Some((_, _, Some(fee))) = state1.computeTransactionDelta(tx1)
       assert(fee == fee1)
       val actualFeeRate = Transactions.fee2rate(fee, tx1.weight())
@@ -142,7 +142,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     }
     {
       val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(5000000.sat - dustLimit, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
-      val TxAndFee(tx1, fee1, _) = state1.completeTransaction(tx, feerate, dustLimit, allowSpendUnconfirmed = true, TxIn.SEQUENCE_FINAL)
+      val TxAndFee(tx1, fee1) = state1.completeTransaction(tx, feerate, dustLimit, allowSpendUnconfirmed = true, TxIn.SEQUENCE_FINAL)
       val Some((_, _, Some(fee))) = state1.computeTransactionDelta(tx1)
       assert(fee == fee1)
       val actualFeeRate = Transactions.fee2rate(fee, tx1.weight())
@@ -151,7 +151,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     {
       // with a huge fee rate that will force us to use an additional input when we complete our tx
       val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(3000000.sat, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
-      val TxAndFee(tx1, fee1, _) = state1.completeTransaction(tx, feerate * 100, dustLimit, allowSpendUnconfirmed = true, TxIn.SEQUENCE_FINAL)
+      val TxAndFee(tx1, fee1) = state1.completeTransaction(tx, feerate * 100, dustLimit, allowSpendUnconfirmed = true, TxIn.SEQUENCE_FINAL)
       val Some((_, _, Some(fee))) = state1.computeTransactionDelta(tx1)
       assert(fee == fee1)
       val actualFeeRate = Transactions.fee2rate(fee, tx1.weight())
@@ -160,7 +160,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     {
       // with a tiny fee rate that will force us to use an additional input when we complete our tx
       val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(0.09), Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
-      val TxAndFee(tx1, fee1, _) = state1.completeTransaction(tx, feerate / 10, dustLimit, allowSpendUnconfirmed = true, TxIn.SEQUENCE_FINAL)
+      val TxAndFee(tx1, fee1) = state1.completeTransaction(tx, feerate / 10, dustLimit, allowSpendUnconfirmed = true, TxIn.SEQUENCE_FINAL)
       val Some((_, _, Some(fee))) = state1.computeTransactionDelta(tx1)
       assert(fee == fee1)
       val actualFeeRate = Transactions.fee2rate(fee, tx1.weight())
@@ -175,7 +175,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     assert(state3.utxos.length == 3)
     assert(state3.balance == (350000000.sat, 0.sat))
 
-    val TxAndFee(tx, fee, _) = state3.spendAll(Script.pay2wpkh(ByteVector.fill(20)(1)), feerate, dustLimit, TxIn.SEQUENCE_FINAL)
+    val TxAndFee(tx, fee) = state3.spendAll(Script.pay2wpkh(ByteVector.fill(20)(1)), feerate, dustLimit, TxIn.SEQUENCE_FINAL)
     val Some((received, _, Some(fee1))) = state3.computeTransactionDelta(tx)
     assert(received === 0.sat)
     assert(fee == fee1)
@@ -189,7 +189,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val pub2 = state.accountKeys(1).publicKey
     val redeemScript = Scripts.multiSig2of2(pub1, pub2)
     val pubkeyScript = Script.pay2wsh(redeemScript)
-    val TxAndFee(tx, fee, _) = state3.spendAll(pubkeyScript, FeeratePerKw(750.sat), dustLimit, TxIn.SEQUENCE_FINAL)
+    val TxAndFee(tx, fee) = state3.spendAll(pubkeyScript, FeeratePerKw(750.sat), dustLimit, TxIn.SEQUENCE_FINAL)
     val Some((received, _, Some(fee1))) = state3.computeTransactionDelta(tx)
     assert(received === 0.sat)
     assert(fee == fee1)
