@@ -121,7 +121,7 @@ object PaymentRequest {
 
   val DEFAULT_EXPIRY_SECONDS = 3600 // If provided invoice does not have an expiry set then we assume it's this much seconds from timestamp
 
-  val OUR_EXPIRY_SECONDS: Int = DEFAULT_EXPIRY_SECONDS * 24 // Invoices issued by us ALWAYS expire in one day
+  val OUR_EXPIRY_SECONDS: Int = DEFAULT_EXPIRY_SECONDS * 24 * 2 // Invoices issued by us ALWAYS expire in two days
 
   val prefixes: Map[ByteVector32, String] = Map(Block.RegtestGenesisBlock.hash -> "lnbcrt", Block.TestnetGenesisBlock.hash -> "lntb", Block.LivenetGenesisBlock.hash -> "lnbc")
 
@@ -136,7 +136,7 @@ object PaymentRequest {
       val defaultTags = List(
         Some(PaymentHash(paymentHash)),
         Some(Description(description)),
-        fallbackAddress.map(FallbackAddress(_)),
+        fallbackAddress.map(FallbackAddress.apply),
         Some(Expiry(OUR_EXPIRY_SECONDS)),
         Some(MinFinalCltvExpiry(minFinalCltvExpiryDelta.toInt)),
         features).flatten
