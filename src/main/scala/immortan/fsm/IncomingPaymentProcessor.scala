@@ -5,7 +5,7 @@ import fr.acinq.eclair.wire._
 import immortan.fsm.IncomingPaymentProcessor._
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, ReasonableLocal, ReasonableTrampoline}
 import immortan.ChannelMaster.{OutgoingAdds, PreimageTry, ReasonableLocals, ReasonableTrampolines}
-import immortan.{ChannelMaster, InFlightPayments, LNParams, PaymentInfo, PaymentStatus}
+import immortan.{Channel, ChannelMaster, InFlightPayments, LNParams, PaymentInfo, PaymentStatus}
 import immortan.crypto.{CanBeShutDown, StateMachine}
 import fr.acinq.eclair.transactions.RemoteFulfill
 import fr.acinq.eclair.router.RouteCalculation
@@ -14,6 +14,7 @@ import immortan.fsm.PaymentFailure.Failures
 import fr.acinq.bitcoin.Crypto.PublicKey
 import immortan.crypto.Tools.Any2Some
 import fr.acinq.bitcoin.ByteVector32
+
 import scala.util.Success
 
 
@@ -269,12 +270,9 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
         val totalFeeReserve = amountIn(adds) - innerPayload.amountToForward - relayFee(innerPayload, LNParams.trampoline)
         val routerConf = LNParams.routerConf.copy(maxCltvDelta = expiryIn(adds) - innerPayload.outgoingCltv - LNParams.trampoline.cltvExpiryDelta)
         val extraEdges = RouteCalculation.makeExtraEdges(innerPayload.invoiceRoutingInfo.map(_.map(_.toList).toList).getOrElse(Nil), innerPayload.outgoingNodeId)
-        // It makes no sense to try to route out a payment through channels used by peer to route it in
-        val allowedChans = cm.all -- adds.map(_.add.channelId)
-
-        val send = SendMultiPart(fullTag, routerConf, innerPayload.outgoingNodeId,
-          onionTotal = innerPayload.amountToForward, actualTotal = innerPayload.amountToForward,
-          totalFeeReserve, targetExpiry = innerPayload.outgoingCltv, allowedChans.values.toSeq)
+        // It makes no sense to try to route out a payment through channels used by peer to route it in, this also includes possible unused multiple channels with same peer
+        val allowedChans = cm.all -- adds.map(_.add.channelId).flatMap(cm.all.get).flatMap(Channel.chanAndCommitsOpt).map(_.commits.remoteInfo.nodeId).flatMap(cm.fromNode).map(_.commits.channelId)
+        val send = SendMultiPart(fullTag, routerConf, innerPayload.outgoingNodeId, innerPayload.amountToForward, innerPayload.amountToForward, totalFeeReserve, innerPayload.outgoingCltv, allowedChans.values.toSeq)
 
         become(TrampolineProcessing(innerPayload.outgoingNodeId), SENDING)
         // If invoice features are present then sender is asking for relay to non-trampoline recipient, it is known that recipient supports MPP
