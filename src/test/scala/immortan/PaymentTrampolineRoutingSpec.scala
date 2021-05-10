@@ -11,7 +11,7 @@ import immortan.crypto.{CanBeRepliedTo, StateMachine}
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentRequest}
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteUpdateFail}
 import immortan.fsm.{IncomingPaymentProcessor, OutgoingPaymentMaster, TrampolinePaymentRelayer, TrampolineRevealed, TrampolineStopping}
-import fr.acinq.eclair.wire.{PaymentTimeout, TemporaryNodeFailure, TrampolineFeeInsufficient, TrampolineOn, UpdateAddHtlc, UpdateFailHtlc}
+import fr.acinq.eclair.wire.{FullPaymentTag, PaymentTagTlv, PaymentTimeout, TemporaryNodeFailure, TrampolineFeeInsufficient, TrampolineOn, UpdateAddHtlc, UpdateFailHtlc}
 import fr.acinq.eclair.payment.IncomingPacket.FinalPacket
 import org.scalatest.funsuite.AnyFunSuite
 import immortan.sqlite.Table
@@ -25,10 +25,12 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer)
     val outerPaymentSecret = randomBytes32
 
+    val (_, _, cm) = makeChannelMasterWithBasicGraph
     val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerLegacyTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, d, CltvExpiryDelta(720), trampolineFees = 1000L.msat)
     val reasonableTrampoline1 = createResolution(pr, 11000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
     val reasonableTrampoline2 = createResolution(pr, 90000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
-    assert(TrampolinePaymentRelayer.validateRelay(ourParams, List(reasonableTrampoline1, reasonableTrampoline2), LNParams.blockCount.get).isEmpty)
+    val fsm = new TrampolinePaymentRelayer(fullTag = FullPaymentTag(null, null, PaymentTagTlv.TRAMPLOINE_ROUTED), cm) { lastAmountIn = List(reasonableTrampoline1, reasonableTrampoline2).map(_.add.amountMsat).sum  }
+    assert(fsm.validateRelay(ourParams, List(reasonableTrampoline1, reasonableTrampoline2), LNParams.blockCount.get).isEmpty)
   }
 
   test("Successfully parse a trampoline-to-legacy payment on payee side") {
@@ -144,7 +146,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     val outPacket = WAIT_UNTIL_RESULT(cm.opm.data.payments(reasonableTrampoline1.fullTag).data.inFlightParts.head.cmd.packetAndSecrets.packet)
     val ourAdd = UpdateAddHtlc(null, 1, null, paymentHash, null, outPacket, null)
 
-    val ourMinimalFee = TrampolinePaymentRelayer.relayFee(reasonableTrampoline3.packet.innerPayload, LNParams.trampoline)
+    val ourMinimalFee = fsm.relayFee(reasonableTrampoline3.packet.innerPayload, LNParams.trampoline)
     WAIT_UNTIL_TRUE(cm.opm.data.payments(reasonableTrampoline1.fullTag).data.cmd.actualTotal == pr.amount.get) // With trampoline-to-legacy we find out a final amount
     assert(cm.opm.data.payments(reasonableTrampoline1.fullTag).data.cmd.totalFeeReserve == feeReserve - ourMinimalFee) // At the very least we collect base trampoline fee
 
