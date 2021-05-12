@@ -68,7 +68,7 @@ class MPPSpec extends AnyFunSuite {
     assert(part2.route.fee == 920L.msat)
 
     LNParams.blockCount.set(10) // One more than receiver CLTV
-    val out1 = cm.allInChannelOutgoing.values.flatten.head
+    val out1 = cm.all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).head
     cm.opm process RemoteUpdateFail(UpdateFailHtlc(out1.channelId, out1.id, randomBytes32.bytes), out1)
 
     WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).state == PaymentStatus.ABORTED)

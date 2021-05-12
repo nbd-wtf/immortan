@@ -517,8 +517,8 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listener: OutgoingP
   }
 
   def abortMaybeNotify(data1: OutgoingPaymentSenderData): Unit = {
-    val noLeftoversPresent = !opm.cm.allInChannelOutgoing.contains(fullTag)
-    if (data1.inFlightParts.isEmpty && noLeftoversPresent) listener.wholePaymentFailed(data1)
+    val hasLeftoversInChannels = opm.cm.all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).exists(_.fullTag == fullTag)
+    if (data1.inFlightParts.isEmpty && !hasLeftoversInChannels) listener.wholePaymentFailed(data1)
     become(data1, ABORTED)
   }
 }

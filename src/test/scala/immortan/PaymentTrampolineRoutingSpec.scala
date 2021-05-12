@@ -62,7 +62,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
 
     WAIT_UNTIL_TRUE {
-      val List(add1) = cm.allInChannelOutgoing.values.flatten.toList
+      val Seq(add1) = cm.all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing)
       IncomingPacket.decrypt(add1, aP).right.get.isInstanceOf[FinalPacket]
     }
   }
@@ -98,7 +98,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
 
     WAIT_UNTIL_TRUE {
-      val List(add1) = cm.allInChannelOutgoing.values.flatten.toList
+      val Seq(add1) = cm.all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing)
       val finalPacket = IncomingPacket.decrypt(add1, aP).right.get.asInstanceOf[FinalPacket]
       assert(finalPacket.payload.paymentSecret.get == pr.paymentSecret.get) // Payment secret is internal, payee will be able to group trampolines from various sources together
       assert(finalPacket.payload.totalAmount == 700000L.msat) // Total amount was not seen by relaying trampoline node, but equal to requested by payee
@@ -364,8 +364,8 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     // Simulate making new FSM on restart
     fsm.become(null, IncomingPaymentProcessor.RECEIVING)
-    WAIT_UNTIL_TRUE(cm.allInChannelOutgoing(reasonableTrampoline1.fullTag).size == 2)
-    val List(out1, out2) = cm.allInChannelOutgoing(reasonableTrampoline1.fullTag).toList
+    WAIT_UNTIL_TRUE(cm.all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).size == 2)
+    val Seq(out1, out2) = cm.all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).filter(_.fullTag == reasonableTrampoline1.fullTag)
     fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
     assert(fsm.data.asInstanceOf[TrampolineStopping].retryOnceFinalized)
     // User has removed an outgoing HC meanwhile
@@ -416,10 +416,10 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     // Simulate making new FSM on restart
     fsm.become(null, IncomingPaymentProcessor.RECEIVING)
-    WAIT_UNTIL_TRUE(cm.allInChannelOutgoing(reasonableTrampoline1.fullTag).size == 2)
-    val List(out1, out2) = cm.allInChannelOutgoing(reasonableTrampoline1.fullTag).toList
+    WAIT_UNTIL_TRUE(cm.all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).size == 2)
+    val Seq(out1, out2) = cm.all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).filter(_.fullTag == reasonableTrampoline1.fullTag)
     fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = reasonableTrampoline2 :: Nil)
-    // Pathologic state: we do not have enough incoming payments, yet have outgoing payments (user removed an HC?)
+    // Pathologic state: we do not have enough incoming payments, yet have outgoing payments
     assert(!fsm.data.asInstanceOf[TrampolineStopping].retryOnceFinalized)
     // User has removed an outgoing HC meanwhile
     cm.all = Map.empty
@@ -475,10 +475,10 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     // Simulate making new FSM on restart
     fsm.become(null, IncomingPaymentProcessor.RECEIVING)
-    WAIT_UNTIL_TRUE(cm.allInChannelOutgoing(reasonableTrampoline1.fullTag).size == 2)
-    val List(out1, out2) = cm.allInChannelOutgoing(reasonableTrampoline1.fullTag).toList
+    WAIT_UNTIL_TRUE(cm.all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).size == 2)
+    val Seq(out1, out2) = cm.all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).filter(_.fullTag == reasonableTrampoline1.fullTag)
     fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = reasonableTrampoline2 :: Nil)
-    // Pathologic state: we do not have enough incoming payments, yet have outgoing payments (user removed an HC?)
+    // Pathologic state: we do not have enough incoming payments, yet have outgoing payments
     assert(!fsm.data.asInstanceOf[TrampolineStopping].retryOnceFinalized)
 
     val senderDataSnapshot = cm.opm.data.payments(reasonableTrampoline1.fullTag).data
