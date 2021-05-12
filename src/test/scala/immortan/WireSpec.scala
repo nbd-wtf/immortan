@@ -4,11 +4,10 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.crypto.SphinxSpec._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
-import fr.acinq.bitcoin.{ByteVector32, SatoshiLong}
-
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, SatoshiLong}
+import fr.acinq.eclair.channel.{CMD_ADD_HTLC, ChannelVersion}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.crypto.Sphinx.PaymentPacket
-import fr.acinq.eclair.channel.CMD_ADD_HTLC
 import org.scalatest.funsuite.AnyFunSuite
 
 
@@ -74,9 +73,30 @@ class WireSpec extends AnyFunSuite {
     val fullTag = FullPaymentTag(paymentHash = ByteVector32.Zeroes, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
     val cmd = CMD_ADD_HTLC(fullTag, firstAmount = 1000000L.msat, CltvExpiry(144), packetAndSecrets, payload)
 
-    val encryptedTag: TlvStream[Tlv] = TlvStream(PaymentTagTlv.EncryptedPaymentSecret(cmd.encryptedTag) :: Nil)
+    val encryptedTag: TlvStream[EncryptedPaymentSecret] = TlvStream(EncryptedPaymentSecret(cmd.encryptedTag) :: Nil)
     val add = UpdateAddHtlc(randomBytes32, id = 1000L, cmd.firstAmount, cmd.fullTag.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet, encryptedTag)
     assert(cmd.partId == add.partId)
     assert(add.fullTag == fullTag)
+  }
+
+  test("LCSS") {
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+
+    val payload = FinalLegacyPayload(MilliSatoshi(10000L), CltvExpiry(144))
+    val packetAndSecrets = PaymentPacket.create(sessionKey, publicKeys, variableSizePayloadsFull, associatedData)
+    val fullTag = FullPaymentTag(paymentHash = ByteVector32.Zeroes, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
+    val cmd = CMD_ADD_HTLC(fullTag, firstAmount = 1000000L.msat, CltvExpiry(144), packetAndSecrets, payload)
+
+    val encryptedTag: TlvStream[EncryptedPaymentSecret] = TlvStream(EncryptedPaymentSecret(cmd.encryptedTag) :: Nil)
+    val add1 = UpdateAddHtlc(randomBytes32, id = 1000L, cmd.firstAmount, cmd.fullTag.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet, encryptedTag)
+    val add2 = UpdateAddHtlc(randomBytes32, id = 1000L, cmd.firstAmount, cmd.fullTag.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet)
+
+    val init = InitHostedChannel(UInt64(1000000000L), htlcMinimumMsat = 100.msat, maxAcceptedHtlcs = 12, channelCapacityMsat = 10000000000L.msat, 100000L.msat, ChannelVersion.STATIC_REMOTEKEY)
+
+    val lcss = LastCrossSignedState(isHost = false, refundScriptPubKey = randomBytes(78), init, blockDay = 12594, localBalanceMsat = 100000L.msat,
+      remoteBalanceMsat = 100000L.msat, localUpdates = 123, remoteUpdates = 294, List(add1, add2, add1), List(add2, add1, add2),
+      remoteSigOfLocal = ByteVector64.Zeroes, localSigOfRemote = ByteVector64.Zeroes)
+
+    assert(lastCrossSignedStateCodec.decode(lastCrossSignedStateCodec.encode(lcss).require).require.value == lcss)
   }
 }

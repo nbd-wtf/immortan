@@ -53,9 +53,9 @@ object ChannelMaster {
 
   def notifyStatusUpdated: Unit = statusUpdateStream.onNext(updateCounter.incrementAndGet)
 
-  final val preimageRevealedStream: Subject[ByteVector32] = Subject[ByteVector32]
+  final val preimageRevealStream: Subject[ByteVector32] = Subject[ByteVector32]
 
-  final val preimageObtainedStream: Subject[ByteVector32] = Subject[ByteVector32]
+  final val preimageObtainStream: Subject[ByteVector32] = Subject[ByteVector32]
 
   def initResolve(ext: UpdateAddHtlcExt): IncomingResolution = IncomingPacket.decrypt(ext.theirAdd, ext.remoteInfo.nodeSpecificPrivKey) match {
     case _ if LNParams.isChainDisconnectedTooLong => CMD_FAIL_HTLC(Right(TemporaryNodeFailure), ext.remoteInfo.nodeSpecificPrivKey, ext.theirAdd)
@@ -168,10 +168,11 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
     initConnect
   }
 
-  def initConnect: Unit = {
-    val eligibleForConnect = all.values.filter(Channel.isOperationalOrWaiting).flatMap(Channel.chanAndCommitsOpt)
-    for (cnc <- eligibleForConnect) CommsTower.listenNative(Set(socketChannelListener), cnc.commits.remoteInfo)
-  }
+  def initConnect: Unit =
+    all.values.flatMap(Channel.chanAndCommitsOpt).foreach { cnc =>
+      // Connect to all peers with channels, including CLOSED and SUSPENDED ones
+      CommsTower.listenNative(Set(socketChannelListener), cnc.commits.remoteInfo)
+    }
 
   def allIncomingResolutions: Iterable[IncomingResolution] = all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.crossSignedIncoming).map(initResolveMemo.get)
   def allInChannelOutgoing: Map[FullPaymentTag, OutgoingAdds] = all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).groupBy(_.fullTag)

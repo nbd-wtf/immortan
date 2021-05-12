@@ -161,8 +161,7 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
       ChannelMaster.notifyStateUpdated
 
     case (CreateSenderFSM(fullTag, listener), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) if !data.payments.contains(fullTag) =>
-      val newSenderFSM = new OutgoingPaymentSender(fullTag, listener, me)
-      val data1 = data.payments.updated(fullTag, newSenderFSM)
+      val data1 = data.payments.updated(value = new OutgoingPaymentSender(fullTag, listener, me), key = fullTag)
       become(data.copy(payments = data1), state)
 
     // Following messages expect that target FSM is always present

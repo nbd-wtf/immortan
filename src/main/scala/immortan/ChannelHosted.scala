@@ -253,7 +253,6 @@ abstract class ChannelHosted extends Channel { me =>
       case (null, wait: WaitRemoteHostedReply, null) => super.become(wait, WAIT_FOR_INIT)
       case (null, hc: HostedCommits, null) if hc.getError.isDefined => super.become(hc, SUSPENDED)
       case (null, hc: HostedCommits, null) => super.become(hc, SLEEPING)
-      case _ =>
     }
 
   def restoreCommits(localLCSS: LastCrossSignedState, remoteInfo: RemoteNodeInfo): HostedCommits = {
