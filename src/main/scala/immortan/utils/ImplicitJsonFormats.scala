@@ -36,12 +36,11 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
 
   implicit val publicKeyFmt: JsonFormat[PublicKey] = sCodecJsonFmt(publicKey)
 
-  implicit val milliSatoshiFmt: JsonFormat[MilliSatoshi] = sCodecJsonFmt(millisatoshi)
-
   implicit val byteVector32Fmt: JsonFormat[ByteVector32] = sCodecJsonFmt(bytes32)
 
-  implicit val satoshiFmt: JsonFormat[Satoshi] =
-    jsonFormat[Long, Satoshi](Satoshi.apply, "underlying")
+  implicit val milliSatoshiFmt: JsonFormat[MilliSatoshi] = jsonFormat[Long, MilliSatoshi](MilliSatoshi.apply, "underlying")
+
+  implicit val satoshiFmt: JsonFormat[Satoshi] = jsonFormat[Long, Satoshi](Satoshi.apply, "underlying")
 
   implicit val lastChainBalanceFmt: RootJsonFormat[LastChainBalance] = jsonFormat[Satoshi, Satoshi, Long,
     LastChainBalance](LastChainBalance.apply, "confirmed", "unconfirmed", "timestamp")
@@ -104,11 +103,14 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
     }
   }
 
-  implicit val plainDescriptionFmt: JsonFormat[PlainDescription] = taggedJsonFmt(jsonFormat[String,
-    PlainDescription](PlainDescription.apply, "invoiceText"), tag = "PlainDescription")
+  implicit val splitInfoFmt: JsonFormat[SplitInfo] =
+    jsonFormat[MilliSatoshi, MilliSatoshi, SplitInfo](SplitInfo.apply, "totalSum", "ourPart")
 
-  implicit val plainMetaDescriptionFmt: JsonFormat[PlainMetaDescription] = taggedJsonFmt(jsonFormat[String, String,
-    PlainMetaDescription](PlainMetaDescription.apply, "invoiceText", "meta"), tag = "PlainMetaDescription")
+  implicit val plainDescriptionFmt: JsonFormat[PlainDescription] = taggedJsonFmt(jsonFormat[Option[SplitInfo], String,
+    PlainDescription](PlainDescription.apply, "split", "invoiceText"), tag = "PlainDescription")
+
+  implicit val plainMetaDescriptionFmt: JsonFormat[PlainMetaDescription] = taggedJsonFmt(jsonFormat[Option[SplitInfo], String, String,
+    PlainMetaDescription](PlainMetaDescription.apply, "split", "invoiceText", "meta"), tag = "PlainMetaDescription")
 
   // Payment action
 
