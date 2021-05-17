@@ -262,6 +262,6 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
   // Mainly to prolong FSM timeouts once another add is seen (but not yet committed)
   override def addReceived(add: UpdateAddHtlcExt): Unit = initResolveMemo.getUnchecked(add) match {
     case resolution: ReasonableResolution => inProcessors.get(resolution.fullTag).foreach(_ doProcess resolution)
-    case _ =>
+    case _ => // Do nothing, invalid add will be failed after it gets committed
   }
 }
