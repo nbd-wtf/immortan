@@ -60,10 +60,12 @@ case class ChannelFailed(failedDescAndCap: DescAndCapacity, increment: Int)
 case class CreateSenderFSM(fullTag: FullPaymentTag, listener: OutgoingPaymentListener)
 case class RemoveSenderFSM(fullTag: FullPaymentTag)
 
-// Important: fullTag contains a POTENTIALLY DIFFERENT PaymentSecret taken from upstream (for routed payments), for locally sent payments tag and outer secret will be the same
-case class SendMultiPart(fullTag: FullPaymentTag, routerConf: RouterConf, targetNodeId: PublicKey, onionTotal: MilliSatoshi = MilliSatoshi(0L), actualTotal: MilliSatoshi = MilliSatoshi(0L),
-                         totalFeeReserve: MilliSatoshi = MilliSatoshi(0L), targetExpiry: CltvExpiry = CltvExpiry(0), allowedChans: Seq[Channel] = Nil, outerPaymentSecret: ByteVector32 = ByteVector32.Zeroes,
-                         assistedEdges: Set[GraphEdge] = Set.empty, onionTlvs: Seq[OnionTlv] = Nil, userCustomTlvs: Seq[GenericTlv] = Nil) {
+// For locally initiated payments outerPaymentSecret and fullTag.paymentSecret are same
+// For trampoline-routed payments fullTag.paymentSecret is taken from upstream incoming payment
+case class SendMultiPart(fullTag: FullPaymentTag, routerConf: RouterConf, targetNodeId: PublicKey, onionTotal: MilliSatoshi = MilliSatoshi(0L),
+                         actualTotal: MilliSatoshi = MilliSatoshi(0L), totalFeeReserve: MilliSatoshi = MilliSatoshi(0L), targetExpiry: CltvExpiry = CltvExpiry(0),
+                         allowedChans: Seq[Channel] = Nil, outerPaymentSecret: ByteVector32 = ByteVector32.Zeroes, assistedEdges: Set[GraphEdge] = Set.empty,
+                         onionTlvs: Seq[OnionTlv] = Nil, userCustomTlvs: Seq[GenericTlv] = Nil) {
 
   require(onionTotal >= actualTotal)
 }

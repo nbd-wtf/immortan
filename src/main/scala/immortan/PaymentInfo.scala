@@ -15,10 +15,9 @@ import java.util.Date
 
 
 object PaymentInfo {
-  final val NOT_SENDABLE_CHAIN_DISCONNECT = 0
-  final val NOT_SENDABLE_LOW_FUNDS = 1
-  final val NOT_SENDABLE_IN_FLIGHT = 2
-  final val NOT_SENDABLE_SUCCESS = 3
+  final val NO_ACTION = "no-action"
+  final val NOT_SENDABLE_IN_FLIGHT = 0
+  final val NOT_SENDABLE_SUCCESS = 1
 }
 
 object PaymentStatus {
@@ -77,7 +76,9 @@ case class AESAction(domain: Option[String], description: String, ciphertext: St
 // Payment descriptions
 
 sealed trait PaymentDescription {
+  val finalDescription: Option[String]
   val split: Option[SplitInfo]
+  val label: Option[String]
   val invoiceText: String
   val queryText: String
 }
@@ -86,12 +87,14 @@ case class SplitInfo(totalSum: MilliSatoshi, ourPart: MilliSatoshi) {
   val sentRatio: Long = ratio(totalSum, ourPart)
 }
 
-case class PlainDescription(split: Option[SplitInfo], invoiceText: String) extends PaymentDescription {
-  val queryText: String = invoiceText
+case class PlainDescription(split: Option[SplitInfo], label: Option[String], invoiceText: String) extends PaymentDescription {
+  val finalDescription: Option[String] = label orElse Some(invoiceText).find(_.nonEmpty)
+  val queryText: String = s"$invoiceText ${label getOrElse new String}"
 }
 
-case class PlainMetaDescription(split: Option[SplitInfo], invoiceText: String, meta: String) extends PaymentDescription {
-  val queryText: String = s"$invoiceText $meta"
+case class PlainMetaDescription(split: Option[SplitInfo], label: Option[String], invoiceText: String, meta: String) extends PaymentDescription {
+  val finalDescription: Option[String] = label orElse List(meta, invoiceText).find(_.nonEmpty)
+  val queryText: String = s"$invoiceText $meta ${label getOrElse new String}"
 }
 
 // Relayed preimages
@@ -122,9 +125,10 @@ case class TxInfo(txString: String, txidString: String, depth: Long, receivedSat
 
 sealed trait TxDescription {
   def queryText(txid: ByteVector32): String
+  def label: Option[String] = None
 }
 
-case class PlainTxDescription(addresses: List[String], label: Option[String] = None) extends TxDescription {
+case class PlainTxDescription(addresses: List[String], override val label: Option[String] = None) extends TxDescription {
   def queryText(txid: ByteVector32): String = txid.toHex + SEPARATOR + addresses.mkString(SEPARATOR) + SEPARATOR + label.getOrElse(new String)
 }
 

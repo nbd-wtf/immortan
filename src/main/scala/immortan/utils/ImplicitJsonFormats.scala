@@ -3,10 +3,14 @@ package immortan.utils
 import immortan._
 import spray.json._
 import fr.acinq.eclair.wire.CommonCodecs._
+import fr.acinq.eclair.wire.LightningMessageCodecs._
+
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import immortan.sqlite.{PaymentSummary, RelaySummary, TxSummary}
 import immortan.utils.FiatRates.{BitpayItemList, CoinGeckoItemMap}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratesPerKB}
+import immortan.utils.PayRequest.AdditionalRoute
+import fr.acinq.eclair.wire.ChannelUpdate
 import fr.acinq.bitcoin.Crypto.PublicKey
 import immortan.crypto.Tools.Fiat2Btc
 import fr.acinq.eclair.MilliSatoshi
@@ -37,6 +41,8 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
   implicit val publicKeyFmt: JsonFormat[PublicKey] = sCodecJsonFmt(publicKey)
 
   implicit val byteVector32Fmt: JsonFormat[ByteVector32] = sCodecJsonFmt(bytes32)
+
+  implicit val channelUpdateFmt: JsonFormat[ChannelUpdate] = sCodecJsonFmt(channelUpdateCodec)
 
   implicit val milliSatoshiFmt: JsonFormat[MilliSatoshi] = jsonFormat[Long, MilliSatoshi](MilliSatoshi.apply, "underlying")
 
@@ -106,11 +112,11 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
   implicit val splitInfoFmt: JsonFormat[SplitInfo] =
     jsonFormat[MilliSatoshi, MilliSatoshi, SplitInfo](SplitInfo.apply, "totalSum", "ourPart")
 
-  implicit val plainDescriptionFmt: JsonFormat[PlainDescription] = taggedJsonFmt(jsonFormat[Option[SplitInfo], String,
-    PlainDescription](PlainDescription.apply, "split", "invoiceText"), tag = "PlainDescription")
+  implicit val plainDescriptionFmt: JsonFormat[PlainDescription] = taggedJsonFmt(jsonFormat[Option[SplitInfo], Option[String], String,
+    PlainDescription](PlainDescription.apply, "split", "label", "invoiceText"), tag = "PlainDescription")
 
-  implicit val plainMetaDescriptionFmt: JsonFormat[PlainMetaDescription] = taggedJsonFmt(jsonFormat[Option[SplitInfo], String, String,
-    PlainMetaDescription](PlainMetaDescription.apply, "split", "invoiceText", "meta"), tag = "PlainMetaDescription")
+  implicit val plainMetaDescriptionFmt: JsonFormat[PlainMetaDescription] = taggedJsonFmt(jsonFormat[Option[SplitInfo], Option[String], String, String,
+    PlainMetaDescription](PlainMetaDescription.apply, "split", "label", "invoiceText", "meta"), tag = "PlainMetaDescription")
 
   // Payment action
 
@@ -171,8 +177,9 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
   implicit val payRequestFmt: JsonFormat[PayRequest] = taggedJsonFmt(jsonFormat[String, Long, Long, String, Option[Int],
     PayRequest](PayRequest.apply, "callback", "maxSendable", "minSendable", "metadata", "commentAllowed"), tag = "payRequest")
 
-  implicit val payRequestFinalFmt: JsonFormat[PayRequestFinal] = jsonFormat[Option[PaymentAction], Option[Boolean], List[String], String,
-    PayRequestFinal](PayRequestFinal.apply, "successAction", "disposable", "routes", "pr")
+  implicit val payRequestFinalFmt: JsonFormat[PayRequestFinal] =
+    jsonFormat[Option[PaymentAction], List[AdditionalRoute], String,
+      PayRequestFinal](PayRequestFinal.apply, "successAction", "routes", "pr")
 
   // Fiat feerates
 
