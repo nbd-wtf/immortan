@@ -62,8 +62,8 @@ case class RemoveSenderFSM(fullTag: FullPaymentTag)
 
 // For locally initiated payments outerPaymentSecret and fullTag.paymentSecret are same
 // For trampoline-routed payments fullTag.paymentSecret is taken from upstream incoming payment
-case class SendMultiPart(fullTag: FullPaymentTag, routerConf: RouterConf, targetNodeId: PublicKey, onionTotal: MilliSatoshi = MilliSatoshi(0L),
-                         actualTotal: MilliSatoshi = MilliSatoshi(0L), totalFeeReserve: MilliSatoshi = MilliSatoshi(0L), targetExpiry: CltvExpiry = CltvExpiry(0),
+case class SendMultiPart(fullTag: FullPaymentTag, chainExpiry: Either[CltvExpiry, CltvExpiryDelta], routerConf: RouterConf, targetNodeId: PublicKey,
+                         onionTotal: MilliSatoshi = MilliSatoshi(0L), actualTotal: MilliSatoshi = MilliSatoshi(0L), totalFeeReserve: MilliSatoshi = MilliSatoshi(0L),
                          allowedChans: Seq[Channel] = Nil, outerPaymentSecret: ByteVector32 = ByteVector32.Zeroes, assistedEdges: Set[GraphEdge] = Set.empty,
                          onionTlvs: Seq[OnionTlv] = Nil, userCustomTlvs: Seq[GenericTlv] = Nil) {
 
@@ -273,7 +273,7 @@ trait OutgoingPaymentListener {
 }
 
 class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listener: OutgoingPaymentListener, opm: OutgoingPaymentMaster) extends StateMachine[OutgoingPaymentSenderData] { me =>
-  become(OutgoingPaymentSenderData(SendMultiPart(fullTag, LNParams.routerConf, invalidPubKey), Map.empty), INIT)
+  become(OutgoingPaymentSenderData(SendMultiPart(fullTag, Right(LNParams.minInvoiceExpiryDelta), LNParams.routerConf, invalidPubKey), Map.empty), INIT)
 
   def doProcess(msg: Any): Unit = (msg, state) match {
     case (CMDException(_, cmd: CMD_ADD_HTLC), ABORTED) => me abortMaybeNotify data.withoutPartId(cmd.partId)
@@ -327,7 +327,8 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listener: OutgoingP
 
     case (found: RouteFound, PENDING) =>
       data.parts.values.collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isEmpty && wait.partId == found.partId =>
-        val finalPayload = Onion.createMultiPartPayload(wait.amount, data.cmd.onionTotal, data.cmd.targetExpiry, data.cmd.outerPaymentSecret, data.cmd.onionTlvs, data.cmd.userCustomTlvs)
+        val chainExpiry = data.cmd.chainExpiry match { case Right(delta) => delta.toCltvExpiry(LNParams.blockCount.get + 1) case Left(absolute) => absolute }
+        val finalPayload = Onion.createMultiPartPayload(wait.amount, data.cmd.onionTotal, chainExpiry, data.cmd.outerPaymentSecret, data.cmd.onionTlvs, data.cmd.userCustomTlvs)
         val (firstAmount, firstExpiry, onion) = OutgoingPacket.buildPacket(Sphinx.PaymentPacket)(wait.onionKey, fullTag.paymentHash, found.route.hops, finalPayload)
         val cmdAdd = CMD_ADD_HTLC(fullTag, firstAmount, firstExpiry, PacketAndSecrets(onion.packet, onion.sharedSecrets), finalPayload)
         become(data.copy(parts = data.parts + wait.copy(flight = InFlightInfo(cmdAdd, found.route).toSome).tuple), PENDING)
@@ -345,12 +346,6 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listener: OutgoingP
           case Some(otherCapableCnc) => become(data.copy(parts = data.parts + wait.oneMoreLocalAttempt(otherCapableCnc).tuple), PENDING)
           case None => me abortMaybeNotify data.withoutPartId(wait.partId).withLocalFailure(RUN_OUT_OF_RETRY_ATTEMPTS, wait.amount)
         }
-      }
-
-    case (reject: RemoteReject, PENDING) if CltvExpiry(LNParams.blockCount.get) >= data.cmd.targetExpiry =>
-      // Too many blocks have passed since we started trying to send a payment, we now know for sure that payee will fail it on receiving
-      data.parts.values.collectFirst { case wait: WaitForRouteOrInFlight if wait.flight.isDefined && wait.partId == reject.ourAdd.partId =>
-        me abortMaybeNotify data.withoutPartId(wait.partId).withLocalFailure(PAYMENT_NOT_SENDABLE, wait.amount)
       }
 
     case (reject: RemoteUpdateMalform, PENDING) =>

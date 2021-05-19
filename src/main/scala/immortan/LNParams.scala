@@ -13,7 +13,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import scala.concurrent.{Await, ExecutionContextExecutor}
 import immortan.sqlite.{DBInterface, PreparedQuery, RichCursor}
 import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
-import fr.acinq.eclair.transactions.{DirectedHtlc, RemoteFulfill}
+import fr.acinq.eclair.transactions.{DirectedHtlc, RemoteFulfill, Transactions}
 import fr.acinq.eclair.channel.{ChannelKeys, LocalParams, PersistentChannelData}
 import akka.actor.{ActorRef, ActorSystem, PoisonPill, Props, SupervisorStrategy}
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
@@ -40,6 +40,7 @@ object LNParams {
   val maxChainConnectionsCount: Int = 5
   val maxAcceptedHtlcs: Int = 483
 
+  val minInvoiceExpiryDelta = CltvExpiryDelta(18)
   val minPayment: MilliSatoshi = MilliSatoshi(5000L)
   val minFundingSatoshis: Satoshi = Satoshi(100000L)
   val minDustLimit: Satoshi = Satoshi(546L)
@@ -129,6 +130,8 @@ object LNParams {
   def incorrectDetails(amount: MilliSatoshi): FailureMessage = IncorrectOrUnknownPaymentDetails(amount, blockCount.get)
 
   def peerSupportsExtQueries(theirInit: Init): Boolean = Features.canUseFeature(ourInit.features, theirInit.features, ChannelRangeQueriesExtended)
+
+  def typicalChainTxFee(target: Int): MilliSatoshi = Transactions.weight2fee(feeRatesInfo.onChainFeeConf.feeEstimator.getFeeratePerKw(target), weight = 700).toMilliSatoshi
 }
 
 class SyncParams {
