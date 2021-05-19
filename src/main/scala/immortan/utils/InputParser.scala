@@ -74,11 +74,6 @@ case class PaymentRequestExt(uri: Try[Uri], pr: PaymentRequest, raw: String) {
   val splitLeftover: MilliSatoshi = pr.amount.map(_ - splits.sum).getOrElse(0L.msat)
 }
 
-case class PaymentSplit(uriWithAllSplits: String, pr: PaymentRequest, otherSplits: MilliSatoshi, mySplit: MilliSatoshi) {
-  lazy val isValid: Boolean = pr.amount.nonEmpty && remainder > LNParams.minPayment
-  lazy val remainder: MilliSatoshi = pr.amount.get - otherSplits - mySplit
-}
-
 object BitcoinUri {
   def fromRaw(raw: String): BitcoinUri = {
     val dataWithoutPrefix = raw.split(':').drop(1).mkString.replace("//", "")

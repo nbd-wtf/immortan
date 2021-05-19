@@ -147,7 +147,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     val ourAdd = UpdateAddHtlc(null, 1, null, paymentHash, null, outPacket, null)
 
     val ourMinimalFee = fsm.relayFee(reasonableTrampoline3.packet.innerPayload, LNParams.trampoline)
-    WAIT_UNTIL_TRUE(cm.opm.data.payments(reasonableTrampoline1.fullTag).data.cmd.actualTotal == pr.amount.get) // With trampoline-to-legacy we find out a final amount
+    WAIT_UNTIL_TRUE(cm.opm.data.payments(reasonableTrampoline1.fullTag).data.cmd.split.myPart == pr.amount.get) // With trampoline-to-legacy we find out a final amount
     assert(cm.opm.data.payments(reasonableTrampoline1.fullTag).data.cmd.totalFeeReserve == feeReserve - ourMinimalFee) // At the very least we collect base trampoline fee
 
     // Sender FSM in turn notifies relay FSM, meanwhile we simulate multiple noisy incoming messages

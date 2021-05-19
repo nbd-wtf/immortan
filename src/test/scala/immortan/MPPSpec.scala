@@ -46,8 +46,8 @@ class MPPSpec extends AnyFunSuite {
     cm.all = Channel.load(Set(cm), cm.chanBag)
 
     val tag = FullPaymentTag(paymentHash = ByteVector32.One, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
-    val send = SendMultiPart(tag, Left(CltvExpiry(9)), routerConf, targetNodeId = a, onionTotal = 190000000L.msat,
-      actualTotal = 190000000L.msat, totalFeeReserve = 1900000L.msat, allowedChans = cm.all.values.toSeq)
+    val send = SendMultiPart(tag, Left(CltvExpiry(9)), SplitInfo(190000000L.msat, 190000000L.msat), routerConf,
+      targetNodeId = a, totalFeeReserve = 1900000L.msat, allowedChans = cm.all.values.toSeq)
 
     cm.opm process CreateSenderFSM(tag, noopListener) // Create since FSM is missing
     cm.opm process CreateSenderFSM(tag, null) // Disregard since FSM will be present
@@ -90,25 +90,25 @@ class MPPSpec extends AnyFunSuite {
 
     val tag = FullPaymentTag(paymentHash = ByteVector32.One, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
     val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1L.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
-    val send = SendMultiPart(tag, Left(CltvExpiry(9)), routerConf, targetNodeId = s, onionTotal = 600000L.msat, actualTotal = 600000L.msat,
+    val send = SendMultiPart(tag, Left(CltvExpiry(9)), SplitInfo(600000L.msat, 600000L.msat), routerConf, targetNodeId = s,
       totalFeeReserve = 6000L.msat, allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
     cm.opm process CreateSenderFSM(tag, noopListener)
     cm.opm process send
 
     // Our only channel is offline, sender FSM awaits for it to become operational
-    WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).data.parts.values.head.asInstanceOf[WaitForChanOnline].amount == send.actualTotal)
+    WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).data.parts.values.head.asInstanceOf[WaitForChanOnline].amount == send.split.myPart)
     WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).data.parts.values.size == 1)
 
     cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
 
     // Channel got online so part now awaits for a route, but graph is not loaded (debug mode = true)
-    WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).data.parts.values.head.asInstanceOf[WaitForRouteOrInFlight].amount == send.actualTotal)
+    WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).data.parts.values.head.asInstanceOf[WaitForRouteOrInFlight].amount == send.split.myPart)
     WAIT_UNTIL_TRUE(cm.pf.extraEdgesMap.size == 1)
 
     // Payment is not yet in channel, but it is waiting in sender so amount without fees is taken into account
     val sendable2 = cm.opm.getSendable(cm.all.values, maxFee = 1000000L.msat).values.head
-    assert(sendable2 == sendable1 - send.actualTotal)
+    assert(sendable2 == sendable1 - send.split.myPart)
 
     cm.pf process PathFinder.CMDLoadGraph
 
@@ -136,7 +136,7 @@ class MPPSpec extends AnyFunSuite {
 
     val tag = FullPaymentTag(paymentHash = ByteVector32.One, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
     val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
-    val send = SendMultiPart(tag, Left(CltvExpiry(9)), routerConf, targetNodeId = s, onionTotal = 600000.msat, actualTotal = 600000.msat,
+    val send = SendMultiPart(tag, Left(CltvExpiry(9)), SplitInfo(600000L.msat, 600000L.msat),  routerConf, targetNodeId = s,
       totalFeeReserve = 6000L.msat, allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
     var senderDataWhenFailed = List.empty[OutgoingPaymentSenderData]
@@ -166,7 +166,7 @@ class MPPSpec extends AnyFunSuite {
 
     val tag = FullPaymentTag(paymentHash = ByteVector32.One, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
     val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1L.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
-    val send = SendMultiPart(tag, Left(CltvExpiry(9)), routerConf, targetNodeId = s, onionTotal = 400000L.msat, actualTotal = 400000L.msat,
+    val send = SendMultiPart(tag, Left(CltvExpiry(9)), SplitInfo(400000L.msat, 400000L.msat), routerConf, targetNodeId = s,
       totalFeeReserve = 6000L.msat, allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
     cm.opm process CreateSenderFSM(tag, noopListener)
@@ -200,7 +200,7 @@ class MPPSpec extends AnyFunSuite {
       assert(part2.cnc.commits.channelId != originalChosenCnc.commits.channelId)
       assert(cm.opm.data.payments(tag).data.inFlightParts.size == 2)
       assert(cm.opm.data.payments(tag).data.parts.size == 2)
-      part1.amount + part2.amount == send.actualTotal
+      part1.amount + part2.amount == send.split.myPart
     }
   }
 
@@ -216,7 +216,7 @@ class MPPSpec extends AnyFunSuite {
 
     val tag = FullPaymentTag(paymentHash = ByteVector32.One, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
     val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
-    val send = SendMultiPart(tag, Left(CltvExpiry(9)), routerConf, targetNodeId = s, onionTotal = 600000L.msat, actualTotal = 600000L.msat,
+    val send = SendMultiPart(tag, Left(CltvExpiry(9)), SplitInfo(600000L.msat, 600000L.msat), routerConf, targetNodeId = s,
       totalFeeReserve = 6000L.msat, allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
     val desc = ChannelDesc(ShortChannelId(3L), b, d)
@@ -257,7 +257,7 @@ class MPPSpec extends AnyFunSuite {
 
     val tag = FullPaymentTag(paymentHash = hash, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
     val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1L.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
-    val send = SendMultiPart(tag, Left(CltvExpiry(9)), routerConf, targetNodeId = s, onionTotal = 600000L.msat, actualTotal = 600000L.msat,
+    val send = SendMultiPart(tag, Left(CltvExpiry(9)), SplitInfo(600000L.msat, 600000L.msat), routerConf, targetNodeId = s,
       totalFeeReserve = 6000L.msat, allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
     val desc = ChannelDesc(ShortChannelId(3L), b, d)
@@ -312,16 +312,19 @@ class MPPSpec extends AnyFunSuite {
     val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1L.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
 
     import scodec.bits._
-    val tag1 = FullPaymentTag(paymentHash = ByteVector32(hex"0200000000000000000000000000000000000000000000000000000000000000"), paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
-    val send1 = SendMultiPart(tag1, Left(CltvExpiry(9)), routerConf, targetNodeId = s, onionTotal = 300000L.msat, actualTotal = 300000L.msat,
+    val tag1 = FullPaymentTag(paymentHash = ByteVector32(hex"0200000000000000000000000000000000000000000000000000000000000000"),
+      paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
+    val send1 = SendMultiPart(tag1, Left(CltvExpiry(9)), SplitInfo(300000L.msat, 300000L.msat), routerConf, targetNodeId = s,
       totalFeeReserve = 6000L.msat, allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
-    val tag2 = FullPaymentTag(paymentHash = ByteVector32(hex"0300000000000000000000000000000000000000000000000000000000000000"), paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
-    val send2 = SendMultiPart(tag2, Left(CltvExpiry(9)), routerConf, targetNodeId = s, onionTotal = 600000L.msat, actualTotal = 600000L.msat,
+    val tag2 = FullPaymentTag(paymentHash = ByteVector32(hex"0300000000000000000000000000000000000000000000000000000000000000"),
+      paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
+    val send2 = SendMultiPart(tag2, Left(CltvExpiry(9)), SplitInfo(600000L.msat, 600000L.msat), routerConf, targetNodeId = s,
       totalFeeReserve = 6000L.msat, allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
-    val tag3 = FullPaymentTag(paymentHash = ByteVector32(hex"0400000000000000000000000000000000000000000000000000000000000000"), paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
-    val send3 = SendMultiPart(tag3, Left(CltvExpiry(9)), routerConf, targetNodeId = s, onionTotal = 200000L.msat, actualTotal = 200000L.msat,
+    val tag3 = FullPaymentTag(paymentHash = ByteVector32(hex"0400000000000000000000000000000000000000000000000000000000000000"),
+      paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
+    val send3 = SendMultiPart(tag3, Left(CltvExpiry(9)), SplitInfo(200000L.msat, 200000L.msat), routerConf, targetNodeId = s,
       totalFeeReserve = 6000L.msat, allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
     cm.opm process CreateSenderFSM(tag1, noopListener)
@@ -362,7 +365,7 @@ class MPPSpec extends AnyFunSuite {
 
     val tag = FullPaymentTag(paymentHash = hash, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
     val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1L.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
-    val send = SendMultiPart(tag, Left(CltvExpiry(9)), routerConf, targetNodeId = s, onionTotal = 600000L.msat, actualTotal = 600000L.msat,
+    val send = SendMultiPart(tag, Left(CltvExpiry(9)), SplitInfo(600000L.msat, 600000L.msat), routerConf, targetNodeId = s,
       totalFeeReserve = 6000L.msat, allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
     var senderDataWhenFailed = List.empty[OutgoingPaymentSenderData]
@@ -376,7 +379,7 @@ class MPPSpec extends AnyFunSuite {
     WAIT_UNTIL_TRUE {
       val parts1 = cm.opm.data.payments(tag).data.parts.values
       // Our only channel is offline, sender FSM awaits for it to become operational
-      assert(parts1.head.asInstanceOf[WaitForChanOnline].amount == send.actualTotal)
+      assert(parts1.head.asInstanceOf[WaitForChanOnline].amount == send.split.myPart)
       parts1.size == 1
     }
 
@@ -405,7 +408,7 @@ class MPPSpec extends AnyFunSuite {
 
     val tag = FullPaymentTag(paymentHash = ByteVector32.One, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
     val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
-    val send = SendMultiPart(tag, Left(CltvExpiry(9)), routerConf, targetNodeId = s, onionTotal = 600000.msat, actualTotal = 600000.msat,
+    val send = SendMultiPart(tag, Left(CltvExpiry(9)), SplitInfo(600000L.msat, 600000L.msat), routerConf, targetNodeId = s,
       totalFeeReserve = 6000L.msat, allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
     var senderDataWhenFailed = List.empty[OutgoingPaymentSenderData]
@@ -436,7 +439,7 @@ class MPPSpec extends AnyFunSuite {
     cm.all = Channel.load(Set(cm), cm.chanBag)
 
     val tag = FullPaymentTag(paymentHash = ByteVector32.One, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
-    val send = SendMultiPart(tag, Left(CltvExpiry(9)), routerConf, targetNodeId = d, onionTotal = 600000L.msat, actualTotal = 600000L.msat,
+    val send = SendMultiPart(tag, Left(CltvExpiry(9)), SplitInfo(600000L.msat, 600000L.msat), routerConf, targetNodeId = d,
       totalFeeReserve = 6000L.msat, allowedChans = cm.all.values.toSeq)
 
     cm.opm process CreateSenderFSM(tag, noopListener)

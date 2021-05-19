@@ -265,7 +265,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
         val routerConf = LNParams.routerConf.copy(maxCltvDelta = expiryIn(adds) - inner.outgoingCltv - LNParams.trampoline.cltvExpiryDelta)
         // It makes no sense to try to route out a payment through channels used by peer to route it in, this also includes possible unused multiple channels with same peer
         val allowedChans = cm.all -- adds.map(_.add.channelId).flatMap(cm.all.get).flatMap(Channel.chanAndCommitsOpt).map(_.commits.remoteInfo.nodeId).flatMap(cm.fromNode).map(_.commits.channelId)
-        val send = SendMultiPart(fullTag, Left(inner.outgoingCltv), routerConf, inner.outgoingNodeId, inner.amountToForward, inner.amountToForward, totalFeeReserve, allowedChans.values.toSeq)
+        val send = SendMultiPart(fullTag, Left(inner.outgoingCltv), SplitInfo(inner.amountToForward, inner.amountToForward), routerConf, inner.outgoingNodeId, totalFeeReserve, allowedChans.values.toSeq)
 
         become(TrampolineProcessing(inner.outgoingNodeId), SENDING)
         // If invoice features are present then sender is asking for non-trampoline relay, it's known that recipient supports MPP
