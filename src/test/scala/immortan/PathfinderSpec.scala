@@ -67,7 +67,7 @@ class PathfinderSpec extends AnyFunSuite {
     val fromKey = randomKey.publicKey
     val fakeLocalEdge = Tools.mkFakeLocalEdge(from = fromKey, toPeer = a)
     val routeRequest = makeRouteRequest(100000.msat, getParams(routerConf, 100000.msat, offChainFeeRatio), fromKey, fakeLocalEdge)
-    pf process Tuple2(sender, routeRequest) // Will get rejected reply as message parameter
+    pf process PathFinder.FindRoute(sender, routeRequest) // Will get rejected reply as message parameter
     WAIT_UNTIL_TRUE(responses == PathFinder.NotifyOperational :: PathFinder.NotifyRejected :: Nil)
   }
 
@@ -82,7 +82,7 @@ class PathfinderSpec extends AnyFunSuite {
 
     val sender: CanBeRepliedTo = new CanBeRepliedTo {
       override def process(reply: Any): Unit = reply match {
-        case PathFinder.NotifyOperational => pf process Tuple2(this, routeRequest) // Send route request once notified (as listener)
+        case PathFinder.NotifyOperational => pf process PathFinder.FindRoute(this, routeRequest) // Send route request once notified (as listener)
         case found: RouteFound => obtainedRoute = found // Store obtained route (as message parameter)
       }
     }
@@ -109,34 +109,34 @@ class PathfinderSpec extends AnyFunSuite {
     // Assisted channel is now reachable
     pf process edgeDSFromD
     pf process PathFinder.CMDLoadGraph
-    pf process Tuple2(sender, routeRequest)
+    pf process PathFinder.FindRoute(sender, routeRequest)
     WAIT_UNTIL_TRUE(response.asInstanceOf[RouteFound].route.hops.map(_.nextNodeId) == a :: c :: d :: s :: Nil)
 
     // Assisted channel has been updated
     val updateDSFromD = makeEdge(ShortChannelId(6L), d, s, 4.msat, 100, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
     pf process updateDSFromD
-    pf process Tuple2(sender, routeRequest)
+    pf process PathFinder.FindRoute(sender, routeRequest)
     WAIT_UNTIL_TRUE(response.asInstanceOf[RouteFound].route.hops.map(_.nextNodeId) == a :: c :: d :: s :: Nil)
     WAIT_UNTIL_TRUE(response.asInstanceOf[RouteFound].route.routedPerChannelHop.last._2.edge.updExt.update.feeBaseMsat == 4.msat)
 
     // Public channel has been updated, CLTV got worse so another channel has been selected
     val updateACFromA1: ChannelUpdate = makeUpdate(ShortChannelId(2L), a, c, 1.msat, 10, cltvDelta = CltvExpiryDelta(154), minHtlc = 10L.msat, maxHtlc = 500000.msat)
     pf process updateACFromA1
-    pf process Tuple2(sender, routeRequest)
+    pf process PathFinder.FindRoute(sender, routeRequest)
     WAIT_UNTIL_TRUE(response.asInstanceOf[RouteFound].route.hops.map(_.nextNodeId) == a :: b :: d :: s :: Nil)
 
     // Another public channel has been updated, a better one got disabled so the one with worse fee is selected again
     val disabled = Announcements.makeChannelFlags(isNode1 = Announcements.isNode1(a, b), enable = false)
     val updateABFromA1 = makeUpdate(ShortChannelId(1L), a, b, 1.msat, 10, cltvDelta = CltvExpiryDelta(14), minHtlc = 10L.msat, maxHtlc = 500000.msat).copy(channelFlags = disabled)
     pf process updateABFromA1
-    pf process Tuple2(sender, routeRequest)
+    pf process PathFinder.FindRoute(sender, routeRequest)
     WAIT_UNTIL_TRUE(response.asInstanceOf[RouteFound].route.hops.map(_.nextNodeId) == a :: c :: d :: s :: Nil)
 
     // The only assisted channel got disabled, payee is now unreachable
     val disabled1 = Announcements.makeChannelFlags(isNode1 = Announcements.isNode1(d, s), enable = false)
     val updateDSFromD1 = makeUpdate(ShortChannelId(6L), d, s, 2.msat, 100, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat).copy(channelFlags = disabled1)
     pf process updateDSFromD1
-    pf process Tuple2(sender, routeRequest)
+    pf process PathFinder.FindRoute(sender, routeRequest)
     WAIT_UNTIL_TRUE(response.isInstanceOf[NoRouteAvailable])
   }
 }
