@@ -302,7 +302,7 @@ object Psbt {
 
   private def signNonWitness(priv: PrivateKey, inputIndex: Int, input: PartiallySignedInput, global: Global, utxo: Transaction): Try[PartiallySignedInput] = {
     val txIn = global.tx.txIn(inputIndex)
-    val redeemScript = input.redeemScript match {
+    val redeemScript: Try[Seq[ScriptElt]] = input.redeemScript match {
       case Some(script) =>
         // If a redeem script is provided in the partially signed input, the utxo must be a p2sh for that script.
         val p2sh = Script.write(Script.pay2sh(script))
@@ -321,7 +321,7 @@ object Psbt {
   }
 
   private def signWitness(priv: PrivateKey, inputIndex: Int, input: PartiallySignedInput, global: Global, utxo: TxOut): Try[PartiallySignedInput] = {
-    val redeemScript = input.redeemScript match {
+    val redeemScript: Try[Seq[ScriptElt]] = input.redeemScript match {
       case Some(script) =>
         // If a redeem script is provided in the partially signed input, the utxo must be a p2sh for that script.
         val p2sh = Script.write(Script.pay2sh(script))
@@ -467,8 +467,14 @@ object Psbt {
       outputs <- readOutputs(input, global.tx.txOut.length)
     } yield Psbt(global, inputs, outputs)
 
+    def readNBytes(input: InputStream, n: Int): Array[Byte] = {
+      val target = new Array[Byte](n)
+      input.read(target)
+      target
+    }
+
     private def readMagicBytes(input: InputStream): Try[Boolean] = Try {
-      input.readNBytes(4).toList
+      readNBytes(input, 4).toList
     } match {
       case Success(0x70 :: 0x73 :: 0x62 :: 0x74 :: Nil) => Success(true)
       case _ => Failure(new IllegalArgumentException("invalid magic bytes: psbt must start with 0x70736274"))
@@ -488,7 +494,7 @@ object Psbt {
         case DataEntry(key, _) if key.length != 1 => Failure(new IllegalArgumentException("psbt version key must contain exactly 1 byte"))
         case DataEntry(_, value) if value.length != 4 => Failure(new IllegalArgumentException("psbt version must be exactly 4 bytes"))
         case DataEntry(_, value) => Protocol.uint32(value, ByteOrder.LITTLE_ENDIAN) match {
-          case v if v > Version => Failure(new IllegalArgumentException(s"unsupported psbt version: $v"))
+          case v if v > Version => Failure(new IllegalArgumentException(s"unsupported psbt version: $v")): Try[Long]
           case v => Success(v)
         }
       }.getOrElse(Success(0))
@@ -497,7 +503,7 @@ object Psbt {
         case DataEntry(_, value) =>
           val tx = Transaction.read(value.toArray, Protocol.PROTOCOL_VERSION | Transaction.SERIALIZE_TRANSACTION_NO_WITNESS)
           if (tx.txIn.exists(input => input.hasWitness || input.signatureScript.nonEmpty)) {
-            Failure(new IllegalArgumentException("psbt tx inputs must have empty scriptSigs and witness"))
+            Failure(new IllegalArgumentException("psbt tx inputs must have empty scriptSigs and witness")): Try[Transaction]
           } else {
             Success(tx)
           }
@@ -518,7 +524,7 @@ object Psbt {
             val masterKeyFingerprint = Protocol.uint32(value.take(4), ByteOrder.BIG_ENDIAN)
             val derivationPath = KeyPath((0 until depth).map(i => Protocol.uint32(value.slice(4 * (i + 1), 4 * (i + 2)), ByteOrder.LITTLE_ENDIAN)))
             if (derivationPath.lastChildNumber != childNumber) {
-              Failure(new IllegalArgumentException("psbt xpub last child number mismatch"))
+              Failure(new IllegalArgumentException("psbt xpub last child number mismatch")): Try[ExtendedPublicKeyWithMaster]
             } else {
               Success(ExtendedPublicKeyWithMaster(prefix, masterKeyFingerprint, ExtendedPublicKey(publicKey, chaincode, depth, derivationPath, parent)))
             }
@@ -543,7 +549,7 @@ object Psbt {
           if (inputTx.txid == txIn.outPoint.txid && txIn.outPoint.index < inputTx.txOut.length) {
             Success(Some(inputTx))
           } else {
-            Failure(new IllegalArgumentException("psbt non-witness utxo does not match psbt outpoint"))
+            Failure(new IllegalArgumentException("psbt non-witness utxo does not match psbt outpoint")): Try[Option[Transaction]]
           }
       }.getOrElse(Success(None))
       val witnessUtxo_opt: Try[Option[TxOut]] = known.find(_.key.head == 0x01).map {
@@ -666,8 +672,8 @@ object Psbt {
           // 0x00 is used as separator to mark the end of a data map.
           None
         case keyLength =>
-          val key = input.readNBytes(keyLength.toInt)
-          val value = input.readNBytes(Protocol.varint(input).toInt)
+          val key = readNBytes(input, keyLength.toInt)
+          val value = readNBytes(input, Protocol.varint(input).toInt)
           Some(DataEntry(ByteVector(key), ByteVector(value)))
       }
     }
