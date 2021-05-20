@@ -42,12 +42,12 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface) extends PaymentBag
 
   def updOkOutgoing(fulfill: RemoteFulfill, fee: MilliSatoshi): Unit = {
     db.change(PaymentTable.updOkOutgoingSql, fulfill.preimage.toHex, fee.toLong: JLong, fulfill.ourAdd.paymentHash.toHex)
-    ChannelMaster.preimageObtainStream.onNext(fulfill.ourAdd.paymentHash)
+    ChannelMaster.preimageObtainStream.onNext(value = fulfill.ourAdd.paymentHash)
   }
 
   def updOkIncoming(receivedAmount: MilliSatoshi, paymentHash: ByteVector32): Unit = {
     db.change(PaymentTable.updOkIncomingSql, receivedAmount.toLong: JLong, System.currentTimeMillis: JLong, paymentHash.toHex)
-    ChannelMaster.preimageRevealStream.onNext(paymentHash)
+    ChannelMaster.preimageRevealStream.onNext(value = paymentHash)
   }
 
   def addRelayedPreimageInfo(fullTag: FullPaymentTag, preimage: ByteVector32, relayed: MilliSatoshi, earned: MilliSatoshi): Unit =

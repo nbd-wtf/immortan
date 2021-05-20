@@ -56,8 +56,8 @@ case class LNUrl(request: String) {
   }
 
   def level1DataResponse: Observable[LNUrlData] = Rx.ioQueue.map { _ =>
-    val level1DataResponse = HttpRequest.get(uri.toString, false).header("Connection", "close")
-    val lnUrlData = to[LNUrlData](LNUrl guardResponse level1DataResponse.connectTimeout(15000).body)
+    val response = HttpRequest.get(uri.toString, false).header("Connection", "close")
+    val lnUrlData = to[LNUrlData](LNUrl guardResponse response.connectTimeout(15000).body)
     require(lnUrlData.checkAgainstParent(this), "1st/2nd level callback domain mismatch")
     lnUrlData
   }
@@ -65,9 +65,11 @@ case class LNUrl(request: String) {
 
 trait LNUrlData {
   def checkAgainstParent(lnUrl: LNUrl): Boolean = true
-  def level2DataResponse(req: Uri.Builder): HttpRequest = {
-    val finalReq = req.appendQueryParameter(randomBytes(4).toHex, new String)
-    HttpRequest.get(finalReq.build.toString, false).header("Connection", "close")
+
+  def level2DataResponse(bld: Uri.Builder): Observable[String] = Rx.ioQueue.map { _ =>
+    val requestWithCacheProtection = bld.appendQueryParameter(randomBytes(4).toHex, new String)
+    val response = HttpRequest.get(requestWithCacheProtection.build.toString, false).header("Connection", "close")
+    LNUrl.guardResponse(response.body)
   }
 }
 
@@ -101,8 +103,8 @@ case class HostedChannelRequest(uri: String, alias: Option[String], k1: String) 
 
 case class WithdrawRequest(callback: String, k1: String, maxWithdrawable: Long, defaultDescription: String, minWithdrawable: Option[Long] = None) extends LNUrlData { me =>
 
-  def requestWithdraw(pr: PaymentRequest): HttpRequest = level2DataResponse {
-    callbackUri.buildUpon.appendQueryParameter("pr", PaymentRequest write pr).appendQueryParameter("k1", k1)
+  def requestWithdraw(ext: PaymentRequestExt): Observable[String] = level2DataResponse {
+    callbackUri.buildUpon.appendQueryParameter("pr", ext.raw).appendQueryParameter("k1", k1)
   }
 
   override def checkAgainstParent(lnUrl: LNUrl): Boolean = lnUrl.uri.getHost == callbackUri.getHost
@@ -110,6 +112,10 @@ case class WithdrawRequest(callback: String, k1: String, maxWithdrawable: Long, 
   val callbackUri: Uri = LNUrl.checkHost(callback)
 
   val minCanReceive: MilliSatoshi = minWithdrawable.map(_.msat).getOrElse(LNParams.minPayment).max(LNParams.minPayment)
+
+  val descriptionOpt: Option[String] = Some(defaultDescription).map(_.trim).map(_ take 72).filter(_.nonEmpty)
+  val brDescription: String = descriptionOpt.map(desc => s"<br><br>$desc").getOrElse(new String)
+  val descriptionOrEmpty: String = descriptionOpt.getOrElse(new String)
 
   require(minCanReceive <= maxWithdrawable.msat, s"$maxWithdrawable is less than min $minCanReceive")
 }
@@ -137,7 +143,7 @@ case class PayLinkInfo(image64: String, lnurl: LNUrl, text: String, lastMsat: Mi
 
 case class PayRequest(callback: String, maxSendable: Long, minSendable: Long, metadata: String, commentAllowed: Option[Int] = None) extends LNUrlData { me =>
 
-  def requestFinal(amount: MilliSatoshi): HttpRequest = level2DataResponse {
+  def requestFinal(amount: MilliSatoshi): Observable[String] = level2DataResponse {
     callbackUri.buildUpon.appendQueryParameter("amount", amount.toLong.toString)
   }
 
