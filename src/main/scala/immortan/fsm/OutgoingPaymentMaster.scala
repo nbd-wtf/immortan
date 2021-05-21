@@ -160,8 +160,9 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
       data.payments.values.foreach(_ doProcess bag)
 
     case (RemoveSenderFSM(fullTag), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) if data.payments.contains(fullTag) =>
+      // First we get their fail, then stateUpdateStream fires, then we fire it here again if FSM is to be removed
       become(data.copy(payments = data.payments - fullTag), state)
-      ChannelMaster.notifyStateUpdated
+      ChannelMaster.next(ChannelMaster.stateUpdateStream)
 
     case (CreateSenderFSM(fullTag, listener), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) if !data.payments.contains(fullTag) =>
       val data1 = data.payments.updated(value = new OutgoingPaymentSender(fullTag, listener, me), key = fullTag)
