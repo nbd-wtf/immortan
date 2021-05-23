@@ -30,6 +30,7 @@ object Tools {
   type Fiat2Btc = Map[String, Double]
   final val SEPARATOR = " "
 
+  def trimmed(text: String): String = text.trim.take(144)
   def none: PartialFunction[Any, Unit] = { case _ => }
   def runAnd[T](result: T)(action: Any): T = result
 
@@ -38,7 +39,7 @@ object Tools {
   }
 
   def ratio(bigger: MilliSatoshi, lesser: MilliSatoshi): Long =
-    Try(lesser.toLong).map(bigger.toLong * 100D / _).map(_.toLong).getOrElse(0L)
+    Try(bigger.toLong).map(lesser.toLong * 100D / _).map(_.toLong).getOrElse(0L)
 
   def mapKeys[K, V, K1](items: mutable.Map[K, V], mapper: K => K1, defVal: V): mutable.Map[K1, V] =
     items.map { case (key, value) => mapper(key) -> value } withDefaultValue defVal

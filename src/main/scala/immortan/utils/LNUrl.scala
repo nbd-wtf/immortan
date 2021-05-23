@@ -112,7 +112,7 @@ case class WithdrawRequest(callback: String, k1: String, maxWithdrawable: Long, 
 
   val minCanReceive: MilliSatoshi = minWithdrawable.map(_.msat).getOrElse(LNParams.minPayment).max(LNParams.minPayment)
 
-  val descriptionOpt: Option[String] = Some(defaultDescription).map(_.trim).map(_ take 72).filter(_.nonEmpty)
+  val descriptionOpt: Option[String] = Some(defaultDescription).map(trimmed).filter(_.nonEmpty)
   val brDescription: String = descriptionOpt.map(desc => s"<br><br>$desc").getOrElse(new String)
   val descriptionOrEmpty: String = descriptionOpt.getOrElse(new String)
 
@@ -135,25 +135,24 @@ object PayRequest {
 
 case class PayRequest(callback: String, maxSendable: Long, minSendable: Long, metadata: String, commentAllowed: Option[Int] = None) extends LNUrlData { me =>
 
-  def requestFinal(amount: MilliSatoshi): Observable[String] = level2DataResponse {
-    callbackUri.buildUpon.appendQueryParameter("amount", amount.toLong.toString)
+  def requestFinal(comment: Option[String], amount: MilliSatoshi): Observable[String] = level2DataResponse {
+    val base: Uri.Builder = callbackUri.buildUpon.appendQueryParameter("amount", amount.toLong.toString)
+    comment match { case Some(text) => base.appendQueryParameter("comment", text) case _ => base }
   }
 
   override def checkAgainstParent(lnUrl: LNUrl): Boolean = lnUrl.uri.getHost == callbackUri.getHost
 
   def metaDataHash: ByteVector32 = Crypto.sha256(ByteVector view metadata.getBytes)
 
-  private val decodedMetadata = to[PayMetaData](metadata)
-
   val callbackUri: Uri = LNUrl.checkHost(callback)
 
-  val metaDataTexts: List[String] = decodedMetadata.collect { case List("text/plain", txt) => txt }
+  val metaDataTexts: List[String] = to[PayMetaData](metadata).collect { case List("text/plain", txt) => txt }
 
   require(metaDataTexts.size == 1, "There must be exactly one text/plain entry in metadata")
 
   require(minSendable <= maxSendable, s"max=$maxSendable while min=$minSendable")
 
-  val metaDataTextPlain: String = metaDataTexts.head take 72
+  val metaDataTextPlain: String = trimmed(metaDataTexts.head)
 }
 
 case class PayRequestFinal(successAction: Option[PaymentAction], routes: List[AdditionalRoute], pr: String) extends LNUrlData {
