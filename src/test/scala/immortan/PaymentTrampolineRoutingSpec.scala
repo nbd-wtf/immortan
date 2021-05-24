@@ -271,8 +271,8 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer-2")
     cm.chanBag.put(hcs1)
     cm.all = Channel.load(Set(cm), cm.chanBag)
-    // Our only outgoing channel got SUSPENDED while we were collecting payment parts
-    cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.SUSPENDED))
+    // Our only outgoing channel got unusable while we were collecting payment parts
+    cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.CLOSING))
 
     val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerLegacyTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, d, CltvExpiryDelta(720), feeReserve)
     val reasonableTrampoline1 = createResolution(pr, 707000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]

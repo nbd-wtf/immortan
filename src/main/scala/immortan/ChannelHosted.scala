@@ -89,7 +89,7 @@ abstract class ChannelHosted extends Channel { me =>
 
 
       // Relaxed constraints for receiveng preimages over HCs
-      case (hc: HostedCommits, fulfill: UpdateFulfillHtlc, OPEN | SLEEPING | SUSPENDED) =>
+      case (hc: HostedCommits, fulfill: UpdateFulfillHtlc, OPEN | SLEEPING) =>
         val (hc1, ourAdd: UpdateAddHtlc) = hc.receiveFulfill(fulfill)
         val filfill = RemoteFulfill(ourAdd, fulfill.paymentPreimage)
         BECOME(data1 = hc1, state1 = state)
@@ -129,7 +129,7 @@ abstract class ChannelHosted extends Channel { me =>
 
 
       // CMD_SIGN will be sent from ChannelMaster strictly after outgoing FSM sends this command
-      case (hc: HostedCommits, cmd: CMD_FULFILL_HTLC, OPEN | SLEEPING | SUSPENDED) if !hc.alreadyReplied(cmd.theirAdd.id) =>
+      case (hc: HostedCommits, cmd: CMD_FULFILL_HTLC, OPEN | SLEEPING) if !hc.alreadyReplied(cmd.theirAdd.id) =>
         val msg = UpdateFulfillHtlc(hc.channelId, cmd.theirAdd.id, cmd.preimage)
         StoreBecomeSend(hc.addLocalProposal(msg), state, msg)
 
@@ -146,7 +146,7 @@ abstract class ChannelHosted extends Channel { me =>
         StoreBecomeSend(hc.addLocalProposal(msg), state, msg)
 
 
-      case (hc: HostedCommits, CMD_SOCKET_ONLINE, SLEEPING | SUSPENDED) =>
+      case (hc: HostedCommits, CMD_SOCKET_ONLINE, OPEN | SLEEPING) =>
         val invokeMsg = InvokeHostedChannel(LNParams.chainHash, hc.lastCrossSignedState.refundScriptPubKey, ByteVector.empty)
         SEND(hc.getError getOrElse invokeMsg)
 
@@ -216,19 +216,19 @@ abstract class ChannelHosted extends Channel { me =>
         else localSuspend(hc, ERR_HOSTED_INVALID_RESIZE)
 
 
-      case (hc: HostedCommits, remoteError: Error, WAIT_FOR_ACCEPT | OPEN | SLEEPING) if hc.remoteError.isEmpty =>
-        StoreBecomeSend(hc.copy(remoteError = remoteError.toSome), SUSPENDED)
+      case (hc: HostedCommits, remoteError: Error, WAIT_FOR_ACCEPT | OPEN) if hc.remoteError.isEmpty =>
+        StoreBecomeSend(hc.copy(remoteError = remoteError.toSome), OPEN)
 
 
-      case (hc: HostedCommits, remoteSO: StateOverride, SUSPENDED) =>
-        StoreBecomeSend(hc.copy(overrideProposal = remoteSO.toSome), SUSPENDED)
+      case (hc: HostedCommits, remoteSO: StateOverride, OPEN | SLEEPING) if hc.getError.isDefined =>
+        StoreBecomeSend(hc.copy(overrideProposal = remoteSO.toSome), state)
 
 
-      case (hc: HostedCommits, cmd @ CMD_HOSTED_STATE_OVERRIDE(remoteSO), SUSPENDED) =>
-        val completeLocalLCSS = hc.lastCrossSignedState.copy(incomingHtlcs = Nil, outgoingHtlcs = Nil,
-          localBalanceMsat = hc.lastCrossSignedState.initHostedChannel.channelCapacityMsat - remoteSO.localBalanceMsat,
-          remoteBalanceMsat = remoteSO.localBalanceMsat, localUpdates = remoteSO.remoteUpdates, remoteUpdates = remoteSO.localUpdates,
-          blockDay = remoteSO.blockDay, remoteSigOfLocal = remoteSO.localSigOfRemoteLCSS).withLocalSigOfRemote(hc.remoteInfo.nodeSpecificPrivKey)
+      case (hc: HostedCommits, cmd @ CMD_HOSTED_STATE_OVERRIDE(remoteSO), OPEN | SLEEPING) if hc.getError.isDefined =>
+        val overriddenLocalBalance = hc.lastCrossSignedState.initHostedChannel.channelCapacityMsat - remoteSO.localBalanceMsat
+        val completeLocalLCSS = hc.lastCrossSignedState.copy(incomingHtlcs = Nil, outgoingHtlcs = Nil, localBalanceMsat = overriddenLocalBalance,
+          remoteBalanceMsat = remoteSO.localBalanceMsat, localUpdates = remoteSO.remoteUpdates, remoteUpdates = remoteSO.localUpdates, blockDay = remoteSO.blockDay,
+          remoteSigOfLocal = remoteSO.localSigOfRemoteLCSS).withLocalSigOfRemote(hc.remoteInfo.nodeSpecificPrivKey)
 
         val isRemoteSigOk = completeLocalLCSS.verifyRemoteSig(hc.remoteInfo.nodeId)
         val hc1 = restoreCommits(completeLocalLCSS, hc.remoteInfo)
@@ -243,7 +243,6 @@ abstract class ChannelHosted extends Channel { me =>
 
 
       case (null, wait: WaitRemoteHostedReply, null) => super.become(wait, WAIT_FOR_INIT)
-      case (null, hc: HostedCommits, null) if hc.getError.isDefined => super.become(hc, SUSPENDED)
       case (null, hc: HostedCommits, null) => super.become(hc, SLEEPING)
       case _ =>
     }
@@ -257,7 +256,7 @@ abstract class ChannelHosted extends Channel { me =>
   def localSuspend(hc: HostedCommits, errCode: String): Unit = {
     val localError = Error(hc.channelId, ByteVector fromValidHex errCode)
     val hc1 = if (hc.localError.isDefined) hc else hc.copy(localError = localError.toSome)
-    StoreBecomeSend(hc1, SUSPENDED, localError)
+    StoreBecomeSend(hc1, state, localError)
   }
 
   def fakeFailedOurAdds(hc: HostedCommits, hc1: HostedCommits): Set[RemoteUpdateFail] =
