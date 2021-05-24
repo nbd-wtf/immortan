@@ -89,22 +89,19 @@ abstract class ChannelHosted extends Channel { me =>
 
 
       // Relaxed constraints for receiveng preimages over HCs
-      case (hc: HostedCommits, msg: UpdateFulfillHtlc, OPEN | SLEEPING | SUSPENDED) =>
-        val ourAdd = hc.nextLocalSpec.findOutgoingHtlcById(msg.id).get.add
-        val filfill = RemoteFulfill(ourAdd, msg.paymentPreimage)
-        BECOME(hc.addRemoteProposal(msg), state)
+      case (hc: HostedCommits, fulfill: UpdateFulfillHtlc, OPEN | SLEEPING | SUSPENDED) =>
+        val (hc1, ourAdd: UpdateAddHtlc) = hc.receiveFulfill(fulfill)
+        val filfill = RemoteFulfill(ourAdd, fulfill.paymentPreimage)
+        BECOME(data1 = hc1, state1 = state)
         events.fulfillReceived(filfill)
 
 
       case (hc: HostedCommits, fail: UpdateFailHtlc, OPEN) =>
-        require(hc.localSpec.findOutgoingHtlcById(fail.id).isDefined)
-        BECOME(hc.addRemoteProposal(fail), OPEN)
+        BECOME(hc.receiveFail(fail), OPEN)
 
 
       case (hc: HostedCommits, malform: UpdateFailMalformedHtlc, OPEN) =>
-        require(0 == (malform.failureCode & FailureMessageCodecs.BADONION), "wrong bad onion code")
-        require(hc.localSpec.findOutgoingHtlcById(malform.id).isDefined)
-        BECOME(hc.addRemoteProposal(malform), OPEN)
+        BECOME(hc.receiveFailMalformed(malform), OPEN)
 
 
       case (hc: HostedCommits, CMD_SIGN, OPEN) if hc.nextLocalUpdates.nonEmpty || hc.resizeProposal.isDefined =>
@@ -117,19 +114,17 @@ abstract class ChannelHosted extends Channel { me =>
         attemptStateUpdate(remoteSU, hc)
 
 
-      case (hc: HostedCommits, cmd: CMD_ADD_HTLC, OPEN) =>
+      case (hc: HostedCommits, cmd: CMD_ADD_HTLC, _) =>
+        if (SLEEPING == state) throw CMDException(ChannelOffline, cmd)
+        if (OPEN != state) throw CMDException(new RuntimeException, cmd)
+        if (hc.getError.isDefined) throw CMDException(new RuntimeException, cmd)
         val (hc1, msg) = hc.sendAdd(cmd, LNParams.blockCount.get)
         StoreBecomeSend(hc1, OPEN, msg)
         process(CMD_SIGN)
 
 
-      case (_: HostedCommits, cmd: CMD_ADD_HTLC, SLEEPING) =>
-        // Instruct payment master to not omit this channel yet
-        throw CMDException(ChannelOffline, cmd)
-
-
-      case (_: HostedCommits, cmd: CMD_ADD_HTLC, _) =>
-        // Instruct payment master to omit this channel
+      case (_, cmd: CMD_ADD_HTLC, _) =>
+        // Omit this channel in any other state
         throw CMDException(new RuntimeException, cmd)
 
 
@@ -152,17 +147,14 @@ abstract class ChannelHosted extends Channel { me =>
 
 
       case (hc: HostedCommits, CMD_SOCKET_ONLINE, SLEEPING | SUSPENDED) =>
-        val refundScriptPubKey: ByteVector = hc.lastCrossSignedState.refundScriptPubKey
-        val invokeMsg = InvokeHostedChannel(LNParams.chainHash, refundScriptPubKey, ByteVector.empty)
+        val invokeMsg = InvokeHostedChannel(LNParams.chainHash, hc.lastCrossSignedState.refundScriptPubKey, ByteVector.empty)
         SEND(hc.getError getOrElse invokeMsg)
 
 
       case (hc: HostedCommits, CMD_SOCKET_OFFLINE, OPEN) => BECOME(hc, SLEEPING)
 
 
-      case (hc: HostedCommits, _: InitHostedChannel, SLEEPING) =>
-        // Peer has lost this channel, they may re-sync from our LCSS
-        SEND(hc.lastCrossSignedState)
+      case (hc: HostedCommits, _: InitHostedChannel, SLEEPING) => SEND(hc.lastCrossSignedState)
 
 
       case (hc: HostedCommits, remoteLCSS: LastCrossSignedState, SLEEPING) =>
