@@ -8,17 +8,16 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.blockchain._
 import com.softwaremill.quicklens._
 import fr.acinq.eclair.transactions._
+
 import akka.actor.{ActorRef, Props}
 import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
 import fr.acinq.eclair.transactions.Transactions.TxOwner
-import fr.acinq.eclair.payment.OutgoingPacket
-import fr.acinq.eclair.router.Announcements
-import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.eclair.channel.Helpers.Closing
+import fr.acinq.eclair.payment.OutgoingPacket
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.eclair.crypto.ShaChain
 import scodec.bits.ByteVector
 import immortan.utils.Rx
-
 import scala.util.Try
 
 
@@ -327,8 +326,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         if (!isTheirFinalScriptPubkeyValid) throw ChannelTransitionFail(norm.commitments.channelId)
         if (norm.commitments.remoteHasUnsignedOutgoingHtlcs) throw ChannelTransitionFail(norm.commitments.channelId)
         if (norm.commitments.remoteHasUnsignedOutgoingUpdateFee) throw ChannelTransitionFail(norm.commitments.channelId)
-
-        if (!norm.commitments.localHasUnsignedOutgoingHtlcs) {
+        if (norm.commitments.localHasUnsignedOutgoingHtlcs) BECOME(norm.copy(remoteShutdown = remote.toSome), OPEN) else {
           val (data1, replies) = maybeStartNegotiations(norm, remote, LNParams.feeRatesInfo.onChainFeeConf)
           StoreBecomeSend(data1, OPEN, replies:_*)
         }
