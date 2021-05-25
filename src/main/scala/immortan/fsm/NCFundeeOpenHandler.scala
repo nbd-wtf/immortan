@@ -20,6 +20,7 @@ abstract class NCFundeeOpenHandler(info: RemoteNodeInfo, theirOpen: OpenChannel,
 
   private val makeChanListener = new ConnectionListener with ChannelListener { me =>
     override def onDisconnect(worker: CommsTower.Worker): Unit = CommsTower.rmListenerNative(info, me)
+
     override def onMessage(worker: CommsTower.Worker, message: LightningMessage): Unit = message match {
       case msg: HasTemporaryChannelId if msg.temporaryChannelId == theirOpen.temporaryChannelId => freshChannel process msg
       case _ => // Do nothing to avoid conflicts

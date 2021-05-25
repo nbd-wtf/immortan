@@ -109,12 +109,11 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
           init.localParams.keys.revocationKey.publicKey, init.localParams.walletStaticPaymentBasepoint, init.localParams.keys.delayedPaymentKey.publicKey,
           init.localParams.keys.htlcKey.publicKey, init.localParams.keys.commitmentPoint(index = 0L), emptyUpfrontShutdown)
 
-        val remoteParams = RemoteParams(init.theirOpen.dustLimitSatoshis, init.theirOpen.maxHtlcValueInFlightMsat,
-          init.theirOpen.channelReserveSatoshis, init.theirOpen.htlcMinimumMsat, init.theirOpen.toSelfDelay, init.theirOpen.maxAcceptedHtlcs,
-          init.theirOpen.fundingPubkey, init.theirOpen.revocationBasepoint, init.theirOpen.paymentBasepoint, init.theirOpen.delayedPaymentBasepoint,
-          init.theirOpen.htlcBasepoint)
+        val remoteParams = RemoteParams(init.theirOpen.dustLimitSatoshis, init.theirOpen.maxHtlcValueInFlightMsat, init.theirOpen.channelReserveSatoshis, init.theirOpen.htlcMinimumMsat,
+          init.theirOpen.toSelfDelay, init.theirOpen.maxAcceptedHtlcs, init.theirOpen.fundingPubkey, init.theirOpen.revocationBasepoint, init.theirOpen.paymentBasepoint,
+          init.theirOpen.delayedPaymentBasepoint, init.theirOpen.htlcBasepoint)
 
-        Helpers.validateParamsFundee(LNParams.ourInit.features, init.theirOpen, LNParams.feeRatesInfo.onChainFeeConf)
+        Helpers.validateParamsFundee(init.theirOpen, LNParams.feeRatesInfo.onChainFeeConf)
         val data1 = DATA_WAIT_FOR_FUNDING_CREATED(init, remoteParams, accept)
         BECOME(data1, WAIT_FOR_ACCEPT)
         SEND(accept)
@@ -345,22 +344,13 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
         normalData match {
           case data1: DATA_CLOSING =>
+            for (close <- data1.mutualClosePublished) doPublish(close)
+            for (close <- data1.localCommitPublished) doPublish(close)
+            for (close <- data1.remoteCommitPublished) doPublish(close)
+            for (close <- data1.revokedCommitPublished) doPublish(close)
+            for (close <- data1.nextRemoteCommitPublished) doPublish(close)
+            for (close <- data1.futureRemoteCommitPublished) doPublish(close)
             BECOME(data1, state1 = CLOSING)
-            Helpers.Closing.isClosingTypeAlreadyKnown(data1) match {
-              case Some(close: Helpers.Closing.MutualClose) => doPublish(close.tx)
-              case Some(close: Helpers.Closing.LocalClose) => doPublish(close.localCommitPublished)
-              case Some(close: Helpers.Closing.RemoteClose) => doPublish(close.remoteCommitPublished)
-              case Some(close: Helpers.Closing.RecoveryClose) => doPublish(close.remoteCommitPublished)
-              case Some(close: Helpers.Closing.RevokedClose) => doPublish(close.revokedCommitPublished)
-
-              case None =>
-                for (close <- data1.mutualClosePublished) doPublish(close)
-                for (close <- data1.localCommitPublished) doPublish(close)
-                for (close <- data1.remoteCommitPublished) doPublish(close)
-                for (close <- data1.revokedCommitPublished) doPublish(close)
-                for (close <- data1.nextRemoteCommitPublished) doPublish(close)
-                for (close <- data1.futureRemoteCommitPublished) doPublish(close)
-            }
 
           case data1 =>
             BECOME(data1, SLEEPING)
@@ -406,12 +396,12 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
       case (closing: DATA_CLOSING, WatchEventSpent(BITCOIN_OUTPUT_SPENT, tx), CLOSING) =>
         // Peer has just used a preimage on chain to claim our outgoing payment's UTXO, payment is sent
-        chainWallet.watcher ! WatchConfirmed(receiver, tx, LNParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(tx))
+        chainWallet.watcher ! WatchConfirmed(receiver, tx, BITCOIN_TX_CONFIRMED(tx), LNParams.minDepthBlocks)
         val remoteFulfills = Helpers.Closing.extractPreimages(closing.commitments.localCommit, tx).map(RemoteFulfill.tupled)
 
         val rev1 = closing.revokedCommitPublished.map { rev =>
           // This might be an old revoked state which is a violation of contract and allows us to take a whole channel balance right away
-          val (rev1, txOpt) = Helpers.Closing.claimRevokedHtlcTxOutputs(closing.commitments, rev, tx, LNParams.feeRatesInfo.onChainFeeConf.feeEstimator)
+          val (txOpt, rev1) = Helpers.Closing.claimRevokedHtlcTxOutputs(closing.commitments, rev, tx, LNParams.feeRatesInfo.onChainFeeConf.feeEstimator)
           for (claimTx <- txOpt) chainWallet.watcher ! WatchSpent(receiver, tx, claimTx.txIn.filter(_.outPoint.txid == tx.txid).head.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT)
           for (claimTx <- txOpt) chainWallet.watcher ! PublishAsap(claimTx)
           rev1
@@ -429,7 +419,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
     }
 
   def feeUpdateRequired(commits: NormalCommits, rates: CurrentFeerates): Option[CMD_UPDATE_FEERATE] = {
-    val networkFeeratePerKw = LNParams.feeRatesInfo.onChainFeeConf.getCommitmentFeerate(commits.channelVersion, rates.toSome)
+    val networkFeeratePerKw = rates.feeratesPerKw.feePerBlock(LNParams.feeRatesInfo.onChainFeeConf.feeTargets.commitmentBlockTarget)
     val shouldUpdate = LNParams.feeRatesInfo.onChainFeeConf.shouldUpdateFee(commits.localCommit.spec.feeratePerKw, networkFeeratePerKw)
     if (commits.localParams.isFunder && shouldUpdate) CMD_UPDATE_FEERATE(commits.channelId, networkFeeratePerKw).toSome else None
   }

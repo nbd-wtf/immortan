@@ -30,7 +30,7 @@ import scala.collection.immutable.Queue
 trait Handlers { me: ChannelNormal =>
   def doPublish(closingTx: Transaction): Unit = {
     val replyEvent: BitcoinEvent = BITCOIN_TX_CONFIRMED(closingTx)
-    chainWallet.watcher ! WatchConfirmed(receiver, closingTx, LNParams.minDepthBlocks, replyEvent)
+    chainWallet.watcher ! WatchConfirmed(receiver, closingTx, replyEvent, LNParams.minDepthBlocks)
     chainWallet.watcher ! PublishAsap(closingTx)
   }
 
@@ -39,7 +39,7 @@ trait Handlers { me: ChannelNormal =>
 
   def watchConfirmedIfNeeded(txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32] = Map.empty): Unit =
     txes.filterNot(Closing inputsAlreadySpent irrevocablySpent).map(BITCOIN_TX_CONFIRMED).foreach { replyEvent =>
-      chainWallet.watcher ! WatchConfirmed(receiver, replyEvent.tx, LNParams.minDepthBlocks, replyEvent)
+      chainWallet.watcher ! WatchConfirmed(receiver, replyEvent.tx, replyEvent, LNParams.minDepthBlocks)
     }
 
   def watchSpentIfNeeded(parentTx: Transaction, txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32] = Map.empty): Unit =
