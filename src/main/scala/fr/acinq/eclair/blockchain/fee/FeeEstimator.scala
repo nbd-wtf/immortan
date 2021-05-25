@@ -24,7 +24,8 @@ trait FeeEstimator {
 case class FeeTargets(fundingBlockTarget: Int, commitmentBlockTarget: Int, mutualCloseBlockTarget: Int, claimMainBlockTarget: Int)
 
 case class FeerateTolerance(ratioLow: Double, ratioHigh: Double) {
-  def isFeeDiffTooHigh(networkFeerate: FeeratePerKw, proposedFeerate: FeeratePerKw): Boolean = proposedFeerate < networkFeerate * ratioLow || networkFeerate * ratioHigh < proposedFeerate
+  def isFeeDiffTooHigh(networkFeerate: FeeratePerKw, proposedFeerate: FeeratePerKw): Boolean =
+    proposedFeerate < networkFeerate * ratioLow || networkFeerate * ratioHigh < proposedFeerate
 }
 
 case class OnChainFeeConf(feeTargets: FeeTargets, feeEstimator: FeeEstimator, closeOnOfflineMismatch: Boolean, updateFeeMinDiffRatio: Double, feerateTolerance: FeerateTolerance) {

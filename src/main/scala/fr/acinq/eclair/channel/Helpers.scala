@@ -126,12 +126,12 @@ object Helpers {
         data.commitments.remoteNextCommitInfo.isRight
 
     def isClosed(data: HasNormalCommitments, additionalConfirmedTxOpt: Option[Transaction] = None): Option[ClosingType] = data match {
-      case c: DATA_CLOSING if additionalConfirmedTxOpt.exists(c.mutualClosePublished.contains) => MutualClose(additionalConfirmedTxOpt.get).toSome
-      case c: DATA_CLOSING if c.localCommitPublished.exists(Closing.isLocalCommitDone) => LocalClose(c.commitments.localCommit, c.localCommitPublished.get).toSome
-      case c: DATA_CLOSING if c.remoteCommitPublished.exists(Closing.isRemoteCommitDone) => CurrentRemoteClose(c.commitments.remoteCommit, c.remoteCommitPublished.get).toSome
-      case c: DATA_CLOSING if c.nextRemoteCommitPublished.exists(Closing.isRemoteCommitDone) => NextRemoteClose(c.commitments.remoteNextCommitInfo.left.get.nextRemoteCommit, c.nextRemoteCommitPublished.get).toSome
-      case c: DATA_CLOSING if c.revokedCommitPublished.exists(Closing.isRevokedCommitDone) => RevokedClose(c.revokedCommitPublished.find(Closing.isRevokedCommitDone).get).toSome
-      case c: DATA_CLOSING if c.futureRemoteCommitPublished.exists(Closing.isRemoteCommitDone) => RecoveryClose(c.futureRemoteCommitPublished.get).toSome
+      case c: DATA_CLOSING if additionalConfirmedTxOpt.exists(c.mutualClosePublished.contains) => MutualClose(additionalConfirmedTxOpt.get).asSome
+      case c: DATA_CLOSING if c.localCommitPublished.exists(Closing.isLocalCommitDone) => LocalClose(c.commitments.localCommit, c.localCommitPublished.get).asSome
+      case c: DATA_CLOSING if c.remoteCommitPublished.exists(Closing.isRemoteCommitDone) => CurrentRemoteClose(c.commitments.remoteCommit, c.remoteCommitPublished.get).asSome
+      case c: DATA_CLOSING if c.nextRemoteCommitPublished.exists(Closing.isRemoteCommitDone) => NextRemoteClose(c.commitments.remoteNextCommitInfo.left.get.nextRemoteCommit, c.nextRemoteCommitPublished.get).asSome
+      case c: DATA_CLOSING if c.revokedCommitPublished.exists(Closing.isRevokedCommitDone) => RevokedClose(c.revokedCommitPublished.find(Closing.isRevokedCommitDone).get).asSome
+      case c: DATA_CLOSING if c.futureRemoteCommitPublished.exists(Closing.isRemoteCommitDone) => RecoveryClose(c.futureRemoteCommitPublished.get).asSome
       case _ => None
     }
 
@@ -149,15 +149,15 @@ object Helpers {
       Transactions.weight2fee(feeratePerKw, closingWeight)
     }
 
-    def firstClosingFee(commitments: NormalCommits, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feeEstimator: FeeEstimator, feeTargets: FeeTargets): Satoshi = {
-      val feeratePerKw = feeEstimator.getFeeratePerKw(feeTargets.mutualCloseBlockTarget).min(commitments.localCommit.spec.feeratePerKw)
+    def firstClosingFee(commitments: NormalCommits, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, conf: OnChainFeeConf): Satoshi = {
+      val feeratePerKw = conf.feeEstimator.getFeeratePerKw(conf.feeTargets.mutualCloseBlockTarget).min(commitments.localCommit.spec.feeratePerKw)
       firstClosingFee(commitments, localScriptPubkey, remoteScriptPubkey, feeratePerKw)
     }
 
     def nextClosingFee(localClosingFee: Satoshi, remoteClosingFee: Satoshi): Satoshi = (localClosingFee + remoteClosingFee) / 4 * 2
 
-    def makeFirstClosingTx(commitments: NormalCommits, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feeEstimator: FeeEstimator, feeTargets: FeeTargets): (ClosingTx, ClosingSigned) = {
-      val closingFee = firstClosingFee(commitments, localScriptPubkey, remoteScriptPubkey, feeEstimator, feeTargets)
+    def makeFirstClosingTx(commitments: NormalCommits, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, conf: OnChainFeeConf): (ClosingTx, ClosingSigned) = {
+      val closingFee = firstClosingFee(commitments, localScriptPubkey, remoteScriptPubkey, conf)
       makeClosingTx(commitments, localScriptPubkey, remoteScriptPubkey, closingFee)
     }
 
@@ -361,7 +361,7 @@ object Helpers {
         infoOpt.map { penaltyInfo =>
           val claimHtlcDelayedPenaltyTxs1 = revokedCommitPublished.claimHtlcDelayedPenaltyTxs :+ penaltyInfo.tx
           val revokedCommitPublished1 = revokedCommitPublished.copy(claimHtlcDelayedPenaltyTxs = claimHtlcDelayedPenaltyTxs1)
-          Tuple2(penaltyInfo.tx.toSome, revokedCommitPublished1)
+          Tuple2(penaltyInfo.tx.asSome, revokedCommitPublished1)
         } getOrElse Tuple2(None, revokedCommitPublished)
       } else Tuple2(None, revokedCommitPublished)
     }

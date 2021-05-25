@@ -33,7 +33,7 @@ object GraphUtils {
     ChannelUpdate(signature = PlaceHolderSig, chainHash = Block.RegtestGenesisBlock.hash, shortChannelId = shortChannelId,
       timestamp = System.currentTimeMillis, messageFlags = 1, channelFlags = if (isNode1) 0 else 1, cltvExpiryDelta = cltvDelta,
       htlcMinimumMsat = minHtlc, feeBaseMsat = feeBase, feeProportionalMillionths = feeProportionalMillionth,
-      htlcMaximumMsat = maxHtlc.toSome)
+      htlcMaximumMsat = maxHtlc.asSome)
   }
 
   def makeEdge(shortChannelId: ShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionth: Int,
