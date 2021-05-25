@@ -31,12 +31,6 @@ object ChannelNormal {
 }
 
 abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me =>
-  def feeUpdateRequired(commits: NormalCommits, rates: CurrentFeerates): Option[CMD_UPDATE_FEERATE] = {
-    val networkFeeratePerKw = rates.feeratesPerKw.feePerBlock(LNParams.feeRatesInfo.onChainFeeConf.feeTargets.commitmentBlockTarget)
-    val shouldUpdate = LNParams.feeRatesInfo.onChainFeeConf.shouldUpdateFee(commits.localCommit.spec.feeratePerKw, networkFeeratePerKw)
-    if (commits.localParams.isFunder && shouldUpdate) CMD_UPDATE_FEERATE(commits.channelId, networkFeeratePerKw).asSome else None
-  }
-
   val chainWallet: WalletExt
 
   def doProcess(change: Any): Unit =
@@ -191,7 +185,9 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
       case (norm: DATA_NORMAL, CMD_CHECK_FEERATE, OPEN) =>
         // Current feerates are supposed to be updated before this command is received
-        feeUpdateRequired(norm.commitments, LNParams.feeRatesInfo.current).foreach(process)
+        val networkFeeratePerKw = LNParams.feeRatesInfo.feeratesPerKw.feePerBlock(LNParams.feeRatesInfo.onChainFeeConf.feeTargets.commitmentBlockTarget)
+        val shouldUpdate = LNParams.feeRatesInfo.onChainFeeConf.shouldUpdateFee(norm.commitments.localCommit.spec.feeratePerKw, networkFeeratePerKw)
+        if (norm.commitments.localParams.isFunder && shouldUpdate) me process CMD_UPDATE_FEERATE(norm.commitments.channelId, networkFeeratePerKw)
 
 
       case (norm: DATA_NORMAL, cmd: CMD_UPDATE_FEERATE, OPEN) if norm.commitments.localParams.isFunder =>
@@ -439,14 +435,14 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
             // Normal case, our data is up-to-date
             if (rs.nextLocalCommitmentNumber == 1 && data1.commitments.localCommit.index == 0) {
               val nextPerCommitmentPoint = data1.commitments.localParams.keys.commitmentPoint(index = 1L)
-              sendQueue = sendQueue :+ FundingLocked(data1.commitments.channelId, nextPerCommitmentPoint)
+              sendQueue :+= FundingLocked(data1.commitments.channelId, nextPerCommitmentPoint)
             }
 
             val (commitments1, sendQueue1) = handleSync(rs, data1)
-            sendQueue = sendQueue ++ sendQueue1
+            sendQueue ++= sendQueue1
 
             // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown
-            data1.localShutdown.foreach(localShutdown => sendQueue = sendQueue :+ localShutdown)
+            data1.localShutdown.foreach(localShutdown => sendQueue :+= localShutdown)
             BECOME(data1.copy(commitments = commitments1), OPEN)
             SEND(sendQueue:_*)
         }
