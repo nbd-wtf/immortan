@@ -183,13 +183,11 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
 
       case (some: HasNormalCommitments, remoteInfo: RemoteNodeInfo, SLEEPING) if some.commitments.remoteInfo.nodeId == remoteInfo.nodeId =>
-        val data1 = some.modify(_.commitments.remoteInfo).setTo(remoteInfo)
-        data = STORE(data1)
+        StoreBecomeSend(some.modify(_.commitments.remoteInfo).setTo(remoteInfo), SLEEPING)
 
 
       case (norm: DATA_NORMAL, update: ChannelUpdate, OPEN | SLEEPING) if update.shortChannelId == norm.shortChannelId && norm.commitments.updateOpt.forall(_.timestamp < update.timestamp) =>
-        val data1 = norm.modify(_.commitments.updateOpt).setTo(update.asSome)
-        data = STORE(data1)
+        StoreBecomeSend(norm.modify(_.commitments.updateOpt).setTo(update.asSome), state)
 
 
       case (norm: DATA_NORMAL, CMD_CHECK_FEERATE, OPEN) =>
