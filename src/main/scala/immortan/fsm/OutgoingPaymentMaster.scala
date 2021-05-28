@@ -357,11 +357,6 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listener: OutgoingP
         }
       }
 
-    case (reject: RemoteUpdateFail, PENDING) if reject.fail.reason.isEmpty =>
-      // This is a special case when HC gets overridden with in-flight outgoing payments AND there was no app restart
-      // in this specific case an outgoing FSM could have tried to re-send this failed payment otherwise, this is undesired
-      me abortMaybeNotify data.withoutPartId(reject.ourAdd.partId).withLocalFailure(NOT_RETRYING_NO_DETAILS, data.cmd.split.myPart)
-
     case (reject: RemoteUpdateFail, PENDING) =>
       // TODO: this is only viable for base and trampoline-to-legacy MPP
       // TODO: when we send TMPP remote errors from targetNodeId have different meaning (since targetNodeId is not payee)
