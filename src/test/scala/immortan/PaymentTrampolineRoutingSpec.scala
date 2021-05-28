@@ -367,7 +367,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     WAIT_UNTIL_TRUE(cm.all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).size == 2)
     val Seq(out1, out2) = cm.all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).filter(_.fullTag == reasonableTrampoline1.fullTag)
     fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
-    assert(fsm.data.asInstanceOf[TrampolineStopping].retryOnceFinalized)
+    assert(fsm.data.asInstanceOf[TrampolineStopping].retry)
     // User has removed an outgoing HC meanwhile
     cm.all = Map.empty
 
@@ -420,7 +420,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     val Seq(out1, out2) = cm.all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).filter(_.fullTag == reasonableTrampoline1.fullTag)
     fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = reasonableTrampoline2 :: Nil)
     // Pathologic state: we do not have enough incoming payments, yet have outgoing payments
-    assert(!fsm.data.asInstanceOf[TrampolineStopping].retryOnceFinalized)
+    assert(!fsm.data.asInstanceOf[TrampolineStopping].retry)
     // User has removed an outgoing HC meanwhile
     cm.all = Map.empty
 
@@ -479,7 +479,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     val Seq(out1, out2) = cm.all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).filter(_.fullTag == reasonableTrampoline1.fullTag)
     fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = reasonableTrampoline2 :: Nil)
     // Pathologic state: we do not have enough incoming payments, yet have outgoing payments
-    assert(!fsm.data.asInstanceOf[TrampolineStopping].retryOnceFinalized)
+    assert(!fsm.data.asInstanceOf[TrampolineStopping].retry)
 
     val senderDataSnapshot = cm.opm.data.payments(reasonableTrampoline1.fullTag).data
     val ourAdd = UpdateAddHtlc(null, 1, null, paymentHash, null, senderDataSnapshot.inFlightParts.head.cmd.packetAndSecrets.packet, null)
