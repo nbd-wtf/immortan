@@ -27,7 +27,7 @@ abstract class NCFundeeOpenHandler(info: RemoteNodeInfo, theirOpen: OpenChannel,
     }
 
     override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = {
-      val localParams = LNParams.makeChannelParams(info, freshChannel.chainWallet, isFunder = false, theirOpen.fundingSatoshis)
+      val localParams = LNParams.makeChannelParams(freshChannel.chainWallet, isFunder = false, theirOpen.fundingSatoshis)
       freshChannel process INPUT_INIT_FUNDEE(info, localParams, theirInit, ChannelVersion.STATIC_REMOTEKEY, theirOpen)
     }
 

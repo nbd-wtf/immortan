@@ -28,26 +28,27 @@ import scala.util.Try
 
 object LNParams {
   val blocksPerDay: Int = 144 // On average we can expect this many blocks per day
-  val cltvRejectThreshold: Int = 144 // Reject incoming payment if CLTV expiry is closer than this to current chain tip when HTLC arrives
-  val incomingFinalCltvExpiry: CltvExpiryDelta = CltvExpiryDelta(144 + 72) // Ask payer to set final CLTV expiry to payer's current chain tip + this many blocks
+  val ncFulfillSafetyBlocks: Int = 36 // Force-close and redeem on chain if NC peer stalls state update and this many blocks are left until expiration
+  val hcFulfillSafetyBlocks: Int = 144 // Offer to publish preimage on chain if HC peer stalls state update and this many blocks are left until expiration
+  val cltvRejectThreshold: Int = hcFulfillSafetyBlocks + 36 // Reject incoming payment if CLTV expiry is closer than this to current chain tip when HTLC arrives
+  val incomingFinalCltvExpiry: CltvExpiryDelta = CltvExpiryDelta(hcFulfillSafetyBlocks + 72) // Ask payer to set final CLTV expiry to current chain tip + this many blocks
 
   val routingCltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(144 * 2) // Ask relayer to set CLTV expiry delta for our channel to this much blocks
   val maxCltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(1008) // A relative expiry per single channel hop can not exceed this much blocks
-  val maxToLocalDelay: CltvExpiryDelta = CltvExpiryDelta(2016)
-  val maxFundingSatoshis: Satoshi = Satoshi(10000000000L)
-  val maxReserveToFundingRatio: Double = 0.05
-  val maxNegotiationIterations: Int = 20
+  val maxToLocalDelay: CltvExpiryDelta = CltvExpiryDelta(2016) // We ask peer to delay their payment for this long in case of force-close
+  val maxFundingSatoshis: Satoshi = Satoshi(10000000000L) // Proposed channels of capacity more than this are not allowed
+  val maxReserveToFundingRatio: Double = 0.05 // %
+  val maxOffChainFeeRatio: Double = 0.01 // %
+  val maxNegotiationIterations: Int = 50
   val maxChainConnectionsCount: Int = 5
   val maxAcceptedHtlcs: Int = 483
 
-  val minInvoiceExpiryDelta = CltvExpiryDelta(18)
-  val minPayment: MilliSatoshi = MilliSatoshi(5000L)
-  val minFundingSatoshis: Satoshi = Satoshi(100000L)
+  val minInvoiceExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(18) // If payee does not provide an explicit relative CLTV this is what we use by default
+  val minForceClosableIncomingHtlcAmountToFeeRatio = 2 // When incoming HTLC gets (nearly) expired, how much higher than trim threshold should it be for us to force-close
+  val minPayment: MilliSatoshi = MilliSatoshi(1000L) // We can neither send nor receive LN payments which are below this value
+  val minFundingSatoshis: Satoshi = Satoshi(200000L) // Proposed channels of capacity less than this are not allowed
   val minDustLimit: Satoshi = Satoshi(546L)
-  val minDepthBlocks: Int = 3
-
-  val reserveToFundingRatio: Double = 0.0025 // %
-  val offChainFeeRatio: Double = 0.01 // %
+  val minDepthBlocks: Int = 2
 
   // Variables to be assigned at runtime
 
@@ -109,19 +110,19 @@ object LNParams {
   }
 
   // We make sure force-close pays directly to wallet
-  def makeChannelParams(remoteInfo: RemoteNodeInfo, chainWallet: WalletExt, isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {
-    val walletKey: PublicKey = Await.result(chainWallet.wallet.getReceiveAddresses, atMost = 40.seconds).values.head.publicKey
-    makeChannelParams(remoteInfo, Script.write(Script.pay2wpkh(walletKey).toList), walletKey, isFunder, fundingAmount)
+  def makeChannelParams(chainWallet: WalletExt, isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {
+    val walletKey = Await.result(chainWallet.wallet.getReceiveAddresses, atMost = 40.seconds).values.head.publicKey
+    makeChannelParams(Script.write(Script.pay2wpkh(walletKey).toList), walletKey, isFunder, fundingAmount)
   }
 
   // We make sure that funder and fundee key path end differently
-  def makeChannelParams(remoteInfo: RemoteNodeInfo, defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: PublicKey, isFunder: Boolean, fundingAmount: Satoshi): LocalParams =
+  def makeChannelParams(defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: PublicKey, isFunder: Boolean, fundingAmount: Satoshi): LocalParams =
     makeChannelParams(defaultFinalScriptPubkey, walletStaticPaymentBasepoint, isFunder, ChannelKeys.newKeyPath(isFunder), fundingAmount)
 
   // Note: we set local maxHtlcValueInFlightMsat to channel capacity to simplify calculations
-  def makeChannelParams(defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: PublicKey, isFunder: Boolean, keyPath: DeterministicWallet.KeyPath, fundingAmount: Satoshi): LocalParams =
-    LocalParams(ChannelKeys.fromPath(secret.keys.master, keyPath), minDustLimit, UInt64(fundingAmount.toMilliSatoshi.toLong), (fundingAmount * reserveToFundingRatio).max(minDustLimit),
-      minPayment, maxToLocalDelay, maxAcceptedHtlcs, isFunder, defaultFinalScriptPubkey, walletStaticPaymentBasepoint)
+  def makeChannelParams(defFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: PublicKey, isFunder: Boolean, keyPath: DeterministicWallet.KeyPath, fundingAmount: Satoshi): LocalParams =
+    LocalParams(ChannelKeys.fromPath(secret.keys.master, keyPath), minDustLimit, UInt64(fundingAmount.toMilliSatoshi.toLong), channelReserve = (fundingAmount * 0.001).max(minDustLimit),
+      minPayment, maxToLocalDelay, maxAcceptedHtlcs = 6, isFunder, defFinalScriptPubkey, walletStaticPaymentBasepoint)
 
   def currentBlockDay: Long = blockCount.get / blocksPerDay
 
@@ -136,11 +137,12 @@ class SyncParams {
   val blw: RemoteNodeInfo = RemoteNodeInfo(PublicKey(hex"03144fcc73cea41a002b2865f98190ab90e4ff58a2ce24d3870f5079081e42922d"), NodeAddress.unresolved(9735, host = 5, 9, 83, 143), "BLW Den")
   val lightning: RemoteNodeInfo = RemoteNodeInfo(PublicKey(hex"03baa70886d9200af0ffbd3f9e18d96008331c858456b16e3a9b41e735c6208fef"), NodeAddress.unresolved(9735, host = 45, 20, 67, 1), "LIGHTNING")
   val conductor: RemoteNodeInfo = RemoteNodeInfo(PublicKey(hex"03c436af41160a355fc1ed230a64f6a64bcbd2ae50f12171d1318f9782602be601"), NodeAddress.unresolved(9735, host = 18, 191, 89, 219), "Conductor")
-  val etleneum: RemoteNodeInfo = RemoteNodeInfo(PublicKey(hex"02c16cca44562b590dd279c942200bdccfd4f990c3a69fad620c10ef2f8228eaff"), NodeAddress.unresolved(9735, host = 5, 2, 67, 89), "Etleneum")
+  val silentBob: RemoteNodeInfo = RemoteNodeInfo(PublicKey(hex"02e9046555a9665145b0dbd7f135744598418df7d61d3660659641886ef1274844"), NodeAddress.unresolved(9735, host = 31, 17, 70, 80), "SilentBob")
+  val lntxbot: RemoteNodeInfo = RemoteNodeInfo(PublicKey(hex"02c16cca44562b590dd279c942200bdccfd4f990c3a69fad620c10ef2f8228eaff"), NodeAddress.unresolved(9735, host = 5, 2, 67, 89), "LNTXBOT")
   val acinq: RemoteNodeInfo = RemoteNodeInfo(PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), NodeAddress.unresolved(9735, host = 34, 239, 230, 56), "ACINQ")
 
   val phcSyncNodes: Set[RemoteNodeInfo] = Set.empty // Semi-trusted PHC-enabled nodes which can be used as seeds for PHC sync
-  val syncNodes: Set[RemoteNodeInfo] = Set(lightning, conductor, etleneum, acinq) // Nodes with extended queries support used as seeds for normal sync
+  val syncNodes: Set[RemoteNodeInfo] = Set(lightning, conductor, silentBob, lntxbot, acinq) // Nodes with extended queries support used as seeds for normal sync
 
   val maxPHCCapacity: MilliSatoshi = MilliSatoshi(1000000000000000L) // PHC can not be larger than 10 000 BTC
   val minPHCCapacity: MilliSatoshi = MilliSatoshi(50000000000L) // PHC can not be smaller than 0.5 BTC

@@ -47,7 +47,7 @@ abstract class NCFunderOpenHandler(info: RemoteNodeInfo, fakeFunding: MakeFundin
     }
 
     override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = {
-      val localParams = LNParams.makeChannelParams(info, freshChannel.chainWallet, isFunder = true, fakeFunding.fundingAmount)
+      val localParams = LNParams.makeChannelParams(freshChannel.chainWallet, isFunder = true, fakeFunding.fundingAmount)
       val initialFeeratePerKw = LNParams.feeRatesInfo.onChainFeeConf.feeEstimator.getFeeratePerKw(LNParams.feeRatesInfo.onChainFeeConf.feeTargets.commitmentBlockTarget)
       val cmd = INPUT_INIT_FUNDER(info, tempChannelId, fakeFunding, 0L.msat, fundingFeeratePerKw, initialFeeratePerKw, localParams, theirInit, 0.toByte, ChannelVersion.STATIC_REMOTEKEY)
       freshChannel process cmd

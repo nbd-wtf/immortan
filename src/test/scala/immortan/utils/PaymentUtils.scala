@@ -7,7 +7,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, NodeHop}
 import fr.acinq.eclair.payment.{OutgoingPacket, PaymentRequest}
 import immortan.ChannelMaster.{OutgoingAdds, ReasonableResolutions}
-import immortan.{ChannelMaster, InFlightPayments, PaymentBag, PlainMetaDescription, RemoteNodeInfo, UpdateAddHtlcExt}
+import immortan.{ChannelMaster, InFlightPayments, LNParams, PaymentBag, PlainMetaDescription, RemoteNodeInfo, UpdateAddHtlcExt}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.{IncomingResolution, ReasonableLocal}
@@ -34,7 +34,9 @@ object PaymentUtils {
     invoice
   }
 
-  def makeRemoteAddToFakeNodeId(partAmount: MilliSatoshi, totalAmount: MilliSatoshi, paymentHash: ByteVector32, paymentSecret: ByteVector32, remoteInfo: RemoteNodeInfo, cltvDelta: Int = 144): ReasonableLocal = {
+  def makeRemoteAddToFakeNodeId(partAmount: MilliSatoshi, totalAmount: MilliSatoshi, paymentHash: ByteVector32, paymentSecret: ByteVector32,
+                                remoteInfo: RemoteNodeInfo, cltvDelta: Int = LNParams.cltvRejectThreshold): ReasonableLocal = {
+
     val addFromRemote1 = createFinalAdd(partAmount, totalAmount, paymentHash, paymentSecret, from = remoteInfo.nodeId, to = remoteInfo.nodeSpecificPubKey, cltvDelta)
     ChannelMaster.initResolve(UpdateAddHtlcExt(theirAdd = addFromRemote1, remoteInfo = remoteInfo)).asInstanceOf[ReasonableLocal]
   }

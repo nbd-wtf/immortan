@@ -19,9 +19,8 @@ object GraphUtils {
   val (a, b, c, d, s, e) = (aP.publicKey, bP.publicKey, cP.publicKey, dP.publicKey, sP.publicKey, eP.publicKey)
 
   var routerConf: RouterConf =
-    RouterConf(maxCltvDelta = CltvExpiryDelta(2016), routeHopDistance = 6,
-      mppMinPartAmount = MilliSatoshi(10000L), maxRemoteAttempts = 12,
-      maxChannelFailures = 12, maxStrangeNodeFailures = 12)
+    RouterConf(initCltvMaxDelta = CltvExpiryDelta(2016), initRouteMaxLength = 6,
+      maxParts = 10, maxRemoteAttempts = 12, maxChannelFailures = 12, maxStrangeNodeFailures = 12)
 
   val offChainFeeRatio = 0.01 // %
 
@@ -55,7 +54,7 @@ object GraphUtils {
   }
 
   def getParams(conf: RouterConf, amount: MilliSatoshi, feeRatio: Double): RouteParams = {
-    RouteParams(feeReserve = amount * feeRatio, routeMaxLength = conf.routeHopDistance, routeMaxCltv = conf.maxCltvDelta)
+    RouteParams(feeReserve = amount * feeRatio, routeMaxLength = conf.initRouteMaxLength, routeMaxCltv = conf.initCltvMaxDelta)
   }
 
   def makeRouteRequest(amount: MilliSatoshi, params: RouteParams, fromNode: PublicKey, fromLocalEdge: GraphEdge): RouteRequest = {

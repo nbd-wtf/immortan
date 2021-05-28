@@ -72,11 +72,8 @@ class WireSpec extends AnyFunSuite {
     val packetAndSecrets = PaymentPacket.create(sessionKey, publicKeys, variableSizePayloadsFull, associatedData)
     val fullTag = FullPaymentTag(paymentHash = ByteVector32.Zeroes, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
     val cmd = CMD_ADD_HTLC(fullTag, firstAmount = 1000000L.msat, CltvExpiry(144), packetAndSecrets, payload)
-
-    val encryptedTag: TlvStream[EncryptedPaymentSecret] = TlvStream(EncryptedPaymentSecret(cmd.encryptedTag) :: Nil)
-    val add = UpdateAddHtlc(randomBytes32, id = 1000L, cmd.firstAmount, cmd.fullTag.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet, encryptedTag)
-    assert(cmd.partId == add.partId)
-    assert(add.fullTag == fullTag)
+    assert(cmd.incompleteAdd.partId == cmd.packetAndSecrets.packet.publicKey)
+    assert(cmd.incompleteAdd.fullTag == fullTag)
   }
 
   test("LCSS") {
@@ -87,8 +84,7 @@ class WireSpec extends AnyFunSuite {
     val fullTag = FullPaymentTag(paymentHash = ByteVector32.Zeroes, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
     val cmd = CMD_ADD_HTLC(fullTag, firstAmount = 1000000L.msat, CltvExpiry(144), packetAndSecrets, payload)
 
-    val encryptedTag: TlvStream[EncryptedPaymentSecret] = TlvStream(EncryptedPaymentSecret(cmd.encryptedTag) :: Nil)
-    val add1 = UpdateAddHtlc(randomBytes32, id = 1000L, cmd.firstAmount, cmd.fullTag.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet, encryptedTag)
+    val add1 = UpdateAddHtlc(randomBytes32, id = 1000L, cmd.firstAmount, cmd.fullTag.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet, cmd.encryptedTag)
     val add2 = UpdateAddHtlc(randomBytes32, id = 1000L, cmd.firstAmount, cmd.fullTag.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet)
 
     val init = InitHostedChannel(UInt64(1000000000L), htlcMinimumMsat = 100.msat, maxAcceptedHtlcs = 12, channelCapacityMsat = 10000000000L.msat, 100000L.msat, ChannelVersion.STATIC_REMOTEKEY)

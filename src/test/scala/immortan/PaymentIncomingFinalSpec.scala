@@ -52,6 +52,7 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
     WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
     WAIT_UNTIL_TRUE(fsm.data.asInstanceOf[IncomingRevealed].preimage == preimage)
     WAIT_UNTIL_TRUE(cm.getPreimageMemo(invoice.paymentHash).get == preimage)
+    println(cm.getPaymentInfoMemo(invoice.paymentHash).get.status)
     WAIT_UNTIL_TRUE(cm.getPaymentInfoMemo(invoice.paymentHash).get.status == PaymentStatus.SUCCEEDED)
   }
 

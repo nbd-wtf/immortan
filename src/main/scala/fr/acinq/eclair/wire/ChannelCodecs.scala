@@ -271,7 +271,6 @@ object ChannelCodecs {
 
   val DATA_CLOSING_Codec = {
     ("commitments" | commitmentsCodec) ::
-      ("fundingTx" | optional(bool8, txCodec)) ::
       ("waitingSince" | int64) ::
       ("mutualCloseProposed" | listOfN(uint16, txCodec)) ::
       ("mutualClosePublished" | listOfN(uint16, txCodec)) ::
