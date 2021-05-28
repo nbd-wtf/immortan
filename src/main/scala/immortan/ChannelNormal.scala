@@ -344,10 +344,10 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
       // OFFLINE IN PERSISTENT STATES
 
       case (data1: HasNormalCommitments, CMD_SOCKET_OFFLINE, WAIT_FUNDING_DONE | OPEN) =>
-        val (wasUpdated, data2, localProposed) = maybeRevertUnsignedOutgoing(data1)
-        localProposed.map(ChannelOffline) foreach events.localAddRejected
-        if (wasUpdated) StoreBecomeSend(data2, SLEEPING)
-        else BECOME(data2, SLEEPING)
+        val (wasUpdated, data2, localProposedAdds) = maybeRevertUnsignedOutgoing(data1)
+        if (wasUpdated) StoreBecomeSend(data2, SLEEPING) else BECOME(data1, SLEEPING)
+        localProposedAdds map ChannelOffline foreach events.localAddRejected
+
 
       // REESTABLISHMENT IN PERSISTENT STATES
 
@@ -525,9 +525,9 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
       case _ => DATA_CLOSING(data1.commitments, waitingSince = System.currentTimeMillis, localCommitPublished = lcp.asSome)
     }
 
-    val (_, closing1, localProposed) = maybeRevertUnsignedOutgoing(closing)
-    localProposed.map(ChannelNotAbleToSend) foreach events.localAddRejected
-    StoreBecomeSend(closing1, CLOSING)
+    val (wasUpdated, closing1, localProposedAdds) = maybeRevertUnsignedOutgoing(closing)
+    if (wasUpdated) StoreBecomeSend(closing1, CLOSING) else StoreBecomeSend(closing, CLOSING)
+    localProposedAdds map ChannelNotAbleToSend foreach events.localAddRejected
     doPublish(lcp)
   }
 }

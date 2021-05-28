@@ -195,7 +195,7 @@ abstract class ChannelHosted extends Channel { me =>
           // We are too far behind, restore from their future data
           val hc3 = restoreCommits(remoteLCSS.reverse, hc2.remoteInfo)
           StoreBecomeSend(hc3, OPEN, remoteLCSS.reverse)
-          cancelOverriddenOutgoingAdds(hc1, hc3)
+          rejectOverriddenOutgoingAdds(hc1, hc3)
         }
       }
 
@@ -246,7 +246,7 @@ abstract class ChannelHosted extends Channel { me =>
       if (remoteSO.blockDay < hc.lastCrossSignedState.blockDay) throw CMDException(new RuntimeException("Provided override blockday from remote host is not acceptable"), cmd)
       if (!isRemoteSigOk) throw CMDException(new RuntimeException("Provided override signature from remote host is wrong"), cmd)
       StoreBecomeSend(hc1, OPEN, completeLocalLCSS.stateUpdate)
-      cancelOverriddenOutgoingAdds(hc, hc1)
+      rejectOverriddenOutgoingAdds(hc, hc1)
 
 
     case (null, wait: WaitRemoteHostedReply, -1) => super.become(wait, WAIT_FOR_INIT)
@@ -254,7 +254,7 @@ abstract class ChannelHosted extends Channel { me =>
     case _ =>
   }
 
-  def cancelOverriddenOutgoingAdds(hc: HostedCommits, hc1: HostedCommits): Unit =
+  def rejectOverriddenOutgoingAdds(hc: HostedCommits, hc1: HostedCommits): Unit =
     hc.allOutgoing -- hc1.allOutgoing map InPrincipleNotSendable foreach events.localAddRejected
 
   def restoreCommits(localLCSS: LastCrossSignedState, remoteInfo: RemoteNodeInfo): HostedCommits = {
