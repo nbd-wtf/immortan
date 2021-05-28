@@ -184,7 +184,7 @@ final case class DATA_NEGOTIATING(commitments: NormalCommits, localShutdown: Shu
                                   remoteShutdown: Shutdown, closingTxProposed: List[List[ClosingTxProposed]] = List(Nil),
                                   bestUnpublishedClosingTxOpt: Option[Transaction] = None) extends ChannelData with HasNormalCommitments
 
-final case class DATA_CLOSING(commitments: NormalCommits, waitingSince: Long = System.currentTimeMillis, mutualCloseProposed: List[Transaction] = Nil, mutualClosePublished: List[Transaction] = Nil,
+final case class DATA_CLOSING(commitments: NormalCommits, waitingSince: Long, mutualCloseProposed: List[Transaction] = Nil, mutualClosePublished: List[Transaction] = Nil,
                               localCommitPublished: Option[LocalCommitPublished] = None, remoteCommitPublished: Option[RemoteCommitPublished] = None, nextRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               futureRemoteCommitPublished: Option[RemoteCommitPublished] = None, revokedCommitPublished: List[RevokedCommitPublished] = Nil) extends ChannelData with HasNormalCommitments {
 

@@ -200,7 +200,7 @@ case class NormalCommits(channelVersion: ChannelVersion, remoteInfo: RemoteNodeI
     if (missingForReceiver < 0L.sat && localParams.isFunder) return ChannelNotAbleToSend(cmd.incompleteAdd).asLeft
     if (commitments1.allOutgoing.foldLeft(0L.msat)(_ + _.amountMsat) > maxSendInFlight) ChannelNotAbleToSend(cmd.incompleteAdd).asLeft
     if (totalOutgoingHtlcs > commitments1.remoteParams.maxAcceptedHtlcs) return ChannelNotAbleToSend(cmd.incompleteAdd).asLeft // This is from spec and prevents remote force-close
-    if (totalOutgoingHtlcs > commitments1.localParams.maxAcceptedHtlcs) return ChannelNotAbleToSend(cmd.incompleteAdd).asLeft// This is needed for peer backup to safely work
+    if (totalOutgoingHtlcs > commitments1.localParams.maxAcceptedHtlcs) return ChannelNotAbleToSend(cmd.incompleteAdd).asLeft // This is needed for peer backup to safely work
     Right(commitments1, completeAdd)
   }
 

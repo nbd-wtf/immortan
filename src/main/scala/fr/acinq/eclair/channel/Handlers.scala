@@ -24,7 +24,6 @@ import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction}
 import fr.acinq.eclair.blockchain.{PublishAsap, WatchConfirmed, WatchSpent}
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.channel.Helpers.Closing
-import scala.collection.immutable.Queue
 
 
 trait Handlers { me: ChannelNormal =>
@@ -65,40 +64,6 @@ trait Handlers { me: ChannelNormal =>
     publishIfNeeded(rcp.claimMainOutputTx ++ rcp.mainPenaltyTx ++ rcp.htlcPenaltyTxs ++ rcp.claimHtlcDelayedPenaltyTxs, rcp.irrevocablySpent)
     watchSpentIfNeeded(rcp.commitTx, rcp.mainPenaltyTx ++ rcp.htlcPenaltyTxs, rcp.irrevocablySpent)
     watchConfirmedIfNeeded(List(rcp.commitTx) ++ rcp.claimMainOutputTx, rcp.irrevocablySpent)
-  }
-
-  def handleSync(channelReestablish: ChannelReestablish, d: HasNormalCommitments): (NormalCommits, Queue[LightningMessage]) = {
-    var sendQueue = Queue.empty[LightningMessage]
-
-    // first we clean up unacknowledged updates
-    val commitments1 = d.commitments.copy(
-      localChanges = d.commitments.localChanges.copy(proposed = Nil),
-      remoteChanges = d.commitments.remoteChanges.copy(proposed = Nil),
-      localNextHtlcId = d.commitments.localNextHtlcId - d.commitments.localChanges.proposed.collect { case u: UpdateAddHtlc => u }.size,
-      remoteNextHtlcId = d.commitments.remoteNextHtlcId - d.commitments.remoteChanges.proposed.collect { case u: UpdateAddHtlc => u }.size)
-
-    def resendRevocation: Unit =
-      if (commitments1.localCommit.index == channelReestablish.nextRemoteRevocationNumber + 1) {
-        val localPerCommitmentSecret = commitments1.localParams.keys.commitmentSecret(d.commitments.localCommit.index - 1)
-        val localNextPerCommitmentPoint = commitments1.localParams.keys.commitmentPoint(d.commitments.localCommit.index + 1)
-        sendQueue :+= RevokeAndAck(commitments1.channelId, localPerCommitmentSecret, localNextPerCommitmentPoint)
-      } else if (commitments1.localCommit.index != channelReestablish.nextRemoteRevocationNumber) {
-        throw ChannelTransitionFail(d.commitments.channelId)
-      }
-
-    commitments1.remoteNextCommitInfo match {
-      case _ if commitments1.remoteNextCommitInfo.isRight && commitments1.remoteCommit.index + 1 == channelReestablish.nextLocalCommitmentNumber => resendRevocation
-      case Left(waitingForRevocation) if waitingForRevocation.nextRemoteCommit.index + 1 == channelReestablish.nextLocalCommitmentNumber => resendRevocation
-
-      case Left(waitingForRevocation) if waitingForRevocation.nextRemoteCommit.index == channelReestablish.nextLocalCommitmentNumber =>
-        if (commitments1.localCommit.index <= waitingForRevocation.sentAfterLocalCommitIndex) resendRevocation
-        (commitments1.localChanges.signed :+ waitingForRevocation.sent).foreach(update => sendQueue :+= update)
-        if (commitments1.localCommit.index > waitingForRevocation.sentAfterLocalCommitIndex) resendRevocation
-
-      case _ => throw ChannelTransitionFail(d.commitments.channelId)
-    }
-
-    (commitments1, sendQueue)
   }
 
   def handleNegotiations(d: DATA_NEGOTIATING, m: ClosingSigned, conf: OnChainFeeConf): Unit = {

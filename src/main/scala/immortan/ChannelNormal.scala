@@ -155,7 +155,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         // Remote peer may send a tx which is unrelated to our agreed upon channel funding, that is, we won't be able to spend our commit tx, check this right away!
         def correct: Unit = Transaction.correctlySpends(wait.commitments.localCommit.publishableTxs.commitTx.tx, Seq(event.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
-        if (Try(correct).isFailure) StoreBecomeSend(DATA_CLOSING(wait.commitments), CLOSING) else {
+        if (Try(correct).isFailure) StoreBecomeSend(DATA_CLOSING(wait.commitments, System.currentTimeMillis), CLOSING) else {
           val shortChannelId = ShortChannelId(event.blockHeight, event.txIndex, wait.commitments.commitInput.outPoint.index.toInt)
           val fundingLocked = FundingLocked(nextPerCommitmentPoint = wait.commitments.localParams.keys.commitmentPoint(1L), channelId = wait.channelId)
           StoreBecomeSend(DATA_WAIT_FOR_FUNDING_LOCKED(wait.commitments, shortChannelId, fundingLocked), WAIT_FUNDING_DONE, fundingLocked)
@@ -183,11 +183,13 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
 
       case (some: HasNormalCommitments, remoteInfo: RemoteNodeInfo, SLEEPING) if some.commitments.remoteInfo.nodeId == remoteInfo.nodeId =>
-        data = me STORE some.modify(_.commitments.remoteInfo).setTo(remoteInfo)
+        val data1 = some.modify(_.commitments.remoteInfo).setTo(remoteInfo)
+        data = STORE(data1)
 
 
       case (norm: DATA_NORMAL, update: ChannelUpdate, OPEN | SLEEPING) if update.shortChannelId == norm.shortChannelId && norm.commitments.updateOpt.forall(_.timestamp < update.timestamp) =>
-        data = me STORE norm.modify(_.commitments.updateOpt).setTo(update.asSome)
+        val data1 = norm.modify(_.commitments.updateOpt).setTo(update.asSome)
+        data = STORE(data1)
 
 
       case (norm: DATA_NORMAL, CMD_CHECK_FEERATE, OPEN) =>
@@ -343,9 +345,11 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
       // OFFLINE IN PERSISTENT STATES
 
-      case (_, CMD_SOCKET_OFFLINE, WAIT_FUNDING_DONE | OPEN) =>
-        // TODO: fail proposed outgoing adds here, ACTUALLY, clean commitemtns off proposed htlcs here
-        BECOME(data, SLEEPING)
+      case (data1: HasNormalCommitments, CMD_SOCKET_OFFLINE, WAIT_FUNDING_DONE | OPEN) =>
+        val (wasUpdated, data2, localProposed) = maybeRevertUnsignedOutgoing(data1)
+        localProposed.map(ChannelOffline) foreach events.localAddRejected
+        if (wasUpdated) StoreBecomeSend(data2, SLEEPING)
+        else BECOME(data2, SLEEPING)
 
       // REESTABLISHMENT IN PERSISTENT STATES
 
@@ -379,7 +383,6 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
       case (data1: DATA_NORMAL, reestablish: ChannelReestablish, SLEEPING) =>
         val pleasePublishError = Error(data1.channelId, "please publish your local commitment")
-        var sendQueue = Queue.empty[LightningMessage]
 
         reestablish match {
           case rs if !Helpers.checkLocalCommit(data1, rs.nextRemoteRevocationNumber) =>
@@ -396,18 +399,40 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
             StoreBecomeSend(DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(data1.commitments, rs), CLOSING, pleasePublishError)
 
           case rs =>
-            // Normal case, our data is up-to-date
+            var sendQueue = Queue.empty[LightningMessage]
             if (rs.nextLocalCommitmentNumber == 1 && data1.commitments.localCommit.index == 0) {
               val nextPerCommitmentPoint = data1.commitments.localParams.keys.commitmentPoint(index = 1L)
               sendQueue :+= FundingLocked(data1.commitments.channelId, nextPerCommitmentPoint)
             }
 
-            val (commits1, sendQueue1) = handleSync(rs, data1)
-            sendQueue ++= sendQueue1
+            def resendRevocation: Unit =
+              if (data1.commitments.localCommit.index == rs.nextRemoteRevocationNumber + 1) {
+                val localPerCommitmentSecret = data1.commitments.localParams.keys.commitmentSecret(data1.commitments.localCommit.index - 1)
+                val localNextPerCommitmentPoint = data1.commitments.localParams.keys.commitmentPoint(data1.commitments.localCommit.index + 1)
+                sendQueue :+= RevokeAndAck(data1.channelId, localPerCommitmentSecret, localNextPerCommitmentPoint)
+              } else if (data1.commitments.localCommit.index != rs.nextRemoteRevocationNumber) {
+                // Sync has failed, no sense to continue normally
+                throw ChannelTransitionFail(data1.channelId)
+              }
+
+            data1.commitments.remoteNextCommitInfo match {
+              case _ if data1.commitments.remoteNextCommitInfo.isRight && data1.commitments.remoteCommit.index + 1 == rs.nextLocalCommitmentNumber => resendRevocation
+              case Left(waitingForRevocation) if waitingForRevocation.nextRemoteCommit.index + 1 == rs.nextLocalCommitmentNumber => resendRevocation
+
+              case Left(waitingForRevocation) if waitingForRevocation.nextRemoteCommit.index == rs.nextLocalCommitmentNumber =>
+                if (data1.commitments.localCommit.index <= waitingForRevocation.sentAfterLocalCommitIndex) resendRevocation
+                (data1.commitments.localChanges.signed :+ waitingForRevocation.sent).foreach(change => sendQueue :+= change)
+                if (data1.commitments.localCommit.index > waitingForRevocation.sentAfterLocalCommitIndex) resendRevocation
+
+              case _ =>
+                // Sync has failed, no sense to continue normally
+                throw ChannelTransitionFail(data1.channelId)
+            }
 
             // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown
             data1.localShutdown.foreach(localShutdown => sendQueue :+= localShutdown)
-            BECOME(data1.copy(commitments = commits1), OPEN)
+
+            BECOME(data1, OPEN)
             SEND(sendQueue:_*)
         }
 
@@ -469,6 +494,16 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
       case _ =>
     }
 
+  private def maybeRevertUnsignedOutgoing(data1: HasNormalCommitments) =
+    if (data1.commitments.localHasUnsignedOutgoingHtlcs || data1.commitments.remoteHasUnsignedOutgoingHtlcs) {
+      val remoteProposed = data1.commitments.remoteChanges.proposed.collect { case remoteUpdate: UpdateAddHtlc => remoteUpdate }
+      val localProposed = data1.commitments.localChanges.proposed.collect { case localUpdate: UpdateAddHtlc => localUpdate }
+      val data2 = data1.modifyAll(_.commitments.remoteChanges.proposed, _.commitments.localChanges.proposed).setTo(Nil)
+      val data3 = data2.modify(_.commitments.remoteNextHtlcId).using(_ - remoteProposed.size)
+      val data4 = data3.modify(_.commitments.localNextHtlcId).using(_ - localProposed.size)
+      (true, data4, localProposed)
+    } else (false, data1, Nil)
+
   private def startNegotiationsAsFunder(data1: DATA_NORMAL, local: Shutdown, remote: Shutdown): Unit = {
     val (closingTx, closingSigned) = Closing.makeFirstClosingTx(data1.commitments, local.scriptPubKey, remote.scriptPubKey, LNParams.feeRatesInfo.onChainFeeConf)
     val data2 = DATA_NEGOTIATING(data1.commitments, local, remote, List(ClosingTxProposed(closingTx.tx, closingSigned) :: Nil), bestUnpublishedClosingTxOpt = None)
@@ -483,16 +518,18 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
   }
 
   private def spendLocalCurrent(data1: HasNormalCommitments): Unit = {
-    val commitTx = data1.commitments.localCommit.publishableTxs.commitTx.tx
-    val lcp = Helpers.Closing.claimCurrentLocalCommitTxOutputs(data1.commitments, commitTx, LNParams.feeRatesInfo.onChainFeeConf)
+    val currentCommitTx: Transaction = data1.commitments.localCommit.publishableTxs.commitTx.tx
+    val lcp = Helpers.Closing.claimCurrentLocalCommitTxOutputs(data1.commitments, currentCommitTx, LNParams.feeRatesInfo.onChainFeeConf)
 
-    val nextData: HasNormalCommitments = data1 match {
-      case data: DATA_CLOSING => data.copy(localCommitPublished = lcp.asSome)
-      case data: DATA_NEGOTIATING => DATA_CLOSING(data.commitments, System.currentTimeMillis, data.closingTxProposed.flatten.map(_.unsignedTx), localCommitPublished = lcp.asSome)
-      case _ => DATA_CLOSING(data1.commitments, System.currentTimeMillis, localCommitPublished = lcp.asSome)
+    val closing: DATA_CLOSING = data1 match {
+      case some: DATA_CLOSING => some.copy(localCommitPublished = lcp.asSome)
+      case some: DATA_NEGOTIATING => DATA_CLOSING(some.commitments, System.currentTimeMillis, some.closingTxProposed.flatten.map(_.unsignedTx), localCommitPublished = lcp.asSome)
+      case _ => DATA_CLOSING(data1.commitments, waitingSince = System.currentTimeMillis, localCommitPublished = lcp.asSome)
     }
 
-    StoreBecomeSend(nextData, CLOSING)
+    val (_, closing1, localProposed) = maybeRevertUnsignedOutgoing(closing)
+    localProposed.map(ChannelNotAbleToSend) foreach events.localAddRejected
+    StoreBecomeSend(closing1, CLOSING)
     doPublish(lcp)
   }
 }
