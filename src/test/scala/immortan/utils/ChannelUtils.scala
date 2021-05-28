@@ -2,7 +2,6 @@ package immortan.utils
 
 import fr.acinq.eclair._
 import immortan.sqlite._
-import fr.acinq.bitcoin.{ByteVector64, Satoshi}
 import fr.acinq.eclair.transactions.{CommitmentSpec, RemoteFulfill}
 import immortan.fsm.{OutgoingPaymentListener, OutgoingPaymentSenderData}
 import fr.acinq.eclair.wire.{InitHostedChannel, LastCrossSignedState, NodeAddress}
@@ -10,6 +9,7 @@ import immortan.{ChannelMaster, HostedCommits, PathFinder, RemoteNodeInfo}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.ByteVector64
 import fr.acinq.bitcoin.SatoshiLong
 import immortan.crypto.Tools
 
@@ -37,8 +37,10 @@ object ChannelUtils {
       remoteBalanceMsat = 100000000L.msat, localUpdates = 201, remoteUpdates = 101, incomingHtlcs = Nil, outgoingHtlcs = Nil, remoteSigOfLocal = ByteVector64.Zeroes,
       localSigOfRemote = ByteVector64.Zeroes)
 
-    HostedCommits(RemoteNodeInfo(nodeId, NodeAddress.unresolved(9735, host = 45, 20, 67, 1), alias), lastCrossSignedState = lcss, nextLocalUpdates = Nil, nextRemoteUpdates = Nil,
-      localSpec = CommitmentSpec(feeratePerKw = FeeratePerKw(0.sat), toLocal = toLocal, toRemote = 100000000L.msat), updateOpt = None, localError = None, remoteError = None,
+    HostedCommits(RemoteNodeInfo(nodeId, NodeAddress.unresolved(9735, host = 45, 20, 67, 1), alias),
+      CommitmentSpec(feeratePerKw = FeeratePerKw(0.sat), toLocal = toLocal, toRemote = 100000000L.msat),
+      lastCrossSignedState = lcss, nextLocalUpdates = Nil, nextRemoteUpdates = Nil, updateOpt = None,
+      postErrorOutgoingResolvedIds = Set.empty, localError = None, remoteError = None,
       startedAt = System.currentTimeMillis)
   }
 

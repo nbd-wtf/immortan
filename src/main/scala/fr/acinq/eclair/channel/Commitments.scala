@@ -52,9 +52,6 @@ trait Commitments {
   def crossSignedIncoming: Set[UpdateAddHtlcExt] // Cross-signed incoming payments offered by them
   def revealedFulfills: Set[LocalFulfill] // Incoming payments for which we have releaved a preimge
 
-  def timedOutOutgoingHtlcs(tip: Long): Set[UpdateAddHtlc] =
-    allOutgoing.filter(tip > _.cltvExpiry.toLong)
-
   def getPendingFulfills(preimages: HashToPreimage = Map.empty): Set[LocalFulfill] = for {
     // Find still present cross-signed incoming payments for which we have revealed a preimage
     UpdateAddHtlcExt(theirAdd, _) <- crossSignedIncoming
@@ -62,10 +59,10 @@ trait Commitments {
   } yield LocalFulfill(theirAdd, ourPreimage)
 }
 
-case class NormalCommits(channelVersion: ChannelVersion, remoteInfo: RemoteNodeInfo, localParams: LocalParams, remoteParams: RemoteParams,
-                         channelFlags: Byte, localCommit: LocalCommit, remoteCommit: RemoteCommit, localChanges: LocalChanges, remoteChanges: RemoteChanges,
-                         localNextHtlcId: Long, remoteNextHtlcId: Long, remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey], commitInput: InputInfo,
-                         remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32, updateOpt: Option[ChannelUpdate] = None,
+case class NormalCommits(channelFlags: Byte, channelId: ByteVector32, channelVersion: ChannelVersion, remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey],
+                         remotePerCommitmentSecrets: ShaChain, updateOpt: Option[ChannelUpdate], postCloseOutgoingResolvedIds: Set[Long], remoteInfo: RemoteNodeInfo,
+                         localParams: LocalParams, remoteParams: RemoteParams, localCommit: LocalCommit, remoteCommit: RemoteCommit, localChanges: LocalChanges,
+                         remoteChanges: RemoteChanges, localNextHtlcId: Long, remoteNextHtlcId: Long, commitInput: InputInfo,
                          startedAt: Long = System.currentTimeMillis) extends Commitments { me =>
 
   val minSendable: MilliSatoshi = remoteParams.htlcMinimum.max(localParams.htlcMinimum)
@@ -74,7 +71,10 @@ case class NormalCommits(channelVersion: ChannelVersion, remoteInfo: RemoteNodeI
 
   val latestRemoteCommit: RemoteCommit = remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit)
 
-  val allOutgoing: Set[UpdateAddHtlc] = localCommit.spec.outgoingAdds ++ localChanges.adds
+  val allOutgoing: Set[UpdateAddHtlc] = {
+    val allOutgoingAdds = localCommit.spec.outgoingAdds ++ localChanges.adds
+    allOutgoingAdds.filterNot(add => postCloseOutgoingResolvedIds contains add.id)
+  }
 
   val crossSignedIncoming: Set[UpdateAddHtlcExt] = for (theirAdd <- remoteCommit.spec.outgoingAdds) yield UpdateAddHtlcExt(theirAdd, remoteInfo)
 

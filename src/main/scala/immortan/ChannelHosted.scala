@@ -192,10 +192,10 @@ abstract class ChannelHosted extends Channel { me =>
           StoreBecomeSend(hc3, OPEN, List(syncedLCSS) ++ hc2.resizeProposal ++ localUpdatesLeftover:_*)
           process(CMD_SIGN)
         } else {
-          // We are too far behind, restore from their data
+          // We are too far behind, restore from their future data
           val hc3 = restoreCommits(remoteLCSS.reverse, hc2.remoteInfo)
-          StoreBecomeSend(data1 = hc3, state1 = OPEN, remoteLCSS.reverse)
-          events stateUpdated fakeFailedOurAdds(hc1, hc3).toList
+          StoreBecomeSend(hc3, OPEN, remoteLCSS.reverse)
+          cancelOverriddenOutgoingAdds(hc1, hc3)
         }
       }
 
@@ -224,8 +224,7 @@ abstract class ChannelHosted extends Channel { me =>
 
 
     case (hc: HostedCommits, remoteError: Error, WAIT_FOR_ACCEPT | OPEN) if hc.remoteError.isEmpty =>
-      val fulfillsAndFakeFails = hc.nextRemoteUpdates.collect { case f: UpdateFulfillHtlc => f case f: UpdateFailHtlc if f.reason.isEmpty => f }
-      StoreBecomeSend(hc.copy(nextRemoteUpdates = fulfillsAndFakeFails, remoteError = remoteError.asSome), OPEN)
+      StoreBecomeSend(hc.copy(remoteError = remoteError.asSome), OPEN)
 
 
     case (hc: HostedCommits, remoteSO: StateOverride, OPEN | SLEEPING) if hc.error.isDefined =>
@@ -247,7 +246,7 @@ abstract class ChannelHosted extends Channel { me =>
       if (remoteSO.blockDay < hc.lastCrossSignedState.blockDay) throw CMDException(new RuntimeException("Provided override blockday from remote host is not acceptable"), cmd)
       if (!isRemoteSigOk) throw CMDException(new RuntimeException("Provided override signature from remote host is wrong"), cmd)
       StoreBecomeSend(hc1, OPEN, completeLocalLCSS.stateUpdate)
-      events stateUpdated fakeFailedOurAdds(hc, hc1).toList
+      cancelOverriddenOutgoingAdds(hc, hc1)
 
 
     case (null, wait: WaitRemoteHostedReply, -1) => super.become(wait, WAIT_FOR_INIT)
@@ -255,22 +254,20 @@ abstract class ChannelHosted extends Channel { me =>
     case _ =>
   }
 
+  def cancelOverriddenOutgoingAdds(hc: HostedCommits, hc1: HostedCommits): Unit =
+    hc.allOutgoing -- hc1.allOutgoing map InPrincipleNotSendable foreach events.localAddRejected
+
   def restoreCommits(localLCSS: LastCrossSignedState, remoteInfo: RemoteNodeInfo): HostedCommits = {
     val inFlightHtlcs = localLCSS.incomingHtlcs.map(IncomingHtlc) ++ localLCSS.outgoingHtlcs.map(OutgoingHtlc)
-    val localSpec = CommitmentSpec(FeeratePerKw(0L.sat), localLCSS.localBalanceMsat, localLCSS.remoteBalanceMsat, htlcs = inFlightHtlcs.toSet)
-    HostedCommits(remoteInfo, localLCSS, nextLocalUpdates = Nil, nextRemoteUpdates = Nil, localSpec, updateOpt = None, localError = None, remoteError = None)
+    HostedCommits(remoteInfo, CommitmentSpec(feeratePerKw = FeeratePerKw(0L.sat), localLCSS.localBalanceMsat, localLCSS.remoteBalanceMsat, inFlightHtlcs.toSet),
+      localLCSS, nextLocalUpdates = Nil, nextRemoteUpdates = Nil, updateOpt = None, postErrorOutgoingResolvedIds = Set.empty, localError = None, remoteError = None)
   }
 
   def localSuspend(hc: HostedCommits, errCode: String): Unit = {
     val localError = Error(hc.channelId, ByteVector fromValidHex errCode)
-    val fulfillsAndFakeFails = hc.nextRemoteUpdates.collect { case f: UpdateFulfillHtlc => f case f: UpdateFailHtlc if f.reason.isEmpty => f }
-    val hc1 = if (hc.localError.isDefined) hc else hc.copy(nextRemoteUpdates = fulfillsAndFakeFails, localError = localError.asSome)
+    val hc1 = if (hc.localError.isDefined) hc else hc.copy(localError = localError.asSome)
     StoreBecomeSend(hc1, state, localError)
   }
-
-  def fakeFailOurAdd(hc: HostedCommits, add: UpdateAddHtlc): RemoteUpdateFail = RemoteUpdateFail(UpdateFailHtlc(hc.channelId, add.id, reason = ByteVector.empty), add)
-
-  def fakeFailedOurAdds(hc: HostedCommits, hc1: HostedCommits): Set[RemoteUpdateFail] = for (ourAdd <- hc.allOutgoing -- hc1.allOutgoing) yield fakeFailOurAdd(hc1, ourAdd)
 
   def attemptStateUpdate(remoteSU: StateUpdate, hc: HostedCommits): Unit = {
     val lcss1 = hc.nextLocalUnsignedLCSS(remoteSU.blockDay).copy(remoteSigOfLocal = remoteSU.localSigOfRemoteLCSS).withLocalSigOfRemote(hc.remoteInfo.nodeSpecificPrivKey)

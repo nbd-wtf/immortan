@@ -14,9 +14,10 @@ case class WaitRemoteHostedReply(remoteInfo: RemoteNodeInfo, refundScriptPubKey:
 
 case class WaitRemoteHostedStateUpdate(remoteInfo: RemoteNodeInfo, hc: HostedCommits) extends ChannelData
 
-case class HostedCommits(remoteInfo: RemoteNodeInfo, lastCrossSignedState: LastCrossSignedState, nextLocalUpdates: List[UpdateMessage], nextRemoteUpdates: List[UpdateMessage],
-                         localSpec: CommitmentSpec, updateOpt: Option[ChannelUpdate], localError: Option[Error], remoteError: Option[Error], resizeProposal: Option[ResizeChannel] = None,
-                         overrideProposal: Option[StateOverride] = None, startedAt: Long = System.currentTimeMillis) extends PersistentChannelData with Commitments { me =>
+case class HostedCommits(remoteInfo: RemoteNodeInfo, localSpec: CommitmentSpec, lastCrossSignedState: LastCrossSignedState, nextLocalUpdates: List[UpdateMessage],
+                         nextRemoteUpdates: List[UpdateMessage], updateOpt: Option[ChannelUpdate], postErrorOutgoingResolvedIds: Set[Long], localError: Option[Error],
+                         remoteError: Option[Error], resizeProposal: Option[ResizeChannel] = None, overrideProposal: Option[StateOverride] = None,
+                         startedAt: Long = System.currentTimeMillis) extends PersistentChannelData with Commitments { me =>
 
   val error: Option[Error] = localError.orElse(remoteError)
 
@@ -28,7 +29,10 @@ case class HostedCommits(remoteInfo: RemoteNodeInfo, lastCrossSignedState: LastC
 
   val channelId: ByteVector32 = hostedChanId(remoteInfo.nodeSpecificPubKey.value, remoteInfo.nodeId.value)
 
-  val allOutgoing: Set[UpdateAddHtlc] = localSpec.outgoingAdds ++ nextLocalSpec.outgoingAdds
+  val allOutgoing: Set[UpdateAddHtlc] = {
+    val allOutgoingAdds = localSpec.outgoingAdds ++ nextLocalSpec.outgoingAdds
+    allOutgoingAdds.filterNot(add => postErrorOutgoingResolvedIds contains add.id)
+  }
 
   val crossSignedIncoming: Set[UpdateAddHtlcExt] = for (theirAdd <- localSpec.incomingAdds) yield UpdateAddHtlcExt(theirAdd, remoteInfo)
 
@@ -78,18 +82,20 @@ case class HostedCommits(remoteInfo: RemoteNodeInfo, lastCrossSignedState: LastC
   // Relaxed constraints for receiveng preimages over HCs: we look at nextLocalSpec, not localSpec
   def receiveFulfill(fulfill: UpdateFulfillHtlc): (HostedCommits, UpdateAddHtlc) = nextLocalSpec.findOutgoingHtlcById(fulfill.id) match {
     case Some(ourAdd) if ourAdd.add.paymentHash != fulfill.paymentHash => throw ChannelTransitionFail(channelId)
+    case _ if postErrorOutgoingResolvedIds.contains(fulfill.id) => throw ChannelTransitionFail(channelId)
     case Some(ourAdd) => (addRemoteProposal(fulfill), ourAdd.add)
     case None => throw ChannelTransitionFail(channelId)
   }
 
   def receiveFail(fail: UpdateFailHtlc): HostedCommits = localSpec.findOutgoingHtlcById(fail.id) match {
-    case _ if fail.reason.isEmpty => throw ChannelTransitionFail(channelId)
+    case _ if postErrorOutgoingResolvedIds.contains(fail.id) => throw ChannelTransitionFail(channelId)
     case None => throw ChannelTransitionFail(channelId)
     case _ => addRemoteProposal(fail)
   }
 
   def receiveFailMalformed(fail: UpdateFailMalformedHtlc): HostedCommits = localSpec.findOutgoingHtlcById(fail.id) match {
     case _ if fail.failureCode.&(FailureMessageCodecs.BADONION) != 0 => throw ChannelTransitionFail(channelId)
+    case _ if postErrorOutgoingResolvedIds.contains(fail.id) => throw ChannelTransitionFail(channelId)
     case None => throw ChannelTransitionFail(channelId)
     case _ => addRemoteProposal(fail)
   }
