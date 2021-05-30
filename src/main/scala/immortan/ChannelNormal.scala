@@ -5,6 +5,7 @@ import immortan.Channel._
 import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
 import fr.acinq.eclair.channel._
+import scala.concurrent.duration._
 import fr.acinq.eclair.blockchain._
 import com.softwaremill.quicklens._
 import fr.acinq.eclair.transactions._
@@ -107,12 +108,10 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
           init.localParams.keys.revocationKey.publicKey, init.localParams.walletStaticPaymentBasepoint, init.localParams.keys.delayedPaymentKey.publicKey,
           init.localParams.keys.htlcKey.publicKey, init.localParams.keys.commitmentPoint(index = 0L), emptyUpfrontShutdown)
 
-        val remoteParams = RemoteParams(init.theirOpen.dustLimitSatoshis, init.theirOpen.maxHtlcValueInFlightMsat, init.theirOpen.channelReserveSatoshis, init.theirOpen.htlcMinimumMsat,
-          init.theirOpen.toSelfDelay, init.theirOpen.maxAcceptedHtlcs, init.theirOpen.fundingPubkey, init.theirOpen.revocationBasepoint, init.theirOpen.paymentBasepoint,
-          init.theirOpen.delayedPaymentBasepoint, init.theirOpen.htlcBasepoint)
+        val data1 = DATA_WAIT_FOR_FUNDING_CREATED(init, RemoteParams(init.theirOpen.dustLimitSatoshis, init.theirOpen.maxHtlcValueInFlightMsat, init.theirOpen.channelReserveSatoshis,
+          init.theirOpen.htlcMinimumMsat, init.theirOpen.toSelfDelay, init.theirOpen.maxAcceptedHtlcs, init.theirOpen.fundingPubkey, init.theirOpen.revocationBasepoint,
+          init.theirOpen.paymentBasepoint, init.theirOpen.delayedPaymentBasepoint, init.theirOpen.htlcBasepoint), accept)
 
-        Helpers.validateParamsFundee(init.theirOpen, LNParams.feeRatesInfo.onChainFeeConf)
-        val data1 = DATA_WAIT_FOR_FUNDING_CREATED(init, remoteParams, accept)
         BECOME(data1, WAIT_FOR_ACCEPT)
         SEND(accept)
 
@@ -128,14 +127,14 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         val localSigOfRemoteTx = Transactions.sign(remoteCommitTx, wait.initFundee.localParams.keys.fundingKey.privateKey, TxOwner.Remote, wait.initFundee.channelVersion.commitmentFormat)
         val fundingSigned = FundingSigned(channelId = toLongId(created.fundingTxid, created.fundingOutputIndex), signature = localSigOfRemoteTx)
 
-        // Make sure their supplied signature is correct before proceeding
-        require(Transactions.checkSpendable(signedLocalCommitTx).isSuccess)
-
         val publishableTxs = PublishableTxs(signedLocalCommitTx, Nil)
         val commits = NormalCommits(wait.initFundee.theirOpen.channelFlags, fundingSigned.channelId, wait.initFundee.channelVersion, Right(randomKey.publicKey), ShaChain.init, updateOpt = None,
           postCloseOutgoingResolvedIds = Set.empty[Long], wait.initFundee.remoteInfo, wait.initFundee.localParams, wait.remoteParams, LocalCommit(index = 0L, localSpec, publishableTxs),
           RemoteCommit(index = 0L, remoteSpec, remoteCommitTx.tx.txid, remotePerCommitmentPoint = wait.initFundee.theirOpen.firstPerCommitmentPoint), LocalChanges(Nil, Nil, Nil),
           RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 0L, remoteNextHtlcId = 0L, signedLocalCommitTx.input)
+
+        require(Transactions.checkSpendable(signedLocalCommitTx).isSuccess)
+        Helpers.validateParamsFundee(wait.initFundee.theirOpen, commits)
 
         chainWallet.watcher ! WatchSpent(receiver, commits.commitInput.outPoint.txid, commits.commitInput.outPoint.index.toInt, commits.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
         chainWallet.watcher ! WatchConfirmed(receiver, commits.commitInput.outPoint.txid, commits.commitInput.txOut.publicKeyScript, LNParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
@@ -190,22 +189,24 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         StoreBecomeSend(norm.modify(_.commitments.updateOpt).setTo(update.asSome), state)
 
 
-      case (norm: DATA_NORMAL, CMD_CHECK_FEERATE, OPEN) =>
-        // Current feerates are supposed to be updated before this command is received
-        val networkFeeratePerKw = LNParams.feeRatesInfo.feeratesPerKw.feePerBlock(LNParams.feeRatesInfo.onChainFeeConf.feeTargets.commitmentBlockTarget)
-        val shouldUpdate = LNParams.feeRatesInfo.onChainFeeConf.shouldUpdateFee(norm.commitments.localCommit.spec.feeratePerKw, networkFeeratePerKw)
-        if (norm.commitments.localParams.isFunder && shouldUpdate) me process CMD_UPDATE_FEERATE(norm.commitments.channelId, networkFeeratePerKw)
+      case (norm: DATA_NORMAL, CMD_CHECK_FEERATE, OPEN) if norm.commitments.localParams.isFunder =>
+        norm.commitments.newFeerate(info = LNParams.feeRatesInfo).map(norm.commitments.sendFee) match {
+          case Some((commits1, balanceAfterUpdate, ourRatesUpdateMsg)) if balanceAfterUpdate.toLong > 0L =>
+            // Technically we still require fee update at this point since local commit feerate is not refreshed yet
+            // but we may start sending new HTLCs right away because remote peer will see HTLCs AFTER update signature
+            StoreBecomeSend(norm.copy(commitments = commits1, feeUpdateRequired = false), OPEN, ourRatesUpdateMsg)
+            doProcess(CMD_SIGN)
 
+          case Some((_, balanceAfterUpdate, _)) if balanceAfterUpdate.toLong <= 0L =>
+            // We need an update but can't afford it so we wait and reject outgoing adds
+            StoreBecomeSend(norm.copy(feeUpdateRequired = true), OPEN)
 
-      case (norm: DATA_NORMAL, cmd: CMD_UPDATE_FEERATE, OPEN) if norm.commitments.localParams.isFunder =>
-        // Unconditionally update feerates here, check whether this is needed was done at earlier stage
-        val (commits1, reserve) = norm.commitments.sendFee(cmd.ourFeeRatesUpdate)
+          case None if norm.feeUpdateRequired =>
+            // Probably feerates have changed such that we're good again
+            StoreBecomeSend(norm.copy(feeUpdateRequired = false), OPEN)
 
-        if (reserve.toLong > 0L) {
-          // Only send update if we can afford it
-          BECOME(norm.copy(commitments = commits1), OPEN)
-          SEND(cmd.ourFeeRatesUpdate)
-          process(CMD_SIGN)
+          case None =>
+            // Do nothing
         }
 
 
@@ -223,10 +224,20 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
 
       case (norm: DATA_NORMAL, cmd: CMD_ADD_HTLC, OPEN | SLEEPING) =>
-        norm.commitments.sendAdd(cmd, blockHeight = LNParams.blockCount.get, feeConf = LNParams.feeRatesInfo.onChainFeeConf) match {
-          case _ if norm.localShutdown.nonEmpty || norm.remoteShutdown.nonEmpty => events localAddRejected ChannelNotAbleToSend(cmd.incompleteAdd)
-          case _ if SLEEPING == state => events localAddRejected ChannelOffline(cmd.incompleteAdd)
-          case Left(reason) => events localAddRejected reason
+        norm.commitments.sendAdd(cmd, blockHeight = LNParams.blockCount.get) match {
+          case _ if norm.localShutdown.nonEmpty || norm.remoteShutdown.nonEmpty =>
+            events localAddRejected ChannelNotAbleToSend(cmd.incompleteAdd)
+
+          case _ if SLEEPING == state =>
+            // Tell outgoing FSM to not exclude this channel yet
+            events localAddRejected ChannelOffline(cmd.incompleteAdd)
+
+          case _ if norm.feeUpdateRequired =>
+            // Tell outgoing payment FSM to skip this channel entirely
+            events localAddRejected ChannelNotAbleToSend(cmd.incompleteAdd)
+
+          case Left(reason) =>
+            events localAddRejected reason
 
           case Right((commits1, updateAddHtlcMsg)) =>
             BECOME(norm.copy(commitments = commits1), OPEN)
@@ -281,17 +292,16 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         maybeStartNegotiations(norm, norm.remoteShutdown.get)
 
 
-      case (norm: DATA_NORMAL, add: UpdateAddHtlc, OPEN) =>
-        val commits1 = norm.commitments.receiveAdd(add, LNParams.feeRatesInfo.onChainFeeConf)
-        val theirAdd = UpdateAddHtlcExt(add, norm.commitments.remoteInfo)
+      case (norm: DATA_NORMAL, theirAdd: UpdateAddHtlc, OPEN) =>
+        val theirAddExt = UpdateAddHtlcExt(theirAdd, norm.commitments.remoteInfo)
+        val commits1 = norm.commitments.receiveAdd(add = theirAdd)
         BECOME(norm.copy(commitments = commits1), OPEN)
-        events addReceived theirAdd
+        events addReceived theirAddExt
 
 
       case (norm: DATA_NORMAL, msg: UpdateFulfillHtlc, OPEN) =>
         val (commits1, ourAdd) = norm.commitments.receiveFulfill(msg)
         val fulfill = RemoteFulfill(ourAdd, msg.paymentPreimage)
-        // First persist a new state, then call an event
         BECOME(norm.copy(commitments = commits1), OPEN)
         events fulfillReceived fulfill
 
@@ -308,17 +318,19 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
       case (norm: DATA_NORMAL, commitSig: CommitSig, OPEN) =>
         val (commits1, revocation) = norm.commitments.receiveCommit(commitSig)
+        // If feerate update is required AND becomes possible then we schedule another check shortly
+        if (norm.feeUpdateRequired) Rx.ioQueue.delay(1.second).foreach(_ => process(CMD_CHECK_FEERATE), none)
         StoreBecomeSend(norm.copy(commitments = commits1), OPEN, revocation)
-        List(CMD_SIGN, CMD_CHECK_FEERATE).foreach(process)
+        process(CMD_SIGN)
 
 
       case (norm: DATA_NORMAL, revocation: RevokeAndAck, OPEN) =>
-        val commits1 = norm.commitments.receiveRevocation(revocation)
         val lastRemoteRejects: Seq[RemoteReject] = norm.commitments.remoteChanges.signed.collect {
           case fail: UpdateFailHtlc => RemoteUpdateFail(fail, norm.commitments.remoteCommit.spec.findIncomingHtlcById(fail.id).get.add)
           case malform: UpdateFailMalformedHtlc => RemoteUpdateMalform(malform, norm.commitments.remoteCommit.spec.findIncomingHtlcById(malform.id).get.add)
         }
 
+        val commits1 = norm.commitments.receiveRevocation(revocation)
         StoreBecomeSend(norm.copy(commitments = commits1), OPEN)
         events stateUpdated lastRemoteRejects
 

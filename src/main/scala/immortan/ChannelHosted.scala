@@ -79,10 +79,10 @@ abstract class ChannelHosted extends Channel { me =>
     // CHANNEL IS ESTABLISHED
 
     // We specifically do not accept remote adds when channel is in error state
-    case (hc: HostedCommits, add: UpdateAddHtlc, OPEN) if hc.error.isEmpty =>
-      val theirAdd = UpdateAddHtlcExt(add, hc.remoteInfo)
-      BECOME(hc.receiveAdd(add), OPEN)
-      events addReceived theirAdd
+    case (hc: HostedCommits, theirAdd: UpdateAddHtlc, OPEN) if hc.error.isEmpty =>
+      val theirAddExt = UpdateAddHtlcExt(theirAdd, hc.remoteInfo)
+      BECOME(hc.receiveAdd(theirAdd), OPEN)
+      events addReceived theirAddExt
 
 
     // Relaxed constraints for receiveng preimages over HCs

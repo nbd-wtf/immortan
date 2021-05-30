@@ -9,10 +9,11 @@ import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import immortan.{LNParams, RemoteNodeInfo, UpdateAddHtlcExt}
-import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Helpers.HashToPreimage
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.bitcoin.Crypto.PublicKey
 import immortan.crypto.Tools.Any2Some
+import immortan.utils.FeeRatesInfo
 
 
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage] = Nil) {
@@ -134,6 +135,13 @@ case class NormalCommits(channelFlags: Byte, channelId: ByteVector32, channelVer
     }
   }
 
+  def newFeerate(info: FeeRatesInfo): Option[FeeratePerKw] = {
+    val newFeerate = info.feeratesPerKw.feePerBlock(info.onChainFeeConf.feeTargets.commitmentBlockTarget)
+    val maxFeerate = localCommit.spec.feeratePerKw.max(newFeerate).toLong.toDouble
+    val minFeerate = localCommit.spec.feeratePerKw.min(newFeerate).toLong
+    if (maxFeerate / minFeerate > 5.0) Some(newFeerate) else None
+  }
+
   def isMoreRecent(other: NormalCommits): Boolean = {
     val ourNextCommitSent = remoteCommit.index == other.remoteCommit.index && remoteNextCommitInfo.isLeft && other.remoteNextCommitInfo.isRight
     localCommit.index > other.localCommit.index || remoteCommit.index > other.remoteCommit.index || ourNextCommitSent
@@ -169,16 +177,10 @@ case class NormalCommits(channelFlags: Byte, channelId: ByteVector32, channelVer
   def localHasChanges: Boolean = remoteChanges.acked.nonEmpty || localChanges.proposed.nonEmpty
 
   type UpdatedNCAndAdd = (NormalCommits, UpdateAddHtlc)
-  def sendAdd(cmd: CMD_ADD_HTLC, blockHeight: Long, feeConf: OnChainFeeConf): Either[LocalAddRejected, UpdatedNCAndAdd] = {
+  def sendAdd(cmd: CMD_ADD_HTLC, blockHeight: Long): Either[LocalAddRejected, UpdatedNCAndAdd] = {
     if (LNParams.maxCltvExpiryDelta.toCltvExpiry(blockHeight) < cmd.cltvExpiry) return InPrincipleNotSendable(cmd.incompleteAdd).asLeft
     if (CltvExpiry(blockHeight) >= cmd.cltvExpiry) return InPrincipleNotSendable(cmd.incompleteAdd).asLeft
     if (cmd.firstAmount < minSendable) return InPrincipleNotSendable(cmd.incompleteAdd).asLeft
-
-    for {
-      // There may be a pending UpdateFee that hasn't been applied yet that needs to be taken into account
-      feeRate <- localCommit.spec.feeratePerKw +: remoteChanges.all.collect { case updateFee: UpdateFee => updateFee.feeratePerKw }
-      if feeConf.feerateTolerance.isFeeDiffTooHigh(feeConf.feeEstimator.getFeeratePerKw(feeConf.feeTargets.commitmentBlockTarget), feeRate)
-    } return InPrincipleNotSendable(cmd.incompleteAdd).asLeft
 
     val completeAdd = cmd.incompleteAdd.copy(channelId = channelId, id = localNextHtlcId)
     val commitments1 = addLocalProposal(completeAdd).copy(localNextHtlcId = localNextHtlcId + 1)
@@ -204,15 +206,9 @@ case class NormalCommits(channelFlags: Byte, channelId: ByteVector32, channelVer
     Right(commitments1, completeAdd)
   }
 
-  def receiveAdd(add: UpdateAddHtlc, feeConf: OnChainFeeConf): NormalCommits = {
+  def receiveAdd(add: UpdateAddHtlc): NormalCommits = {
     if (localParams.htlcMinimum.max(1L.msat) > add.amountMsat) throw ChannelTransitionFail(channelId)
     if (add.id != remoteNextHtlcId) throw ChannelTransitionFail(channelId)
-
-    for {
-      // There may be a pending UpdateFee that hasn't been applied yet that needs to be taken into account
-      feeRate <- localCommit.spec.feeratePerKw +: remoteChanges.all.collect { case updateFee: UpdateFee => updateFee.feeratePerKw }
-      if feeConf.feerateTolerance.isFeeDiffTooHigh(feeConf.feeEstimator.getFeeratePerKw(feeConf.feeTargets.commitmentBlockTarget), feeRate)
-    } throw ChannelTransitionFail(channelId)
 
     // Let's compute the current commitment *as seen by us* including this change
     val commitments1 = addRemoteProposal(add).copy(remoteNextHtlcId = remoteNextHtlcId + 1)
@@ -247,13 +243,14 @@ case class NormalCommits(channelFlags: Byte, channelId: ByteVector32, channelVer
     case _ => addRemoteProposal(fail)
   }
 
-  def sendFee(msg: UpdateFee): (NormalCommits, Satoshi) = {
+  def sendFee(rate: FeeratePerKw): (NormalCommits, Satoshi, UpdateFee) = {
+    val msg: UpdateFee = UpdateFee(channelId = channelId, feeratePerKw = rate)
     // Let's compute the current commitment *as seen by them* with this change taken into account
     val commitments1 = me.modify(_.localChanges.proposed).using(changes => changes.filter { case _: UpdateFee => false case _ => true } :+ msg)
     val reduced = CommitmentSpec.reduce(commitments1.remoteCommit.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
     val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced, channelVersion.commitmentFormat)
     val reserve = reduced.toRemote.truncateToSatoshi - commitments1.remoteParams.channelReserve - fees
-    (commitments1, reserve)
+    (commitments1, reserve, msg)
   }
 
   def receiveFee(fee: UpdateFee): NormalCommits = {

@@ -32,15 +32,17 @@ import akka.pattern.ask
 
 class ElectrumEclairWallet(val wallet: ActorRef, chainHash: ByteVector32)(implicit system: ActorSystem, ec: ExecutionContext, timeout: akka.util.Timeout) extends EclairWallet {
 
-  override def getBalance: Future[OnChainBalance] = (wallet ? GetBalance).mapTo[GetBalanceResponse].map(balance => OnChainBalance(balance.confirmed, balance.unconfirmed))
+  override def getBalance: Future[OnChainBalance] = (wallet ? GetBalance).mapTo[GetBalanceResponse].map{
+    balance => OnChainBalance(balance.confirmed, balance.unconfirmed)
+  }
 
   override def getReceiveAddresses: Future[Address2PrivKey] = (wallet ? GetCurrentReceiveAddresses).mapTo[GetCurrentReceiveAddressesResponse].map(_.a2p)
 
   override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw): Future[MakeFundingTxResponse] =
     getBalance.flatMap {
       case chainBalance if chainBalance.totalBalance == amount =>
-        val senAllCommand = SendAll(pubkeyScript, Nil, feeRatePerKw, TxIn.SEQUENCE_FINAL)
-        (wallet ? senAllCommand).mapTo[SendAllResponse].map(_.result).map {
+        val sendAllCommand = SendAll(pubkeyScript, Nil, feeRatePerKw, TxIn.SEQUENCE_FINAL)
+        (wallet ? sendAllCommand).mapTo[SendAllResponse].map(_.result).map {
           case Some(res) => MakeFundingTxResponse(res.tx, 0, res.fee)
           case None => throw new RuntimeException
         }

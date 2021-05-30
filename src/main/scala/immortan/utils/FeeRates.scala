@@ -53,16 +53,12 @@ object FeeRates extends CanBeShutDown {
 
 case class FeeRatesInfo(perKb: FeeratesPerKB, stamp: Long) {
   val feeratesPerKw: FeeratesPerKw = FeeratesPerKw(perKb)
-
-  val feeEstimator: FeeEstimator = new FeeEstimator {
-    override def getFeeratePerKw(target: Int): FeeratePerKw =
-      FeeratePerKw(1000.sat) max feeratesPerKw.feePerBlock(target)
-  }
+  val minPerKw: FeeratePerKw = FeeratePerKw(1000L.sat)
 
   val onChainFeeConf: OnChainFeeConf = {
-    val feerateTolerance = FeerateTolerance(0.001, 1000)
-    val feeTargets = FeeTargets(fundingBlockTarget = 12, commitmentBlockTarget = 6, mutualCloseBlockTarget = 36, claimMainBlockTarget = 36)
-    OnChainFeeConf(feeTargets, feeEstimator, closeOnOfflineMismatch = false, updateFeeMinDiffRatio = 0.1, feerateTolerance)
+    val targets = FeeTargets(fundingBlockTarget = 12, commitmentBlockTarget = 6, mutualCloseBlockTarget = 36, claimMainBlockTarget = 72)
+    val estimator = new FeeEstimator { override def getFeeratePerKw(target: Int): FeeratePerKw = feeratesPerKw.feePerBlock(target) max minPerKw }
+    OnChainFeeConf(targets, estimator)
   }
 }
 
