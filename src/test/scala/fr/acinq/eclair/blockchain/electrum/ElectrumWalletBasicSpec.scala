@@ -175,7 +175,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     assert(state3.utxos.length == 3)
     assert(state3.balance == (350000000.sat, 0.sat))
 
-    val TxAndFee(tx, fee) = state3.spendAll(Script.pay2wpkh(ByteVector.fill(20)(1)), feerate, dustLimit, TxIn.SEQUENCE_FINAL)
+    val TxAndFee(tx, fee) = state3.spendAll(Script.pay2wpkh(ByteVector.fill(20)(1)), Nil, feerate, dustLimit, TxIn.SEQUENCE_FINAL)
     val Some((received, _, Some(fee1))) = state3.computeTransactionDelta(tx)
     assert(received === 0.sat)
     assert(fee == fee1)
@@ -189,7 +189,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val pub2 = state.accountKeys(1).publicKey
     val redeemScript = Scripts.multiSig2of2(pub1, pub2)
     val pubkeyScript = Script.pay2wsh(redeemScript)
-    val TxAndFee(tx, fee) = state3.spendAll(pubkeyScript, FeeratePerKw(750.sat), dustLimit, TxIn.SEQUENCE_FINAL)
+    val TxAndFee(tx, fee) = state3.spendAll(pubkeyScript, Nil, FeeratePerKw(750.sat), dustLimit, TxIn.SEQUENCE_FINAL)
     val Some((received, _, Some(fee1))) = state3.computeTransactionDelta(tx)
     assert(received === 0.sat)
     assert(fee == fee1)
@@ -206,7 +206,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val pub2 = state.accountKeys(1).publicKey
     val redeemScript = Scripts.multiSig2of2(pub1, pub2)
     val pubkeyScript = Script.pay2wsh(redeemScript)
-    assert(Try(state3.spendAll(pubkeyScript, FeeratePerKw(8000.sat), dustLimit, TxIn.SEQUENCE_FINAL)).isFailure)
+    assert(Try(state3.spendAll(pubkeyScript, Nil, FeeratePerKw(8000.sat), dustLimit, TxIn.SEQUENCE_FINAL)).isFailure)
   }
 
   test("fuzzy test") {
