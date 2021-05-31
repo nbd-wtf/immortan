@@ -10,11 +10,11 @@ import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
+import immortan.crypto.Tools.{Any2Some, newFeerate}
 import immortan.{ChannelBag, LNParams}
 import scala.util.{Success, Try}
 
 import fr.acinq.eclair.crypto.Generators
-import immortan.crypto.Tools.Any2Some
 import scodec.bits.ByteVector
 
 
@@ -33,7 +33,7 @@ object Helpers {
     if (open.fundingSatoshis < LNParams.minFundingSatoshis || open.fundingSatoshis > LNParams.maxFundingSatoshis)
       throw InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, LNParams.minFundingSatoshis, LNParams.maxFundingSatoshis)
 
-    commits.newFeerate(LNParams.feeRatesInfo) foreach { localFeeratePerKw =>
+    newFeerate(LNParams.feeRatesInfo, commits.localCommit.spec, LNParams.shouldForceClosePaymentFeerateDiff).foreach { localFeeratePerKw =>
       throw FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw)
     }
 

@@ -45,7 +45,7 @@ object LNParams {
 
   val shouldSendUpdateFeerateDiff = 5.0
   val shouldRejectPaymentFeerateDiff = 15.0
-  val shouldForceClosePaymentFeerateDiff = 20.0
+  val shouldForceClosePaymentFeerateDiff = 25.0
 
   val minInvoiceExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(18) // If payee does not provide an explicit relative CLTV this is what we use by default
   val minForceClosableIncomingHtlcAmountToFeeRatio = 3 // When incoming HTLC gets (nearly) expired, how much higher than trim threshold should it be for us to force-close

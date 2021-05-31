@@ -251,7 +251,7 @@ case class NormalCommits(channelFlags: Byte, channelId: ByteVector32, channelVer
     val commitments1 = me.modify(_.remoteChanges.proposed).using(changes => changes.filter { case _: UpdateFee => false case _ => true } :+ fee)
     val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
 
-    val threshold = Transactions.offeredHtlcTrimThreshold(remoteParams.dustLimit, reduced, channelVersion.commitmentFormat)
+    val threshold = Transactions.offeredHtlcTrimThreshold(remoteParams.dustLimit, commitments1.localCommit.spec, channelVersion.commitmentFormat)
     val largeRoutedExist = allOutgoing.exists(ourAdd => ourAdd.amountMsat > threshold * LNParams.minForceClosableOutgoingHtlcAmountToFeeRatio && ourAdd.fullTag.tag == PaymentTagTlv.TRAMPLOINE_ROUTED)
     val dangerousState = largeRoutedExist && newFeerate(LNParams.feeRatesInfo, reduced, LNParams.shouldForceClosePaymentFeerateDiff).isDefined && fee.feeratePerKw < commitments1.localCommit.spec.feeratePerKw
     if (dangerousState) throw ChannelTransitionFail(channelId)
