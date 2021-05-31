@@ -2,11 +2,12 @@ package immortan.utils
 
 import immortan._
 import spray.json._
+import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import immortan.utils.FiatRates.{BitpayItemList, CoinGeckoItemMap}
-import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratePerKw, FeeratesPerKB, FeeratesPerKw}
+import fr.acinq.bitcoin.{ByteVector32, Satoshi}
+
 import immortan.utils.PayRequest.AdditionalRoute
 import fr.acinq.eclair.wire.ChannelUpdate
 import fr.acinq.bitcoin.Crypto.PublicKey
