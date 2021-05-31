@@ -136,7 +136,8 @@ case class NormalCommits(channelFlags: Byte, channelId: ByteVector32, channelVer
   }
 
   def newFeerate(info: FeeRatesInfo): Option[FeeratePerKw] = {
-    val newFeerate = info.feeratesPerKw.feePerBlock(info.onChainFeeConf.feeTargets.commitmentBlockTarget)
+    val commitTarget = info.onChainFeeConf.feeTargets.commitmentBlockTarget
+    val newFeerate = info.onChainFeeConf.feeEstimator.getFeeratePerKw(commitTarget)
     val maxFeerate = localCommit.spec.feeratePerKw.max(newFeerate).toLong.toDouble
     val minFeerate = localCommit.spec.feeratePerKw.min(newFeerate).toLong
     if (maxFeerate / minFeerate > 5.0) Some(newFeerate) else None

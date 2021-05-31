@@ -109,7 +109,7 @@ abstract class ChannelHosted extends Channel { me =>
 
 
     // First attempt a normal state update, then a resized state update if original signature check fails and we have a pending resize proposal
-    case (hc: HostedCommits, remoteSU: StateUpdate, OPEN) if (remoteSU.localSigOfRemoteLCSS != hc.lastCrossSignedState.remoteSigOfLocal) && hc.error.isEmpty =>
+    case (hc: HostedCommits, remoteSU: StateUpdate, OPEN) if remoteSU.localSigOfRemoteLCSS != hc.lastCrossSignedState.remoteSigOfLocal && hc.error.isEmpty =>
       attemptStateUpdate(remoteSU, hc)
 
 
@@ -254,8 +254,11 @@ abstract class ChannelHosted extends Channel { me =>
     case _ =>
   }
 
-  def rejectOverriddenOutgoingAdds(hc: HostedCommits, hc1: HostedCommits): Unit =
+  def rejectOverriddenOutgoingAdds(hc: HostedCommits, hc1: HostedCommits): Unit = {
     hc.allOutgoing -- hc1.allOutgoing map InPrincipleNotSendable foreach events.localAddRejected
+    // We have already rejected overridden outgoing HTLCs as if they are not sendable
+    events stateUpdated Nil
+  }
 
   def restoreCommits(localLCSS: LastCrossSignedState, remoteInfo: RemoteNodeInfo): HostedCommits = {
     val inFlightHtlcs = localLCSS.incomingHtlcs.map(IncomingHtlc) ++ localLCSS.outgoingHtlcs.map(OutgoingHtlc)

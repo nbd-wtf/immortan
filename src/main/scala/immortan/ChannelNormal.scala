@@ -108,9 +108,10 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
           init.localParams.keys.revocationKey.publicKey, init.localParams.walletStaticPaymentBasepoint, init.localParams.keys.delayedPaymentKey.publicKey,
           init.localParams.keys.htlcKey.publicKey, init.localParams.keys.commitmentPoint(index = 0L), emptyUpfrontShutdown)
 
-        val data1 = DATA_WAIT_FOR_FUNDING_CREATED(init, RemoteParams(init.theirOpen.dustLimitSatoshis, init.theirOpen.maxHtlcValueInFlightMsat, init.theirOpen.channelReserveSatoshis,
-          init.theirOpen.htlcMinimumMsat, init.theirOpen.toSelfDelay, init.theirOpen.maxAcceptedHtlcs, init.theirOpen.fundingPubkey, init.theirOpen.revocationBasepoint,
-          init.theirOpen.paymentBasepoint, init.theirOpen.delayedPaymentBasepoint, init.theirOpen.htlcBasepoint), accept)
+        val data1 = DATA_WAIT_FOR_FUNDING_CREATED(init, RemoteParams(init.theirOpen.dustLimitSatoshis, init.theirOpen.maxHtlcValueInFlightMsat,
+          init.theirOpen.channelReserveSatoshis, init.theirOpen.htlcMinimumMsat, init.theirOpen.toSelfDelay, init.theirOpen.maxAcceptedHtlcs,
+          init.theirOpen.fundingPubkey, init.theirOpen.revocationBasepoint, init.theirOpen.paymentBasepoint,
+          init.theirOpen.delayedPaymentBasepoint, init.theirOpen.htlcBasepoint), accept)
 
         BECOME(data1, WAIT_FOR_ACCEPT)
         SEND(accept)
@@ -193,7 +194,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         norm.commitments.newFeerate(info = LNParams.feeRatesInfo).map(norm.commitments.sendFee) match {
           case Some((commits1, balanceAfterUpdate, ourRatesUpdateMsg)) if balanceAfterUpdate.toLong > 0L =>
             // Technically we still require fee update at this point since local commit feerate is not refreshed yet
-            // but we may start sending new HTLCs right away because remote peer will see HTLCs AFTER update signature
+            // but we may start sending new HTLCs right away because remote peer will see them AFTER update signature
             StoreBecomeSend(norm.copy(commitments = commits1, feeUpdateRequired = false), OPEN, ourRatesUpdateMsg)
             doProcess(CMD_SIGN)
 
