@@ -319,7 +319,7 @@ case class ChannelReserveTooHigh(channelId: ByteVector32, reserveToFundingRatio:
 }
 
 case class ChannelTransitionFail(channelId: ByteVector32) extends RuntimeException {
-  override def toString: String = s"ChannelTransitionFail"
+  override def toString: String = s"ChannelTransitionFail, details: $getMessage"
 }
 
 case class CMDException(error: RuntimeException, cmd: Command) extends RuntimeException

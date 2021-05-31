@@ -11,6 +11,7 @@ import com.softwaremill.quicklens._
 import fr.acinq.eclair.transactions._
 import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
 import fr.acinq.eclair.transactions.Transactions.TxOwner
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.bitcoin.Crypto.PrivateKey
@@ -179,7 +180,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         val threshold = Transactions.receivedHtlcTrimThreshold(norm.commitments.remoteParams.dustLimit, norm.commitments.latestRemoteCommit.spec, norm.commitments.channelVersion.commitmentFormat)
         val largeReceivedRevealed = norm.commitments.revealedFulfills.filter(_.theirAdd.amountMsat > threshold * LNParams.minForceClosableIncomingHtlcAmountToFeeRatio)
         val expiredReceivedRevealed = largeReceivedRevealed.exists(tip > _.theirAdd.cltvExpiry.toLong - LNParams.ncFulfillSafetyBlocks)
-        if (sentExpiredRouted || expiredReceivedRevealed) spendLocalCurrent(norm)
+        if (sentExpiredRouted || expiredReceivedRevealed) throw ChannelTransitionFail(norm.channelId)
 
 
       case (some: HasNormalCommitments, remoteInfo: RemoteNodeInfo, SLEEPING) if some.commitments.remoteInfo.nodeId == remoteInfo.nodeId =>
@@ -191,22 +192,24 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
 
       case (norm: DATA_NORMAL, CMD_CHECK_FEERATE, OPEN) if norm.commitments.localParams.isFunder =>
-        norm.commitments.newFeerate(info = LNParams.feeRatesInfo).map(norm.commitments.sendFee) match {
-          case Some((commits1, balanceAfterUpdate, ourRatesUpdateMsg)) if balanceAfterUpdate.toLong > 0L =>
-            // Technically we still require fee update at this point since local commit feerate is not refreshed yet
+        nextFeerate(norm, LNParams.shouldSendUpdateFeerateDiff).map(norm.commitments.sendFee).toList match {
+          case (commits1, balanceAfterFeeUpdate, ourRatesUpdateMsg) :: Nil if balanceAfterFeeUpdate.toLong > 0L =>
+            // Technically we still require feerate update at this point since local commit feerate is not refreshed yet
             // but we may start sending new HTLCs right away because remote peer will see them AFTER update signature
             StoreBecomeSend(norm.copy(commitments = commits1, feeUpdateRequired = false), OPEN, ourRatesUpdateMsg)
             doProcess(CMD_SIGN)
 
-          case Some((_, balanceAfterUpdate, _)) if balanceAfterUpdate.toLong <= 0L =>
-            // We need an update but can't afford it so we wait and reject outgoing adds
+          case _ :: Nil =>
+            // We need a feerate update but can't afford it right now so wait and reject outgoing adds
+            // situation is expected to normalize by either sending it later or getting better feerates
             StoreBecomeSend(norm.copy(feeUpdateRequired = true), OPEN)
 
-          case None if norm.feeUpdateRequired =>
-            // Probably feerates have changed such that we're good again
+          case Nil if norm.feeUpdateRequired =>
+            // We don't need a feerate update, but persisted state indicates it was required
+            // we have probably gotten another feerates which are more in line with current ones
             StoreBecomeSend(norm.copy(feeUpdateRequired = false), OPEN)
 
-          case None =>
+          case Nil =>
             // Do nothing
         }
 
@@ -233,8 +236,12 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
             // Tell outgoing FSM to not exclude this channel yet
             events localAddRejected ChannelOffline(cmd.incompleteAdd)
 
-          case _ if norm.feeUpdateRequired =>
-            // Tell outgoing payment FSM to skip this channel entirely
+          case _ if norm.commitments.localParams.isFunder && norm.feeUpdateRequired =>
+            // It's dangerous to send payments when we need a feerate update but can not afford it
+            events localAddRejected ChannelNotAbleToSend(cmd.incompleteAdd)
+
+          case _ if !norm.commitments.localParams.isFunder && cmd.fullTag.tag == PaymentTagTlv.TRAMPLOINE_ROUTED && nextFeerate(norm, LNParams.shouldRejectPaymentFeerateDiff).isDefined =>
+            // It's dangerous to send routed payments as a fundee when we need a feerate update but peer has not sent us one yet
             events localAddRejected ChannelNotAbleToSend(cmd.incompleteAdd)
 
           case Left(reason) =>
@@ -504,6 +511,9 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
 
       case _ =>
     }
+
+  def nextFeerate(norm: DATA_NORMAL, threshold: Double): Option[FeeratePerKw] =
+    newFeerate(LNParams.feeRatesInfo, norm.commitments.localCommit.spec, threshold)
 
   private def maybeRevertUnsignedOutgoing(data1: HasNormalCommitments) =
     if (data1.commitments.localHasUnsignedOutgoingHtlcs || data1.commitments.remoteHasUnsignedOutgoingHtlcs) {
