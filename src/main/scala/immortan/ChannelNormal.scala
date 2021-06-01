@@ -247,7 +247,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
           case Left(reason) =>
             events localAddRejected reason
 
-          case Right((commits1, updateAddHtlcMsg)) =>
+          case Right(commits1 ~~ updateAddHtlcMsg) =>
             BECOME(norm.copy(commitments = commits1), OPEN)
             SEND(msg = updateAddHtlcMsg)
             process(CMD_SIGN)
@@ -311,6 +311,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         val (commits1, ourAdd) = norm.commitments.receiveFulfill(msg)
         val fulfill = RemoteFulfill(ourAdd, msg.paymentPreimage)
         BECOME(norm.copy(commitments = commits1), OPEN)
+        // Real state update is expected
         events fulfillReceived fulfill
 
 
@@ -488,6 +489,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         // First persist a new state, then call an event
         StoreBecomeSend(closing.copy(revokedCommitPublished = rev1), CLOSING)
         // Proceed as if we have normally received preimages off chain
+        // TODO: also send a simulated follow up state update
         remoteFulfills foreach events.fulfillReceived
 
       // RESTORING FROM STORED DATA

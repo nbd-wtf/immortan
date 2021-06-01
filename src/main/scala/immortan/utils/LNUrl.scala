@@ -61,7 +61,7 @@ case class LNUrl(request: String) {
   }
 
   def level1DataResponse: Observable[LNUrlData] = Rx.ioQueue.map { _ =>
-    val lnUrlData = to[LNUrlData](LNUrl guardResponse HttpRequest.get(uri.toString, false).header("Connection", "close").connectTimeout(15000).body)
+    val lnUrlData = to[LNUrlData](LNUrl guardResponse HttpRequest.get(uri.toString, false).connectTimeout(15000).header("Connection", "close").body)
     require(lnUrlData.checkAgainstParent(this), "1st/2nd level callback domain mismatch")
     lnUrlData
   }
