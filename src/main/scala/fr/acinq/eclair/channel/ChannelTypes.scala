@@ -84,8 +84,13 @@ case class CMD_ADD_HTLC(fullTag: FullPaymentTag, firstAmount: MilliSatoshi, cltv
   }
 }
 
-case object CMD_FORCECLOSE extends Command
-final case class CMD_CLOSE(scriptPubKey: Option[ByteVector] = None) extends Command
+object CMD_CLOSE {
+  final val INVALID_CLOSING_PUBKEY = "invalid-closing-pubkey"
+  final val ALREADY_IN_PROGRESS = "already-in-progress"
+  final val CHANNEL_BUSY = "channel-busy"
+}
+
+case class CMD_CLOSE(scriptPubKey: Option[ByteVector], force: Boolean) extends Command
 case class CMD_HOSTED_STATE_OVERRIDE(so: StateOverride) extends Command
 case class HC_CMD_RESIZE(delta: Satoshi) extends Command
 case object CMD_SOCKET_OFFLINE extends Command
@@ -306,4 +311,5 @@ case class ChannelTransitionFail(channelId: ByteVector32) extends RuntimeExcepti
   override def toString: String = s"ChannelTransitionFail, details: $getMessage"
 }
 
-case class CMDException(error: RuntimeException, cmd: Command) extends RuntimeException
+case class CMDException(reason: String, cmd: Command) extends RuntimeException
+case class RemoteErrorException(details: String) extends RuntimeException

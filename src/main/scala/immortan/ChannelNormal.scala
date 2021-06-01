@@ -220,11 +220,27 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         val isValidFinalScriptPubkey = Helpers.Closing.isValidFinalScriptPubkey(localScriptPubKey)
         val hasLocalHasUnsignedOutgoingHtlcs = norm.commitments.localHasUnsignedOutgoingHtlcs
         val shutdown = Shutdown(norm.channelId, localScriptPubKey)
+        val norm1 = norm.copy(localShutdown = shutdown.asSome)
 
-        if (!isValidFinalScriptPubkey) throw CMDException(new RuntimeException, cmd)
-        else if (norm.localShutdown.isDefined) throw CMDException(new RuntimeException, cmd)
-        else if (hasLocalHasUnsignedOutgoingHtlcs) throw CMDException(new RuntimeException, cmd)
-        else StoreBecomeSend(norm.copy(localShutdown = shutdown.asSome), state, shutdown)
+        if (cmd.force) {
+          if (norm.localShutdown.isDefined) spendLocalCurrent(norm)
+          else if (hasLocalHasUnsignedOutgoingHtlcs) spendLocalCurrent(norm)
+          else StoreBecomeSend(norm1, state, shutdown)
+        } else {
+          if (!isValidFinalScriptPubkey) throw CMDException(CMD_CLOSE.INVALID_CLOSING_PUBKEY, cmd)
+          else if (norm.localShutdown.isDefined) throw CMDException(CMD_CLOSE.ALREADY_IN_PROGRESS, cmd)
+          else if (hasLocalHasUnsignedOutgoingHtlcs) throw CMDException(CMD_CLOSE.CHANNEL_BUSY, cmd)
+          else StoreBecomeSend(norm1, state, shutdown)
+        }
+
+
+      // In all other states except normal we force-close right away
+      case (some: HasNormalCommitments, _: CMD_CLOSE, OPEN | SLEEPING) =>
+        spendLocalCurrent(some)
+
+
+      case (_: HasNormalCommitments, remote: Error, OPEN | SLEEPING) =>
+        throw RemoteErrorException(ErrorExt extractDescription remote)
 
 
       case (norm: DATA_NORMAL, cmd: CMD_ADD_HTLC, OPEN | SLEEPING) =>
@@ -383,7 +399,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
             handleMutualClose(signedClosingTx, negs1)
             SEND(closingSignedMsg)
           } else {
-            // Keep negotiating
+            // Keep negotiating, our closing fees are different
             StoreBecomeSend(negs1, OPEN, closingSignedMsg)
           }
         }

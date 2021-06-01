@@ -8,6 +8,7 @@ import immortan.crypto.Tools._
 import immortan.PaymentStatus._
 import immortan.ChannelMaster._
 import fr.acinq.eclair.channel._
+
 import scala.concurrent.duration._
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -15,11 +16,13 @@ import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteReject}
 import immortan.crypto.{CanBeRepliedTo, CanBeShutDown, StateMachine}
 import immortan.fsm.OutgoingPaymentMaster.CMDChanGotOnline
 import java.util.concurrent.atomic.AtomicLong
+
 import fr.acinq.eclair.payment.IncomingPacket
 import com.google.common.cache.LoadingCache
-import immortan.ChannelListener.Transition
+import immortan.ChannelListener.{Malfunction, Transition}
 import rx.lang.scala.Subject
 import immortan.utils.Rx
+
 import scala.util.Try
 
 
@@ -228,6 +231,16 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
     }
 
   // These are executed in Channel context
+
+  override def onException: PartialFunction[Malfunction, Unit] = {
+    case (chan: ChannelNormal, data: HasNormalCommitments, error: ChannelTransitionFail) =>
+      dataBag.putChanCloseDetails(data.channelId, error.getStackTrace.toList.toString)
+      chan process CMD_CLOSE(scriptPubKey = None, force = true)
+
+    case (chan: ChannelHosted, hc: HostedCommits, error: ChannelTransitionFail) =>
+      dataBag.putChanCloseDetails(hc.channelId, error.getStackTrace.toList.toString)
+      chan.localSuspend(hc, ErrorCodes.ERR_HOSTED_MANUAL_SUSPEND)
+  }
 
   override def onBecome: PartialFunction[Transition, Unit] = {
     case (_, _, _, SLEEPING, CLOSING) => next(statusUpdateStream)
