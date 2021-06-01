@@ -9,7 +9,7 @@ import scala.concurrent.duration._
 import fr.acinq.eclair.blockchain._
 import com.softwaremill.quicklens._
 import fr.acinq.eclair.transactions._
-import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, OutPoint, ScriptFlags, Transaction}
 import fr.acinq.eclair.transactions.Transactions.TxOwner
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing
@@ -32,7 +32,7 @@ object ChannelNormal {
   }
 }
 
-abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me =>
+abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
   val chainWallet: WalletExt
 
   def doProcess(change: Any): Unit =
@@ -229,7 +229,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
             StoreBecomeSend(norm.copy(feeUpdateRequired = false), OPEN)
 
           case Nil =>
-          // Do nothing
+            // Do nothing
         }
 
 
@@ -687,4 +687,45 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
         // As a measure of last resort
         spendLocalCurrent(data1)
     }
+
+  // Publish handlers
+
+  private def doPublish(closingTx: Transaction): Unit = {
+    val replyEvent: BitcoinEvent = BITCOIN_TX_CONFIRMED(closingTx)
+    chainWallet.watcher ! WatchConfirmed(receiver, closingTx, replyEvent, LNParams.minDepthBlocks)
+    chainWallet.watcher ! PublishAsap(closingTx)
+  }
+
+  private def publishIfNeeded(txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32] = Map.empty): Unit =
+    txes.filterNot(Closing inputsAlreadySpent irrevocablySpent).map(PublishAsap).foreach(event => chainWallet.watcher ! event)
+
+  // Watch utxos only we can spend
+  private def watchConfirmedIfNeeded(txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32] = Map.empty): Unit =
+    txes.filterNot(Closing inputsAlreadySpent irrevocablySpent).map(BITCOIN_TX_CONFIRMED).foreach { replyEvent =>
+      chainWallet.watcher ! WatchConfirmed(receiver, replyEvent.tx, replyEvent, LNParams.minDepthBlocks)
+    }
+
+  // Watch utxos that both we and peer can spend
+  private def watchSpentIfNeeded(parentTx: Transaction, txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32] = Map.empty): Unit =
+    txes.filterNot(Closing inputsAlreadySpent irrevocablySpent).map(_.txIn.head.outPoint.index.toInt).foreach { outPointIndex =>
+      chainWallet.watcher ! WatchSpent(receiver, parentTx, outPointIndex, BITCOIN_OUTPUT_SPENT)
+    }
+
+  private def doPublish(lcp: LocalCommitPublished): Unit = {
+    publishIfNeeded(List(lcp.commitTx) ++ lcp.claimMainDelayedOutputTx ++ lcp.htlcSuccessTxs ++ lcp.htlcTimeoutTxs ++ lcp.claimHtlcDelayedTxs, lcp.irrevocablySpent)
+    watchConfirmedIfNeeded(List(lcp.commitTx) ++ lcp.claimMainDelayedOutputTx ++ lcp.claimHtlcDelayedTxs, lcp.irrevocablySpent)
+    watchSpentIfNeeded(lcp.commitTx, lcp.htlcSuccessTxs ++ lcp.htlcTimeoutTxs, lcp.irrevocablySpent)
+  }
+
+  private def doPublish(rcp: RemoteCommitPublished): Unit = {
+    publishIfNeeded(rcp.claimMainOutputTx ++ rcp.claimHtlcSuccessTxs ++ rcp.claimHtlcTimeoutTxs, rcp.irrevocablySpent)
+    watchSpentIfNeeded(rcp.commitTx, rcp.claimHtlcTimeoutTxs ++ rcp.claimHtlcSuccessTxs, rcp.irrevocablySpent)
+    watchConfirmedIfNeeded(List(rcp.commitTx) ++ rcp.claimMainOutputTx, rcp.irrevocablySpent)
+  }
+
+  private def doPublish(rcp: RevokedCommitPublished): Unit = {
+    publishIfNeeded(rcp.claimMainOutputTx ++ rcp.mainPenaltyTx ++ rcp.htlcPenaltyTxs ++ rcp.claimHtlcDelayedPenaltyTxs, rcp.irrevocablySpent)
+    watchSpentIfNeeded(rcp.commitTx, rcp.mainPenaltyTx ++ rcp.htlcPenaltyTxs, rcp.irrevocablySpent)
+    watchConfirmedIfNeeded(List(rcp.commitTx) ++ rcp.claimMainOutputTx, rcp.irrevocablySpent)
+  }
 }
