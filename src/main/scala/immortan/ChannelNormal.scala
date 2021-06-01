@@ -360,7 +360,30 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
       // NEGOTIATIONS
 
       case (negs: DATA_NEGOTIATING, remote: ClosingSigned, OPEN) =>
-        handleNegotiations(negs, remote, LNParams.feeRatesInfo.onChainFeeConf)
+        val firstClosingFee = Closing.firstClosingFee(negs.commitments, negs.localShutdown.scriptPubKey, negs.remoteShutdown.scriptPubKey, LNParams.feeRatesInfo.onChainFeeConf)
+        val signedClosingTx = Closing.checkClosingSignature(negs.commitments, negs.localShutdown.scriptPubKey, negs.remoteShutdown.scriptPubKey, remote.feeSatoshis, remote.signature)
+        if (negs.closingTxProposed.last.lastOption.map(_.localClosingSigned.feeSatoshis).contains(remote.feeSatoshis) || negs.closingTxProposed.flatten.size >= LNParams.maxNegotiationIterations) {
+          val negs1 = negs.copy(bestUnpublishedClosingTxOpt = signedClosingTx.asSome)
+          handleMutualClose(signedClosingTx, negs1)
+        } else {
+          val lastLocalClosingFee = negs.closingTxProposed.last.lastOption.map(_.localClosingSigned.feeSatoshis)
+          val nextClosingFee = Closing.nextClosingFee(localClosingFee = lastLocalClosingFee.getOrElse(firstClosingFee), remoteClosingFee = remote.feeSatoshis)
+          val (closingTx, closingSignedMsg) = Closing.makeClosingTx(negs.commitments, negs.localShutdown.scriptPubKey, negs.remoteShutdown.scriptPubKey, nextClosingFee)
+          val negs1 = negs.withAnotherClosingProposed(ClosingTxProposed(closingTx.tx, closingSignedMsg), signedClosingTx)
+
+          if (lastLocalClosingFee contains nextClosingFee) {
+            // Next computed fee is the same than the one we previously sent
+            // this may happen due to rounding, anyway we can close now
+            handleMutualClose(signedClosingTx, negs1)
+          } else if (nextClosingFee == remote.feeSatoshis) {
+            // Our next computed fee matches their, we have converged
+            handleMutualClose(signedClosingTx, negs1)
+            SEND(closingSignedMsg)
+          } else {
+            // Keep negotiating
+            StoreBecomeSend(negs1, OPEN, closingSignedMsg)
+          }
+        }
 
       // OFFLINE IN PERSISTENT STATES
 
@@ -538,6 +561,18 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
     if (data1.commitments.hasPendingHtlcsOrFeeUpdate) StoreBecomeSend(data1.copy(localShutdown = local.asSome, remoteShutdown = remote.asSome), OPEN, local)
     else if (!data1.commitments.localParams.isFunder) StoreBecomeSend(DATA_NEGOTIATING(data1.commitments, local, remote), OPEN, local)
     else startNegotiationsAsFunder(data1, local, remote)
+  }
+
+  private def handleMutualClose(closingTx: Transaction, data1: DATA_NEGOTIATING): Unit = {
+    val data2 = DATA_CLOSING(data1.commitments, System.currentTimeMillis, data1.closingTxProposed.flatten.map(_.unsignedTx), closingTx :: Nil)
+    BECOME(STORE(data2), CLOSING)
+    doPublish(closingTx)
+  }
+
+  private def handleMutualClose(closingTx: Transaction, data1: DATA_CLOSING): Unit = {
+    val data2 = data1.copy(mutualClosePublished = data1.mutualClosePublished :+ closingTx)
+    BECOME(STORE(data2), CLOSING)
+    doPublish(closingTx)
   }
 
   private def spendLocalCurrent(data1: HasNormalCommitments): Unit = {
