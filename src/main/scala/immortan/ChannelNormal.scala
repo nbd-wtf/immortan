@@ -369,7 +369,10 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel with Handlers { me
           val lastLocalClosingFee = negs.closingTxProposed.last.lastOption.map(_.localClosingSigned.feeSatoshis)
           val nextClosingFee = Closing.nextClosingFee(localClosingFee = lastLocalClosingFee.getOrElse(firstClosingFee), remoteClosingFee = remote.feeSatoshis)
           val (closingTx, closingSignedMsg) = Closing.makeClosingTx(negs.commitments, negs.localShutdown.scriptPubKey, negs.remoteShutdown.scriptPubKey, nextClosingFee)
-          val negs1 = negs.withAnotherClosingProposed(ClosingTxProposed(closingTx.tx, closingSignedMsg), signedClosingTx)
+
+          val proposed = ClosingTxProposed(closingTx.tx, closingSignedMsg)
+          val closingTxProposed1 = negs.closingTxProposed match { case prev :+ current => prev :+ (current :+ proposed) map identity }
+          val negs1 = negs.copy(bestUnpublishedClosingTxOpt = Some(signedClosingTx), closingTxProposed = closingTxProposed1)
 
           if (lastLocalClosingFee contains nextClosingFee) {
             // Next computed fee is the same than the one we previously sent

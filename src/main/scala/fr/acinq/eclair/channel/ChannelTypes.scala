@@ -163,13 +163,7 @@ final case class DATA_NORMAL(commitments: NormalCommits, shortChannelId: ShortCh
 
 final case class DATA_NEGOTIATING(commitments: NormalCommits, localShutdown: Shutdown,
                                   remoteShutdown: Shutdown, closingTxProposed: List[List[ClosingTxProposed]] = List(Nil),
-                                  bestUnpublishedClosingTxOpt: Option[Transaction] = None) extends ChannelData with HasNormalCommitments { me =>
-
-  def withAnotherClosingProposed(proposed: ClosingTxProposed, signedClosingTx: Transaction): DATA_NEGOTIATING = {
-    val closingTxProposed1 = closingTxProposed match { case prev :+ current => prev :+ (current :+ proposed) map identity }
-    copy(bestUnpublishedClosingTxOpt = Some(signedClosingTx), closingTxProposed = closingTxProposed1)
-  }
-}
+                                  bestUnpublishedClosingTxOpt: Option[Transaction] = None) extends ChannelData with HasNormalCommitments
 
 final case class DATA_CLOSING(commitments: NormalCommits, waitingSince: Long, mutualCloseProposed: List[Transaction] = Nil, mutualClosePublished: List[Transaction] = Nil,
                               localCommitPublished: Option[LocalCommitPublished] = None, remoteCommitPublished: Option[RemoteCommitPublished] = None, nextRemoteCommitPublished: Option[RemoteCommitPublished] = None,
