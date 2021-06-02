@@ -187,7 +187,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
           case closing: DATA_CLOSING if closing.mutualCloseProposed.exists(_.txid == tx.txid) => handleMutualClose(tx, closing)
           case negs: DATA_NEGOTIATING if negs.bestUnpublishedClosingTxOpt.exists(_.txid == tx.txid) => handleMutualClose(tx, negs)
           case negs: DATA_NEGOTIATING if negs.closingTxProposed.flatten.exists(_.unsignedTx.txid == tx.txid) => handleMutualClose(tx, negs)
-          case waitForPeerToPublishFuture: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => handleRemoteSpentFuture(tx, waitForPeerToPublishFuture)
+          case waitPublishFuture: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => handleRemoteSpentFuture(tx, waitPublishFuture.commitments)
           case _ if some.commitments.remoteNextCommitInfo.left.exists(_.nextRemoteCommit.txid == tx.txid) => handleRemoteSpentNext(tx, some)
           case _ if tx.txid == some.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, some)
           case _ => handleRemoteSpentOther(tx, some)
@@ -664,16 +664,15 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
     doPublish(rcp)
   }
 
-  private def handleRemoteSpentFuture(commitTx: Transaction, data1: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT): Unit = {
+  private def handleRemoteSpentFuture(commitTx: Transaction, commits: NormalCommits): Unit = {
     val remoteCommitPublished = RemoteCommitPublished(commitTx, claimMainOutputTx = None, claimHtlcSuccessTxs = Nil, claimHtlcTimeoutTxs = Nil)
-    val closing = DATA_CLOSING(data1.commitments, System.currentTimeMillis, futureRemoteCommitPublished = remoteCommitPublished.asSome)
+    val closing = DATA_CLOSING(commits, System.currentTimeMillis, futureRemoteCommitPublished = remoteCommitPublished.asSome)
     StoreBecomeSend(closing, CLOSING)
   }
 
   private def handleRemoteSpentOther(tx: Transaction, data1: HasNormalCommitments): Unit =
     Helpers.Closing.claimRevokedRemoteCommitTxOutputs(data1.commitments, tx, bag, LNParams.feeRatesInfo.onChainFeeConf.feeEstimator) match {
-      // This is most likely an old revoked state, but it might not be in some kind of exceptional circumstance (such as private keys leakage)
-      // As a measure of last resort we try to spend our local commit to maybe win a chain race if we can't derive a punishment tx
+      // This is most likely an old revoked state, but it might not be in some kind of exceptional circumstance (private keys leakage, old backup etc)
 
       case Some(revCp) =>
         handleChannelForceClosing(data1) {
@@ -684,8 +683,9 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
         doPublish(revCp)
 
       case None =>
-        // As a measure of last resort
-        spendLocalCurrent(data1)
+        // It is dagerous to publish our commit here (for example when we restore state from an old backup)
+        // thanks to remote static key we get the rest of channel balance back anyway so it's not too bad
+        handleRemoteSpentFuture(tx, data1.commitments)
     }
 
   // Publish handlers
