@@ -29,7 +29,7 @@ class DbSpec extends AnyFunSuite {
     val onion = OnionRoutingPacket(1, randomKey.publicKey.value, null, null)
     val inserts = for (n <- 0L until 100L) yield IncomingHtlc(UpdateAddHtlc(null, n, 100L.msat, randomBytes32, CltvExpiry(n), onion))
     val interface = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, HtlcInfoTable)
-    val sqLiteChannel = new SQLiteChannel(interface)
+    val sqLiteChannel = new SQLiteChannel(interface, null)
 
     sqLiteChannel.putHtlcInfos(inserts, ShortChannelId(100L), commitNumber = 100)
     assert(sqLiteChannel.htlcInfos(commitNumer = 100).map(_.cltvExpiry) == inserts.map(_.add.cltvExpiry))

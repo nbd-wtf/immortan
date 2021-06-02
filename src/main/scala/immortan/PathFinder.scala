@@ -19,13 +19,11 @@ import scala.collection.mutable
 
 
 object PathFinder {
-  val RESYNC_PERIOD: Long = 1000L * 3600 * 24 * 2
   val NotifyRejected = "path-finder-notify-rejected"
   val NotifyOperational = "path-finder-notify-operational"
   val NotifySyncStarted = "path-finder-notify-sync-started"
   val NotifySyncFinished = "path-finder-notify-sync-finished"
   val CMDLoadGraph = "cmd-load-graph"
-  val CMDResync = "cmd-resync"
 
   val WAITING = 0
   val OPERATIONAL = 1
@@ -38,14 +36,14 @@ object PathFinder {
 abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag) extends StateMachine[Data] { me =>
   private val extraEdges = CacheBuilder.newBuilder.expireAfterWrite(1, TimeUnit.DAYS).maximumSize(5000).build[ShortIdAndPosition, GraphEdge]
   val extraEdgesMap: mutable.Map[ShortIdAndPosition, GraphEdge] = extraEdges.asMap.asScala
-
   var listeners: Set[CanBeRepliedTo] = Set.empty
-
   var debugMode: Boolean = false
 
   implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
   def process(changeMessage: Any): Unit = scala.concurrent.Future(me doProcess changeMessage)
 
+  private val CMDResync = "cmd-resync"
+  private val RESYNC_PERIOD: Long = 1000L * 3600 * 24 * 2
   // We don't load routing data on every startup but when user (or system) actually needs it
   become(Data(channels = Map.empty, hostedChannels = Map.empty, graph = DirectedGraph.apply), WAITING)
   // Init resync with persistent delay on startup, then periodically resync every RESYNC_PERIOD days + 1 hour to trigger a full, not just PHC sync

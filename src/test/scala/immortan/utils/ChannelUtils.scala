@@ -49,7 +49,7 @@ object ChannelUtils {
     val essentialInterface = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, ChannelTable, PreimageTable)
     val notEssentialInterface = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, PaymentTable, RelayTable, DataTable, ElectrumHeadersTable)
     val payBag = new SQLitePayment(notEssentialInterface, essentialInterface)
-    val chanBag = new SQLiteChannel(essentialInterface)
+    val chanBag = new SQLiteChannel(essentialInterface, null)
     val dataBag = new SQLiteData(notEssentialInterface)
 
     val pf = makePathFinder(normalStore, hostedStore)

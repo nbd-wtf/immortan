@@ -11,11 +11,11 @@ import fr.acinq.eclair.blockchain.electrum._
 import scodec.bits.{ByteVector, HexStringSyntax}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import scala.concurrent.{Await, ExecutionContextExecutor}
-import immortan.sqlite.{DBInterface, PreparedQuery, RichCursor}
 import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
 import fr.acinq.eclair.transactions.{DirectedHtlc, RemoteFulfill}
 import fr.acinq.eclair.channel.{ChannelKeys, LocalParams, PersistentChannelData}
 import akka.actor.{ActorRef, ActorSystem, PoisonPill, Props, SupervisorStrategy}
+import immortan.sqlite.{ChannelTxFeesSummary, DBInterface, PreparedQuery, RichCursor}
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
 import fr.acinq.eclair.router.ChannelUpdateExt
 import java.util.concurrent.atomic.AtomicLong
@@ -283,4 +283,7 @@ trait ChannelBag {
   def putHtlcInfo(sid: ShortChannelId, commitNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry)
   def putHtlcInfos(htlcs: Seq[DirectedHtlc], sid: ShortChannelId, commitNumber: Long)
   def rmHtlcInfos(sid: ShortChannelId)
+
+  def channelTxFeesSummary: Try[ChannelTxFeesSummary]
+  def addChannelTxFee(feePaid: Satoshi, txid: ByteVector32)
 }
