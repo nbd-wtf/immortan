@@ -181,10 +181,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     val feeReserve = 7000L.msat
 
     var replies = List.empty[Any]
-    ChannelMaster.NO_CHANNEL = new StateMachine[ChannelData] with CanBeRepliedTo {
-      def process(change: Any): Unit = doProcess(change)
-      def doProcess(change: Any): Unit = replies ::= change
-    }
+    cm.sendTo = (change, _) => replies ::= change
 
     val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerLegacyTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, d, CltvExpiryDelta(720), feeReserve)
     val reasonableTrampoline1 = createResolution(pr, 105000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
@@ -219,10 +216,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     val feeReserve = 7000L.msat
 
     var replies = List.empty[Any]
-    ChannelMaster.NO_CHANNEL = new StateMachine[ChannelData] with CanBeRepliedTo {
-      def process(change: Any): Unit = doProcess(change)
-      def doProcess(change: Any): Unit = replies ::= change
-    }
+    cm.sendTo = (change, _) => replies ::= change
 
     // Private channel US -> A
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer-2")
@@ -262,10 +256,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     val feeReserve = 7000L.msat
 
     var replies = List.empty[Any]
-    ChannelMaster.NO_CHANNEL = new StateMachine[ChannelData] with CanBeRepliedTo {
-      def process(change: Any): Unit = doProcess(change)
-      def doProcess(change: Any): Unit = replies ::= change
-    }
+    cm.sendTo = (change, _) => replies ::= change
 
     // Private channel US -> A
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer-2")
@@ -304,10 +295,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     val feeReserve = 7000L.msat
 
     var replies = List.empty[Any]
-    ChannelMaster.NO_CHANNEL = new StateMachine[ChannelData] with CanBeRepliedTo {
-      def process(change: Any): Unit = doProcess(change)
-      def doProcess(change: Any): Unit = replies ::= change
-    }
+    cm.sendTo = (change, _) => replies ::= change
 
     // Private channel US -> A
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer-2")
@@ -429,10 +417,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     cm.opm process RemoteUpdateFail(UpdateFailHtlc(out2.channelId, out2.id, randomBytes32.bytes), out2)
 
     var replies = List.empty[Any]
-    ChannelMaster.NO_CHANNEL = new StateMachine[ChannelData] with CanBeRepliedTo {
-      def process(change: Any): Unit = doProcess(change)
-      def doProcess(change: Any): Unit = replies ::= change
-    }
+    cm.sendTo = (change, _) => replies ::= change
 
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline2 :: Nil) // Noisy event
     WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
