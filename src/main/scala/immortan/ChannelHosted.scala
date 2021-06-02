@@ -289,7 +289,7 @@ abstract class ChannelHosted extends Channel { me =>
   }
 
   def rejectOverriddenOutgoingAdds(hc: HostedCommits, hc1: HostedCommits): Unit = {
-    hc.allOutgoing -- hc1.allOutgoing map InPrincipleNotSendable foreach events.localAddRejected
+    for (add <- hc.allOutgoing -- hc1.allOutgoing) events localAddRejected InPrincipleNotSendable(add)
     // We may have local incoming FSMs to finalize because pending incoming HTLCs could have also been removed
     events stateUpdated Nil
   }

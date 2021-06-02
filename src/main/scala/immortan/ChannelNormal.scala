@@ -428,7 +428,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
       case (data1: HasNormalCommitments, CMD_SOCKET_OFFLINE, WAIT_FUNDING_DONE | OPEN) =>
         val (wasUpdated, data2, localProposedAdds) = maybeRevertUnsignedOutgoing(data1)
         if (wasUpdated) StoreBecomeSend(data2, SLEEPING) else BECOME(data1, SLEEPING)
-        localProposedAdds map ChannelOffline foreach events.localAddRejected
+        for (add <- localProposedAdds) events localAddRejected ChannelOffline(add)
 
 
       // REESTABLISHMENT IN PERSISTENT STATES
@@ -643,10 +643,12 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
     } else (false, data1, Nil)
 
   private def handleChannelForceClosing(prev: HasNormalCommitments)(turnIntoClosing: HasNormalCommitments => DATA_CLOSING): Unit = {
-    val (wasUpdated, closing1: DATA_CLOSING, localProposedAdds) = turnIntoClosing.andThen(maybeRevertUnsignedOutgoing)(prev)
-    if (wasUpdated) StoreBecomeSend(closing1, CLOSING) else StoreBecomeSend(closing1, CLOSING)
-    localProposedAdds map ChannelNotAbleToSend foreach events.localAddRejected
-    // In case if force-closing happens when we have a cross-signed mutual
+    val (_, closing1: DATA_CLOSING, localProposedAdds) = turnIntoClosing.andThen(maybeRevertUnsignedOutgoing)(prev)
+    StoreBecomeSend(closing1, CLOSING)
+
+    // Unsigned outgoing HTLCs should be failed right away on any force-closing
+    for (add <- localProposedAdds) events localAddRejected ChannelNotAbleToSend(add)
+    // In case if force-closing happens when we have a cross-signed mutual tx
     closing1.mutualClosePublished.foreach(doPublish)
   }
 
