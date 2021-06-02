@@ -168,6 +168,7 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
     // Outgoing FSMs won't receive anything without channel listeners
     for (channel <- all.values) channel.listeners = Set.empty
     for (fsm <- inProcessors.values) fsm.becomeShutDown
+    pf.subscription.unsubscribe
     pf.listeners = Set.empty
   }
 
