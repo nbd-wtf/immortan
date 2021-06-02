@@ -1,14 +1,12 @@
 package immortan.sqlite
 
 import java.lang.{Long => JLong}
-
 import fr.acinq.eclair.{CltvExpiry, ShortChannelId}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.channel.PersistentChannelData
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.wire.ChannelCodecs
 import immortan.ChannelBag
-
 import scala.util.Try
 
 
