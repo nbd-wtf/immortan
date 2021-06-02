@@ -170,8 +170,7 @@ class TestNetSyncParams extends SyncParams {
   override val acceptThreshold = 0
 }
 
-// Important: LNParams.format must be defined
-
+// Important: LNParams.secret must be defined
 case class RemoteNodeInfo(nodeId: PublicKey, address: NodeAddress, alias: String) {
   lazy val nodeSpecificExtendedKey: DeterministicWallet.ExtendedPrivateKey = LNParams.secret.keys.ourFakeNodeIdKey(nodeId)
   lazy val nodeSpecificPair: KeyPairAndPubKey = KeyPairAndPubKey(KeyPair(nodeSpecificPubKey.value, nodeSpecificPrivKey.value), nodeId)
