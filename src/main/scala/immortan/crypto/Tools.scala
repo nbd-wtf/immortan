@@ -4,7 +4,6 @@ import fr.acinq.eclair._
 import fr.acinq.bitcoin._
 import scala.concurrent.duration._
 import immortan.crypto.StateMachine._
-import immortan.crypto.Tools.{none, runAnd}
 import immortan.utils.{FeeRatesInfo, ThrottledWork}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, ShortChannelId}
@@ -20,6 +19,7 @@ import immortan.crypto.Noise.KeyPair
 import java.util.concurrent.TimeUnit
 import java.io.ByteArrayInputStream
 import language.implicitConversions
+import immortan.crypto.Tools.runAnd
 import scala.collection.mutable
 import rx.lang.scala.Observable
 import scodec.bits.ByteVector
@@ -140,13 +140,16 @@ abstract class StateMachine[T] { me =>
   var state: Int = -1
   var data: T = _
 
-  lazy val delayedCMDWorker: ThrottledWork[String, Long] = new ThrottledWork[String, Long] {
-    def work(cmd: String): Observable[Long] = Observable.interval(1.second).doOnSubscribe { secondsLeft = INTERVAL }
-    def error(canNotHappen: Throwable): Unit = none
+  lazy val delayedCMDWorker: ThrottledWork[String, Long] =
+    new ThrottledWork[String, Long] {
+      def work(cmd: String): Observable[Long] = {
+        val tickIncrease = Observable.interval(1.second)
+        tickIncrease.doOnSubscribe { secondsLeft = INTERVAL }
+      }
 
-    def process(cmd: String, tickInterval: Long): Unit = {
-      secondsLeft = INTERVAL - math.min(INTERVAL, tickInterval + 1)
-      if (secondsLeft <= 0L) runAnd(unsubscribeCurrentWork)(me doProcess cmd)
+      def process(cmd: String, tickInterval: Long): Unit = {
+        secondsLeft = INTERVAL - math.min(INTERVAL, tickInterval + 1)
+        if (secondsLeft <= 0L) runAnd(unsubscribeCurrentWork)(me doProcess cmd)
+      }
     }
-  }
 }
