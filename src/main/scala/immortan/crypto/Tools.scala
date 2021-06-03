@@ -43,6 +43,14 @@ object Tools {
     def asList: List[T] = List(underlying)
   }
 
+  implicit class ThrowableOps(error: Throwable) {
+    def stackTraceAsString: String = {
+      val stackTraceWriter = new java.io.StringWriter
+      error printStackTrace new java.io.PrintWriter(stackTraceWriter)
+      stackTraceWriter.toString
+    }
+  }
+
   def ratio(bigger: MilliSatoshi, lesser: MilliSatoshi): Long =
     Try(bigger.toLong).map(lesser.toLong * 100D / _).map(_.toLong).getOrElse(0L)
 
@@ -99,12 +107,6 @@ object Tools {
 
   def chaChaDecrypt(key: ByteVector32, data: ByteVector): Try[ByteVector] = Try {
     ChaCha20Poly1305.decrypt(key, nonce = data drop 16 take 12, ciphertext = data drop 28, ByteVector.empty, mac = data take 16)
-  }
-
-  def excToString(exc: Throwable): String = {
-    val stackTraceWriter = new java.io.StringWriter
-    exc printStackTrace new java.io.PrintWriter(stackTraceWriter)
-    stackTraceWriter.toString
   }
 
   object ~~ {

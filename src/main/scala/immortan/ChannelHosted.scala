@@ -117,7 +117,7 @@ abstract class ChannelHosted extends Channel { me =>
 
 
     case (hc: HostedCommits, msg: UpdateFulfillHtlc, OPEN | SLEEPING) if hc.error.isEmpty =>
-      val remoteFulfill = hc.receiveFulfill(msg)
+      val remoteFulfill = hc.makeRemoteFulfill(msg)
       BECOME(hc.addRemoteProposal(msg), state)
       events fulfillReceived remoteFulfill
 
@@ -126,7 +126,7 @@ abstract class ChannelHosted extends Channel { me =>
       // We may get into error state with this HTLC not expired yet so they may fulfill it afterwards
       val hc1 = hc.modify(_.postErrorOutgoingResolvedIds).using(_ + msg.id)
       // This will throw if HTLC has already been settled post-error
-      val remoteFulfill = hc.receiveFulfill(msg)
+      val remoteFulfill = hc.makeRemoteFulfill(msg)
       BECOME(hc1.addRemoteProposal(msg), state)
       events fulfillReceived remoteFulfill
 
