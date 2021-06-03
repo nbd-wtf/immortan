@@ -226,7 +226,7 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
     case (_: ChannelTransitionFail, chan: ChannelNormal, _: HasNormalCommitments) =>
       chan process CMD_CLOSE(scriptPubKey = None, force = true)
 
-    case (_: ChannelTransitionFail, chan: ChannelHosted, hc: HostedCommits) =>
+    case (_: ChannelTransitionFail, chan: ChannelHosted, hc: HostedCommits) if hc.error.isEmpty =>
       chan.localSuspend(hc, ErrorCodes.ERR_HOSTED_MANUAL_SUSPEND)
   }
 

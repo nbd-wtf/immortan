@@ -7,7 +7,6 @@ import immortan.utils.GraphUtils._
 import immortan.utils.PaymentUtils._
 import immortan.utils.ChannelUtils._
 import fr.acinq.bitcoin.{Block, Crypto}
-import immortan.crypto.{CanBeRepliedTo, StateMachine}
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentRequest}
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteUpdateFail}
 import immortan.fsm.{IncomingPaymentProcessor, OutgoingPaymentMaster, TrampolinePaymentRelayer, TrampolineRevealed, TrampolineStopping}
