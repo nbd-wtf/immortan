@@ -266,22 +266,22 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
       case (norm: DATA_NORMAL, cmd: CMD_ADD_HTLC, OPEN | SLEEPING) =>
         norm.commitments.sendAdd(cmd, blockHeight = LNParams.blockCount.get) match {
           case _ if norm.localShutdown.nonEmpty || norm.remoteShutdown.nonEmpty =>
-            events localAddRejected ChannelNotAbleToSend(cmd.incompleteAdd)
+            events addRejectedLocally ChannelNotAbleToSend(cmd.incompleteAdd)
 
           case _ if SLEEPING == state =>
             // Tell outgoing FSM to not exclude this channel yet
-            events localAddRejected ChannelOffline(cmd.incompleteAdd)
+            events addRejectedLocally ChannelOffline(cmd.incompleteAdd)
 
           case _ if norm.commitments.localParams.isFunder && norm.feeUpdateRequired =>
             // It's dangerous to send payments when we need a feerate update but can not afford it
-            events localAddRejected ChannelNotAbleToSend(cmd.incompleteAdd)
+            events addRejectedLocally ChannelNotAbleToSend(cmd.incompleteAdd)
 
           case _ if !norm.commitments.localParams.isFunder && cmd.fullTag.tag == PaymentTagTlv.TRAMPLOINE_ROUTED && nextFeerate(norm, LNParams.shouldRejectPaymentFeerateDiff).isDefined =>
             // It's dangerous to send routed payments as a fundee when we need a feerate update but peer has not sent us one yet
-            events localAddRejected ChannelNotAbleToSend(cmd.incompleteAdd)
+            events addRejectedLocally ChannelNotAbleToSend(cmd.incompleteAdd)
 
           case Left(reason) =>
-            events localAddRejected reason
+            events addRejectedLocally reason
 
           case Right(commits1 ~~ updateAddHtlcMsg) =>
             BECOME(norm.copy(commitments = commits1), OPEN)
@@ -293,7 +293,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
       case (_, cmd: CMD_ADD_HTLC, _) =>
         // Instruct upstream to skip this channel in such a state
         val reason = ChannelNotAbleToSend(cmd.incompleteAdd)
-        events localAddRejected reason
+        events addRejectedLocally reason
 
 
       // CMD_SIGN will be sent from ChannelMaster strictly after outgoing FSM sends this command
@@ -368,14 +368,9 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
 
 
       case (norm: DATA_NORMAL, revocation: RevokeAndAck, OPEN) =>
-        val lastRemoteRejects: Seq[RemoteReject] = norm.commitments.remoteChanges.signed.collect {
-          case fail: UpdateFailHtlc => RemoteUpdateFail(fail, norm.commitments.remoteCommit.spec.findIncomingHtlcById(fail.id).get.add)
-          case malform: UpdateFailMalformedHtlc => RemoteUpdateMalform(malform, norm.commitments.remoteCommit.spec.findIncomingHtlcById(malform.id).get.add)
-        }
-
-        val commits1 = norm.commitments.receiveRevocation(revocation)
-        StoreBecomeSend(norm.copy(commitments = commits1), OPEN)
-        events stateUpdated lastRemoteRejects
+        StoreBecomeSend(norm.copy(commitments = norm.commitments receiveRevocation revocation), OPEN)
+        notifyRemoteRejects(norm.commitments.remoteChanges.signed, norm.commitments.remoteCommit.spec)
+        events.notifyResolvers
 
 
       case (norm: DATA_NORMAL, remoteFee: UpdateFee, OPEN) =>
@@ -427,7 +422,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
       case (data1: HasNormalCommitments, CMD_SOCKET_OFFLINE, WAIT_FUNDING_DONE | OPEN) =>
         val (wasUpdated, data2, localProposedAdds) = maybeRevertUnsignedOutgoing(data1)
         if (wasUpdated) StoreBecomeSend(data2, SLEEPING) else BECOME(data1, SLEEPING)
-        for (add <- localProposedAdds) events localAddRejected ChannelOffline(add)
+        for (add <- localProposedAdds) events addRejectedLocally ChannelOffline(add)
 
 
       // REESTABLISHMENT IN PERSISTENT STATES
@@ -579,7 +574,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
         // Update state and notify system about failed HTLCs
         val settledOutgoingHtlcIds = (overRiddenHtlcs ++ timedOutHtlcs).map(_.id)
         StoreBecomeSend(closing1.modify(_.commitments.postCloseOutgoingResolvedIds).using(_ ++ settledOutgoingHtlcIds), CLOSING)
-        for (add <- overRiddenHtlcs ++ timedOutHtlcs) events localAddRejected InPrincipleNotSendable(localAdd = add)
+        for (add <- overRiddenHtlcs ++ timedOutHtlcs) events addRejectedLocally InPrincipleNotSendable(localAdd = add)
 
         Helpers.chainFeePaid(confirmed.tx, closing1).foreach { chainFee =>
           // Record a chain tx fee we have paid if fee can be defined
@@ -654,7 +649,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
     StoreBecomeSend(closing1, CLOSING)
 
     // Unsigned outgoing HTLCs should be failed right away on any force-closing
-    for (add <- localProposedAdds) events localAddRejected ChannelNotAbleToSend(add)
+    for (add <- localProposedAdds) events addRejectedLocally ChannelNotAbleToSend(add)
     // In case if force-closing happens when we have a cross-signed mutual tx
     closing1.mutualClosePublished.foreach(doPublish)
   }
