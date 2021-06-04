@@ -558,16 +558,23 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
         val fcp1Opt = for (fcp <- closing.futureRemoteCommitPublished) yield Closing.updateRemoteCommitPublished(fcp, confirmed.tx)
         val rcp1NextOpt = for (rcp <- closing.nextRemoteCommitPublished) yield Closing.updateRemoteCommitPublished(rcp, confirmed.tx)
         val revCp1Opt = for (revokedCp <- closing.revokedCommitPublished) yield Closing.updateRevokedCommitPublished(revokedCp, confirmed.tx)
-        val closing1 = DATA_CLOSING(closing.commitments, closing.waitingSince, closing.mutualCloseProposed, closing.mutualCloseProposed, lcp1Opt, rcp1Opt, rcp1NextOpt, fcp1Opt, revCp1Opt)
-        val overRiddenHtlcs = Closing.overriddenOutgoingHtlcs(closing1, confirmed.tx)
+
+        val closing1: DATA_CLOSING =
+          DATA_CLOSING(closing.commitments, closing.waitingSince, closing.mutualCloseProposed,
+            closing.mutualCloseProposed, lcp1Opt, rcp1Opt, rcp1NextOpt, fcp1Opt, revCp1Opt)
+
+        val isClosed: Boolean =
+          closing1.mutualClosePublished.contains(confirmed.tx) || lcp1Opt.exists(Closing.isLocalCommitDone) ||
+            rcp1Opt.exists(Closing.isRemoteCommitDone) || rcp1NextOpt.exists(Closing.isRemoteCommitDone) ||
+            revCp1Opt.exists(Closing.isRevokedCommitDone) || fcp1Opt.exists(Closing.isRemoteCommitDone)
 
         val format = closing1.commitments.channelVersion.commitmentFormat
-        val timedOutHtlcs = Closing.isClosingTypeAlreadyKnown(closing1) match {
-          case Some(c: Closing.LocalClose) => Closing.timedoutHtlcs(format, c.localCommit, c.localCommitPublished, closing1.commitments.localParams.dustLimit, confirmed.tx)
-          case Some(c: Closing.RemoteClose) => Closing.timedoutHtlcs(format, c.remoteCommit, c.remoteCommitPublished, closing1.commitments.remoteParams.dustLimit, confirmed.tx)
-          case Some(_: Closing.MutualClose | _: Closing.RecoveryClose | _: Closing.RevokedClose) => Set.empty[UpdateAddHtlc] // We can not have pending HTLCs in these states
-          case None => Set.empty[UpdateAddHtlc] // Keep waiting
-        }
+        val overRiddenHtlcs = Closing.overriddenOutgoingHtlcs(closing1, confirmed.tx)
+        val timedOutHtlcs: Set[UpdateAddHtlc] = Closing.isClosingTypeAlreadyKnown(closing1) map {
+          case local: Closing.LocalClose => Closing.timedoutHtlcs(format, local.localCommit, local.localCommitPublished, closing1.commitments.localParams.dustLimit, confirmed.tx)
+          case remote: Closing.RemoteClose => Closing.timedoutHtlcs(format, remote.remoteCommit, remote.remoteCommitPublished, closing1.commitments.remoteParams.dustLimit, confirmed.tx)
+          case _: Closing.MutualClose | _: Closing.RecoveryClose | _: Closing.RevokedClose => Set.empty[UpdateAddHtlc] // We can not have pending HTLCs in these states
+        } getOrElse Set.empty[UpdateAddHtlc]
 
         // Update state and notify system about failed HTLCs
         val settledOutgoingHtlcIds = (overRiddenHtlcs ++ timedOutHtlcs).map(_.id)
@@ -579,10 +586,11 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
           bag.addChannelTxFee(chainFee, confirmed.tx.txid)
         }
 
-        // Finally remove a channel from db if it's closed (will disappear on next restart)
-        val isClosed = Closing.isClosed(closing1, additionalConfirmedTxOpt = confirmed.tx.asSome)
-        if (isClosed) closing1.commitments.updateOpt.map(_.shortChannelId).foreach(bag.rmHtlcInfos)
-        if (isClosed) bag.delete(closing1.channelId)
+        if (isClosed) bag.db txWrap {
+          // We only remove a channel from db here, it will disapper on next restart
+          closing1.commitments.updateOpt.map(_.shortChannelId).foreach(bag.rmHtlcInfos)
+          bag.delete(closing1.channelId)
+        }
 
 
       case (closing: DATA_CLOSING, cmd: CMD_FULFILL_HTLC, CLOSING) if !closing.commitments.alreadyReplied(cmd.theirAdd.id) =>
@@ -746,8 +754,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
   // Publish handlers
 
   private def doPublish(closingTx: Transaction): Unit = {
-    val replyEvent: BitcoinEvent = BITCOIN_TX_CONFIRMED(closingTx)
-    chainWallet.watcher ! WatchConfirmed(receiver, closingTx, replyEvent, LNParams.minDepthBlocks)
+    chainWallet.watcher ! WatchConfirmed(receiver, closingTx, BITCOIN_TX_CONFIRMED(closingTx), LNParams.minDepthBlocks)
     chainWallet.watcher ! PublishAsap(closingTx)
   }
 
