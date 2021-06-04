@@ -101,6 +101,8 @@ abstract class ChannelHosted extends Channel { me =>
             localSuspend(hc.modify(_.postErrorOutgoingResolvedIds).using(_ ++ settledOutgoingHtlcIds), ERR_HOSTED_TIMED_OUT_OUTGOING_HTLC)
             for (add <- fulfilled) events fulfillReceived RemoteFulfill(theirPreimage = hash2preimage(add.paymentHash), ourAdd = add)
             for (add <- failed) events addRejectedLocally InPrincipleNotSendable(localAdd = add)
+            // There will be no state update
+            events.notifyResolvers
           }
         }
 
@@ -129,6 +131,8 @@ abstract class ChannelHosted extends Channel { me =>
       val remoteFulfill = hc.makeRemoteFulfill(msg)
       BECOME(hc1.addRemoteProposal(msg), state)
       events fulfillReceived remoteFulfill
+      // There will be no state update
+      events.notifyResolvers
 
 
     case (hc: HostedCommits, msg: UpdateFailHtlc, OPEN) if hc.error.isEmpty => BECOME(hc.receiveFail(msg), OPEN)

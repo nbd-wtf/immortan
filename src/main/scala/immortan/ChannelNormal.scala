@@ -545,6 +545,8 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
         val closing1 = closing.modify(_.commitments.postCloseOutgoingResolvedIds).using(_ ++ settledOutgoingHtlcIds)
         StoreBecomeSend(closing1.copy(revokedCommitPublished = rev1), CLOSING)
         remoteFulfills foreach events.fulfillReceived
+        // There will be no state update
+        events.notifyResolvers
 
 
       case (closing: DATA_CLOSING, confirmed: BITCOIN_TX_CONFIRMED, CLOSING) =>
