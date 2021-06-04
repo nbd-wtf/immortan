@@ -69,7 +69,7 @@ class FeeRates(bag: DataBag) extends CanBeShutDown {
   }
 
   val subscription: Subscription = retryRepeatDelayedCall.subscribe(newPerKB => {
-    // Prepend new item to history, them make sure default is not there, then keep 3 recent items
+    // Prepend new item to history, then make sure default is not there, then keep 3 recent items
     val history1: List[FeeratesPerKB] = newPerKB :: info.history diff List(defaultFeerates) take 3
     info = FeeRatesInfo(smoothedFeeratesPerKw(history1), history1, System.currentTimeMillis)
     for (lst <- listeners) lst.onFeeRates(info)
