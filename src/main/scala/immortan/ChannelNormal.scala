@@ -389,7 +389,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
       // NEGOTIATIONS
 
       case (negs: DATA_NEGOTIATING, remote: ClosingSigned, OPEN) =>
-        val firstClosingFee = Closing.firstClosingFee(negs.commitments, negs.localShutdown.scriptPubKey, negs.remoteShutdown.scriptPubKey, LNParams.feeRatesInfo.onChainFeeConf)
+        val firstClosingFee = Closing.firstClosingFee(negs.commitments, negs.localShutdown.scriptPubKey, negs.remoteShutdown.scriptPubKey, LNParams.feeRates.info.onChainFeeConf)
         val signedClosingTx = Closing.checkClosingSignature(negs.commitments, negs.localShutdown.scriptPubKey, negs.remoteShutdown.scriptPubKey, remote.feeSatoshis, remote.signature)
         if (negs.closingTxProposed.last.lastOption.map(_.localClosingSigned.feeSatoshis).contains(remote.feeSatoshis) || negs.closingTxProposed.flatten.size >= LNParams.maxNegotiationIterations) {
           val negs1 = negs.copy(bestUnpublishedClosingTxOpt = signedClosingTx.asSome)
@@ -511,7 +511,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
 
       case (data1: DATA_NEGOTIATING, _: ChannelReestablish, SLEEPING) if data1.commitments.localParams.isFunder =>
         // We could use the last ClosingSigned we sent, but network fees may have changed while we were offline so it is better to restart from scratch
-        val (closingTx, closingSigned) = Closing.makeFirstClosingTx(data1.commitments, data1.localShutdown.scriptPubKey, data1.remoteShutdown.scriptPubKey, LNParams.feeRatesInfo.onChainFeeConf)
+        val (closingTx, closingSigned) = Closing.makeFirstClosingTx(data1.commitments, data1.localShutdown.scriptPubKey, data1.remoteShutdown.scriptPubKey, LNParams.feeRates.info.onChainFeeConf)
         StoreBecomeSend(data1.modify(_.closingTxProposed).using(_ :+ ClosingTxProposed(closingTx.tx, closingSigned).asList), OPEN, data1.localShutdown, closingSigned)
 
 
@@ -535,7 +535,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
 
         val rev1 = closing.revokedCommitPublished.map { revokedCommit =>
           // This might be further spend of success/timeout UTXO from an old revoked state which peer has published previously
-          val (txOpt, rev1) = Closing.claimRevokedHtlcTxOutputs(closing.commitments, revokedCommit, tx, LNParams.feeRatesInfo.onChainFeeConf.feeEstimator)
+          val (txOpt, rev1) = Closing.claimRevokedHtlcTxOutputs(closing.commitments, revokedCommit, tx, LNParams.feeRates.info.onChainFeeConf.feeEstimator)
           for (claimTx <- txOpt) chainWallet.watcher ! WatchSpent(receiver, tx, claimTx.txIn.filter(_.outPoint.txid == tx.txid).head.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT)
           for (claimTx <- txOpt) chainWallet.watcher ! PublishAsap(claimTx)
           rev1
@@ -593,7 +593,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
       case (closing: DATA_CLOSING, cmd: CMD_FULFILL_HTLC, CLOSING) if !closing.commitments.alreadyReplied(cmd.theirAdd.id) =>
         // We get a preimage when channel is already closed, so we need to try to redeem payments on chain
         val (commits1, ourFulfillMsg) = closing.commitments.sendFulfill(cmd)
-        val conf = LNParams.feeRatesInfo.onChainFeeConf
+        val conf = LNParams.feeRates.info.onChainFeeConf
 
         val lcp1Opt = for (lcp <- closing.localCommitPublished) yield Closing.claimCurrentLocalCommitTxOutputs(commits1, lcp.commitTx, conf)
         val rcp1Opt = for (rcp <- closing.remoteCommitPublished) yield Closing.claimRemoteCommitTxOutputs(commits1, commits1.remoteCommit, rcp.commitTx, conf.feeEstimator)
@@ -634,7 +634,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
     }
 
   def nextFeerate(norm: DATA_NORMAL, threshold: Double): Option[FeeratePerKw] =
-    newFeerate(LNParams.feeRatesInfo, norm.commitments.localCommit.spec, threshold)
+    newFeerate(LNParams.feeRates.info, norm.commitments.localCommit.spec, threshold)
 
   private def maybeRevertUnsignedOutgoing(data1: HasNormalCommitments) =
     if (data1.commitments.localHasUnsignedOutgoingHtlcs || data1.commitments.remoteHasUnsignedOutgoingHtlcs) {
@@ -657,7 +657,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
   }
 
   private def startNegotiationsAsFunder(data1: DATA_NORMAL, local: Shutdown, remote: Shutdown): Unit = {
-    val (closingTx, closingSigned) = Closing.makeFirstClosingTx(data1.commitments, local.scriptPubKey, remote.scriptPubKey, LNParams.feeRatesInfo.onChainFeeConf)
+    val (closingTx, closingSigned) = Closing.makeFirstClosingTx(data1.commitments, local.scriptPubKey, remote.scriptPubKey, LNParams.feeRates.info.onChainFeeConf)
     val data2 = DATA_NEGOTIATING(data1.commitments, local, remote, List(ClosingTxProposed(closingTx.tx, closingSigned) :: Nil), bestUnpublishedClosingTxOpt = None)
     StoreBecomeSend(data2, OPEN, local, closingSigned)
   }
@@ -687,7 +687,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
 
     case _ =>
       val commitTx = data1.commitments.localCommit.publishableTxs.commitTx.tx
-      val lcp = Closing.claimCurrentLocalCommitTxOutputs(data1.commitments, commitTx, LNParams.feeRatesInfo.onChainFeeConf)
+      val lcp = Closing.claimCurrentLocalCommitTxOutputs(data1.commitments, commitTx, LNParams.feeRates.info.onChainFeeConf)
 
       handleChannelForceClosing(data1) {
         case some: DATA_CLOSING => some.copy(localCommitPublished = lcp.asSome)
@@ -699,7 +699,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
   }
 
   private def handleRemoteSpentCurrent(commitTx: Transaction, data1: HasNormalCommitments): Unit = {
-    val rcp = Closing.claimRemoteCommitTxOutputs(data1.commitments, data1.commitments.remoteCommit, commitTx, LNParams.feeRatesInfo.onChainFeeConf.feeEstimator)
+    val rcp = Closing.claimRemoteCommitTxOutputs(data1.commitments, data1.commitments.remoteCommit, commitTx, LNParams.feeRates.info.onChainFeeConf.feeEstimator)
 
     handleChannelForceClosing(data1) {
       case some: DATA_CLOSING => some.copy(remoteCommitPublished = rcp.asSome)
@@ -713,7 +713,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
 
   private def handleRemoteSpentNext(commitTx: Transaction, data1: HasNormalCommitments): Unit = {
     val nextRemoteCommit: RemoteCommit = data1.commitments.remoteNextCommitInfo.left.get.nextRemoteCommit
-    val rcp = Closing.claimRemoteCommitTxOutputs(data1.commitments, nextRemoteCommit, commitTx, LNParams.feeRatesInfo.onChainFeeConf.feeEstimator)
+    val rcp = Closing.claimRemoteCommitTxOutputs(data1.commitments, nextRemoteCommit, commitTx, LNParams.feeRates.info.onChainFeeConf.feeEstimator)
 
     handleChannelForceClosing(data1) {
       case some: DATA_CLOSING => some.copy(nextRemoteCommitPublished = rcp.asSome)
@@ -731,7 +731,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
   }
 
   private def handleRemoteSpentOther(tx: Transaction, data1: HasNormalCommitments): Unit =
-    Closing.claimRevokedRemoteCommitTxOutputs(data1.commitments, tx, bag, LNParams.feeRatesInfo.onChainFeeConf.feeEstimator) match {
+    Closing.claimRevokedRemoteCommitTxOutputs(data1.commitments, tx, bag, LNParams.feeRates.info.onChainFeeConf.feeEstimator) match {
       // This is most likely an old revoked state, but it might not be in some kind of exceptional circumstance (private keys leakage, old backup etc)
 
       case Some(revCp) =>
