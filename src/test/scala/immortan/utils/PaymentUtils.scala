@@ -2,7 +2,7 @@ package immortan.utils
 
 import fr.acinq.eclair._
 import immortan.utils.GraphUtils._
-import fr.acinq.eclair.wire.{Onion, OnionTlv, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{GenericTlv, Onion, OnionTlv, UpdateAddHtlc}
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, NodeHop}
 import fr.acinq.eclair.payment.{OutgoingPacket, PaymentRequest}
@@ -18,26 +18,27 @@ import scala.util.Failure
 
 
 object PaymentUtils {
-  def createFinalAdd(partAmount: MilliSatoshi, totalAmount: MilliSatoshi, paymentHash: ByteVector32, paymentSecret: ByteVector32, from: PublicKey, to: PublicKey, cltvDelta: Int): UpdateAddHtlc = {
+  def createFinalAdd(partAmount: MilliSatoshi, totalAmount: MilliSatoshi, paymentHash: ByteVector32, paymentSecret: ByteVector32, from: PublicKey, to: PublicKey, cltvDelta: Int, tlvs: Seq[GenericTlv] = Nil): UpdateAddHtlc = {
     val update = makeUpdate(ShortChannelId("100x100x100"), from, to, 1.msat, 10, cltvDelta = CltvExpiryDelta(cltvDelta), minHtlc = 10L.msat, maxHtlc = 50000000.msat)
     val finalHop = ChannelHop(GraphEdge(ChannelDesc(update.shortChannelId, from, to), updExt = ChannelUpdateExt fromUpdate update))
 
-    val finalPayload = Onion.createMultiPartPayload(partAmount, totalAmount, update.cltvExpiryDelta.toCltvExpiry(0L), paymentSecret)
+    val finalPayload = Onion.createMultiPartPayload(partAmount, totalAmount, update.cltvExpiryDelta.toCltvExpiry(0L), paymentSecret, userCustomTlvs = tlvs)
     val (firstAmount, firstExpiry, onion) = OutgoingPacket.buildPacket(Sphinx.PaymentPacket)(randomKey, paymentHash, finalHop :: Nil, finalPayload)
     UpdateAddHtlc(randomBytes32, System.currentTimeMillis + secureRandom.nextInt(1000), firstAmount, paymentHash, firstExpiry, onion.packet)
   }
 
   def recordIncomingPaymentToFakeNodeId(amount: Option[MilliSatoshi], preimage: ByteVector32, payBag: PaymentBag, remoteInfo: RemoteNodeInfo): PaymentRequest = {
     val invoice = PaymentRequest(Block.TestnetGenesisBlock.hash, amount, Crypto.sha256(preimage), remoteInfo.nodeSpecificPrivKey, "Invoice", CltvExpiryDelta(18), Nil)
-    payBag.replaceIncomingPayment(PaymentRequestExt(uri = Failure(new RuntimeException), invoice, PaymentRequest.write(invoice)), preimage,
-      PlainMetaDescription(None, None, "Invoice", "Invoice meta"), balanceSnap = 1000L.msat, fiatRateSnap = Map("USD" -> 12D), chainFee = 1000L.msat)
+    val prExt = PaymentRequestExt(uri = Failure(new RuntimeException), invoice, PaymentRequest.write(invoice))
+    val desc = PlainMetaDescription(None, None, "Invoice", "Invoice meta")
+    payBag.replaceIncomingPayment(prExt, preimage, desc, balanceSnap = 1000L.msat, fiatRateSnap = Map("USD" -> 12D), chainFee = 1000L.msat)
     invoice
   }
 
   def makeRemoteAddToFakeNodeId(partAmount: MilliSatoshi, totalAmount: MilliSatoshi, paymentHash: ByteVector32, paymentSecret: ByteVector32,
-                                remoteInfo: RemoteNodeInfo, cltvDelta: Int = LNParams.cltvRejectThreshold): ReasonableLocal = {
+                                remoteInfo: RemoteNodeInfo, cltvDelta: Int = LNParams.cltvRejectThreshold, tlvs: Seq[GenericTlv] = Nil): ReasonableLocal = {
 
-    val addFromRemote1 = createFinalAdd(partAmount, totalAmount, paymentHash, paymentSecret, from = remoteInfo.nodeId, to = remoteInfo.nodeSpecificPubKey, cltvDelta)
+    val addFromRemote1 = createFinalAdd(partAmount, totalAmount, paymentHash, paymentSecret, from = remoteInfo.nodeId, to = remoteInfo.nodeSpecificPubKey, cltvDelta, tlvs)
     ChannelMaster.initResolve(UpdateAddHtlcExt(theirAdd = addFromRemote1, remoteInfo = remoteInfo)).asInstanceOf[ReasonableLocal]
   }
 

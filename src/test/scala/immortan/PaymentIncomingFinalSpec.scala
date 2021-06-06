@@ -4,11 +4,12 @@ import fr.acinq.eclair._
 import immortan.utils.TestUtils._
 import immortan.utils.GraphUtils._
 import immortan.utils.PaymentUtils._
-import fr.acinq.eclair.wire.PaymentTimeout
+import fr.acinq.eclair.wire.{GenericTlv, OnionCodecs, PaymentTimeout}
 import immortan.fsm.{IncomingAborted, IncomingPaymentProcessor, IncomingPaymentReceiver, IncomingRevealed}
 import fr.acinq.eclair.channel.{CMD_FAIL_MALFORMED_HTLC, ReasonableLocal}
 import immortan.utils.ChannelUtils.makeChannelMasterWithBasicGraph
 import org.scalatest.funsuite.AnyFunSuite
+import fr.acinq.bitcoin.Crypto
 
 
 class PaymentIncomingFinalSpec extends AnyFunSuite {
@@ -75,6 +76,7 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
     val add3 = makeRemoteAddToFakeNodeId(partAmount = 30000L.msat, totalAmount = 200000L.msat, invoice.paymentHash, invoice.paymentSecret.get, remoteNodeInfo)
 
     fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: add2 :: Nil)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.RECEIVING)
     fsm doProcess makeInFlightPayments(out = Nil, in = add3 :: add1 :: add2 :: Nil)
 
     WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
@@ -94,6 +96,36 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
     WAIT_UNTIL_TRUE(fsm2.data.asInstanceOf[IncomingRevealed].preimage == preimage)
     WAIT_UNTIL_TRUE(cm.getPreimageMemo(invoice.paymentHash).get == preimage)
     WAIT_UNTIL_TRUE(cm.getPaymentInfoMemo(invoice.paymentHash).get.received == 100000L.msat) // Original amount is retained
+  }
+
+  test("Fulfill multipart keysend payment") {
+    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
+    val (_, _, cm) = makeChannelMasterWithBasicGraph
+
+    val preimage = randomBytes32
+    val paymentSecret = randomBytes32
+    val paymentHash = Crypto.sha256(preimage)
+    val keySendTlv = Seq(GenericTlv(OnionCodecs.keySendNumber, preimage))
+    val add1 = makeRemoteAddToFakeNodeId(partAmount = 35000L.msat, totalAmount = 100000L.msat, paymentHash, paymentSecret, remoteNodeInfo, LNParams.cltvRejectThreshold, keySendTlv)
+
+    val fsm = new IncomingPaymentReceiver(add1.fullTag, cm)
+    fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: Nil)
+
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.RECEIVING)
+    WAIT_UNTIL_TRUE(fsm.data == null)
+
+    val add2 = makeRemoteAddToFakeNodeId(partAmount = 35000L.msat, totalAmount = 100000L.msat, paymentHash, paymentSecret, remoteNodeInfo, LNParams.cltvRejectThreshold + 10, keySendTlv)
+    val add3 = makeRemoteAddToFakeNodeId(partAmount = 30000L.msat, totalAmount = 100000L.msat, paymentHash, paymentSecret, remoteNodeInfo, LNParams.cltvRejectThreshold + 20, keySendTlv)
+
+    fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: add2 :: Nil)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.RECEIVING)
+    fsm doProcess makeInFlightPayments(out = Nil, in = add3 :: add1 :: add2 :: Nil)
+
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    WAIT_UNTIL_TRUE(fsm.data.asInstanceOf[IncomingRevealed].preimage == preimage)
+    WAIT_UNTIL_TRUE(cm.getPreimageMemo(paymentHash).get == preimage) // We have obtained a preimage
+    WAIT_UNTIL_TRUE(cm.getPaymentInfoMemo(paymentHash).isFailure) // We did not ask for this payment
   }
 
   test("Do not react to incoming payment with same hash, but different secret") {
@@ -127,7 +159,7 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
     WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
   }
 
-  test("Fail an unknown payment right away") {
+  test("Fail an unknown payment after timeout") {
     LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
     val (_, _, cm) = makeChannelMasterWithBasicGraph
@@ -143,8 +175,9 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
     fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: add2 :: Nil)
     fsm doProcess makeInFlightPayments(out = Nil, in = add3 :: add1 :: add2 :: Nil)
 
+    fsm doProcess IncomingPaymentProcessor.CMDTimeout
     WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
-    WAIT_UNTIL_TRUE(fsm.data.asInstanceOf[IncomingAborted].failure.isEmpty)
+    WAIT_UNTIL_TRUE(fsm.data.asInstanceOf[IncomingAborted].failure contains PaymentTimeout)
 
     // All parts have been cleared in channels
     fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
