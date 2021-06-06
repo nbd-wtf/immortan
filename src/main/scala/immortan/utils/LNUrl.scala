@@ -183,11 +183,13 @@ case class PayRequest(callback: String, maxSendable: Long, minSendable: Long, me
   } yield content
 }
 
-case class PayRequestFinal(successAction: Option[PaymentAction], routes: List[AdditionalRoute], pr: String) extends LNUrlData {
+case class PayRequestFinal(successAction: Option[PaymentAction], disposable: Option[Boolean], routes: List[AdditionalRoute], pr: String) extends LNUrlData {
 
   val additionalRoutes: Set[GraphStructure.GraphEdge] = RouteCalculation.makeExtraEdges(routes.map(PayRequest.routeToHops), prExt.pr.nodeId)
 
   lazy val prExt: PaymentRequestExt = PaymentRequestExt.fromRaw(pr)
+
+  val isThrowAway: Boolean = disposable.getOrElse(true)
 }
 
 case class PayLinkInfo(image64: String, lnurl: LNUrl, text: String, lastMsat: MilliSatoshi, hash: String, lastDate: Long) {
