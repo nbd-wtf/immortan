@@ -89,7 +89,6 @@ class ElectrumClientPoolSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val probe1 = TestProbe()
     probe1.send(pool, HeaderSubscription(probe1.ref))
     val HeaderSubscriptionResponse(_, header) = probe1.expectMsgType[HeaderSubscriptionResponse](timeout)
-    println(s"received header for block ${header.blockId}")
   }
 
   test("scripthash subscription") {

@@ -206,14 +206,14 @@ object OutgoingPacket {
    */
   def buildTrampolineToLegacyPacket(sessionKey: PrivateKey, invoice: PaymentRequest, hops: Seq[NodeHop], finalPayload: Onion.FinalPayload): (MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets) = {
     val (firstAmount, firstExpiry, payloads) = hops.drop(1).reverse.foldLeft((finalPayload.amount, finalPayload.expiry, Seq[Onion.PerHopPayload](finalPayload))) {
-      case ((amount, expiry, payloads), hop) =>
+      case ((amount, expiry, payloads1), hop) =>
         // The next-to-last trampoline hop must include invoice data to indicate the conversion to a legacy payment.
-        val payload = if (payloads.length == 1) {
+        val payload = if (payloads1.length == 1) {
           Onion.createNodeRelayToNonTrampolinePayload(finalPayload.amount, finalPayload.totalAmount, finalPayload.expiry, hop.nextNodeId, invoice)
         } else {
           Onion.createNodeRelayPayload(amount, expiry, hop.nextNodeId)
         }
-        (amount + hop.fee(amount), expiry + hop.cltvExpiryDelta, payload +: payloads)
+        (amount + hop.fee(amount), expiry + hop.cltvExpiryDelta, payload +: payloads1)
     }
     val nodes = hops.map(_.nextNodeId)
     val onion = buildOnion(Sphinx.TrampolinePacket)(sessionKey, nodes, payloads, invoice.paymentHash)

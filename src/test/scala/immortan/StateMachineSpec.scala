@@ -6,7 +6,7 @@ import org.scalatest.funsuite.AnyFunSuite
 
 
 class StateMachineSpec extends AnyFunSuite {
- test("State mechine interval correctly works") {
+ test("State machine interval correctly works") {
    StateMachine.INTERVAL = 5
 
    var result: Any = null
