@@ -15,7 +15,7 @@ import fr.acinq.bitcoin.Crypto
 class PaymentIncomingFinalSpec extends AnyFunSuite {
   test("Correctly parse final payments sent to our fake nodeIds") {
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
-    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
 
     // Sent to our peer-specific fake nodeId
     val addFromRemote1 = createFinalAdd(600L.msat, totalAmount = 1000L.msat, randomBytes32, randomBytes32, from = s, to = remoteNodeInfo.nodeSpecificPubKey, cltvDelta = 144)
@@ -36,7 +36,7 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
   }
 
   test("Fulfill a single part incoming payment") {
-    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
@@ -58,7 +58,7 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
   }
 
   test("Fulfill multipart incoming payment") {
-    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
@@ -99,7 +99,7 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
   }
 
   test("Fulfill multipart keysend payment") {
-    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
@@ -129,7 +129,7 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
   }
 
   test("Do not react to incoming payment with same hash, but different secret") {
-    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
@@ -160,7 +160,7 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
   }
 
   test("Fail an unknown payment after timeout") {
-    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
@@ -185,7 +185,7 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
   }
 
   test("Fail if one of parts is too close to chain tip") {
-    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
@@ -205,7 +205,7 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
   }
 
   test("Do not reveal a preimage on FSM entering failed state") {
-    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 

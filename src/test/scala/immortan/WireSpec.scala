@@ -6,7 +6,6 @@ import fr.acinq.eclair.crypto.SphinxSpec._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, SatoshiLong}
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, ChannelVersion}
-import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.crypto.Sphinx.PaymentPacket
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -66,9 +65,9 @@ class WireSpec extends AnyFunSuite {
   }
 
   test("UpdateAddHtlc tag encryption and partId equivalence") {
-    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
 
-    val payload = FinalLegacyPayload(MilliSatoshi(10000L), CltvExpiry(144))
+    val payload = Onion.createSinglePartPayload(1000000L.msat, CltvExpiry(144), randomBytes32)
     val packetAndSecrets = PaymentPacket.create(sessionKey, publicKeys, variableSizePayloadsFull, associatedData)
     val fullTag = FullPaymentTag(paymentHash = ByteVector32.Zeroes, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
     val cmd = CMD_ADD_HTLC(fullTag, firstAmount = 1000000L.msat, CltvExpiry(144), packetAndSecrets, payload)
@@ -77,9 +76,9 @@ class WireSpec extends AnyFunSuite {
   }
 
   test("LCSS") {
-    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
 
-    val payload = FinalLegacyPayload(MilliSatoshi(10000L), CltvExpiry(144))
+    val payload = Onion.createSinglePartPayload(1000000L.msat, CltvExpiry(144), randomBytes32)
     val packetAndSecrets = PaymentPacket.create(sessionKey, publicKeys, variableSizePayloadsFull, associatedData)
     val fullTag = FullPaymentTag(paymentHash = ByteVector32.Zeroes, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
     val cmd = CMD_ADD_HTLC(fullTag, firstAmount = 1000000L.msat, CltvExpiry(144), packetAndSecrets, payload)

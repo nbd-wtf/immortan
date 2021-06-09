@@ -56,7 +56,7 @@ object PaymentUtils {
     )
 
     // We send to a receiver who does not support trampoline, so relay node will send a basic MPP with inner payment secret provided and revealed
-    val finalInnerPayload = Onion.createSinglePartPayload(pr.amount.get, CltvExpiry(18), pr.paymentSecret) // Final CLTV is supposed to be taken from invoice (+ assuming tip = 0 when testing)
+    val finalInnerPayload = Onion.createSinglePartPayload(pr.amount.get, CltvExpiry(18), pr.paymentSecret.get) // Final CLTV is supposed to be taken from invoice (+ assuming tip = 0 when testing)
     OutgoingPacket.buildTrampolineToLegacyPacket(randomKey, pr, trampolineRoute, finalInnerPayload)
   }
 

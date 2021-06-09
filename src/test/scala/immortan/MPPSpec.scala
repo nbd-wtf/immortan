@@ -16,7 +16,7 @@ import org.scalatest.funsuite.AnyFunSuite
 
 class MPPSpec extends AnyFunSuite {
   test("Split between direct and non-direct channel") {
-    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (normalStore, _, cm) = makeChannelMasterWithBasicGraph
 
     // Add a US -> C -> A channel
@@ -77,7 +77,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Split after no route found on first attempt") {
-    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -123,7 +123,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Halt on excessive local failures") {
-    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1").modify(_.lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs).setTo(0) // Payments will fail locally
@@ -155,7 +155,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Switch channel on first one becoming SLEEPING") {
-    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -205,7 +205,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Correctly process failed-at-amount") {
-    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -243,7 +243,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Correctly process fulfilled payment") {
-    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -299,7 +299,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Handle multiple competing payments") {
-    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -351,7 +351,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Fail on local timeout") {
-    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -393,7 +393,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Halt fast on terminal failure") {
-    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     LNParams.blockCount.set(Int.MaxValue)
@@ -431,7 +431,7 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Smaller part takes disproportionally larger fee from reserve") {
-    LNParams.secret = WalletSecret(outstandingProviders = Set.empty, LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")

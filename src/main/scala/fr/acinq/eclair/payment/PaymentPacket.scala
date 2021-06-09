@@ -81,7 +81,6 @@ object IncomingPacket {
       case Left(failure) => Left(failure)
       // NB: we don't validate the ChannelRelayPacket here because its fees and cltv depend on what channel we'll choose to use.
       case Right(DecodedOnionPacket(payload: Onion.ChannelRelayPayload, next)) => Right(ChannelRelayPacket(add, payload, next))
-      case Right(DecodedOnionPacket(payload: Onion.FinalLegacyPayload, _)) => validateFinal(add, payload)
       case Right(DecodedOnionPacket(payload: Onion.FinalTlvPayload, _)) => payload.records.get[OnionTlv.TrampolineOnion] match {
         case Some(OnionTlv.TrampolineOnion(trampolinePacket)) => decryptOnion(add, privateKey)(trampolinePacket, Sphinx.TrampolinePacket) match {
           case Left(failure) => Left(failure)
@@ -117,7 +116,7 @@ object IncomingPacket {
     } else {
       // We merge contents from the outer and inner payloads.
       // We must use the inner payload's total amount and payment secret because the payment may be split between multiple trampoline payments (#reckless).
-      Right(FinalPacket(add, Onion.createMultiPartPayload(outerPayload.amount, innerPayload.totalAmount, outerPayload.expiry, innerPayload.paymentSecret.get)))
+      Right(FinalPacket(add, Onion.createMultiPartPayload(outerPayload.amount, innerPayload.totalAmount, outerPayload.expiry, innerPayload.paymentSecret)))
     }
   }
 

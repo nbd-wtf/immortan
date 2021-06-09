@@ -28,9 +28,9 @@ import scala.util.Try
 
 object LNParams {
   val blocksPerDay: Int = 144 // On average we can expect this many blocks per day
-  val ncFulfillSafetyBlocks: Int = 36 // Force-close and redeem on chain if NC peer stalls state update and this many blocks are left until expiration
-  val hcFulfillSafetyBlocks: Int = 144 // Offer to publish preimage on chain if HC peer stalls state update and this many blocks are left until expiration
-  val cltvRejectThreshold: Int = hcFulfillSafetyBlocks + 36 // Reject incoming payment if CLTV expiry is closer than this to current chain tip when HTLC arrives
+  val ncFulfillSafetyBlocks: Int = 36 // Force-close and redeem revealed incoming payment on chain if NC peer stalls state update and this many blocks are left until expiration
+  val hcFulfillSafetyBlocks: Int = 144 // Offer to publish revealed incoming payment preimage on chain if HC peer stalls state update and this many blocks are left until expiration
+  val cltvRejectThreshold: Int = hcFulfillSafetyBlocks + 36 // Reject incoming payment right away if CLTV expiry is closer than this to current chain tip when HTLC arrives
   val incomingFinalCltvExpiry: CltvExpiryDelta = CltvExpiryDelta(hcFulfillSafetyBlocks + 72) // Ask payer to set final CLTV expiry to current chain tip + this many blocks
 
   val routingCltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(144 * 2) // Ask relayer to set CLTV expiry delta for our channel to this much blocks
@@ -38,10 +38,12 @@ object LNParams {
   val maxToLocalDelay: CltvExpiryDelta = CltvExpiryDelta(2016) // We ask peer to delay their payment for this long in case of force-close
   val maxFundingSatoshis: Satoshi = Satoshi(10000000000L) // Proposed channels of capacity more than this are not allowed
   val maxReserveToFundingRatio: Double = 0.05 // %
-  val maxOffChainFeeRatio: Double = 0.01 // %
   val maxNegotiationIterations: Int = 50
   val maxChainConnectionsCount: Int = 5
   val maxAcceptedHtlcs: Int = 483
+
+  val maxOffChainFeeRatio: Double = 0.01 // We are OK with paying up to this % of LN fee relative to payment amount
+  val maxOffChainFeeAboveRatio: MilliSatoshi = MilliSatoshi(200000L) // For small amounts we always accept fee up to this
 
   val shouldSendUpdateFeerateDiff = 5.0
   val shouldRejectPaymentFeerateDiff = 15.0
@@ -177,7 +179,7 @@ case class RemoteNodeInfo(nodeId: PublicKey, address: NodeAddress, alias: String
   lazy val nodeSpecificPubKey: PublicKey = nodeSpecificPrivKey.publicKey
 }
 
-case class WalletSecret(outstandingProviders: Set[NodeAnnouncement], keys: LightningNodeKeys, mnemonic: List[String], seed: ByteVector)
+case class WalletSecret(keys: LightningNodeKeys, mnemonic: List[String], seed: ByteVector)
 
 case class WalletExt(wallet: ElectrumEclairWallet, eventsCatcher: ActorRef, clientPool: ActorRef, watcher: ActorRef) extends CanBeShutDown {
   override def becomeShutDown: Unit = List(eventsCatcher, clientPool, watcher).foreach(_ ! PoisonPill)
