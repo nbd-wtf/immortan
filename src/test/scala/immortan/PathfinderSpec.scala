@@ -7,7 +7,7 @@ import immortan.utils.SQLiteUtils._
 import immortan.utils.ChannelUtils._
 import immortan.crypto.{CanBeRepliedTo, Tools}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
-import fr.acinq.eclair.router.Router.{NoRouteAvailable, RouteFound}
+import fr.acinq.eclair.router.Router.{ChannelDesc, NoRouteAvailable, RouteFound}
 import fr.acinq.eclair.router.Announcements
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -129,14 +129,16 @@ class PathfinderSpec extends AnyFunSuite {
     val disabled = Announcements.makeChannelFlags(isNode1 = Announcements.isNode1(a, b), enable = false)
     val updateABFromA1 = makeUpdate(ShortChannelId(1L), a, b, 1.msat, 10, cltvDelta = CltvExpiryDelta(14), minHtlc = 10L.msat, maxHtlc = 500000.msat).copy(channelFlags = disabled)
     pf process updateABFromA1
-    pf process PathFinder.FindRoute(sender, routeRequest)
+    // Disabled channel is updated and still present in graph, but outgoing FSM instructs pathfinder to omit it
+    pf process PathFinder.FindRoute(sender, routeRequest.copy(ignoreChannels = Set(ChannelDesc(updateABFromA1.shortChannelId, a, b))))
     WAIT_UNTIL_TRUE(response.asInstanceOf[RouteFound].route.hops.map(_.nextNodeId) == a :: c :: d :: s :: Nil)
 
     // The only assisted channel got disabled, payee is now unreachable
     val disabled1 = Announcements.makeChannelFlags(isNode1 = Announcements.isNode1(d, s), enable = false)
     val updateDSFromD1 = makeUpdate(ShortChannelId(6L), d, s, 2.msat, 100, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat).copy(channelFlags = disabled1)
     pf process updateDSFromD1
-    pf process PathFinder.FindRoute(sender, routeRequest)
+    // Disabled channel is updated and still present in graph, but outgoing FSM instructs pathfinder to omit it
+    pf process PathFinder.FindRoute(sender, routeRequest.copy(ignoreChannels = Set(ChannelDesc(updateDSFromD1.shortChannelId, d, s))))
     WAIT_UNTIL_TRUE(response.isInstanceOf[NoRouteAvailable])
   }
 }
