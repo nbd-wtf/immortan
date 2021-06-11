@@ -199,9 +199,11 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
   // - in NC case we always set local NC.maxHtlcValueInFlightMsat to channel capacity so NC.availableForReceive is always less than NC.maxHtlcValueInFlightMsat
   // - in HC case we don't have local HC.maxHtlcValueInFlightMsat at all and only look at HC.availableForReceive
 
-  def operationalCncs: Seq[ChanAndCommits] = all.values.filter(Channel.isOperational).flatMap(Channel.chanAndCommitsOpt).toList
-  def allSortedReceivable: Seq[ChanAndCommits] = operationalCncs.filter(_.commits.updateOpt.isDefined).sortBy(_.commits.availableForReceive)
-  def allSortedSendable: Seq[ChanAndCommits] = operationalCncs.sortBy(_.commits.availableForSend)
+  def operationalCncs(chans: Iterable[Channel] = Nil): Seq[ChanAndCommits] = chans.filter(Channel.isOperational).flatMap(Channel.chanAndCommitsOpt).toList
+
+  def sortedReceivable(chans: Iterable[Channel] = Nil): Seq[ChanAndCommits] = operationalCncs(chans).filter(_.commits.updateOpt.isDefined).sortBy(_.commits.availableForReceive)
+
+  def sortedSendable(chans: Iterable[Channel] = Nil): Seq[ChanAndCommits] = operationalCncs(chans).sortBy(_.commits.availableForSend)
 
   def maxReceivable(sorted: Seq[ChanAndCommits] = Nil): Seq[ChanAndCommits] = {
     // Sorting example: (5/Open, 30/Open, 50/Sleeping, 60/Open, 100/Open) -> (50/Sleeping, 60/Open, 100/Open) -> 60/Open as first one
@@ -209,12 +211,16 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
     viable.sortBy(cnc => if (Channel isOperationalAndOpen cnc.chan) 0 else 1)
   }
 
-  def maxSendable: MilliSatoshi = {
-    val chans = all.values.filter(Channel.isOperational)
-    val sendableNoFee = opm.getSendable(chans, maxFee = 0L.msat).values.sum
+  def maxSendable(chans: Iterable[Channel] = Nil): MilliSatoshi = {
+    val inPrincipleUsableChans = chans.filter(Channel.isOperational)
+    val sendableNoFee = opm.getSendable(inPrincipleUsableChans, maxFee = 0L.msat).values.sum
     val theoreticalMaxFee = LNParams.maxOffChainFeeAboveRatio.max(sendableNoFee * LNParams.maxOffChainFeeRatio)
     // Subtract max theoretical fee from EACH channel since ANY channel MAY use ALL of fee reserve
-    opm.getSendable(chans, maxFee = theoreticalMaxFee).values.sum
+    opm.getSendable(inPrincipleUsableChans, maxFee = theoreticalMaxFee).values.sum
+  }
+
+  def keysend() = {
+
   }
 
   def checkIfSendable(paymentHash: ByteVector32): Option[Int] =
@@ -227,8 +233,13 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
   // These are executed in Channel context
 
   override def onException: PartialFunction[Malfunction, Unit] = {
-    case (_: ChannelTransitionFail, chan: ChannelNormal, _: HasNormalCommitments) => chan process CMD_CLOSE(scriptPubKey = None, force = true)
-    case (_: ChannelTransitionFail, chan: ChannelHosted, hc: HostedCommits) if hc.error.isEmpty => chan.localSuspend(hc, ErrorCodes.ERR_HOSTED_MANUAL_SUSPEND)
+    case (_: ChannelTransitionFail, chan: ChannelNormal, _: HasNormalCommitments) =>
+      // Execute immediately in same thread to not let channel get updated
+      chan doProcess CMD_CLOSE(scriptPubKey = None, force = true)
+
+    case (_: ChannelTransitionFail, chan: ChannelHosted, hc: HostedCommits) if hc.error.isEmpty =>
+      // Execute immediately in same thread to not let channel get updated
+      chan.localSuspend(hc, ErrorCodes.ERR_HOSTED_MANUAL_SUSPEND)
   }
 
   override def onBecome: PartialFunction[Transition, Unit] = {
