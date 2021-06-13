@@ -237,7 +237,7 @@ class MPPSpec extends AnyFunSuite {
       val parts = cm.opm.data.payments(tag).data.parts.values.collect { case inFlight: WaitForRouteOrInFlight => inFlight }
       assert(cm.opm.data.payments(tag).feeLeftover == send.totalFeeReserve - parts.flatMap(_.flight).map(_.route.fee).sum)
       // Initial split was 300k/300k, but one of routes has previously failed at 200k so we need to split further
-      assert(Set(150000L.msat, 150000L.msat, 300000L.msat) == parts.map(_.amount).toSet)
+      assert(List(150000L.msat, 150000L.msat, 300000L.msat).sorted == parts.map(_.amount).toList.sorted)
       cm.opm.data.payments(tag).data.parts.size == 3
     }
   }

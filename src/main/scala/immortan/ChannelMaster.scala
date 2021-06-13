@@ -9,17 +9,18 @@ import immortan.PaymentStatus._
 import immortan.ChannelMaster._
 import fr.acinq.eclair.channel._
 import scala.concurrent.duration._
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
+import immortan.utils.{PaymentRequestExt, Rx}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi}
 import immortan.ChannelListener.{Malfunction, Transition}
+import fr.acinq.eclair.payment.{IncomingPacket, PaymentRequest}
 import fr.acinq.eclair.transactions.{LocalFulfill, RemoteFulfill, RemoteReject}
 import immortan.fsm.OutgoingPaymentMaster.CMDChanGotOnline
+import fr.acinq.eclair.router.RouteCalculation
 import java.util.concurrent.atomic.AtomicLong
-import fr.acinq.eclair.payment.IncomingPacket
 import com.google.common.cache.LoadingCache
 import immortan.crypto.CanBeShutDown
 import rx.lang.scala.Subject
-import immortan.utils.Rx
 import scala.util.Try
 
 
@@ -34,21 +35,22 @@ object ChannelMaster {
   type ReasonableLocals = Iterable[ReasonableLocal]
 
   final val updateCounter = new AtomicLong(0)
-
   final val stateUpdateStream: Subject[Long] = Subject[Long]
-
   final val statusUpdateStream: Subject[Long] = Subject[Long]
-
   final val paymentDbStream: Subject[Long] = Subject[Long]
-
   final val relayDbStream: Subject[Long] = Subject[Long]
-
   final val txDbStream: Subject[Long] = Subject[Long]
 
   def next(stream: Subject[Long] = null): Unit = stream.onNext(updateCounter.incrementAndGet)
 
   final val hashRevealStream: Subject[ByteVector32] = Subject[ByteVector32]
   final val remoteFulfillStream: Subject[RemoteFulfill] = Subject[RemoteFulfill]
+  final val unknownReestablishStream: Subject[UnknownReestablish] = Subject[UnknownReestablish]
+
+  final val lnPaymentAddedStream: Subject[ByteVector32] = Subject[ByteVector32]
+  final val chainTxAddedStream: Subject[ByteVector32] = Subject[ByteVector32]
+  final val relayAddedStream: Subject[ByteVector32] = Subject[ByteVector32]
+  final val payLinkAddedStream: Subject[String] = Subject[String]
 
   final val NO_PREIMAGE = ByteVector32.One
   final val NO_SECRET = ByteVector32.Zeroes
@@ -136,6 +138,7 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
 
   override def onMessage(worker: CommsTower.Worker, message: LightningMessage): Unit = message match {
     case msg: Error if msg.channelId == ByteVector32.Zeroes => fromNode(worker.info.nodeId).foreach(_.chan process msg)
+    case msg: ChannelReestablish if !all.contains(msg.channelId) => unknownReestablishStream onNext UnknownReestablish(worker, msg)
     case msg: ChannelUpdate => fromNode(worker.info.nodeId).foreach(_.chan process msg)
     case msg: HasChannelId => sendTo(msg, msg.channelId)
     case _ => // Do nothing
@@ -185,7 +188,7 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
 
   def pendingRefundsAmount: Satoshi = all.values.map(_.data).collect { case c: DATA_CLOSING => c.forceCloseCommitPublished }.flatten.flatMap(_.delayedRefundsLeft).map(_.txOut.head.amount).sum
 
-  def allHosted: Iterable[ChanAndCommits] = all.values.collect { case chan: ChannelHosted => chan }.flatMap(Channel.chanAndCommitsOpt)
+  def allHosted: Iterable[ChannelHosted] = all.values.collect { case chan: ChannelHosted => chan }
 
   def hostedFromNode(nodeId: PublicKey): Option[ChannelHosted] = fromNode(nodeId).collectFirst { case ChanAndCommits(chan: ChannelHosted, _) => chan }
 
@@ -219,8 +222,43 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
     opm.getSendable(inPrincipleUsableChans, maxFee = theoreticalMaxFee).values.sum
   }
 
-  def keysend() = {
+  def makeSendCmd(prExt: PaymentRequestExt, toSend: MilliSatoshi, allowedChans: Seq[Channel], typicalChainTxFee: MilliSatoshi, capLNFeeToChain: Boolean): SendMultiPart = {
+    val fullTag = FullPaymentTag(paymentHash = prExt.pr.paymentHash, paymentSecret = prExt.pr.paymentSecret.get, tag = PaymentTagTlv.LOCALLY_SENT)
+    val extraEdges = RouteCalculation.makeExtraEdges(prExt.pr.routingInfo, target = prExt.pr.nodeId)
 
+    val feeReserve = toSend * LNParams.maxOffChainFeeRatio match {
+      case percent if percent < LNParams.maxOffChainFeeAboveRatio => LNParams.maxOffChainFeeAboveRatio
+      case percent if percent > typicalChainTxFee && capLNFeeToChain => typicalChainTxFee
+      case percent => percent
+    }
+
+    val split = SplitInfo(totalSum = 0L.msat, toSend)
+    // Supply relative cltv expiry in case if we initiate a payment when chain tip is not yet known
+    val chainExpiry = Right(prExt.pr.minFinalCltvExpiryDelta getOrElse LNParams.minInvoiceExpiryDelta)
+    // An assumption is that toSend is at most maxSendable so max theoretically possible off-chain fee is already counted in, so we can send amount + fee
+    SendMultiPart(fullTag, chainExpiry, split, LNParams.routerConf, targetNodeId = prExt.pr.nodeId, feeReserve, allowedChans, fullTag.paymentSecret, extraEdges)
+  }
+
+  def makePrExt(toReceive: MilliSatoshi, allowedChans: Seq[ChanAndCommits], description: PaymentDescription, preimage: ByteVector32): PaymentRequestExt = {
+    // Make a BOLT11 payment request with hints leading to us from provided peer nodes and fake payee nodeId derived from payment hash
+
+    val hash = Crypto.sha256(preimage)
+    val invoiceKey = LNParams.secret.keys.fakeInvoiceKey(hash)
+    val hops = allowedChans.map(_.commits.updateOpt).zip(allowedChans).collect { case Some(upd) ~ cnc => upd.extraHop(cnc.commits.remoteInfo.nodeId) :: Nil }
+    val pr = PaymentRequest(LNParams.chainHash, Some(toReceive), hash, invoiceKey, description.invoiceText, LNParams.incomingFinalCltvExpiry, hops.toList)
+    PaymentRequestExt.from(pr)
+  }
+
+  def localSend(cmd: SendMultiPart): Unit = {
+    opm process CreateSenderFSM(cmd.fullTag, localPaymentListener)
+    opm process ClearFailures
+    opm process cmd
+  }
+
+  def localSendToSelf(sources: List[Channel], destination: ChanAndCommits, preimage: ByteVector32, typicalChainTxFee: MilliSatoshi, capLNFeeToChain: Boolean): Unit = {
+    val prExt = makePrExt(maxSendable(sources).min(destination.commits.availableForReceive), List(destination), PlainDescription(split = None, label = None, new String), preimage)
+    val keySendCmd = makeSendCmd(prExt, prExt.pr.amount.get, sources, typicalChainTxFee, capLNFeeToChain).copy(userCustomTlvs = GenericTlv(OnionCodecs.keySendNumber, preimage) :: Nil)
+    localSend(keySendCmd)
   }
 
   def checkIfSendable(paymentHash: ByteVector32): Option[Int] =
@@ -237,7 +275,7 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
       // Execute immediately in same thread to not let channel get updated
       chan doProcess CMD_CLOSE(scriptPubKey = None, force = true)
 
-    case (_: ChannelTransitionFail, chan: ChannelHosted, hc: HostedCommits) if hc.error.isEmpty =>
+    case (_: ChannelTransitionFail, chan: ChannelHosted, hc: HostedCommits) =>
       // Execute immediately in same thread to not let channel get updated
       chan.localSuspend(hc, ErrorCodes.ERR_HOSTED_MANUAL_SUSPEND)
   }
