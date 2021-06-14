@@ -256,7 +256,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
       val changeMaster = ElectrumWallet.changeKey(master, walletParameters.chainHash)
       val firstAccountKeys = (0 until walletParameters.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
       val firstChangeKeys = (0 until walletParameters.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
-      val data1 = Data(walletParameters, Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header), firstAccountKeys, firstChangeKeys)
+      val data1 = Data(Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header), firstAccountKeys, firstChangeKeys)
 
       val amount1 = 1000000 sat
       val amount2 = 1500000 sat
@@ -384,7 +384,7 @@ object ElectrumWalletSimulatedClientSpec {
 
   def updateStatus(data: ElectrumWallet.Data): ElectrumWallet.Data = {
     val status1 = data.history.mapValues(items => {
-      val status = items.map(i => s"${i.tx_hash}:${i.height}:").mkString("")
+      val status = items.map(i => s"${i.txHash}:${i.height}:").mkString("")
       Crypto.sha256(ByteVector.view(status.getBytes())).toString()
     }).toMap
     data.copy(status = status1)
