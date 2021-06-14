@@ -96,10 +96,6 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
     val ready = listener.expectMsgType[WalletReady]
     assert(ready.timestamp == headers.last.time)
     listener.expectNoMessage
-    listener.send(wallet, GetXpub)
-    val GetXpubResponse(xpub, path) = listener.expectMsgType[GetXpubResponse]
-    assert(xpub == "upub5DffbMENbUsLcJbhufWvy1jourQfXfC6SoYyxhy2gPKeTSGzYHB3wKTnKH2LYCDemSzZwqzNcHNjnQZJCDn7Jy2LvvQeysQ6hrcK5ogp11B")
-    assert(path == "m/49'/1'/0'")
   }
 
   test("tell wallet is ready when a new block comes in, even if nothing else has changed") {
