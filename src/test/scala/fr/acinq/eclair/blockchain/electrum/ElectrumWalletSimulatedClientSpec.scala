@@ -74,7 +74,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
   })
 
   val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, DataTable, ElectrumHeadersTable)
-  val walletParameters = WalletParameters(Block.RegtestGenesisBlock.hash, new SQLiteData(connection))
+  val walletParameters = WalletParameters(Block.RegtestGenesisBlock.hash, new SQLiteData(connection), dustLimit = 546L.sat, swipeRange = 10, allowSpendUnconfirmed = true)
   val wallet = TestFSMRef(new ElectrumWallet(seed, client.ref, walletParameters))
   listener.expectNoMessage
 

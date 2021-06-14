@@ -29,22 +29,11 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.blockchain.TxAndFee
+import immortan.crypto.Tools.Any2Some
 import scala.annotation.tailrec
 import scodec.bits.ByteVector
 
-/**
- * Simple electrum wallet.
- * See the documentation at https://electrumx-spesmilo.readthedocs.io/en/latest/
- *
- * Typical workflow:
- *
- * client ---- header update ----> wallet
- * client ---- status update ----> wallet
- * client <--- ask history   ----- wallet
- * client ---- history       ----> wallet
- * client <--- ask tx        ----- wallet
- * client ---- tx            ----> wallet
- */
+// See the documentation at https://electrumx-spesmilo.readthedocs.io/en/latest/
 class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.WalletParameters) extends FSM[ElectrumWallet.State, ElectrumWallet.Data] {
 
   import Blockchain.RETARGETING_PERIOD
@@ -59,78 +48,44 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
 
   client ! ElectrumClient.AddStatusListener(self)
 
-  /**
-   * If the wallet is ready and its state changed since the last time it was ready:
-   * - publish a WalletReady notification
-   * - persist state data
-   *
-   * @param data wallet data
-   * @return the input data with an updated 'last ready message' if needed
-   */
-  def persistAndNotify(data: ElectrumWallet.Data): ElectrumWallet.Data = {
-    if (data.isReady(swipeRange)) {
-      data.lastReadyMessage match {
-        case Some(value) if value == data.readyMessage =>
-          log.debug("ready message {} has already been sent", value)
-          data
-        case _ =>
-          log.info(s"checking wallet")
-          val ready = data.readyMessage
-          log.info(s"wallet is ready with $ready")
-          context.system.eventStream.publish(ready)
-          params.walletDb.persist(PersistentData(data))
-          data.copy(lastReadyMessage = Some(ready))
-      }
-    } else data
+  def persistAndNotify(data: Data): Data = {
+    val isSame = data.lastReadyMessage.contains(data.readyMessage)
+
+    if (isSame) data else {
+      params.walletDb persist PersistentData(data)
+      context.system.eventStream publish data.readyMessage
+      data.copy(lastReadyMessage = data.readyMessage.asSome)
+    }
   }
 
-  startWith(DISCONNECTED, {
+  def loadData: Data = {
     val blockchain = params.chainHash match {
-      // regtest is a special case, there are no checkpoints and we start with a single header
       case Block.RegtestGenesisBlock.hash => Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header)
-      case _ =>
-        val checkpoints = CheckPoint.load(params.chainHash, params.walletDb)
-        Blockchain.fromCheckpoints(params.chainHash, checkpoints)
+      case _ => Blockchain.fromCheckpoints(checkpoints = CheckPoint.load(params.chainHash, params.walletDb), chainhash = params.chainHash)
     }
-    val headers = params.walletDb.getHeaders(blockchain.checkpoints.size * RETARGETING_PERIOD, Int.MaxValue)
-    log.info(s"loading ${headers.size} headers from db")
-    val blockchain1 = Blockchain.addHeadersChunk(blockchain, blockchain.checkpoints.size * RETARGETING_PERIOD, headers)
-    val data = Try(params.walletDb.readPersistentData) match {
-      case Success(Some(persisted)) =>
-        val firstAccountKeys = (0 until persisted.accountKeysCount).map(i => derivePrivateKey(accountMaster, i)).toVector
-        val firstChangeKeys = (0 until persisted.changeKeysCount).map(i => derivePrivateKey(changeMaster, i)).toVector
 
-        Data(blockchain1,
-          firstAccountKeys,
-          firstChangeKeys,
-          status = persisted.status,
-          transactions = persisted.transactions,
-          heights = persisted.heights,
-          history = persisted.history,
-          proofs = persisted.proofs,
-          pendingHistoryRequests = Set.empty,
-          pendingHeadersRequests = Set.empty,
-          pendingTransactionRequests = Set.empty,
-          pendingTransactions = persisted.pendingTransactions,
-          lastReadyMessage = None)
-      case Success(None) =>
-        log.info(s"wallet db is empty, starting with a default wallet")
-        val firstAccountKeys = (0 until params.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
-        val firstChangeKeys = (0 until params.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
-        Data(params, blockchain1, firstAccountKeys, firstChangeKeys)
-      case Failure(exception) =>
-        log.info(s"cannot read wallet db ($exception), starting with a default wallet")
-        val firstAccountKeys = (0 until params.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
-        val firstChangeKeys = (0 until params.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
-        Data(params, blockchain1, firstAccountKeys, firstChangeKeys)
+    val headers = params.walletDb.getHeaders(blockchain.checkpoints.size * RETARGETING_PERIOD, Int.MaxValue)
+    val blockchain1 = Blockchain.addHeadersChunk(blockchain, blockchain.checkpoints.size * RETARGETING_PERIOD, headers)
+
+    Try(params.walletDb.readPersistentData).toOption.flatten.map { persisted =>
+      val firstAccountKeys = for (idx <- 0 until persisted.accountKeysCount) yield derivePrivateKey(accountMaster, idx)
+      val firstChangeKeys = for (idx <- 0 until persisted.changeKeysCount) yield derivePrivateKey(changeMaster, idx)
+
+      Data(blockchain1, firstAccountKeys.toVector, firstChangeKeys.toVector, status = persisted.status, transactions = persisted.transactions, heights = persisted.heights,
+        history = persisted.history, proofs = persisted.proofs, pendingHistoryRequests = Set.empty, pendingHeadersRequests = Set.empty, pendingTransactionRequests = Set.empty,
+        pendingTransactions = persisted.pendingTransactions, lastReadyMessage = None)
+
+    } getOrElse {
+      val firstAccountKeys = for (idx <- 0 until params.swipeRange) yield derivePrivateKey(accountMaster, idx)
+      val firstChangeKeys = for (idx <- 0 until params.swipeRange) yield derivePrivateKey(changeMaster, idx)
+      Data(params, blockchain1, firstAccountKeys.toVector, firstChangeKeys.toVector)
     }
-    log.info(s"restored wallet balance=${data.balance}")
-    data
-  })
+  }
+
+  startWith(DISCONNECTED, loadData)
 
   when(DISCONNECTED) {
     case Event(ElectrumClient.ElectrumReady(_, _, _), data) =>
-      // subscribe to headers stream, server will reply with its current tip
       client ! ElectrumClient.HeaderSubscription(self)
       goto(WAITING_FOR_TIP) using data
   }
@@ -459,7 +414,7 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
 }
 
 object ElectrumWallet {
-  case class WalletParameters(chainHash: ByteVector32, walletDb: WalletDb, dustLimit: Satoshi = 546L.sat, swipeRange: Int = 10, allowSpendUnconfirmed: Boolean = true)
+  case class WalletParameters(chainHash: ByteVector32, walletDb: WalletDb, dustLimit: Satoshi, swipeRange: Int, allowSpendUnconfirmed: Boolean)
 
   sealed trait State
   case object DISCONNECTED extends State
@@ -490,17 +445,12 @@ object ElectrumWallet {
   case object InsufficientFunds extends Response
   case class AmountBelowDustLimit(dustLimit: Satoshi) extends Response
 
-  case class GetPrivateKey(address: String) extends Request
-  case class GetPrivateKeyResponse(address: String, key: Option[ExtendedPrivateKey]) extends Response
-
   case class IsDoubleSpent(tx: Transaction) extends Request
   case class IsDoubleSpentResponse(tx: Transaction, depth: Long, isDoubleSpent: Boolean) extends Response
 
   sealed trait WalletEvent
   case class TransactionReceived(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi, walletAddreses: List[String], feeOpt: Option[Satoshi] = None) extends WalletEvent
-  case class WalletReady(confirmedBalance: Satoshi, unconfirmedBalance: Satoshi, height: Long, timestamp: Long) extends WalletEvent {
-    val totalBalance: Satoshi = confirmedBalance + unconfirmedBalance
-  }
+  case class WalletReady(confirmedBalance: Satoshi, unconfirmedBalance: Satoshi, height: Long, timestamp: Long) extends WalletEvent
 
   def segwitAddress(key: ExtendedPrivateKey, chainHash: ByteVector32): String = computeBIP84Address(key.publicKey, chainHash)
 
@@ -559,19 +509,10 @@ object ElectrumWallet {
    * @param pendingTransactionRequests requests pending a response from the electrum server
    * @param pendingTransactions        transactions received but not yet connected to their parents
    */
-  case class Data(blockchain: Blockchain,
-                  accountKeys: Vector[ExtendedPrivateKey],
-                  changeKeys: Vector[ExtendedPrivateKey],
-                  status: Map[ByteVector32, String],
-                  transactions: Map[ByteVector32, Transaction],
-                  heights: Map[ByteVector32, Int],
-                  history: Map[ByteVector32, List[ElectrumClient.TransactionHistoryItem]],
-                  proofs: Map[ByteVector32, GetMerkleResponse],
-                  pendingHistoryRequests: Set[ByteVector32],
-                  pendingTransactionRequests: Set[ByteVector32],
-                  pendingHeadersRequests: Set[GetHeaders],
-                  pendingTransactions: List[Transaction],
-                  lastReadyMessage: Option[WalletReady]) {
+  case class Data(blockchain: Blockchain, accountKeys: Vector[ExtendedPrivateKey], changeKeys: Vector[ExtendedPrivateKey], status: Map[ByteVector32, String],
+                  transactions: Map[ByteVector32, Transaction], heights: Map[ByteVector32, Int], history: Map[ByteVector32, PersistentData.TransactionHistoryItemList],
+                  proofs: Map[ByteVector32, GetMerkleResponse], pendingHistoryRequests: Set[ByteVector32], pendingTransactionRequests: Set[ByteVector32],
+                  pendingHeadersRequests: Set[GetHeaders], pendingTransactions: List[Transaction], lastReadyMessage: Option[WalletReady]) {
 
     private val unused = new String
 
@@ -811,10 +752,9 @@ object ElectrumWallet {
     def signTransaction(tx: Transaction): Transaction = {
       tx.copy(txIn = tx.txIn.zipWithIndex.map { case (txIn, i) =>
         val utxo = utxos.find(_.outPoint == txIn.outPoint).getOrElse(throw new RuntimeException(s"cannot sign input that spends from ${txIn.outPoint}"))
-        val key = utxo.key
-        val sig = Transaction.signInput(tx, i, Script.pay2pkh(key.publicKey), SIGHASH_ALL, Satoshi(utxo.item.value), SigVersion.SIGVERSION_WITNESS_V0, key.privateKey)
-        val sigScript = Script.write(OP_PUSHDATA(Script.write(Script.pay2wpkh(key.publicKey))) :: Nil)
-        val witness = ScriptWitness(sig :: key.publicKey.value :: Nil)
+        val sig = Transaction.signInput(tx, i, Script.pay2pkh(utxo.key.publicKey), SIGHASH_ALL, Satoshi(utxo.item.value), SigVersion.SIGVERSION_WITNESS_V0, utxo.key.privateKey)
+        val sigScript = Script.write(OP_PUSHDATA(Script write Script.pay2wpkh(utxo.key.publicKey)) :: Nil)
+        val witness = ScriptWitness(sig :: utxo.key.publicKey.value :: Nil)
         txIn.copy(signatureScript = sigScript, witness = witness)
       })
     }
@@ -864,18 +804,15 @@ object ElectrumWallet {
       Data(blockchain, accountKeys, changeKeys, Map.empty, Map.empty, Map.empty, Map.empty, Map.empty, Set.empty, Set.empty, Set.empty, List.empty, None)
   }
 
-  case class InfiniteLoopException(data: Data, tx: Transaction) extends Exception
-
-  case class PersistentData(accountKeysCount: Int,
-                            changeKeysCount: Int,
-                            status: Map[ByteVector32, String],
-                            transactions: Map[ByteVector32, Transaction],
-                            heights: Map[ByteVector32, Int],
-                            history: Map[ByteVector32, List[ElectrumClient.TransactionHistoryItem]],
-                            proofs: Map[ByteVector32, GetMerkleResponse],
-                            pendingTransactions: List[Transaction])
+  case class PersistentData(accountKeysCount: Int, changeKeysCount: Int, status: Map[ByteVector32, String], transactions: Map[ByteVector32, Transaction],
+                            heights: Map[ByteVector32, Int], history: Map[ByteVector32, PersistentData.TransactionHistoryItemList],
+                            proofs: Map[ByteVector32, GetMerkleResponse], pendingTransactions: List[Transaction] = Nil)
 
   object PersistentData {
-    def apply(data: Data) = new PersistentData(data.accountKeys.length, data.changeKeys.length, data.status, data.transactions, data.heights, data.history, data.proofs, data.pendingTransactions)
+    type TransactionHistoryItemList = List[ElectrumClient.TransactionHistoryItem]
+
+    def apply(data: Data) =
+      new PersistentData(data.accountKeys.length, data.changeKeys.length, data.status,
+        data.transactions, data.heights, data.history, data.proofs, data.pendingTransactions)
   }
 }

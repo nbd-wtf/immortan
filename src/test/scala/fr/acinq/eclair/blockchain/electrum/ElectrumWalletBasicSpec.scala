@@ -52,7 +52,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
   val firstChangeKeys = (0 until 10).map(i => derivePrivateKey(changeMaster, i)).toVector
 
   val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, DataTable, ElectrumHeadersTable)
-  val params = ElectrumWallet.WalletParameters(Block.RegtestGenesisBlock.hash, new SQLiteData(connection))
+  val params = ElectrumWallet.WalletParameters(Block.RegtestGenesisBlock.hash, new SQLiteData(connection), dustLimit = 546L.sat, swipeRange = 10, allowSpendUnconfirmed = true)
 
   val state = Data(params, Blockchain.fromCheckpoints(Block.RegtestGenesisBlock.hash, CheckPoint.loadFromChainHash(Block.RegtestGenesisBlock.hash)), firstAccountKeys, firstChangeKeys)
     .copy(status = (firstAccountKeys ++ firstChangeKeys).map(key => computeScriptHashFromPublicKey(key.publicKey) -> "").toMap)
