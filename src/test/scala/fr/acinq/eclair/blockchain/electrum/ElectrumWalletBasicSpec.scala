@@ -52,9 +52,9 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
   val firstChangeKeys = (0 until 10).map(i => derivePrivateKey(changeMaster, i)).toVector
 
   val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, DataTable, ElectrumHeadersTable)
-  val params = ElectrumWallet.WalletParameters(Block.RegtestGenesisBlock.hash, new SQLiteData(connection))
+  val params = ElectrumWallet.WalletParameters(Block.RegtestGenesisBlock.hash, new SQLiteData(connection), dustLimit = 546L.sat, swipeRange = 10, allowSpendUnconfirmed = true)
 
-  val state = Data(params, Blockchain.fromCheckpoints(Block.RegtestGenesisBlock.hash, CheckPoint.loadFromChainHash(Block.RegtestGenesisBlock.hash)), firstAccountKeys, firstChangeKeys)
+  val state = Data(Blockchain.fromCheckpoints(Block.RegtestGenesisBlock.hash, CheckPoint.loadFromChainHash(Block.RegtestGenesisBlock.hash)), firstAccountKeys, firstChangeKeys)
     .copy(status = (firstAccountKeys ++ firstChangeKeys).map(key => computeScriptHashFromPublicKey(key.publicKey) -> "").toMap)
 
   def addFunds(data: Data, key: ExtendedPrivateKey, amount: Satoshi): Data = {
@@ -79,25 +79,15 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
 
   def addFunds(data: Data, keyamounts: Seq[(ExtendedPrivateKey, Satoshi)]): Data = keyamounts.foldLeft(data)(addFunds)
 
-  test("compute addresses") {
-    val priv = PrivateKey.fromBase58("cRumXueoZHjhGXrZWeFoEBkeDHu2m8dW5qtFBCqSAt4LDR2Hnd8Q", Base58.Prefix.SecretKeyTestnet)._1
-    assert(Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, priv.publicKey.hash160) == "ms93boMGZZjvjciujPJgDAqeR86EKBf9MC")
-    assert(segwitAddress(priv, Block.RegtestGenesisBlock.hash) == "2MscvqgGXMTYJNAY3owdUtgWJaxPUjH38Cx")
-  }
-
-  test("implement BIP49") {
-    val mnemonics = "pizza afraid guess romance pair steel record jazz rubber prison angle hen heart engage kiss visual helmet twelve lady found between wave rapid twist".split(" ")
-    val seed = MnemonicCode.toSeed(mnemonics, "")
-    val master = DeterministicWallet.generate(seed)
-
-    val accountMaster = accountKey(master, Block.RegtestGenesisBlock.hash)
-    val firstKey = derivePrivateKey(accountMaster, 0)
-    assert(segwitAddress(firstKey, Block.RegtestGenesisBlock.hash) === "2MxJejujQJRRJdbfTKNQQ94YCnxJwRaE7yo")
+  test("implement BIP84") {
+    val seed = MnemonicCode.toSeed("pizza afraid guess romance pair steel record jazz rubber prison angle hen heart engage kiss visual helmet twelve lady found between wave rapid twist", "")
+    val firstKey = derivePrivateKey(accountKey(DeterministicWallet.generate(seed), Block.RegtestGenesisBlock.hash), 0)
+    assert(segwitAddress(firstKey, Block.RegtestGenesisBlock.hash) === "bcrt1qhhkvl59p56wym0radn65egs7h3szz2clm5c94p")
   }
 
   test("complete transactions (enough funds)") {
     val state1 = addFunds(state, state.accountKeys.head, 1.btc)
-    val (confirmed1, unconfirmed1) = state1.balance
+    val GetBalanceResponse(confirmed1, unconfirmed1) = state1.balance
 
     val pub = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5.btc, Script.pay2pkh(pub)) :: Nil, lockTime = 0)
@@ -106,7 +96,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     assert(fee == fee1)
 
     val state2 = state1.commitTransaction(tx1)
-    val (confirmed4, unconfirmed4) = state2.balance
+    val GetBalanceResponse(confirmed4, unconfirmed4) = state2.balance
     assert(confirmed4 == confirmed1)
     assert(unconfirmed1 - unconfirmed4 >= btc2satoshi(0.5.btc))
   }
@@ -114,7 +104,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
   test("complete transactions (insufficient funds)") {
     val state1 = addFunds(state, state.accountKeys.head, 5.btc)
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(6.btc, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
-    intercept[IllegalArgumentException] {
+    intercept[RuntimeException] {
       state1.completeTransaction(tx, feerate, dustLimit, allowSpendUnconfirmed = false, TxIn.SEQUENCE_FINAL)
     }
   }
@@ -173,13 +163,13 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val state2 = addFunds(state1, state1.accountKeys(1), 2.btc)
     val state3 = addFunds(state2, state2.changeKeys(0), 0.5.btc)
     assert(state3.utxos.length == 3)
-    assert(state3.balance == (350000000.sat, 0.sat))
+    assert(GetBalanceResponse(350000000.sat, 0.sat) == state3.balance)
 
     val TxAndFee(tx, fee) = state3.spendAll(Script.pay2wpkh(ByteVector.fill(20)(1)), Nil, feerate, dustLimit, TxIn.SEQUENCE_FINAL)
     val Some((received, _, Some(fee1))) = state3.computeTransactionDelta(tx)
     assert(received === 0.sat)
     assert(fee == fee1)
-    assert(tx.txOut.map(_.amount).sum + fee == state3.balance._1 + state3.balance._2)
+    assert(tx.txOut.map(_.amount).sum + fee == state3.balance.confirmed + state3.balance.unconfirmed)
   }
 
   test("check that issue #1146 is fixed") {
@@ -193,7 +183,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val Some((received, _, Some(fee1))) = state3.computeTransactionDelta(tx)
     assert(received === 0.sat)
     assert(fee == fee1)
-    assert(tx.txOut.map(_.amount).sum + fee == state3.balance._1 + state3.balance._2)
+    assert(tx.txOut.map(_.amount).sum + fee == state3.balance.confirmed + state3.balance.unconfirmed)
 
     val tx1 = Transaction(version = 2, txIn = Nil, txOut = TxOut(tx.txOut.map(_.amount).sum, pubkeyScript) :: Nil, lockTime = 0)
     assert(Try(state3.completeTransaction(tx1, FeeratePerKw(750.sat), dustLimit, allowSpendUnconfirmed = true, TxIn.SEQUENCE_FINAL)).isSuccess)
@@ -206,7 +196,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val pub2 = state.accountKeys(1).publicKey
     val redeemScript = Scripts.multiSig2of2(pub1, pub2)
     val pubkeyScript = Script.pay2wsh(redeemScript)
-    assert(Try(state3.spendAll(pubkeyScript, Nil, FeeratePerKw(8000.sat), dustLimit, TxIn.SEQUENCE_FINAL)).isFailure)
+    assert(Try(state3.spendAll(pubkeyScript, Nil, FeeratePerKw(10000.sat), dustLimit, TxIn.SEQUENCE_FINAL)).isFailure)
   }
 
   test("fuzzy test") {

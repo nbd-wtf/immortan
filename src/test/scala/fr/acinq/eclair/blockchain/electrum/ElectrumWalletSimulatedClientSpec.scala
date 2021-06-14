@@ -74,7 +74,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
   })
 
   val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, DataTable, ElectrumHeadersTable)
-  val walletParameters = WalletParameters(Block.RegtestGenesisBlock.hash, new SQLiteData(connection))
+  val walletParameters = WalletParameters(Block.RegtestGenesisBlock.hash, new SQLiteData(connection), dustLimit = 546L.sat, swipeRange = 10, allowSpendUnconfirmed = true)
   val wallet = TestFSMRef(new ElectrumWallet(seed, client.ref, walletParameters))
   listener.expectNoMessage
 
@@ -96,10 +96,6 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
     val ready = listener.expectMsgType[WalletReady]
     assert(ready.timestamp == headers.last.time)
     listener.expectNoMessage
-    listener.send(wallet, GetXpub)
-    val GetXpubResponse(xpub, path) = listener.expectMsgType[GetXpubResponse]
-    assert(xpub == "upub5DffbMENbUsLcJbhufWvy1jourQfXfC6SoYyxhy2gPKeTSGzYHB3wKTnKH2LYCDemSzZwqzNcHNjnQZJCDn7Jy2LvvQeysQ6hrcK5ogp11B")
-    assert(path == "m/49'/1'/0'")
   }
 
   test("tell wallet is ready when a new block comes in, even if nothing else has changed") {
@@ -260,7 +256,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
       val changeMaster = ElectrumWallet.changeKey(master, walletParameters.chainHash)
       val firstAccountKeys = (0 until walletParameters.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
       val firstChangeKeys = (0 until walletParameters.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
-      val data1 = Data(walletParameters, Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header), firstAccountKeys, firstChangeKeys)
+      val data1 = Data(Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header), firstAccountKeys, firstChangeKeys)
 
       val amount1 = 1000000 sat
       val amount2 = 1500000 sat
@@ -388,7 +384,7 @@ object ElectrumWalletSimulatedClientSpec {
 
   def updateStatus(data: ElectrumWallet.Data): ElectrumWallet.Data = {
     val status1 = data.history.mapValues(items => {
-      val status = items.map(i => s"${i.tx_hash}:${i.height}:").mkString("")
+      val status = items.map(i => s"${i.txHash}:${i.height}:").mkString("")
       Crypto.sha256(ByteVector.view(status.getBytes())).toString()
     }).toMap
     data.copy(status = status1)
