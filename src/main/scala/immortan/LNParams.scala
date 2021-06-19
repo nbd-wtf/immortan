@@ -48,9 +48,7 @@ object LNParams {
   val shouldRejectPaymentFeerateDiff = 150.0
   val shouldForceClosePaymentFeerateDiff = 250.0
 
-  val minRoutingCltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(144 * 3) // Ask relayer to set CLTV expiry delta to at least this many blocks
-  val ourRoutingOurCltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(144 * 2) // We will reserve this many blocks for our incoming routed HTLC
-
+  val minRoutingCltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(144 * 2) // Ask relayer to set CLTV expiry delta to at least this many blocks
   val minInvoiceExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(18) // If payee does not provide an explicit relative CLTV this is what we use by default
   val minForceClosableIncomingHtlcAmountToFeeRatio = 4 // When incoming HTLC gets (nearly) expired, how much higher than trim threshold should it be for us to force-close
   val minForceClosableOutgoingHtlcAmountToFeeRatio = 5 // When peer sends a suspiciously low feerate, how much higher than trim threshold should our outgoing HTLC be for us to force-close
@@ -90,7 +88,7 @@ object LNParams {
     val walletParams = ElectrumWallet.WalletParameters(chainHash, walletDb, minDustLimit, swipeRange = 10, allowSpendUnconfirmed = true)
     val clientPool = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(blockCount, chainHash)), "pool", SupervisorStrategy.Resume))
     val watcher = system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(blockCount, clientPool)), "watcher", SupervisorStrategy.Resume))
-    val wallet = system.actorOf(Props(new ElectrumWallet(seed, clientPool, walletParams)), "wallet")
+    val wallet = system.actorOf(Props(new ElectrumWallet(seed, clientPool, walletParams, new ElectrumWallet32)), "wallet")
     val catcher = system.actorOf(Props(new WalletEventsCatcher), "catcher")
     val eclairWallet = new ElectrumEclairWallet(wallet, chainHash)
     WalletExt(eclairWallet, catcher, clientPool, watcher)

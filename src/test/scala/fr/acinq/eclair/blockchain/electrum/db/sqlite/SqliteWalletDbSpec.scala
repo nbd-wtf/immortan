@@ -20,7 +20,7 @@ import fr.acinq.eclair.{randomBytes, randomBytes32}
 import immortan.sqlite.{DataTable, ElectrumHeadersTable, SQLiteData}
 import fr.acinq.bitcoin.{Block, BlockHeader, OutPoint, Satoshi, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.GetMerkleResponse
-import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
+import fr.acinq.eclair.blockchain.electrum.PersistentData
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import org.scalatest.funsuite.AnyFunSuite
 import immortan.utils.SQLiteUtils
@@ -92,12 +92,13 @@ class SqliteWalletDbSpec extends AnyFunSuite {
   test("serialize persistent data") {
     val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, DataTable, ElectrumHeadersTable)
     val db = new SQLiteData(connection)
-    assert(db.readPersistentData.isEmpty)
+    val tag = "test"
+    assert(db.readPersistentData(tag).isEmpty)
 
     for (i <- 0 until 50) {
       val data = randomPersistentData
-      db.persist(data)
-      val Some(check) = db.readPersistentData
+      db.persist(data, tag)
+      val Some(check) = db.readPersistentData(tag)
       assert(check === data)
     }
   }
