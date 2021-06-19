@@ -7,9 +7,9 @@ import immortan.utils.ImplicitJsonFormats._
 import java.lang.{Integer => JInt}
 import immortan.utils.{FeeRatesInfo, FiatRatesInfo}
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32}
-import fr.acinq.eclair.wire.{HostedChannelBranding, SwapInState}
 import immortan.{DataBag, LastChainBalance, SwapInStateExt, WalletSecret}
-import fr.acinq.eclair.wire.LightningMessageCodecs.{hostedChannelBrandingCodec, swapInStateCodec}
+import fr.acinq.eclair.wire.{HostedChannelBranding, SwapInState, TrampolineOn}
+import fr.acinq.eclair.wire.LightningMessageCodecs.{hostedChannelBrandingCodec, swapInStateCodec, trampolineOnCodec}
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb.persistentDataCodec
 import fr.acinq.eclair.blockchain.electrum.PersistentData
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
@@ -24,12 +24,14 @@ object SQLiteData {
   final val LABEL_FORMAT = "label-format"
   final val LABEL_FEE_RATES = "label-fee-rates"
   final val LABEL_FIAT_RATES = "label-fiat-rates"
+  final val LABLEL_TRAMPOLINE_ON = "label-trampoline-on"
 
   final val LABEL_BRANDING_PREFIX = "label-branding-node-"
   final val LABEL_SWAP_IN_STATE_PREFIX = "label-swap-in-node-"
   final val LABEL_ELECTRUM_DATA_PREFIX = "label-electrum-data-"
   final val LABEL_PAYMENT_REPORT_PREFIX = "label-payment-report-"
   final val LABEL_LAST_CHAIN_BALANCE_PREFIX = "label-last-chain-balance-"
+
   def byteVecToString(bv: ByteVector): String = new String(bv.toArray, "UTF-8")
 }
 
@@ -57,6 +59,10 @@ class SQLiteData(val db: DBInterface) extends WalletDb with DataBag {
   def putLastChainBalance(data: LastChainBalance, tag: String): Unit = put(LABEL_LAST_CHAIN_BALANCE_PREFIX + tag, data.toJson.compactPrint getBytes "UTF-8")
 
   def tryGetLastChainBalance(tag: String): Try[LastChainBalance] = tryGet(LABEL_LAST_CHAIN_BALANCE_PREFIX + tag).map(SQLiteData.byteVecToString) map to[LastChainBalance]
+
+  def putTrampolineOn(ton: TrampolineOn): Unit = put(LABLEL_TRAMPOLINE_ON, trampolineOnCodec.encode(ton).require.toByteArray)
+
+  def tryGetTrampolineOn: Try[TrampolineOn] = tryGet(LABLEL_TRAMPOLINE_ON).map(raw => trampolineOnCodec.decode(raw.toBitVector).require.value)
 
   def putFiatRatesInfo(data: FiatRatesInfo): Unit = put(LABEL_FIAT_RATES, data.toJson.compactPrint getBytes "UTF-8")
 
