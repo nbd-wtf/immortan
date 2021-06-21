@@ -3,6 +3,7 @@ package immortan
 import fr.acinq.eclair._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.crypto.SphinxSpec._
+import fr.acinq.bitcoin.DeterministicWallet._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, SatoshiLong}
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, ChannelVersion}
@@ -93,5 +94,15 @@ class WireSpec extends AnyFunSuite {
       remoteSigOfLocal = ByteVector64.Zeroes, localSigOfRemote = ByteVector64.Zeroes)
 
     assert(lastCrossSignedStateCodec.decode(lastCrossSignedStateCodec.encode(lcss).require).require.value == lcss)
+  }
+
+  test("Derive public key from private one") {
+    val seed = randomBytes32
+    val master = generate(seed)
+    val accountPrivKey = derivePrivateKey(master, hardened(1L) :: 0L :: 0L :: Nil)
+    val accountPubKey = publicKey(accountPrivKey)
+    val pub12 = derivePublicKey(accountPubKey, 12L)
+    val privKey12 = derivePrivateKey(accountPrivKey, pub12.path.lastChildNumber)
+    assert(pub12.publicKey == privKey12.publicKey)
   }
 }

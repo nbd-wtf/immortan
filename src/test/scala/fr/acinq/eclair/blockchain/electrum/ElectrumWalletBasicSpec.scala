@@ -17,13 +17,15 @@
 package fr.acinq.eclair.blockchain.electrum
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey}
+import fr.acinq.bitcoin.DeterministicWallet._
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.randomBytes32
-import fr.acinq.eclair.blockchain.TxAndFee
+import fr.acinq.eclair.blockchain.{EclairWallet, TxAndFee}
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
+import fr.acinq.eclair.blockchain.electrum.ElectrumWalletBasicSpec._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.randomBytes32
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
-import immortan.sqlite.{DataTable, ElectrumHeadersTable, SQLiteData}
+import immortan.sqlite.{DataTable, ElectrumHeadersTable}
 import immortan.utils.SQLiteUtils
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
@@ -32,31 +34,22 @@ import scala.util.{Failure, Random, Success, Try}
 
 class ElectrumWalletBasicSpec extends AnyFunSuite {
 
-  import ElectrumWallet._
-  import ElectrumWalletBasicSpec._
+  private val dustLimit = 546.sat
+  private val feerate = FeeratePerKw(20000.sat)
 
-  val swipeRange = 10
-  val dustLimit = 546 sat
-  val feerate = FeeratePerKw(20000 sat)
+  private val entropy: ByteVector = ByteVector.fill(32)(1)
 
-  val ewt = new ElectrumWallet84
-  val master = DeterministicWallet.generate(ByteVector32(ByteVector.fill(32)(1)))
-  val accountMaster = ewt.accountKey(master, Block.RegtestGenesisBlock.hash)
-  val accountIndex = 0
+  private val ewt = ElectrumWalletType.make(EclairWallet.BIP84, entropy, Block.RegtestGenesisBlock.hash)
 
-  val changeMaster = ewt.changeKey(master, Block.RegtestGenesisBlock.hash)
-  val changeIndex = 0
+  private val firstAccountKeys = (0 until 10).map(i => derivePublicKey(ewt.accountMaster, i)).toVector
+  private val firstChangeKeys = (0 until 10).map(i => derivePublicKey(ewt.changeMaster, i)).toVector
 
-  val firstAccountKeys = (0 until 10).map(i => derivePrivateKey(accountMaster, i)).toVector
-  val firstChangeKeys = (0 until 10).map(i => derivePrivateKey(changeMaster, i)).toVector
+  private val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, DataTable, ElectrumHeadersTable)
 
-  val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, DataTable, ElectrumHeadersTable)
-  val params = ElectrumWallet.WalletParameters(Block.RegtestGenesisBlock.hash, new SQLiteData(connection), dustLimit = 546L.sat, swipeRange = 10, allowSpendUnconfirmed = true)
-
-  val state = ElectrumData(ewt,Blockchain.fromCheckpoints(Block.RegtestGenesisBlock.hash, CheckPoint.loadFromChainHash(Block.RegtestGenesisBlock.hash)), firstAccountKeys, firstChangeKeys)
+  private val state = ElectrumData(ewt,Blockchain.fromCheckpoints(Block.RegtestGenesisBlock.hash, CheckPoint.loadFromChainHash(Block.RegtestGenesisBlock.hash)), firstAccountKeys, firstChangeKeys)
     .copy(status = (firstAccountKeys ++ firstChangeKeys).map(key => ewt.computeScriptHashFromPublicKey(key.publicKey) -> "").toMap)
 
-  def addFunds(data: ElectrumData, key: ExtendedPrivateKey, amount: Satoshi): ElectrumData = {
+  def addFunds(data: ElectrumData, key: ExtendedPublicKey, amount: Satoshi): ElectrumData = {
     val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(amount, ewt.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
     val scriptHash = ewt.computeScriptHashFromPublicKey(key.publicKey)
     val scriptHashHistory = data.history.getOrElse(scriptHash, List.empty[ElectrumClient.TransactionHistoryItem])
@@ -66,7 +59,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     )
   }
 
-  def addFunds(data: ElectrumData, keyamount: (ExtendedPrivateKey, Satoshi)): ElectrumData = {
+  def addFunds(data: ElectrumData, keyamount: (ExtendedPublicKey, Satoshi)): ElectrumData = {
     val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(keyamount._2, ewt.computePublicKeyScript(keyamount._1.publicKey)) :: Nil, lockTime = 0)
     val scriptHash = ewt.computeScriptHashFromPublicKey(keyamount._1.publicKey)
     val scriptHashHistory = data.history.getOrElse(scriptHash, List.empty[ElectrumClient.TransactionHistoryItem])
@@ -76,13 +69,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     )
   }
 
-  def addFunds(data: ElectrumData, keyamounts: Seq[(ExtendedPrivateKey, Satoshi)]): ElectrumData = keyamounts.foldLeft(data)(addFunds)
-
-  test("implement BIP84") {
-    val seed = MnemonicCode.toSeed("pizza afraid guess romance pair steel record jazz rubber prison angle hen heart engage kiss visual helmet twelve lady found between wave rapid twist", "")
-    val firstKey = derivePrivateKey(ewt.accountKey(DeterministicWallet.generate(seed), Block.RegtestGenesisBlock.hash), 0)
-    assert(ewt.textAddress(firstKey, Block.RegtestGenesisBlock.hash) === "bcrt1qhhkvl59p56wym0radn65egs7h3szz2clm5c94p")
-  }
+  def addFunds(data: ElectrumData, keyamounts: Seq[(ExtendedPublicKey, Satoshi)]): ElectrumData = keyamounts.foldLeft(data)(addFunds)
 
   test("complete transactions (enough funds)") {
     val state1 = addFunds(state, state.accountKeys.head, 1.btc)
@@ -222,11 +209,6 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
 }
 
 object ElectrumWalletBasicSpec {
-  /**
-   * @param actualFeeRate actual fee rate
-   * @param targetFeeRate target fee rate
-   * @return true if actual fee rate is within 10% of target
-   */
   def isFeerateOk(actualFeeRate: FeeratePerKw, targetFeeRate: FeeratePerKw): Boolean =
     Math.abs(actualFeeRate.toLong - targetFeeRate.toLong) < 0.1 * (actualFeeRate + targetFeeRate).toLong
 }

@@ -9,14 +9,13 @@ import fr.acinq.eclair.Features._
 import scala.concurrent.duration._
 import fr.acinq.eclair.blockchain.electrum._
 import scodec.bits.{ByteVector, HexStringSyntax}
+import akka.actor.{ActorRef, ActorSystem, PoisonPill}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import scala.concurrent.{Await, ExecutionContextExecutor}
 import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
 import fr.acinq.eclair.transactions.{DirectedHtlc, RemoteFulfill}
 import fr.acinq.eclair.channel.{ChannelKeys, LocalParams, PersistentChannelData}
-import akka.actor.{ActorRef, ActorSystem, PoisonPill, Props, SupervisorStrategy}
 import immortan.sqlite.{ChannelTxFeesSummary, DBInterface, PreparedQuery, RichCursor}
-import fr.acinq.eclair.blockchain.electrum.db.WalletDb
 import fr.acinq.eclair.router.ChannelUpdateExt
 import java.util.concurrent.atomic.AtomicLong
 import immortan.SyncMaster.ShortChanIdSet
@@ -85,16 +84,6 @@ object LNParams {
   implicit val timeout: Timeout = Timeout(30.seconds)
   implicit val system: ActorSystem = ActorSystem("immortan-actor-system")
   implicit val ec: ExecutionContextExecutor = scala.concurrent.ExecutionContext.Implicits.global
-
-  def createWallet(walletDb: WalletDb, seed: ByteVector, walletType: ElectrumWalletType): WalletExt = {
-    val walletParams = ElectrumWallet.WalletParameters(chainHash, walletDb, minDustLimit, swipeRange = 10, allowSpendUnconfirmed = true)
-    val clientPool = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(blockCount, chainHash)), "pool", SupervisorStrategy.Resume))
-    val watcher = system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(blockCount, clientPool)), "watcher", SupervisorStrategy.Resume))
-    val wallet = system.actorOf(Props(new ElectrumWallet(seed, clientPool, walletParams, walletType)), "wallet")
-    val catcher = system.actorOf(Props(new WalletEventsCatcher), "catcher")
-    val eclairWallet = new ElectrumEclairWallet(wallet, chainHash)
-    WalletExt(eclairWallet, catcher, clientPool, watcher)
-  }
 
   def createInit: Init = {
     val networks: InitTlv = InitTlv.Networks(chainHash :: Nil)

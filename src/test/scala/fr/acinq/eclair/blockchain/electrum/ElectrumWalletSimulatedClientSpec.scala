@@ -16,46 +16,40 @@
 
 package fr.acinq.eclair.blockchain.electrum
 
+import java.net.InetSocketAddress
+
 import akka.actor.{ActorRef, Terminated}
 import akka.testkit
 import akka.testkit.{TestActor, TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey
-import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32, Crypto, DeterministicWallet, MnemonicCode, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.DeterministicWallet._
+import fr.acinq.bitcoin._
 import fr.acinq.eclair.TestKitBaseClass
+import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
-import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
-import org.scalatest.funsuite.AnyFunSuiteLike
-import scodec.bits.ByteVector
-import java.net.InetSocketAddress
-import java.sql.DriverManager
-
+import fr.acinq.eclair.blockchain.electrum.ElectrumWalletSimulatedClientSpec._
 import immortan.sqlite.{DataTable, ElectrumHeadersTable, SQLiteData}
 import immortan.utils.SQLiteUtils
+import org.scalatest.funsuite.AnyFunSuiteLike
+import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
 import scala.concurrent.duration._
 
 class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
-  import ElectrumWalletSimulatedClientSpec._
+  private val sender = TestProbe()
+  private val listener = TestProbe()
+  private val client = TestProbe()
 
-  val sender = TestProbe()
-
-  val entropy = ByteVector32(ByteVector.fill(32)(1))
-  val mnemonics = MnemonicCode.toMnemonics(entropy)
-  val seed = MnemonicCode.toSeed(mnemonics, "")
-
-  val listener = TestProbe()
   system.eventStream.subscribe(listener.ref, classOf[WalletEvent])
 
-  val genesis = Block.RegtestGenesisBlock.header
+  private val genesis = Block.RegtestGenesisBlock.header
   // initial headers that we will sync when we connect to our mock server
-  var headers = makeHeaders(genesis, 2016 + 2000)
+  private var headers = makeHeaders(genesis, 2016 + 2000)
 
-  val client = TestProbe()
   client.ignoreMsg {
     case ElectrumClient.Ping => true
     case _: AddStatusListener => true
@@ -74,9 +68,9 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
   })
 
 
-  val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, DataTable, ElectrumHeadersTable)
-  val walletParameters = WalletParameters(Block.RegtestGenesisBlock.hash, new SQLiteData(connection), dustLimit = 546L.sat, swipeRange = 10, allowSpendUnconfirmed = true)
-  val wallet = TestFSMRef(new ElectrumWallet(seed, client.ref, walletParameters, ewt))
+  private val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, DataTable, ElectrumHeadersTable)
+  private val walletParameters = WalletParameters(new SQLiteData(connection), dustLimit = 546L.sat, swipeRange = 10, allowSpendUnconfirmed = true)
+  private val wallet = TestFSMRef(new ElectrumWallet(client.ref, walletParameters, ewt))
   listener.expectNoMessage
 
   def reconnect: WalletReady = {
@@ -243,7 +237,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
     client.expectMsgType[ScriptHashSubscription]
 
     while (listener.msgAvailable) {
-      listener.receiveOne(100 milliseconds)
+      listener.receiveOne(100.milliseconds)
     }
 
     client.expectMsg(GetTransaction(tx.txid))
@@ -252,15 +246,12 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
 
   test("handle disconnect/reconnect events") {
     val data = {
-      val master = DeterministicWallet.generate(seed)
-      val accountMaster = ewt.accountKey(master, walletParameters.chainHash)
-      val changeMaster = ewt.changeKey(master, walletParameters.chainHash)
-      val firstAccountKeys = (0 until walletParameters.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
-      val firstChangeKeys = (0 until walletParameters.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
+      val firstAccountKeys = (0 until walletParameters.swipeRange).map(i => derivePublicKey(ewt.accountMaster, i)).toVector
+      val firstChangeKeys = (0 until walletParameters.swipeRange).map(i => derivePublicKey(ewt.changeMaster, i)).toVector
       val data1 = ElectrumData(ewt, Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header), firstAccountKeys, firstChangeKeys)
 
-      val amount1 = 1000000 sat
-      val amount2 = 1500000 sat
+      val amount1 = 1000000.sat
+      val amount2 = 1500000.sat
 
       // transactions that send funds to our wallet
       val wallettxs = Seq(
@@ -369,11 +360,17 @@ object ElectrumWalletSimulatedClientSpec {
     loop(Vector(makeHeader(previousHeader)))
   }
 
-  val ewt = new ElectrumWallet84
+  val entropy: ByteVector32 = ByteVector32(ByteVector.fill(32)(1))
 
-  val emptyTx = Transaction(version = 2, txIn = Nil, txOut = Nil, lockTime = 0)
+  val mnemonics: Seq[String] = MnemonicCode.toMnemonics(entropy)
 
-  def walletOutput(amount: Satoshi, key: PublicKey) = TxOut(amount, ewt.computePublicKeyScript(key))
+  val seed: ByteVector = MnemonicCode.toSeed(mnemonics, "")
+
+  val ewt = ElectrumWalletType.make(EclairWallet.BIP84, entropy, Block.RegtestGenesisBlock.hash)
+
+  val emptyTx: Transaction = Transaction(version = 2, txIn = Nil, txOut = Nil, lockTime = 0)
+
+  def walletOutput(amount: Satoshi, key: PublicKey): TxOut = TxOut(amount, ewt computePublicKeyScript key)
 
   def addOutputs(tx: Transaction, amount: Satoshi, keys: PublicKey*): Transaction = keys.foldLeft(tx) { case (t, k) => t.copy(txOut = t.txOut :+ walletOutput(amount, k)) }
 
