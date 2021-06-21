@@ -95,14 +95,4 @@ class WireSpec extends AnyFunSuite {
 
     assert(lastCrossSignedStateCodec.decode(lastCrossSignedStateCodec.encode(lcss).require).require.value == lcss)
   }
-
-  test("Derive public key from private one") {
-    val seed = randomBytes32
-    val master = generate(seed)
-    val accountPrivKey = derivePrivateKey(master, hardened(1L) :: 0L :: 0L :: Nil)
-    val accountPubKey = publicKey(accountPrivKey)
-    val pub12 = derivePublicKey(accountPubKey, 12L)
-    val privKey12 = derivePrivateKey(accountPrivKey, pub12.path.lastChildNumber)
-    assert(pub12.publicKey == privKey12.publicKey)
-  }
 }
