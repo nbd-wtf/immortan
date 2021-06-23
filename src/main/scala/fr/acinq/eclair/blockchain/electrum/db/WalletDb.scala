@@ -6,7 +6,7 @@ import fr.acinq.eclair.blockchain.electrum.PersistentData
 
 trait HeaderDb {
   type HeightAndHeader = (Int, BlockHeader)
-  def addHeaders(startHeight: Int, headers: Seq[BlockHeader] = Nil): Unit
+  def addHeaders(headers: Seq[BlockHeader], startHeight: Int): Unit
 
   def getHeader(height: Int): Option[BlockHeader]
   def getHeader(blockHash: ByteVector32): Option[HeightAndHeader]

@@ -69,7 +69,7 @@ class SqliteWalletDbSpec extends AnyFunSuite {
     val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, DataTable, ElectrumHeadersTable)
     val db = new SQLiteData(connection)
     val headers = makeHeaders(100)
-    db.addHeaders(2016, headers)
+    db.addHeaders(headers, 2016)
 
     val headers1 = db.getHeaders(2016, Int.MaxValue)
     assert(headers1 === headers)

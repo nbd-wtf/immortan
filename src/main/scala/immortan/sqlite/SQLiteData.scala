@@ -110,13 +110,13 @@ class SQLiteData(val db: DBInterface) extends WalletDb with DataBag {
 
   // HeadersDb
 
-  override def addHeaders(startHeight: Int, headers: Seq[BlockHeader] = Nil): Unit = {
+  override def addHeaders(headers: Seq[BlockHeader], atHeight: Int): Unit = {
     val addHeaderSqlPQ = db.makePreparedQuery(ElectrumHeadersTable.addHeaderSql)
 
     db txWrap {
       for (Tuple2(header, idx) <- headers.zipWithIndex) {
         val serialized: Array[Byte] = BlockHeader.write(header).toArray
-        db.change(addHeaderSqlPQ, startHeight + idx: JInt, header.hash.toHex, serialized)
+        db.change(addHeaderSqlPQ, atHeight + idx: JInt, header.hash.toHex, serialized)
       }
     }
 
