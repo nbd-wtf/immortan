@@ -71,7 +71,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
   private val socketAddress = InetSocketAddress.createUnresolved("0.0.0.0", 9735)
   private val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, DataTable, ElectrumHeadersTable)
   private val walletParameters = WalletParameters(new SQLiteData(connection), dustLimit = 546L.sat, swipeRange = 10, allowSpendUnconfirmed = true)
-  private val chainSync = TestFSMRef(new ChainSync(client.ref, walletParameters.walletDb, ewt.chainHash))
+  private val chainSync = TestFSMRef(new ElectrumChainSync(client.ref, walletParameters.walletDb, ewt.chainHash))
   private val wallet = TestFSMRef(new ElectrumWallet(client.ref, chainSync, walletParameters, ewt))
   sender.send(wallet, FreshWallet)
   listener.expectNoMessage
@@ -347,9 +347,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
     data.status.foreach { case (scriptHash, status) => sender.send(wallet, ScriptHashSubscriptionResponse(scriptHash, status)) }
 
     val expected = data.transactions.keySet
-    awaitCond {
-      wallet.stateData.transactions.keySet == expected
-    }
+    awaitCond(wallet.stateData.transactions.keySet == expected)
   }
 }
 
