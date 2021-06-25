@@ -15,9 +15,13 @@ import immortan.crypto.Tools
 class SQLiteChainWallet(val db: DBInterface) extends WalletDb {
   def remove(pub: PublicKey): Unit = db.change(ChainWalletTable.killSql, pub.toString)
 
-  def addChainWallet(info: CompleteChainWalletInfo): Unit = db.change(ChainWalletTable.newSql, info.core.toJson.compactPrint, info.pub.toString, info.data.toArray, info.lastBalance.toLong: JLong, info.label)
+  def addChainWallet(info: CompleteChainWalletInfo): Unit =
+    db.change(ChainWalletTable.newSql, info.core.toJson.compactPrint,
+      info.pub.toString, info.data.toArray, info.lastBalance.toLong: JLong, info.label)
 
-  def persist(data: PersistentData, lastBalance: Satoshi, pub: PublicKey): Unit = db.change(ChainWalletTable.updSql, persistentDataCodec.encode(data).require.toByteArray, lastBalance.toLong: JLong, pub.toString)
+  def persist(data: PersistentData, lastBalance: Satoshi, pub: PublicKey): Unit =
+    db.change(ChainWalletTable.updSql, persistentDataCodec.encode(data).require.toByteArray,
+      lastBalance.toLong: JLong, pub.toString)
 
   def updateLabel(label: String, pub: PublicKey): Unit = db.change(ChainWalletTable.updLabelSql, label, pub.toString)
 
