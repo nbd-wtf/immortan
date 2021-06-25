@@ -8,12 +8,13 @@ import immortan.crypto.Tools.Any2Some
 import scodec.bits.ByteVector
 import scala.util.Try
 
+
 object ElectrumWalletType {
-  def make(tag: String, seed: ByteVector, chainHash: ByteVector32): ElectrumWalletType = tag match {
-    case EclairWallet.BIP32 => makeSigningWallet(EclairWallet.BIP32, xPriv32(generate(seed), chainHash), chainHash)
-    case EclairWallet.BIP44 => makeSigningWallet(EclairWallet.BIP44, xPriv44(generate(seed), chainHash), chainHash)
-    case EclairWallet.BIP49 => makeSigningWallet(EclairWallet.BIP49, xPriv49(generate(seed), chainHash), chainHash)
-    case EclairWallet.BIP84 => makeSigningWallet(EclairWallet.BIP84, xPriv84(generate(seed), chainHash), chainHash)
+  def makeSigningWallet(tag: String, master: ExtendedPrivateKey, chainHash: ByteVector32): ElectrumWalletType = tag match {
+    case EclairWallet.BIP32 => makeSigningWallet(EclairWallet.BIP32, xPriv32(master, chainHash), chainHash)
+    case EclairWallet.BIP44 => makeSigningWallet(EclairWallet.BIP44, xPriv44(master, chainHash), chainHash)
+    case EclairWallet.BIP49 => makeSigningWallet(EclairWallet.BIP49, xPriv49(master, chainHash), chainHash)
+    case EclairWallet.BIP84 => makeSigningWallet(EclairWallet.BIP84, xPriv84(master, chainHash), chainHash)
     case _ => throw new RuntimeException
   }
 

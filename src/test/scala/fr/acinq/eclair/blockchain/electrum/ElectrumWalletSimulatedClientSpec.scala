@@ -30,7 +30,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWalletSimulatedClientSpec._
-import immortan.sqlite.{DataTable, ElectrumHeadersTable, SQLiteData}
+import immortan.sqlite.{ChainWalletTable, DataTable, ElectrumHeadersTable, SQLiteChainWallet, SQLiteData}
 import immortan.utils.SQLiteUtils
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
@@ -69,11 +69,11 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
 
 
   private val socketAddress = InetSocketAddress.createUnresolved("0.0.0.0", 9735)
-  private val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, DataTable, ElectrumHeadersTable)
-  private val walletParameters = WalletParameters(new SQLiteData(connection), dustLimit = 546L.sat, swipeRange = 10, allowSpendUnconfirmed = true)
-  private val chainSync = TestFSMRef(new ElectrumChainSync(client.ref, walletParameters.walletDb, ewt.chainHash))
+  private val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, ChainWalletTable, ElectrumHeadersTable)
+  private val walletParameters = WalletParameters(new SQLiteData(connection), new SQLiteChainWallet(connection), dustLimit = 546L.sat, swipeRange = 10, allowSpendUnconfirmed = true)
+  private val chainSync = TestFSMRef(new ElectrumChainSync(client.ref, walletParameters.headerDb, ewt.chainHash))
   private val wallet = TestFSMRef(new ElectrumWallet(client.ref, chainSync, walletParameters, ewt))
-  sender.send(wallet, FreshWallet)
+  sender.send(wallet, walletParameters.emptyPersistentDataBytes)
   listener.expectNoMessage
 
   def reconnect: WalletReady = {
@@ -92,7 +92,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
   test("wait until wallet is ready") {
     sender.send(chainSync, ElectrumClient.ElectrumReady(2016, headers(2015), socketAddress))
     sender.send(chainSync, ElectrumClient.HeaderSubscriptionResponse(2016, headers(2015)))
-    assert(listener.expectMsgType[WalletReady].timestamp == headers.last.time)
+    listener.expectMsgType[WalletReady]
     listener.expectNoMessage
   }
 
@@ -102,7 +102,8 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
     val header = makeHeader(last.header)
     headers = headers :+ header
     sender.send(chainSync, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, header))
-    assert(listener.expectMsgType[WalletReady].timestamp == header.time)
+    listener.expectMsgType[WalletReady]
+    listener.expectNoMessage
   }
 
   test("tell wallet is ready when it is reconnected, even if nothing has changed") {
@@ -121,7 +122,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
     awaitCond(wallet.stateName == ElectrumWallet.RUNNING)
 
     // listener should be notified
-    assert(listener.expectMsgType[WalletReady].timestamp == last.header.time)
+    listener.expectMsgType[WalletReady]
     listener.expectNoMessage
   }
 
@@ -132,7 +133,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
     val header = makeHeader(last.header)
     headers = headers :+ header
     sender.send(chainSync, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, header))
-    assert(listener.expectMsgType[WalletReady].timestamp == header.time)
+    listener.expectMsgType[WalletReady]
     listener.expectNoMessage
 
     sender.send(chainSync, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, header))
@@ -375,7 +376,7 @@ object ElectrumWalletSimulatedClientSpec {
 
   val seed: ByteVector = MnemonicCode.toSeed(mnemonics, "")
 
-  val ewt: ElectrumWalletType = ElectrumWalletType.make(EclairWallet.BIP84, entropy, Block.RegtestGenesisBlock.hash)
+  val ewt: ElectrumWalletType = ElectrumWalletType.makeSigningWallet(EclairWallet.BIP84, generate(entropy), Block.RegtestGenesisBlock.hash)
 
   val emptyTx: Transaction = Transaction(version = 2, txIn = Nil, txOut = Nil, lockTime = 0)
 

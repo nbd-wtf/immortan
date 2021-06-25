@@ -1,7 +1,10 @@
 package fr.acinq.eclair.blockchain.electrum.db
 
-import fr.acinq.bitcoin.{BlockHeader, ByteVector32}
+import fr.acinq.bitcoin.{BlockHeader, ByteVector32, Satoshi}
+import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
 import fr.acinq.eclair.blockchain.electrum.PersistentData
+import fr.acinq.bitcoin.Crypto.PublicKey
+import scodec.bits.ByteVector
 
 
 trait HeaderDb {
@@ -14,7 +17,19 @@ trait HeaderDb {
   def getTip: Option[HeightAndHeader]
 }
 
-trait WalletDb extends HeaderDb {
-  def persist(data: PersistentData, tag: String): Unit
-  def readPersistentData(tag: String): Option[PersistentData]
+sealed trait ChainWalletInfo {
+  val isRemovable: Boolean
+  val walletType: String
+}
+
+case class SigningWallet(walletType: String, isRemovable: Boolean) extends ChainWalletInfo
+case class WatchingWallet(walletType: String, xPub: ExtendedPublicKey, isRemovable: Boolean) extends ChainWalletInfo
+case class CompleteChainWalletInfo(core: ChainWalletInfo, pub: PublicKey, data: ByteVector, lastBalance: Satoshi, label: String)
+
+trait WalletDb {
+  def remove(pub: PublicKey): Unit
+  def addChainWallet(info: CompleteChainWalletInfo): Unit
+  def persist(data: PersistentData, lastBalance: Satoshi, pub: PublicKey): Unit
+  def updateLabel(label: String, pub: PublicKey): Unit
+  def listWallets: Iterable[CompleteChainWalletInfo]
 }

@@ -7,12 +7,10 @@ import immortan.utils.ImplicitJsonFormats._
 import java.lang.{Integer => JInt}
 import immortan.utils.{FeeRatesInfo, FiatRatesInfo}
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32}
-import immortan.{DataBag, LastChainBalance, SwapInStateExt, WalletSecret}
+import immortan.{DataBag, SwapInStateExt, WalletSecret}
 import fr.acinq.eclair.wire.{HostedChannelBranding, SwapInState, TrampolineOn}
 import fr.acinq.eclair.wire.LightningMessageCodecs.{hostedChannelBrandingCodec, swapInStateCodec, trampolineOnCodec}
-import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb.persistentDataCodec
-import fr.acinq.eclair.blockchain.electrum.PersistentData
-import fr.acinq.eclair.blockchain.electrum.db.WalletDb
+import fr.acinq.eclair.blockchain.electrum.db.HeaderDb
 import immortan.wire.ExtCodecs.walletSecretCodec
 import fr.acinq.bitcoin.Crypto.PublicKey
 import immortan.crypto.Tools.Bytes
@@ -25,17 +23,13 @@ object SQLiteData {
   final val LABEL_FEE_RATES = "label-fee-rates"
   final val LABEL_FIAT_RATES = "label-fiat-rates"
   final val LABLEL_TRAMPOLINE_ON = "label-trampoline-on"
-
   final val LABEL_BRANDING_PREFIX = "label-branding-node-"
   final val LABEL_SWAP_IN_STATE_PREFIX = "label-swap-in-node-"
-  final val LABEL_ELECTRUM_DATA_PREFIX = "label-electrum-data-"
   final val LABEL_PAYMENT_REPORT_PREFIX = "label-payment-report-"
-  final val LABEL_LAST_CHAIN_BALANCE_PREFIX = "label-last-chain-balance-"
-
   def byteVecToString(bv: ByteVector): String = new String(bv.toArray, "UTF-8")
 }
 
-class SQLiteData(val db: DBInterface) extends WalletDb with DataBag {
+class SQLiteData(val db: DBInterface) extends HeaderDb with DataBag {
   def delete(label: String): Unit = db.change(DataTable.killSql, label)
 
   def tryGet(keyValueLabel: String): Try[ByteVector] =
@@ -54,11 +48,7 @@ class SQLiteData(val db: DBInterface) extends WalletDb with DataBag {
 
   def tryGetSecret: Try[WalletSecret] = tryGet(LABEL_FORMAT).map(raw => walletSecretCodec.decode(raw.toBitVector).require.value)
 
-  // Last balance, fiat rates, fee rates
-
-  def putLastChainBalance(data: LastChainBalance, tag: String): Unit = put(LABEL_LAST_CHAIN_BALANCE_PREFIX + tag, data.toJson.compactPrint getBytes "UTF-8")
-
-  def tryGetLastChainBalance(tag: String): Try[LastChainBalance] = tryGet(LABEL_LAST_CHAIN_BALANCE_PREFIX + tag).map(SQLiteData.byteVecToString) map to[LastChainBalance]
+  // Fiat rates, fee rates
 
   def putTrampolineOn(ton: TrampolineOn): Unit = put(LABLEL_TRAMPOLINE_ON, trampolineOnCodec.encode(ton).require.toByteArray)
 
@@ -101,12 +91,6 @@ class SQLiteData(val db: DBInterface) extends WalletDb with DataBag {
     tryGet(LABEL_SWAP_IN_STATE_PREFIX + nodeId.toString) map { rawSwapInState =>
       SwapInStateExt(swapInStateCodec.decode(rawSwapInState.toBitVector).require.value, nodeId)
     }
-
-  // WalletDb
-
-  override def persist(data: PersistentData, tag: String): Unit = put(LABEL_ELECTRUM_DATA_PREFIX + tag, persistentDataCodec.encode(data).require.toByteArray)
-
-  override def readPersistentData(tag: String): Option[PersistentData] = tryGet(LABEL_ELECTRUM_DATA_PREFIX + tag).map(raw => persistentDataCodec.decode(raw.toBitVector).require.value).toOption
 
   // HeadersDb
 

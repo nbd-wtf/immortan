@@ -39,14 +39,13 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
 
   private val entropy: ByteVector = ByteVector.fill(32)(1)
 
-  private val ewt = ElectrumWalletType.make(EclairWallet.BIP84, entropy, Block.RegtestGenesisBlock.hash)
+  private val ewt = ElectrumWalletType.makeSigningWallet(EclairWallet.BIP84, generate(entropy), Block.RegtestGenesisBlock.hash)
 
   private val firstAccountKeys = (0 until 10).map(i => derivePublicKey(ewt.accountMaster, i)).toVector
   private val firstChangeKeys = (0 until 10).map(i => derivePublicKey(ewt.changeMaster, i)).toVector
 
-  private val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, DataTable, ElectrumHeadersTable)
-
-  private val state = ElectrumData(ewt,Blockchain.fromCheckpoints(Block.RegtestGenesisBlock.hash, CheckPoint.loadFromChainHash(Block.RegtestGenesisBlock.hash)), firstAccountKeys, firstChangeKeys)
+  private val state = ElectrumData(ewt,
+    Blockchain.fromCheckpoints(Block.RegtestGenesisBlock.hash, CheckPoint.loadFromChainHash(Block.RegtestGenesisBlock.hash)), firstAccountKeys, firstChangeKeys)
     .copy(status = (firstAccountKeys ++ firstChangeKeys).map(key => ewt.computeScriptHashFromPublicKey(key.publicKey) -> "").toMap)
 
   def addFunds(data: ElectrumData, key: ExtendedPublicKey, amount: Satoshi): ElectrumData = {

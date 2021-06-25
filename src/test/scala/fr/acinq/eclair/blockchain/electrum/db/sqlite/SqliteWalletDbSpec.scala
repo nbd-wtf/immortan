@@ -16,14 +16,17 @@
 
 package fr.acinq.eclair.blockchain.electrum.db.sqlite
 
-import fr.acinq.eclair.{randomBytes, randomBytes32}
-import immortan.sqlite.{DataTable, ElectrumHeadersTable, SQLiteData}
 import fr.acinq.bitcoin.{Block, BlockHeader, OutPoint, Satoshi, Transaction, TxIn, TxOut}
+import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.GetMerkleResponse
-import fr.acinq.eclair.blockchain.electrum.PersistentData
-import fr.acinq.eclair.blockchain.electrum.ElectrumClient
-import org.scalatest.funsuite.AnyFunSuite
+import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, PersistentData}
+import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb.persistentDataCodec
+import fr.acinq.eclair.blockchain.electrum.db.{CompleteChainWalletInfo, SigningWallet}
+import fr.acinq.eclair.{randomBytes, randomBytes32, randomKey}
+import immortan.sqlite._
 import immortan.utils.SQLiteUtils
+import org.scalatest.funsuite.AnyFunSuite
+
 import scala.util.Random
 
 
@@ -48,7 +51,7 @@ class SqliteWalletDbSpec extends AnyFunSuite {
 
   def randomHistoryItems = (0 to random.nextInt(100)).map(_ => randomHistoryItem).toList
 
-  def randomProof = GetMerkleResponse(randomBytes32, ((0 until 10).map(_ => randomBytes32)).toList, random.nextInt(100000), 0, None)
+  def randomProof = GetMerkleResponse(randomBytes32, (0 until 10).map(_ => randomBytes32).toList, random.nextInt(100000), 0, None)
 
   def randomPersistentData = {
     val transactions = for (i <- 0 until random.nextInt(100)) yield randomTransaction
@@ -90,16 +93,16 @@ class SqliteWalletDbSpec extends AnyFunSuite {
   }
 
   test("serialize persistent data") {
-    val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, DataTable, ElectrumHeadersTable)
-    val db = new SQLiteData(connection)
-    val tag = "test"
-    assert(db.readPersistentData(tag).isEmpty)
+    val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, ChainWalletTable, ElectrumHeadersTable)
+    val db = new SQLiteChainWallet(connection)
+    assert(db.listWallets.isEmpty)
 
-    for (i <- 0 until 50) {
-      val data = randomPersistentData
-      db.persist(data, tag)
-      val Some(check) = db.readPersistentData(tag)
-      assert(check === data)
-    }
+    val data = randomPersistentData
+    val key = randomKey.publicKey
+    val core = SigningWallet(EclairWallet.BIP49, isRemovable = true)
+    val info = CompleteChainWalletInfo(core, key, persistentDataCodec.encode(data).require.toByteVector, Satoshi(1000L), "label")
+    db.addChainWallet(info)
+    val List(check) = db.listWallets.toList
+    assert(check === info)
   }
 }
