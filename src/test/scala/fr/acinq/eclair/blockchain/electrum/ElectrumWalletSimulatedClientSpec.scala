@@ -30,7 +30,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWalletSimulatedClientSpec._
-import immortan.sqlite.{DataTable, ElectrumHeadersTable, SQLiteData}
+import immortan.sqlite.{ChainWalletTable, DataTable, ElectrumHeadersTable, SQLiteChainWallet, SQLiteData}
 import immortan.utils.SQLiteUtils
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
@@ -68,28 +68,31 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
   })
 
 
-  private val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, DataTable, ElectrumHeadersTable)
-  private val walletParameters = WalletParameters(new SQLiteData(connection), dustLimit = 546L.sat, swipeRange = 10, allowSpendUnconfirmed = true)
-  private val wallet = TestFSMRef(new ElectrumWallet(client.ref, walletParameters, ewt))
+  private val socketAddress = InetSocketAddress.createUnresolved("0.0.0.0", 9735)
+  private val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, ChainWalletTable, ElectrumHeadersTable)
+  private val walletParameters = WalletParameters(new SQLiteData(connection), new SQLiteChainWallet(connection), dustLimit = 546L.sat, swipeRange = 10, allowSpendUnconfirmed = true)
+  private val chainSync = TestFSMRef(new ElectrumChainSync(client.ref, walletParameters.headerDb, ewt.chainHash))
+  private val wallet = TestFSMRef(new ElectrumWallet(client.ref, chainSync, walletParameters, ewt))
+  sender.send(wallet, walletParameters.emptyPersistentDataBytes)
   listener.expectNoMessage
 
   def reconnect: WalletReady = {
-    sender.send(wallet, ElectrumClient.ElectrumReady(wallet.stateData.blockchain.bestchain.last.height, wallet.stateData.blockchain.bestchain.last.header, InetSocketAddress.createUnresolved("0.0.0.0", 9735)))
-    awaitCond(wallet.stateName == ElectrumWallet.WAITING_FOR_TIP)
+    sender.send(chainSync, ElectrumClient.ElectrumReady(chainSync.stateData.bestchain.last.height, chainSync.stateData.bestchain.last.header, socketAddress))
+    awaitCond(chainSync.stateName == ElectrumWallet.WAITING_FOR_TIP)
     while (listener.msgAvailable) {
-      listener.receiveOne(100 milliseconds)
+      listener.receiveOne(100.milliseconds)
     }
-    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(wallet.stateData.blockchain.bestchain.last.height, wallet.stateData.blockchain.bestchain.last.header))
+    sender.send(chainSync, ElectrumClient.HeaderSubscriptionResponse(chainSync.stateData.bestchain.last.height, chainSync.stateData.bestchain.last.header))
+    awaitCond(chainSync.stateName == ElectrumWallet.RUNNING)
     awaitCond(wallet.stateName == ElectrumWallet.RUNNING)
     val ready = listener.expectMsgType[WalletReady]
     ready
   }
 
   test("wait until wallet is ready") {
-    sender.send(wallet, ElectrumClient.ElectrumReady(2016, headers(2015), InetSocketAddress.createUnresolved("0.0.0.0", 9735)))
-    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(2016, headers(2015)))
-    val ready = listener.expectMsgType[WalletReady]
-    assert(ready.timestamp == headers.last.time)
+    sender.send(chainSync, ElectrumClient.ElectrumReady(2016, headers(2015), socketAddress))
+    sender.send(chainSync, ElectrumClient.HeaderSubscriptionResponse(2016, headers(2015)))
+    listener.expectMsgType[WalletReady]
     listener.expectNoMessage
   }
 
@@ -98,24 +101,28 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
     assert(last.header == headers.last)
     val header = makeHeader(last.header)
     headers = headers :+ header
-    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, header))
-    assert(listener.expectMsgType[WalletReady].timestamp == header.time)
+    sender.send(chainSync, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, header))
+    listener.expectMsgType[WalletReady]
+    listener.expectNoMessage
   }
 
   test("tell wallet is ready when it is reconnected, even if nothing has changed") {
     // disconnect wallet
     sender.send(wallet, ElectrumClient.ElectrumDisconnected)
+    sender.send(chainSync, ElectrumClient.ElectrumDisconnected)
+
     awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
+    awaitCond(chainSync.stateName == ElectrumWallet.DISCONNECTED)
 
     // reconnect wallet
     val last = wallet.stateData.blockchain.tip
     assert(last.header == headers.last)
-    sender.send(wallet, ElectrumClient.ElectrumReady(2016, headers(2015), InetSocketAddress.createUnresolved("0.0.0.0", 9735)))
-    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height, last.header))
+    sender.send(chainSync, ElectrumClient.ElectrumReady(2016, headers(2015), socketAddress))
+    sender.send(chainSync, ElectrumClient.HeaderSubscriptionResponse(last.height, last.header))
     awaitCond(wallet.stateName == ElectrumWallet.RUNNING)
 
     // listener should be notified
-    assert(listener.expectMsgType[WalletReady].timestamp == last.header.time)
+    listener.expectMsgType[WalletReady]
     listener.expectNoMessage
   }
 
@@ -125,11 +132,11 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
     assert(last.header == headers.last)
     val header = makeHeader(last.header)
     headers = headers :+ header
-    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, header))
-    assert(listener.expectMsgType[WalletReady].timestamp == header.time)
+    sender.send(chainSync, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, header))
+    listener.expectMsgType[WalletReady]
     listener.expectNoMessage
 
-    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, header))
+    sender.send(chainSync, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, header))
     listener.expectNoMessage(500.milliseconds)
   }
 
@@ -145,43 +152,43 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
       override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
         case Terminated(actor) if actor == probe.ref =>
           // if the client dies, we tell the wallet that it's been disconnected
+          chainSync ! ElectrumClient.ElectrumDisconnected
           wallet ! ElectrumClient.ElectrumDisconnected
           TestActor.KeepRunning
       }
     })
 
-    probe.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, bad))
+    probe.send(chainSync, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, bad))
     watcher.expectTerminated(probe.ref)
+    awaitCond(chainSync.stateName == ElectrumWallet.DISCONNECTED)
     awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
-
     reconnect
   }
 
-
   test("disconnect if server sends an invalid transaction") {
     while (client.msgAvailable) {
-      client.receiveOne(100 milliseconds)
+      client.receiveOne(100.milliseconds)
     }
     val key = wallet.stateData.accountKeys(0)
     val scriptHash = ewt.computeScriptHashFromPublicKey(key.publicKey)
     wallet ! ScriptHashSubscriptionResponse(scriptHash, ByteVector32(ByteVector.fill(32)(1)).toHex)
     client.expectMsg(GetScriptHashHistory(scriptHash))
 
-    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(100000 sat, ewt.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
+    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(100000.sat, ewt.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
     wallet ! GetScriptHashHistoryResponse(scriptHash, TransactionHistoryItem(2, tx.txid) :: Nil)
 
     // wallet will generate a new address and the corresponding subscription
     client.expectMsgType[ScriptHashSubscription]
 
     while (listener.msgAvailable) {
-      listener.receiveOne(100 milliseconds)
+      listener.receiveOne(100.milliseconds)
     }
 
     client.expectMsg(GetTransaction(tx.txid))
     wallet ! GetTransactionResponse(tx, None)
-    val TransactionReceived(_, _, Satoshi(100000), _, _, _) = listener.expectMsgType[TransactionReceived]
     // we think we have some unconfirmed funds
-    assert(listener.expectMsgType[WalletReady].confirmedBalance == Satoshi(100000))
+    assert(listener.expectMsgType[TransactionReceived].received == 100000.sat)
+    assert(listener.expectMsgType[WalletReady].confirmedBalance == 100000.sat)
 
     client.expectMsg(GetMerkle(tx.txid, 2))
 
@@ -191,12 +198,14 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
     watcher.setAutoPilot(new TestActor.AutoPilot {
       override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
         case Terminated(actor) if actor == probe.ref =>
+          chainSync ! ElectrumClient.ElectrumDisconnected
           wallet ! ElectrumClient.ElectrumDisconnected
           TestActor.KeepRunning
       }
     })
     probe.send(wallet, GetMerkleResponse(tx.txid, ByteVector32(ByteVector.fill(32)(1)) :: Nil, 2, 0, None))
     watcher.expectTerminated(probe.ref)
+    awaitCond(chainSync.stateName == ElectrumWallet.DISCONNECTED)
     awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
 
     val ready = reconnect
@@ -205,7 +214,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
 
   test("clear status when we have pending history requests") {
     while (client.msgAvailable) {
-      client.receiveOne(100 milliseconds)
+      client.receiveOne(100.milliseconds)
     }
     // tell wallet that there is something for our first account key
     val scriptHash = ewt.computeScriptHashFromPublicKey(wallet.stateData.accountKeys(0).publicKey)
@@ -214,23 +223,24 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
     assert(wallet.stateData.status(scriptHash) == "010101")
 
     // disconnect wallet
+    chainSync ! ElectrumDisconnected
     wallet ! ElectrumDisconnected
+    awaitCond(chainSync.stateName == ElectrumWallet.DISCONNECTED)
     awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
-    assert(wallet.stateData.status.get(scriptHash).isEmpty)
-
+    assert(!wallet.stateData.status.contains(scriptHash))
     reconnect
   }
 
   test("handle pending transaction requests") {
     while (client.msgAvailable) {
-      client.receiveOne(100 milliseconds)
+      client.receiveOne(100.milliseconds)
     }
     val key = wallet.stateData.accountKeys(1)
     val scriptHash = ewt.computeScriptHashFromPublicKey(key.publicKey)
     wallet ! ScriptHashSubscriptionResponse(scriptHash, ByteVector32(ByteVector.fill(32)(2)).toHex)
     client.expectMsg(GetScriptHashHistory(scriptHash))
 
-    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(100000 sat, ewt.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
+    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(100000.sat, ewt.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
     wallet ! GetScriptHashHistoryResponse(scriptHash, TransactionHistoryItem(2, tx.txid) :: Nil)
 
     // wallet will generate a new address and the corresponding subscription
@@ -265,8 +275,8 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
       // a tx that spend from our wallet to our wallet, plus change to our wallet
       val tx1 = {
         val tx = Transaction(version = 2,
-          txIn = TxIn(OutPoint(wallettxs(0), 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
-          txOut = walletOutput(wallettxs(0).txOut(0).amount - 50000.sat, data2.accountKeys(2).publicKey) :: walletOutput(50000 sat, data2.changeKeys(0).publicKey) :: Nil,
+          txIn = TxIn(OutPoint(wallettxs.head, 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
+          txOut = walletOutput(wallettxs.head.txOut.head.amount - 50000.sat, data2.accountKeys(2).publicKey) :: walletOutput(50000.sat, data2.changeKeys(0).publicKey) :: Nil,
           lockTime = 0)
         ewt.signTransaction(data2.utxos, tx)
       }
@@ -275,7 +285,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
       val tx2 = {
         val tx = Transaction(version = 2,
           txIn = TxIn(OutPoint(wallettxs(1), 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
-          txOut = TxOut(wallettxs(1).txOut(0).amount - 50000.sat, Script.pay2wpkh(fr.acinq.eclair.randomKey.publicKey)) :: walletOutput(50000 sat, data2.changeKeys(1).publicKey) :: Nil,
+          txOut = TxOut(wallettxs(1).txOut.head.amount - 50000.sat, Script.pay2wpkh(fr.acinq.eclair.randomKey.publicKey)) :: walletOutput(50000.sat, data2.changeKeys(1).publicKey) :: Nil,
           lockTime = 0)
         ewt.signTransaction(data2.utxos, tx)
       }
@@ -286,7 +296,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
     // simulated electrum server that disconnects after a given number of messages
 
     var counter = 0
-    var disconnectAfter = 10 // disconnect when counter % disconnectAfter == 0
+    val disconnectAfter = 10 // disconnect when counter % disconnectAfter == 0
 
     client.setAutoPilot(new testkit.TestActor.AutoPilot {
       override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = {
@@ -302,10 +312,11 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
             TestActor.KeepRunning
           case msg if counter % disconnectAfter == 0 =>
             // disconnect
-            sender ! ElectrumClient.ElectrumDisconnected
+            chainSync ! ElectrumClient.ElectrumDisconnected
+            wallet ! ElectrumClient.ElectrumDisconnected
             // and reconnect
-            sender ! ElectrumClient.ElectrumReady(headers.length, headers.last, InetSocketAddress.createUnresolved("0.0.0.0", 9735))
-            sender ! ElectrumClient.HeaderSubscriptionResponse(headers.length, headers.last)
+            chainSync ! ElectrumClient.ElectrumReady(headers.length, headers.last, socketAddress)
+            chainSync ! ElectrumClient.HeaderSubscriptionResponse(headers.length, headers.last)
             TestActor.KeepRunning
           case request@GetTransaction(txid, context_opt) =>
             data.transactions.get(txid) match {
@@ -329,16 +340,15 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
     })
 
     val sender = TestProbe()
+    chainSync ! ElectrumClient.ElectrumDisconnected
     wallet ! ElectrumClient.ElectrumDisconnected
-    wallet ! ElectrumClient.ElectrumReady(headers.length, headers.last, InetSocketAddress.createUnresolved("0.0.0.0", 9735))
-    wallet ! ElectrumClient.HeaderSubscriptionResponse(headers.length, headers.last)
+    chainSync ! ElectrumClient.ElectrumReady(headers.length, headers.last, socketAddress)
+    chainSync ! ElectrumClient.HeaderSubscriptionResponse(headers.length, headers.last)
 
     data.status.foreach { case (scriptHash, status) => sender.send(wallet, ScriptHashSubscriptionResponse(scriptHash, status)) }
 
     val expected = data.transactions.keySet
-    awaitCond {
-      wallet.stateData.transactions.keySet == expected
-    }
+    awaitCond(wallet.stateData.transactions.keySet == expected)
   }
 }
 
@@ -366,7 +376,7 @@ object ElectrumWalletSimulatedClientSpec {
 
   val seed: ByteVector = MnemonicCode.toSeed(mnemonics, "")
 
-  val ewt = ElectrumWalletType.make(EclairWallet.BIP84, entropy, Block.RegtestGenesisBlock.hash)
+  val ewt: ElectrumWalletType = ElectrumWalletType.makeSigningWallet(EclairWallet.BIP84, generate(entropy), Block.RegtestGenesisBlock.hash)
 
   val emptyTx: Transaction = Transaction(version = 2, txIn = Nil, txOut = Nil, lockTime = 0)
 
