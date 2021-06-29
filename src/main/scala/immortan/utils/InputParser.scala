@@ -2,11 +2,9 @@ package immortan.utils
 
 import fr.acinq.eclair._
 import immortan.utils.InputParser._
-
 import scala.util.{Failure, Success, Try}
 import immortan.{LNParams, RemoteNodeInfo}
 import fr.acinq.eclair.payment.PaymentRequest
-
 import scala.util.matching.UnanchoredRegex
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.wire.NodeAddress
