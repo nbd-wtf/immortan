@@ -39,7 +39,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
 
   private val entropy: ByteVector = ByteVector.fill(32)(1)
 
-  private val ewt = ElectrumWalletType.makeSigningWallet(EclairWallet.BIP84, generate(entropy), Block.RegtestGenesisBlock.hash)
+  private val ewt = ElectrumWalletType.makeSigningType(EclairWallet.BIP84, generate(entropy), Block.RegtestGenesisBlock.hash)
 
   private val firstAccountKeys = (0 until 10).map(i => derivePublicKey(ewt.accountMaster, i)).toVector
   private val firstChangeKeys = (0 until 10).map(i => derivePublicKey(ewt.changeMaster, i)).toVector

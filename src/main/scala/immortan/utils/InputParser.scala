@@ -2,9 +2,11 @@ package immortan.utils
 
 import fr.acinq.eclair._
 import immortan.utils.InputParser._
+
 import scala.util.{Failure, Success, Try}
 import immortan.{LNParams, RemoteNodeInfo}
 import fr.acinq.eclair.payment.PaymentRequest
+
 import scala.util.matching.UnanchoredRegex
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.wire.NodeAddress
@@ -35,14 +37,13 @@ object InputParser {
   def recordValue(raw: String): Unit = value = parse(raw)
 
   def parse(rawInput: String): Any = rawInput take 2880 match {
-    case uriLink if uriLink.startsWith(bitcoin) => BitcoinUri.fromRaw(uriLink)
-    case uriLink if uriLink.startsWith(lightning) => PaymentRequestExt.fromUri(uriLink)
-    case uriLink if uriLink.startsWith(bitcoin.toUpperCase) => BitcoinUri.fromRaw(uriLink.toLowerCase)
-    case uriLink if uriLink.startsWith(lightning.toUpperCase) => PaymentRequestExt.fromUri(uriLink.toLowerCase)
+    case lnUrl(prefix, data) => LNUrl.fromBech32(s"$prefix$data")
+    case _ if rawInput.startsWith(bitcoin) => BitcoinUri.fromRaw(rawInput)
+    case _ if rawInput.startsWith(bitcoin.toUpperCase) => BitcoinUri.fromRaw(rawInput.toLowerCase)
     case nodeLink(key, host, port) => RemoteNodeInfo(PublicKey.fromBin(ByteVector fromValidHex key), NodeAddress.fromParts(host, port.toInt), host)
     case shortNodeLink(key, host) => RemoteNodeInfo(PublicKey.fromBin(ByteVector fromValidHex key), NodeAddress.fromParts(host, port = 9735), host)
+    case _ if rawInput.toLowerCase.startsWith(lightning) => PaymentRequestExt.fromUri(rawInput.toLowerCase)
     case lnPayReq(prefix, data) => PaymentRequestExt.fromRaw(s"$prefix$data")
-    case lnUrl(prefix, data) => LNUrl.fromBech32(s"$prefix$data")
     case _ => BitcoinUri.fromRaw(s"$bitcoin$rawInput")
   }
 }

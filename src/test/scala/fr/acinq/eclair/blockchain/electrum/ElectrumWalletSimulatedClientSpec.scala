@@ -376,7 +376,7 @@ object ElectrumWalletSimulatedClientSpec {
 
   val seed: ByteVector = MnemonicCode.toSeed(mnemonics, "")
 
-  val ewt: ElectrumWalletType = ElectrumWalletType.makeSigningWallet(EclairWallet.BIP84, generate(entropy), Block.RegtestGenesisBlock.hash)
+  val ewt: ElectrumWalletType = ElectrumWalletType.makeSigningType(EclairWallet.BIP84, generate(entropy), Block.RegtestGenesisBlock.hash)
 
   val emptyTx: Transaction = Transaction(version = 2, txIn = Nil, txOut = Nil, lockTime = 0)
 
