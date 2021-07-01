@@ -64,6 +64,10 @@ case class Error(channelId: ByteVector32, data: ByteVector) extends SetupMessage
   def toAscii: String = new String(data.toArray, StandardCharsets.US_ASCII)
 }
 
+case class Warning(channelId: ByteVector32, data: ByteVector) extends SetupMessage with HasChannelId {
+  def toAscii: String = new String(data.toArray, StandardCharsets.US_ASCII)
+}
+
 case class Ping(pongLength: Int, data: ByteVector) extends SetupMessage
 
 case class Pong(data: ByteVector) extends SetupMessage
