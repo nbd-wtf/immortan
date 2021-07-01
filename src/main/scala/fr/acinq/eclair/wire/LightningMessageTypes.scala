@@ -29,14 +29,14 @@ case class Init(features: Features, tlvs: TlvStream[InitTlv] = TlvStream.empty) 
   val networks: Seq[ByteVector32] = tlvs.get[InitTlv.Networks].map(_.chainHashes).getOrElse(Nil)
 }
 
-object Error {
-  def apply(channelId: ByteVector32, msg: String): Error = {
+object Fail {
+  def apply(channelId: ByteVector32, msg: String): Fail = {
     val bytes = msg.getBytes(Charsets.US_ASCII)
-    Error(channelId, ByteVector view bytes)
+    Fail(channelId, ByteVector view bytes)
   }
 }
 
-case class Error(channelId: ByteVector32, data: ByteVector) extends HasChannelId {
+case class Fail(channelId: ByteVector32, data: ByteVector) extends HasChannelId {
   def toAscii: String = new String(data.toArray, StandardCharsets.US_ASCII)
 }
 
