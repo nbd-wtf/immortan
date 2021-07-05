@@ -381,8 +381,7 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listener: OutgoingP
 
             case pkt @ Sphinx.DecryptedFailurePacket(originNodeId, failure: Update) =>
               // Pathfinder channels must be fully loaded from db at this point since we have already used them to construct a route earlier
-              val originalNodeIdOpt = opm.cm.pf.data.channels.get(failure.update.shortChannelId).map(_.ann getNodeIdSameSideAs failure.update)
-              val isSignatureFine = originalNodeIdOpt.contains(originNodeId) && Announcements.checkSig(failure.update)(originNodeId)
+              val isSignatureFine = opm.cm.pf.nodeIdFromUpdate(failure.update).contains(originNodeId) && Announcements.checkSig(failure.update)(originNodeId)
 
               if (isSignatureFine) {
                 opm.cm.pf process failure.update
@@ -398,7 +397,7 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listener: OutgoingP
                     opm doProcess ChannelFailed(edge.toDescAndCapacity, channelFailIncrement)
                     opm doProcess NodeFailed(originNodeId, increment = 1)
 
-                  case Some(edge) if edge.updExt.update.core == failure.update.core =>
+                  case Some(edge) if edge.updExt.update.core.noPosition == failure.update.core.noPosition =>
                     // Remote node returned EXACTLY same update, this channel is likely imbalanced
                     opm doProcess ChannelFailed(edge.toDescAndCapacity, channelFailIncrement)
 
