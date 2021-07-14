@@ -1,5 +1,6 @@
 package immortan
 
+import fr.acinq.eclair._
 import immortan.utils.ImplicitJsonFormats._
 import immortan.utils.{LNUrl, PayRequest, PayRequestMeta, PaymentRequestExt}
 import immortan.crypto.Tools.{Any2Some, Bytes, Fiat2Btc, SEPARATOR, ratio}
@@ -7,9 +8,9 @@ import immortan.fsm.{IncomingPaymentProcessor, SendMultiPart, SplitInfo}
 import fr.acinq.eclair.channel.{DATA_CLOSING, HasNormalCommitments}
 import fr.acinq.bitcoin.{ByteVector32, Satoshi, Transaction}
 import fr.acinq.eclair.wire.{FullPaymentTag, PaymentTagTlv}
+import immortan.ChannelMaster.TxConfirmedAtOpt
 import org.bouncycastle.util.encoders.Base64
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.MilliSatoshi
 import scodec.bits.ByteVector
 import java.util.Date
 import scala.util.Try
@@ -33,8 +34,8 @@ sealed trait TransactionDetails {
   def seenAt: Long
 }
 
-case class PayLinkInfo(lnurlString: String, metaString: String, lastMsat: MilliSatoshi, lastDate: Long, labelString: String) extends TransactionDetails {
-  override val seenAt: Long = System.currentTimeMillis + lastDate / 10000L // To make it always appear on top in timestamp-sorted lists on UI
+case class PayLinkInfo(lnurlString: String, metaString: String, lastMsat: MilliSatoshi, lastDate: Long, lastCommentString: String, labelString: String) extends TransactionDetails {
+  override val seenAt: Long = System.currentTimeMillis + lastDate // To make it always appear on top in timestamp-sorted lists on UI
   override val date: Date = new Date(lastDate) // To display real date of last usage in lists on UI
 
   lazy val meta: PayRequestMeta = {
@@ -43,11 +44,14 @@ case class PayLinkInfo(lnurlString: String, metaString: String, lastMsat: MilliS
   }
 
   lazy val label: Option[String] = Option(labelString).filter(_.nonEmpty)
+  lazy val lastComment: Option[String] = Option(lastCommentString).filter(_.nonEmpty)
   lazy val imageBytesTry: Try[Bytes] = Try(Base64 decode meta.imageBase64s.head)
   lazy val lnurl: LNUrl = LNUrl(lnurlString)
 }
 
-case class DelayedRefunds(totalAmount: MilliSatoshi, seenAt: Long = Long.MaxValue) extends TransactionDetails
+case class DelayedRefunds(txToParent: Map[Transaction, TxConfirmedAtOpt], seenAt: Long = Long.MaxValue) extends TransactionDetails {
+  lazy val totalAmount: MilliSatoshi = txToParent.keys.map(_.txOut.head.amount).sum.toMilliSatoshi
+}
 
 case class SplitParams(prExt: PaymentRequestExt, action: Option[PaymentAction], description: PaymentDescription, cmd: SendMultiPart, chainFee: MilliSatoshi)
 
@@ -55,15 +59,14 @@ case class PaymentInfo(prString: String, preimage: ByteVector32, status: Int, se
                        paymentSecret: ByteVector32, received: MilliSatoshi, sent: MilliSatoshi, fee: MilliSatoshi, balanceSnapshot: MilliSatoshi, fiatRatesString: String,
                        chainFee: MilliSatoshi, incoming: Long) extends TransactionDetails {
 
-  val isIncoming: Boolean = 1 == incoming
-  val fullTag: FullPaymentTag = FullPaymentTag(paymentHash, paymentSecret, if (isIncoming) PaymentTagTlv.FINAL_INCOMING else PaymentTagTlv.LOCALLY_SENT)
+  lazy val isIncoming: Boolean = 1 == incoming
+  lazy val fullTag: FullPaymentTag = FullPaymentTag(paymentHash, paymentSecret, if (isIncoming) PaymentTagTlv.FINAL_INCOMING else PaymentTagTlv.LOCALLY_SENT)
   lazy val action: Option[PaymentAction] = if (actionString == PaymentInfo.NO_ACTION) None else to[PaymentAction](actionString).asSome
   lazy val description: PaymentDescription = to[PaymentDescription](descriptionString)
   lazy val prExt: PaymentRequestExt = PaymentRequestExt.fromRaw(prString)
   lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
 
-  def receivedRatio(fsm: IncomingPaymentProcessor): Long =
-    ratio(received, fsm.lastAmountIn)
+  def receivedRatio(fsm: IncomingPaymentProcessor): Long = ratio(received, fsm.lastAmountIn)
 }
 
 // Payment actions
@@ -110,8 +113,9 @@ case class PlainMetaDescription(split: Option[SplitInfo], label: Option[String],
 
 // Relayed preimages
 
-case class RelayedPreimageInfo(paymentHashString: String, paymentSecretString: String, preimageString: String,
-                               relayed: MilliSatoshi, earned: MilliSatoshi, seenAt: Long) extends TransactionDetails {
+case class RelayedPreimageInfo(paymentHashString: String,
+                               paymentSecretString: String, preimageString: String, relayed: MilliSatoshi,
+                               earned: MilliSatoshi, seenAt: Long) extends TransactionDetails {
 
   lazy val preimage: ByteVector32 = ByteVector32.fromValidHex(preimageString)
   lazy val paymentHash: ByteVector32 = ByteVector32.fromValidHex(paymentHashString)
@@ -125,8 +129,8 @@ case class TxInfo(txString: String, txidString: String, depth: Long, receivedSat
                   seenAt: Long, descriptionString: String, balanceSnapshot: MilliSatoshi, fiatRatesString: String,
                   incoming: Long, doubleSpent: Long) extends TransactionDetails {
 
-  val isIncoming: Boolean = 1L == incoming
-  val isDoubleSpent: Boolean = 1L == doubleSpent
+  lazy val isIncoming: Boolean = 1L == incoming
+  lazy val isDoubleSpent: Boolean = 1L == doubleSpent
   lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
   lazy val description: TxDescription = to[TxDescription](descriptionString)
   lazy val txid: ByteVector32 = ByteVector32.fromValidHex(txidString)
