@@ -50,7 +50,7 @@ case class PayLinkInfo(lnurlString: String, metaString: String, lastMsat: MilliS
 
   lazy val imageBytesTry: Try[Bytes] = Try(Base64 decode meta.imageBase64s.head)
 
-  lazy val lnurl: LNUrl = LNUrl(lnurlString)
+  lazy val lnurlLink: LNUrl = LNUrl(lnurlString)
 }
 
 case class DelayedRefunds(txToParent: Map[Transaction, TxConfirmedAtOpt], seenAt: Long = Long.MaxValue) extends TransactionDetails {
@@ -160,15 +160,19 @@ case class TxInfo(txString: String, txidString: String, depth: Long, receivedSat
 }
 
 sealed trait TxDescription {
+  def toAddress: Option[String] = None
+  def withNodeId: Option[PublicKey] = None
   def queryText(txid: ByteVector32): String
   val label: Option[String]
 }
 
 case class PlainTxDescription(addresses: List[String], label: Option[String] = None) extends TxDescription {
   def queryText(txid: ByteVector32): String = txid.toHex + SEPARATOR + addresses.mkString(SEPARATOR) + SEPARATOR + label.getOrElse(new String)
+  override def toAddress: Option[String] = addresses.headOption
 }
 
 sealed trait ChanTxDescription extends TxDescription {
+  override def withNodeId: Option[PublicKey] = Some(nodeId)
   def nodeId: PublicKey
 }
 
