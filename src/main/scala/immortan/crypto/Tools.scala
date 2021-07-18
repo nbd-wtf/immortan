@@ -78,8 +78,8 @@ object Tools {
 
   def hostedShortChanId(pubkey1: ByteVector, pubkey2: ByteVector): ShortChannelId = {
     val stream = new ByteArrayInputStream(hostedNodesCombined(pubkey1, pubkey2).toArray)
-    val id = List.fill(8)(Protocol.uint64(stream, ByteOrder.BIG_ENDIAN)).sum
-    ShortChannelId(id)
+    def getChunk: Long = Protocol.uint64(stream, ByteOrder.BIG_ENDIAN)
+    ShortChannelId(List.fill(8)(getChunk).sum)
   }
 
   def mkFakeLocalEdge(from: PublicKey, toPeer: PublicKey): GraphEdge = {
