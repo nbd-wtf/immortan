@@ -8,6 +8,7 @@ import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, SatoshiLong}
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, ChannelVersion}
 import fr.acinq.eclair.crypto.Sphinx.PaymentPacket
+import immortan.crypto.Tools
 import org.scalatest.funsuite.AnyFunSuite
 
 
@@ -94,5 +95,12 @@ class WireSpec extends AnyFunSuite {
       remoteSigOfLocal = ByteVector64.Zeroes, localSigOfRemote = ByteVector64.Zeroes)
 
     assert(lastCrossSignedStateCodec.decode(lastCrossSignedStateCodec.encode(lcss).require).require.value == lcss)
+  }
+
+  test("HC short channel ids are random") {
+    val hostNodeId = randomBytes32
+    val iterations = 1000000
+    val sids = List.fill(iterations)(Tools.hostedShortChanId(randomBytes32, hostNodeId))
+    assert(sids.size == sids.toSet.size)
   }
 }

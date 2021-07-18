@@ -32,7 +32,7 @@ object Tools {
   type Fiat2Btc = Map[String, Double]
   final val SEPARATOR = " "
 
-  def stringToPubKey(xPub: String) = PublicKey(ByteVector fromValidHex xPub)
+  def stringToPubKey(xPub: String): PublicKey = PublicKey(ByteVector fromValidHex xPub)
 
   def trimmed(text: String): String = text.trim.take(144)
 
@@ -78,8 +78,7 @@ object Tools {
 
   def hostedShortChanId(pubkey1: ByteVector, pubkey2: ByteVector): ShortChannelId = {
     val stream = new ByteArrayInputStream(hostedNodesCombined(pubkey1, pubkey2).toArray)
-    def getChunk: Long = Protocol.uint64(stream, ByteOrder.BIG_ENDIAN)
-    val id = List.fill(8)(getChunk).foldLeft(Long.MaxValue)(_ % _)
+    val id = List.fill(8)(Protocol.uint64(stream, ByteOrder.BIG_ENDIAN)).sum
     ShortChannelId(id)
   }
 
