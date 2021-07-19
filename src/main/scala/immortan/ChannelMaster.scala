@@ -186,8 +186,6 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
     .collect { case fullTag if fullTag.tag == PaymentTagTlv.LOCALLY_SENT && !inFlightOutgoing.contains(fullTag) => fullTag.paymentHash }
     .foreach(payBag.updAbortedOutgoing)
 
-  def totalBalance: MilliSatoshi = all.values.filter(Channel.isOperationalOrWaiting).map(Channel.estimateBalance).sum
-
   def allInChannelOutgoing: Map[FullPaymentTag, OutgoingAdds] = all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).groupBy(_.fullTag)
 
   def allIncomingRevealed: Map[ByteVector32, RevealedLocalFulfills] = all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.revealedFulfills).groupBy(_.theirAdd.paymentHash)
@@ -201,12 +199,11 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
   def allFromNode(nodeId: PublicKey): Iterable[ChanAndCommits] = all.values.flatMap(Channel.chanAndCommitsOpt).filter(_.commits.remoteInfo.nodeId == nodeId)
 
   def delayedRefunds: DelayedRefunds = {
-    val commitsPublished = all.values.map(_.data).collect { case closingData: DATA_CLOSING => closingData.forceCloseCommitPublished }.flatten
+    val commitsPublished = all.values.map(_.data).flatMap { case close: DATA_CLOSING => close.forceCloseCommitPublished case _ => None }
     val spentParents = commitsPublished.flatMap(_.irrevocablySpent.values).map(confirmedAt => confirmedAt.tx.txid -> confirmedAt).toMap
 
     val result = for {
-      fcp <- commitsPublished
-      delayedTx <- fcp.delayedRefundsLeft
+      delayedTx <- commitsPublished.flatMap(_.delayedRefundsLeft)
       parentTxid <- delayedTx.txIn.map(_.outPoint.txid)
       parentHeight = spentParents.get(parentTxid)
     } yield (delayedTx, parentHeight)

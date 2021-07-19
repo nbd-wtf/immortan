@@ -201,9 +201,9 @@ abstract class ChannelHosted extends Channel { me =>
     case (hc: HostedCommits, remoteInfo: RemoteNodeInfo, SLEEPING) if hc.remoteInfo.nodeId == remoteInfo.nodeId => StoreBecomeSend(hc.copy(remoteInfo = remoteInfo), SLEEPING)
 
 
-    case (hc: HostedCommits, upd: ChannelUpdate, OPEN | SLEEPING) if hc.updateOpt.forall(_.timestamp < upd.timestamp) && hc.error.isEmpty =>
-      val shortIdMatches = hostedShortChanId(hc.remoteInfo.nodeSpecificPubKey.value, hc.remoteInfo.nodeId.value) == upd.shortChannelId
-      if (shortIdMatches) StoreBecomeSend(hc.copy(updateOpt = upd.asSome), state)
+    case (hc: HostedCommits, update: ChannelUpdate, OPEN | SLEEPING) if hc.updateOpt.forall(_.core != update.core) && hc.error.isEmpty =>
+      val shortIdMatches = hostedShortChanId(hc.remoteInfo.nodeSpecificPubKey.value, hc.remoteInfo.nodeId.value) == update.shortChannelId
+      if (shortIdMatches) StoreBecomeSend(hc.copy(updateOpt = update.asSome), state)
 
 
     case (hc: HostedCommits, cmd: HC_CMD_RESIZE, OPEN | SLEEPING) if hc.resizeProposal.isEmpty && hc.error.isEmpty =>

@@ -34,7 +34,7 @@ object Tools {
 
   def stringToPubKey(xPub: String): PublicKey = PublicKey(ByteVector fromValidHex xPub)
 
-  def trimmed(text: String): String = text.trim.take(144)
+  def trimmed(inputText: String): String = inputText.trim.take(144)
 
   def none: PartialFunction[Any, Unit] = { case _ => }
 
@@ -147,8 +147,9 @@ abstract class StateMachine[T] { me =>
   lazy val delayedCMDWorker: ThrottledWork[String, Long] =
     new ThrottledWork[String, Long] {
       def work(cmd: String): Observable[Long] = {
-        val tickIncrease = Observable.interval(1.second)
-        tickIncrease.doOnSubscribe { secondsLeft = INTERVAL }
+        Observable.interval(1.second).doOnSubscribe {
+          secondsLeft = INTERVAL
+        }
       }
 
       def process(cmd: String, tickInterval: Long): Unit = {

@@ -120,14 +120,15 @@ sealed trait ForceCloseCommitPublished {
   val commitTx: Transaction
 }
 
-case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: List[Transaction], htlcTimeoutTxs: List[Transaction],
-                                claimHtlcDelayedTxs: List[Transaction], irrevocablySpent: Map[OutPoint, TxConfirmedAt] = Map.empty) extends ForceCloseCommitPublished {
+case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction],
+                                htlcSuccessTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], claimHtlcDelayedTxs: List[Transaction],
+                                irrevocablySpent: Map[OutPoint, TxConfirmedAt] = Map.empty) extends ForceCloseCommitPublished {
 
   lazy val delayedRefundsLeft: Seq[Transaction] = (claimMainDelayedOutputTx.toList ++ claimHtlcDelayedTxs).filterNot(isIrrevocablySpent)
 }
 
-case class RemoteCommitPublished(commitTx: Transaction,
-                                 claimMainOutputTx: Option[Transaction], claimHtlcSuccessTxs: List[Transaction], claimHtlcTimeoutTxs: List[Transaction],
+case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction],
+                                 claimHtlcSuccessTxs: List[Transaction], claimHtlcTimeoutTxs: List[Transaction],
                                  irrevocablySpent: Map[OutPoint, TxConfirmedAt] = Map.empty) extends ForceCloseCommitPublished {
 
   lazy val delayedRefundsLeft: Seq[Transaction] = claimHtlcTimeoutTxs.filterNot(isIrrevocablySpent)

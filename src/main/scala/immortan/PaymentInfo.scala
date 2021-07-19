@@ -106,7 +106,7 @@ case class AESAction(domain: Option[String], description: String, ciphertext: St
 // Payment descriptions
 
 sealed trait PaymentDescription {
-  val finalDescription: Option[String]
+  val externalInfo: Option[String]
   val split: Option[SplitInfo]
   val label: Option[String]
   val invoiceText: String
@@ -114,13 +114,13 @@ sealed trait PaymentDescription {
 }
 
 case class PlainDescription(split: Option[SplitInfo], label: Option[String], invoiceText: String) extends PaymentDescription {
-  val finalDescription: Option[String] = label orElse Some(invoiceText).find(_.nonEmpty)
+  val externalInfo: Option[String] = Some(invoiceText).find(_.nonEmpty)
 
   val queryText: String = s"$invoiceText ${label getOrElse new String}"
 }
 
 case class PlainMetaDescription(split: Option[SplitInfo], label: Option[String], invoiceText: String, meta: String) extends PaymentDescription {
-  val finalDescription: Option[String] = label orElse List(meta, invoiceText).find(_.nonEmpty)
+  val externalInfo: Option[String] = List(meta, invoiceText).find(_.nonEmpty)
 
   val queryText: String = s"$invoiceText $meta ${label getOrElse new String}"
 }

@@ -218,10 +218,10 @@ object Helpers {
       }
 
       val mainDelayedTxOpt = for (info <- mainDelayedTx) yield info.tx
-      val htlcDelayedTxesOpt = for (info <- htlcDelayedTxes) yield info.tx
+      val htlcDelayedTxesSeq = for (info <- htlcDelayedTxes) yield info.tx
       val successTxs = htlcTxes.collect { case success: HtlcSuccessTx => success.tx }
       val timeoutTxs = htlcTxes.collect { case timeout: HtlcTimeoutTx => timeout.tx }
-      LocalCommitPublished(tx, mainDelayedTxOpt, successTxs, timeoutTxs, htlcDelayedTxesOpt)
+      LocalCommitPublished(tx, mainDelayedTxOpt, successTxs, timeoutTxs, htlcDelayedTxesSeq)
     }
 
     def claimRemoteCommitTxOutputs(cs: NormalCommits, remoteCommit: RemoteCommit, tx: Transaction, feeEstimator: FeeEstimator): RemoteCommitPublished = {
