@@ -86,7 +86,7 @@ case class UpdateAddHtlc(channelId: ByteVector32, id: Long,
   lazy val fullTag: FullPaymentTag = fullTagOpt getOrElse FullPaymentTag(paymentHash, ChannelMaster.NO_SECRET, PaymentTagTlv.LOCALLY_SENT)
 
   // This is relevant for outgoing payments (with these we can ensure onion key uniqueness)
-  final val partId: ByteVector = onionRoutingPacket.publicKey
+  final lazy val partId: ByteVector = onionRoutingPacket.publicKey
 }
 
 case class UpdateFulfillHtlc(channelId: ByteVector32, id: Long, paymentPreimage: ByteVector32) extends HtlcMessage with HasChannelId with UpdateMessage {

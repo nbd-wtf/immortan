@@ -18,7 +18,7 @@ import akka.pattern.ask
 
 case class ElectrumEclairWallet(wallet: ActorRef, ewt: ElectrumWalletType, info: CompleteChainWalletInfo)(implicit system: ActorSystem, ec: ExecutionContext, timeout: Timeout) extends EclairWallet {
   override def getReceiveAddresses: Future[Address2PubKey] = (wallet ? GetCurrentReceiveAddresses).mapTo[GetCurrentReceiveAddressesResponse].map(_.address2PubKey)
-  private def isInChain(error: fr.acinq.eclair.blockchain.bitcoind.rpc.Error): Boolean = error.message.toLowerCase contains "already in block chain"
+  private def isInChain(error: fr.acinq.eclair.blockchain.bitcoind.rpc.Error): Boolean = error.message.toLowerCase.contains("already in block chain")
   private def emptyUtxo(pubKeyScript: ByteVector): TxOut = TxOut(Satoshi(0L), pubKeyScript)
 
   override def getBalance: Future[OnChainBalance] = (wallet ? GetBalance).mapTo[GetBalanceResponse].map {
@@ -59,7 +59,7 @@ case class ElectrumEclairWallet(wallet: ActorRef, ewt: ElectrumWalletType, info:
   override def sendPreimageBroadcast(preimages: Set[ByteVector32], address: String, feeRatePerKw: FeeratePerKw): Future[TxAndFee] = {
     val preimageTxOuts = preimages.toList.map(_.bytes).map(OP_PUSHDATA.apply).grouped(2).map(OP_RETURN :: _).map(Script.write).map(emptyUtxo).toList
     val sendAll = SendAll(Script write addressToPublicKeyScript(address, ewt.chainHash), preimageTxOuts, feeRatePerKw, OPT_IN_FULL_RBF)
-    (wallet ? sendAll).mapTo[CompleteTransactionResponse].map(_.result.get)
+    (wallet ? sendAll).mapTo[SendAllResponse].map(_.result.get)
   }
 
   override def sendPayment(amount: Satoshi, address: String, feeRatePerKw: FeeratePerKw): Future[TxAndFee] = {

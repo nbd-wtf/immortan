@@ -220,7 +220,7 @@ abstract class ChannelHosted extends Channel { me =>
       else localSuspend(hc, ERR_HOSTED_INVALID_RESIZE)
 
 
-    case (hc: HostedCommits, remoteSO: StateOverride, OPEN | SLEEPING) if hc.error.isDefined =>
+    case (hc: HostedCommits, remoteSO: StateOverride, OPEN | SLEEPING) if hc.error.isDefined && !hc.overrideProposal.contains(remoteSO) =>
       StoreBecomeSend(hc.copy(overrideProposal = remoteSO.asSome), state)
 
 

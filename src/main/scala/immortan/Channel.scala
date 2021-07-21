@@ -41,12 +41,6 @@ object Channel {
     case _ => None
   }
 
-  def estimateBalance(chan: Channel): MilliSatoshi = chan.data match {
-    case data: HasNormalCommitments => data.commitments.latestReducedRemoteSpec.toRemote
-    case data: HostedCommits => data.nextLocalSpec.toLocal
-    case _ => MilliSatoshi(0L)
-  }
-
   def isOperational(chan: Channel): Boolean = chan.data match {
     case data: DATA_NORMAL => data.localShutdown.isEmpty && data.remoteShutdown.isEmpty
     case hostedCommits: HostedCommits => hostedCommits.error.isEmpty

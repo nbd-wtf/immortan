@@ -70,7 +70,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
 
   private val socketAddress = InetSocketAddress.createUnresolved("0.0.0.0", 9735)
   private val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, ChainWalletTable, ElectrumHeadersTable)
-  private val walletParameters = WalletParameters(new SQLiteData(connection), new SQLiteChainWallet(connection), dustLimit = 546L.sat, swipeRange = 10, allowSpendUnconfirmed = true)
+  private val walletParameters = WalletParameters(new SQLiteData(connection), new SQLiteChainWallet(connection), dustLimit = 546L.sat, allowSpendUnconfirmed = true)
   private val chainSync = TestFSMRef(new ElectrumChainSync(client.ref, walletParameters.headerDb, ewt.chainHash))
   private val wallet = TestFSMRef(new ElectrumWallet(client.ref, chainSync, walletParameters, ewt))
   sender.send(wallet, walletParameters.emptyPersistentDataBytes)
@@ -243,9 +243,6 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(100000.sat, ewt.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
     wallet ! GetScriptHashHistoryResponse(scriptHash, TransactionHistoryItem(2, tx.txid) :: Nil)
 
-    // wallet will generate a new address and the corresponding subscription
-    client.expectMsgType[ScriptHashSubscription]
-
     while (listener.msgAvailable) {
       listener.receiveOne(100.milliseconds)
     }
@@ -256,8 +253,8 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
 
   test("handle disconnect/reconnect events") {
     val data = {
-      val firstAccountKeys = (0 until walletParameters.swipeRange).map(i => derivePublicKey(ewt.accountMaster, i)).toVector
-      val firstChangeKeys = (0 until walletParameters.swipeRange).map(i => derivePublicKey(ewt.changeMaster, i)).toVector
+      val firstAccountKeys = (0 until EclairWallet.MAX_RECEIVE_ADDRESSES).map(i => derivePublicKey(ewt.accountMaster, i)).toVector
+      val firstChangeKeys = (0 until EclairWallet.MAX_RECEIVE_ADDRESSES).map(i => derivePublicKey(ewt.changeMaster, i)).toVector
       val data1 = ElectrumData(ewt, Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header), firstAccountKeys, firstChangeKeys)
 
       val amount1 = 1000000.sat

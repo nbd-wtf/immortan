@@ -31,10 +31,10 @@ object ErrorCodes {
 
 object ErrorExt {
   def extractDescription(error: Fail): String = {
-    val postTagData = error.data.drop(2)
-    val tag = error.data.take(2)
+    val postTagData = error.data.drop(4)
+    val tag = error.toAscii.take(4)
 
-    ErrorCodes.knownHostedCodes.get(tag.toHex) match {
+    ErrorCodes.knownHostedCodes.get(tag) match {
       case Some(codeOnly) if postTagData.isEmpty => s"hosted-code=$codeOnly"
       case Some(code) => s"hosted-code=$code, extra=${error.copy(data = postTagData).toAscii}"
       case None => error.toAscii

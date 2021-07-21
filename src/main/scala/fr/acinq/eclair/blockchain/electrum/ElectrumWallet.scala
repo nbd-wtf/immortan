@@ -65,9 +65,13 @@ class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParame
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if data.status.get(scriptHash).contains(status) =>
       val missing = data.history.getOrElse(scriptHash, Nil).map(_.txHash).filterNot(data.transactions.contains).toSet -- data.pendingTransactionRequests
-      val data1 = data.copy(pendingHistoryRequests = data.pendingTransactionRequests ++ missing)
-      for (txid <- missing) client ! GetTransaction(txid)
-      stay using persistAndNotify(data1)
+
+      if (missing.nonEmpty) {
+        // An optimization to not recalculate internal data values on each scriptHashResponse event
+        val data1 = data.copy(pendingHistoryRequests = data.pendingTransactionRequests ++ missing)
+        for (txid <- missing) client ! GetTransaction(txid)
+        stay using persistAndNotify(data1)
+      } else stay
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if !data.accountKeyMap.contains(scriptHash) && !data.changeKeyMap.contains(scriptHash) =>
       log.warning(s"Received status $status for scriptHash $scriptHash which does not match any of our keys")
@@ -90,13 +94,13 @@ class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParame
           val data2 = data1.copy(changeKeys = data1.changeKeys :+ newKey)
           stay using persistAndNotify(data2)
 
-        case false =>
+        case false if data.currentReceiveAddresses.size <= MAX_RECEIVE_ADDRESSES =>
           val newKey = derivePublicKey(ewt.accountMaster, data.accountKeys.last.path.lastChildNumber + 1)
           client ! ElectrumClient.ScriptHashSubscription(ewt.computeScriptHashFromPublicKey(newKey.publicKey), self)
           val data2 = data1.copy(accountKeys = data1.accountKeys :+ newKey)
           stay using persistAndNotify(data2)
 
-        case true =>
+        case _ =>
           // This is not a new scriptHash
           stay using persistAndNotify(data1)
       }
@@ -316,8 +320,8 @@ case class Utxo(key: ExtendedPublicKey, item: ElectrumClient.UnspentItem)
 
 case class AccountAndXPrivKey(xPriv: ExtendedPrivateKey, master: ExtendedPrivateKey)
 
-case class WalletParameters(headerDb: HeaderDb, walletDb: WalletDb, dustLimit: Satoshi, swipeRange: Int, allowSpendUnconfirmed: Boolean) {
-  lazy val emptyPersistentData: PersistentData = PersistentData(accountKeysCount = swipeRange, changeKeysCount = swipeRange)
+case class WalletParameters(headerDb: HeaderDb, walletDb: WalletDb, dustLimit: Satoshi, allowSpendUnconfirmed: Boolean) {
+  lazy val emptyPersistentData: PersistentData = PersistentData(accountKeysCount = MAX_RECEIVE_ADDRESSES, changeKeysCount = MAX_RECEIVE_ADDRESSES)
   lazy val emptyPersistentDataBytes: ByteVector = persistentDataCodec.encode(emptyPersistentData).require.toByteVector
 }
 
@@ -332,16 +336,16 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
 
   lazy val currentReadyMessage: WalletReady = WalletReady(balance.confirmed, balance.unconfirmed, blockchain.tip.height, heights.values.forall(_ > 0), ewt.xPub)
 
-  private lazy val firstUnusedAccountKeys = accountKeys.view.filter(key => status get ewt.computeScriptHashFromPublicKey(key.publicKey) contains new String).take(MAX_RECEIVE_ADDRESSES)
+  private lazy val firstUnusedAccountKeys = accountKeyMap.collect { case Tuple2(scriptHash, privKey) if status.get(scriptHash).contains(new String) => privKey }
 
-  private lazy val firstUnusedChangeKeys = changeKeys.find(key => status get ewt.computeScriptHashFromPublicKey(key.publicKey) contains new String)
+  private lazy val firstUnusedChangeKey = changeKeyMap.collectFirst { case Tuple2(scriptHash, privKey) if status.get(scriptHash).contains(new String) => privKey }
 
   private lazy val publicScriptMap = (accountKeys ++ changeKeys).map { key => Script.write(ewt computePublicKeyScript key.publicKey) -> key }.toMap
 
   lazy val utxos: Seq[Utxo] = history.keys.toList.flatMap(getUtxos)
 
   def currentReceiveAddresses: Address2PubKey = {
-    val privateKeys = if (firstUnusedAccountKeys.isEmpty) accountKeys.take(MAX_RECEIVE_ADDRESSES) else firstUnusedAccountKeys
+    val privateKeys = if (firstUnusedAccountKeys.isEmpty) accountKeys else firstUnusedAccountKeys
     privateKeys.map(ewt.textAddress).zip(privateKeys).toMap
   }
 
@@ -456,7 +460,7 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
       Transactions.weight2fee(feeRatePerKw, weight)
     }
 
-    val changeKey = firstUnusedChangeKeys.getOrElse(changeKeys.head)
+    val changeKey = firstUnusedChangeKey.getOrElse(changeKeys.head)
     val changeScript = ewt.computePublicKeyScript(changeKey.publicKey)
     val changeTxOut = TxOut(Satoshi(0), changeScript)
 

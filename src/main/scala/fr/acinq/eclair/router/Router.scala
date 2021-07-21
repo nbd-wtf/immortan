@@ -96,7 +96,7 @@ object Router {
 
     def getEdgeForNode(nodeId: PublicKey): Option[GraphEdge] = routedPerChannelHop.collectFirst { case (_, chanHop: ChannelHop) if nodeId == chanHop.nodeId => chanHop.edge }
 
-    def asString(denom: Denomination): String = routedPerHop.collect { case (amt, hop) => hop.asString(denom asString amt).trim }.mkString("me", " -> ", s" -> payee, route fee: ${denom asString fee}")
+    def asString(denom: Denomination): String = routedPerHop.collect { case (amt, hop) => hop.asString(denom asString amt).trim }.mkString("me ->", " -> ", s" -> payee, route fee: ${denom asString fee}")
 
     require(hops.nonEmpty, "Route cannot be empty")
   }

@@ -26,9 +26,9 @@ trait Denomination { me =>
   def directedWithSign(incoming: Satoshi, outgoing: Satoshi, inColor: String, outColor: String, zeroColor: String, isPlus: Boolean): String =
     directedWithSign(incoming.toMilliSatoshi, outgoing.toMilliSatoshi, inColor, outColor, zeroColor, isPlus)
 
-  def directedWithSign(incoming: MilliSatoshi, out: MilliSatoshi, inColor: String, outColor: String, zeroColor: String, isPlus: Boolean): String =
-    if (isPlus && incoming == 0L.msat) parsedWithSign(incoming, inColor, zeroColor)
-    else if (isPlus) "+&#160;" + parsedWithSign(incoming, inColor, zeroColor)
+  def directedWithSign(in: MilliSatoshi, out: MilliSatoshi, inColor: String, outColor: String, zeroColor: String, isPlus: Boolean): String =
+    if (isPlus && in == 0L.msat) parsedWithSign(in, inColor, zeroColor)
+    else if (isPlus) "+&#160;" + parsedWithSign(in, inColor, zeroColor)
     else if (out == 0L.msat) parsedWithSign(out, outColor, zeroColor)
     else "-&#160;" + parsedWithSign(out, outColor, zeroColor)
 

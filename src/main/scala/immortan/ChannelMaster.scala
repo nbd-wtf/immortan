@@ -75,9 +75,14 @@ object ChannelMaster {
     case packet: IncomingPacket.FinalPacket => CMD_FAIL_HTLC(LNParams.incorrectDetails(packet.add.amountMsat).asRight, secret, packet.add)
   }
 
-  // Of all incoming payments inside of HCs for which we have revealed a preimage, find those which are dangerously close to expiration
-  def dangerousHCRevealed(revealed: Map[ByteVector32, RevealedLocalFulfills], tip: Long, hash: ByteVector32): Iterable[LocalFulfill] =
-    revealed.getOrElse(hash, Iterable.empty).filter(tip > _.theirAdd.cltvExpiry.toLong - LNParams.hcFulfillSafetyBlocks)
+  def allIncomingRevealed(chans: Iterable[Channel] = Nil): Map[ByteVector32, RevealedLocalFulfills] = {
+    chans.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.revealedFulfills).groupBy(_.theirAdd.paymentHash)
+  }
+
+  def dangerousHCRevealed(allRevealed: Map[ByteVector32, RevealedLocalFulfills], tip: Long, hash: ByteVector32): Iterable[LocalFulfill] = {
+    // Of all incoming payments inside of HCs for which we have revealed a preimage, find those which are dangerously close to expiration, but not expired yet
+    allRevealed.getOrElse(hash, Iterable.empty).filter(tip >= _.theirAdd.cltvExpiry.toLong - LNParams.hcFulfillSafetyBlocks).filter(tip <= _.theirAdd.cltvExpiry.toLong - 3)
+  }
 }
 
 case class InFlightPayments(out: Map[FullPaymentTag, OutgoingAdds], in: Map[FullPaymentTag, ReasonableResolutions] = Map.empty) {
@@ -187,8 +192,6 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
     .foreach(payBag.updAbortedOutgoing)
 
   def allInChannelOutgoing: Map[FullPaymentTag, OutgoingAdds] = all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).groupBy(_.fullTag)
-
-  def allIncomingRevealed: Map[ByteVector32, RevealedLocalFulfills] = all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.revealedFulfills).groupBy(_.theirAdd.paymentHash)
 
   def allHosted: Iterable[ChannelHosted] = all.values.collect { case chan: ChannelHosted => chan }
 
