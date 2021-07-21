@@ -133,7 +133,7 @@ object LNParams {
 
   // Defined here since when modified it takes implicit parameters
   case class WalletExt(wallets: List[ElectrumEclairWallet], catcher: ActorRef, sync: ActorRef, pool: ActorRef, watcher: ActorRef, db: WalletDb) extends CanBeShutDown { me =>
-    def lastBalanceUpdated(event: WalletReady): WalletExt = me.modify(_.wallets.eachWhere(event.sameXpub).info.lastBalance).setTo(event.unconfirmedBalance + event.confirmedBalance)
+    def lastBalanceUpdated(event: WalletReady): WalletExt = me.modify(_.wallets.eachWhere(event.sameXpub).info.lastBalance).setTo(event.balance)
     override def becomeShutDown: Unit = wallets.map(_.wallet) ++ List(catcher, sync, pool, watcher) foreach (_ ! PoisonPill)
     lazy val lnWallet: ElectrumEclairWallet = wallets.find(_.ewt.tag == EclairWallet.BIP84).get
   }

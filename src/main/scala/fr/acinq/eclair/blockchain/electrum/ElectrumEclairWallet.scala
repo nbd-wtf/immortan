@@ -3,7 +3,7 @@ package fr.acinq.eclair.blockchain.electrum
 import fr.acinq.eclair.blockchain.EclairWallet._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
 import fr.acinq.bitcoin.{ByteVector32, OP_PUSHDATA, OP_RETURN, Satoshi, Script, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.blockchain.{EclairWallet, MakeFundingTxResponse, OnChainBalance, TxAndFee}
+import fr.acinq.eclair.blockchain.{EclairWallet, MakeFundingTxResponse, TxAndFee}
 import scala.concurrent.{ExecutionContext, Future}
 import akka.actor.{ActorRef, ActorSystem}
 
@@ -21,12 +21,8 @@ case class ElectrumEclairWallet(wallet: ActorRef, ewt: ElectrumWalletType, info:
   private def isInChain(error: fr.acinq.eclair.blockchain.bitcoind.rpc.Error): Boolean = error.message.toLowerCase.contains("already in block chain")
   private def emptyUtxo(pubKeyScript: ByteVector): TxOut = TxOut(Satoshi(0L), pubKeyScript)
 
-  override def getBalance: Future[OnChainBalance] = (wallet ? GetBalance).mapTo[GetBalanceResponse].map {
-    balance => OnChainBalance(balance.confirmed, balance.unconfirmed)
-  }
-
   override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw): Future[MakeFundingTxResponse] =
-    getBalance.flatMap {
+    (wallet ? GetBalance).mapTo[GetBalanceResponse].flatMap {
       case chainBalance if chainBalance.totalBalance == amount =>
         val sendAllCommand = SendAll(pubkeyScript, Nil, feeRatePerKw, TxIn.SEQUENCE_FINAL)
         (wallet ? sendAllCommand).mapTo[SendAllResponse].map(_.result).map {
@@ -65,7 +61,7 @@ case class ElectrumEclairWallet(wallet: ActorRef, ewt: ElectrumWalletType, info:
   override def sendPayment(amount: Satoshi, address: String, feeRatePerKw: FeeratePerKw): Future[TxAndFee] = {
     val publicKeyScript = Script write addressToPublicKeyScript(address, ewt.chainHash)
 
-    getBalance.flatMap {
+    (wallet ? GetBalance).mapTo[GetBalanceResponse].flatMap {
       case chainBalance if chainBalance.totalBalance == amount =>
         val sendAll = SendAll(publicKeyScript, Nil, feeRatePerKw, OPT_IN_FULL_RBF)
         (wallet ? sendAll).mapTo[SendAllResponse].map(_.result.get)

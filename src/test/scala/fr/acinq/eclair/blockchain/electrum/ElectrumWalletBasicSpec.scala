@@ -72,7 +72,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
 
   test("complete transactions (enough funds)") {
     val state1 = addFunds(state, state.accountKeys.head, 1.btc)
-    val GetBalanceResponse(confirmed1, unconfirmed1) = state1.balance
+    val GetBalanceResponse(confirmed1) = state1.balance
 
     val pub = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5.btc, Script.pay2pkh(pub)) :: Nil, lockTime = 0)
@@ -81,9 +81,8 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     assert(fee == fee1)
 
     val state2 = state1.commitTransaction(tx1)
-    val GetBalanceResponse(confirmed4, unconfirmed4) = state2.balance
-    assert(confirmed4 == confirmed1)
-    assert(unconfirmed1 - unconfirmed4 >= btc2satoshi(0.5.btc))
+    val GetBalanceResponse(confirmed4) = state2.balance
+    assert(confirmed1 - confirmed4 >= btc2satoshi(0.5.btc))
   }
 
   test("complete transactions (insufficient funds)") {
@@ -148,14 +147,14 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val state2 = addFunds(state1, state1.accountKeys(1), 2.btc)
     val state3 = addFunds(state2, state2.changeKeys(0), 0.5.btc)
     assert(state3.utxos.length == 3)
-    assert(GetBalanceResponse(350000000.sat, 0.sat) == state3.balance)
+    assert(GetBalanceResponse(350000000.sat) == state3.balance)
 
     val pay2wpkh = Script.pay2wpkh(ByteVector.fill(20)(1))
     val TxAndFee(tx, fee) = state3.spendAll(Script.write(pay2wpkh), Nil, feerate, dustLimit, TxIn.SEQUENCE_FINAL)
     val Some((received, _, Some(fee1))) = state3.computeTransactionDelta(tx)
     assert(received === 0.sat)
     assert(fee == fee1)
-    assert(tx.txOut.map(_.amount).sum + fee == state3.balance.confirmed + state3.balance.unconfirmed)
+    assert(tx.txOut.map(_.amount).sum + fee == state3.balance.totalBalance)
   }
 
   test("check that issue #1146 is fixed") {
@@ -169,7 +168,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val Some((received, _, Some(fee1))) = state3.computeTransactionDelta(tx)
     assert(received === 0.sat)
     assert(fee == fee1)
-    assert(tx.txOut.map(_.amount).sum + fee == state3.balance.confirmed + state3.balance.unconfirmed)
+    assert(tx.txOut.map(_.amount).sum + fee == state3.balance.totalBalance)
 
     val tx1 = Transaction(version = 2, txIn = Nil, txOut = TxOut(tx.txOut.map(_.amount).sum, pubkeyScript) :: Nil, lockTime = 0)
     assert(Try(state3.completeTransaction(tx1, FeeratePerKw(750.sat), dustLimit, allowSpendUnconfirmed = true, TxIn.SEQUENCE_FINAL)).isSuccess)

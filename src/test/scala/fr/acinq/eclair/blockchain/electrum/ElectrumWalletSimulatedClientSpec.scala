@@ -188,7 +188,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
     wallet ! GetTransactionResponse(tx, None)
     // we think we have some unconfirmed funds
     assert(listener.expectMsgType[TransactionReceived].received == 100000.sat)
-    assert(listener.expectMsgType[WalletReady].confirmedBalance == 100000.sat)
+    assert(listener.expectMsgType[WalletReady].balance == 100000.sat)
 
     client.expectMsg(GetMerkle(tx.txid, 2))
 
@@ -209,7 +209,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
     awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
 
     val ready = reconnect
-    assert(ready.unconfirmedBalance === 0.sat)
+    assert(ready.balance === 0.sat)
   }
 
   test("clear status when we have pending history requests") {

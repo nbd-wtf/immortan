@@ -88,14 +88,14 @@ class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParame
       client ! ElectrumClient.GetScriptHashHistory(scriptHash)
 
       data.status.contains(statusBytes) match {
-        case false if data.changeKeyMap.contains(scriptHash) =>
-          val newKey = derivePublicKey(ewt.changeMaster, data.changeKeys.last.path.lastChildNumber + 1)
+        case false if data.changeKeyMap.contains(scriptHash) && data.firstUnusedChangeKey.isEmpty =>
+          val newKey: ExtendedPublicKey = derivePublicKey(ewt.changeMaster, data.changeKeys.last.path.lastChildNumber + 1)
           client ! ElectrumClient.ScriptHashSubscription(ewt.computeScriptHashFromPublicKey(newKey.publicKey), self)
           val data2 = data1.copy(changeKeys = data1.changeKeys :+ newKey)
           stay using persistAndNotify(data2)
 
-        case false if data.currentReceiveAddresses.size <= MAX_RECEIVE_ADDRESSES =>
-          val newKey = derivePublicKey(ewt.accountMaster, data.accountKeys.last.path.lastChildNumber + 1)
+        case false if data.firstUnusedAccountKeys.size <= MAX_RECEIVE_ADDRESSES && data.noAccountKeysWithoutStatus =>
+          val newKey: ExtendedPublicKey = derivePublicKey(ewt.accountMaster, data.accountKeys.last.path.lastChildNumber + 1)
           client ! ElectrumClient.ScriptHashSubscription(ewt.computeScriptHashFromPublicKey(newKey.publicKey), self)
           val data2 = data1.copy(accountKeys = data1.accountKeys :+ newKey)
           stay using persistAndNotify(data2)
@@ -270,9 +270,7 @@ object ElectrumWallet {
 
   case object GetBalance extends Request
 
-  case class GetBalanceResponse(confirmed: Satoshi, unconfirmed: Satoshi) extends Response {
-    val totalBalance: Satoshi = confirmed + unconfirmed
-  }
+  case class GetBalanceResponse(totalBalance: Satoshi) extends Response
 
   case object GetCurrentReceiveAddresses extends Request
 
@@ -305,7 +303,7 @@ object ElectrumWallet {
 
   case class TransactionReceived(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi, walletAddreses: List[String], xPub: ExtendedPublicKey, feeOpt: Option[Satoshi] = None) extends WalletEvent
 
-  case class WalletReady(confirmedBalance: Satoshi, unconfirmedBalance: Satoshi, height: Long, allConfirmed: Boolean, xPub: ExtendedPublicKey) extends WalletEvent
+  case class WalletReady(balance: Satoshi, height: Long, allConfirmed: Boolean, xPub: ExtendedPublicKey) extends WalletEvent
 
   def doubleSpend(tx1: Transaction, tx2: Transaction): Boolean = tx1.txIn.map(_.outPoint).toSet.intersect(tx2.txIn.map(_.outPoint).toSet).nonEmpty
 
@@ -322,6 +320,7 @@ case class AccountAndXPrivKey(xPriv: ExtendedPrivateKey, master: ExtendedPrivate
 
 case class WalletParameters(headerDb: HeaderDb, walletDb: WalletDb, dustLimit: Satoshi, allowSpendUnconfirmed: Boolean) {
   lazy val emptyPersistentData: PersistentData = PersistentData(accountKeysCount = MAX_RECEIVE_ADDRESSES, changeKeysCount = MAX_RECEIVE_ADDRESSES)
+
   lazy val emptyPersistentDataBytes: ByteVector = persistentDataCodec.encode(emptyPersistentData).require.toByteVector
 }
 
@@ -334,13 +333,15 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
 
   lazy val changeKeyMap: Map[ByteVector32, ExtendedPublicKey] = changeKeys.map(key => ewt.computeScriptHashFromPublicKey(key.publicKey) -> key).toMap
 
-  lazy val currentReadyMessage: WalletReady = WalletReady(balance.confirmed, balance.unconfirmed, blockchain.tip.height, heights.values.forall(_ > 0), ewt.xPub)
+  lazy val currentReadyMessage: WalletReady = WalletReady(balance.totalBalance, blockchain.tip.height, heights.values.forall(_ > 0), ewt.xPub)
 
-  private lazy val firstUnusedAccountKeys = accountKeyMap.collect { case Tuple2(scriptHash, privKey) if status.get(scriptHash).contains(new String) => privKey }
+  lazy val firstUnusedAccountKeys: immutable.Iterable[ExtendedPublicKey] = accountKeyMap.collect { case Tuple2(scriptHash, privKey) if status.get(scriptHash).contains(new String) => privKey }
 
-  private lazy val firstUnusedChangeKey = changeKeyMap.collectFirst { case Tuple2(scriptHash, privKey) if status.get(scriptHash).contains(new String) => privKey }
+  lazy val firstUnusedChangeKey: Option[ExtendedPublicKey] = changeKeyMap.collectFirst { case Tuple2(scriptHash, privKey) if status.get(scriptHash).contains(new String) => privKey }
 
-  private lazy val publicScriptMap = (accountKeys ++ changeKeys).map { key => Script.write(ewt computePublicKeyScript key.publicKey) -> key }.toMap
+  lazy val publicScriptMap: Map[ByteVector, ExtendedPublicKey] = (accountKeys ++ changeKeys).map(key => Script.write(ewt computePublicKeyScript key.publicKey) -> key).toMap
+
+  lazy val noAccountKeysWithoutStatus: Boolean = accountKeyMap.keySet.forall(status.contains)
 
   lazy val utxos: Seq[Utxo] = history.keys.toList.flatMap(getUtxos)
 
@@ -390,40 +391,7 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
         unspents.filterNot(utxo => txs contains utxo.item.outPoint)
     }
 
-  def calculateBalance(scriptHash: ByteVector32): (Satoshi, Satoshi) =
-    history.get(scriptHash) match {
-      case Some(Nil) => (0.sat, 0.sat)
-      case None => (0.sat, 0.sat)
-
-      case Some(items) =>
-        val (confirmedItems, unconfirmedItems) = items.partition(_.height > 0)
-        val confirmedTxs = confirmedItems.map(_.txHash).flatMap(transactions.get)
-        val unconfirmedTxs = unconfirmedItems.map(_.txHash).flatMap(transactions.get)
-
-        def findOurSpentOutputs(txs: Seq[Transaction] = Nil): Seq[TxOut] = for {
-          input <- txs.flatMap(_.txIn) if isSpend(input, scriptHash)
-          transaction <- transactions.get(input.outPoint.txid)
-        } yield transaction.txOut(input.outPoint.index.toInt)
-
-        val confirmedSpents = findOurSpentOutputs(confirmedTxs)
-        val unconfirmedSpents = findOurSpentOutputs(unconfirmedTxs)
-
-        val received = isReceive(_: TxOut, scriptHash)
-        val confirmedReceived = confirmedTxs.flatMap(_.txOut).filter(received)
-        val unconfirmedReceived = unconfirmedTxs.flatMap(_.txOut).filter(received)
-
-        val confirmedBalance = confirmedReceived.map(_.amount).sum - confirmedSpents.map(_.amount).sum
-        val unconfirmedBalance = unconfirmedReceived.map(_.amount).sum - unconfirmedSpents.map(_.amount).sum
-        (confirmedBalance, unconfirmedBalance)
-    }
-
-  lazy val balance: GetBalanceResponse = {
-    val startState = GetBalanceResponse(0L.sat, 0L.sat)
-    (accountKeyMap.keys ++ changeKeyMap.keys).map(calculateBalance).foldLeft(startState) {
-      case (GetBalanceResponse(confirmed, unconfirmed), confirmed1 ~ unconfirmed1) =>
-        GetBalanceResponse(confirmed + confirmed1, unconfirmed + unconfirmed1)
-    }
-  }
+  lazy val balance: GetBalanceResponse = GetBalanceResponse(utxos.map(_.item.value.sat).sum)
 
   def transactionReceived(tx: Transaction, feeOpt: Option[Satoshi], received: Satoshi, sent: Satoshi, xPub: ExtendedPublicKey): TransactionReceived = {
     val walletAddresses = tx.txOut.filter(isMine).map(_.publicKeyScript).flatMap(publicScriptMap.get).map(ewt.textAddress).toList

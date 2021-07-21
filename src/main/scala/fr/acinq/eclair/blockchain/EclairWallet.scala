@@ -21,8 +21,6 @@ object EclairWallet {
 }
 
 trait EclairWallet {
-  def getBalance: Future[OnChainBalance]
-
   def getReceiveAddresses: Future[Address2PubKey]
 
   def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw): Future[MakeFundingTxResponse]
@@ -37,10 +35,6 @@ trait EclairWallet {
 }
 
 case class TxAndFee(tx: Transaction, fee: Satoshi)
-
-case class OnChainBalance(confirmed: Satoshi, unconfirmed: Satoshi) {
-  val totalBalance: Satoshi = confirmed + unconfirmed
-}
 
 case class MakeFundingTxResponse(fundingTx: Transaction, fundingTxOutputIndex: Int, fee: Satoshi) {
   val fundingPubkeyScript: ByteVector = fundingTx.txOut(fundingTxOutputIndex).publicKeyScript
