@@ -59,10 +59,8 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface) extends PaymentBag
     ChannelMaster.next(ChannelMaster.paymentDbStream)
   }
 
-  def replaceOutgoingPayment(prex: PaymentRequestExt,
-                             description: PaymentDescription, action: Option[PaymentAction],
-                             finalAmount: MilliSatoshi, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc,
-                             chainFee: MilliSatoshi): Unit =
+  def replaceOutgoingPayment(prex: PaymentRequestExt, description: PaymentDescription, action: Option[PaymentAction],
+                             finalAmount: MilliSatoshi, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc, chainFee: MilliSatoshi): Unit =
     db txWrap {
       removePaymentInfo(prex.pr.paymentHash)
       db.change(PaymentTable.newSql, prex.raw, ChannelMaster.NO_PREIMAGE.toHex, PaymentStatus.PENDING: JInt, System.currentTimeMillis: JLong, description.toJson.compactPrint,
@@ -72,8 +70,7 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface) extends PaymentBag
       ChannelMaster.next(ChannelMaster.paymentDbStream)
     }
 
-  def replaceIncomingPayment(prex: PaymentRequestExt,
-                             preimage: ByteVector32, description: PaymentDescription,
+  def replaceIncomingPayment(prex: PaymentRequestExt, preimage: ByteVector32, description: PaymentDescription,
                              balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc): Unit =
     db txWrap {
       removePaymentInfo(prex.pr.paymentHash)

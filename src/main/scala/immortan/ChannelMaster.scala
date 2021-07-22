@@ -75,10 +75,6 @@ object ChannelMaster {
     case packet: IncomingPacket.FinalPacket => CMD_FAIL_HTLC(LNParams.incorrectDetails(packet.add.amountMsat).asRight, secret, packet.add)
   }
 
-  def allIncomingRevealed(chans: Iterable[Channel] = Nil): Map[ByteVector32, RevealedLocalFulfills] = {
-    chans.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.revealedFulfills).groupBy(_.theirAdd.paymentHash)
-  }
-
   def dangerousHCRevealed(allRevealed: Map[ByteVector32, RevealedLocalFulfills], tip: Long, hash: ByteVector32): Iterable[LocalFulfill] = {
     // Of all incoming payments inside of HCs for which we have revealed a preimage, find those which are dangerously close to expiration, but not expired yet
     allRevealed.getOrElse(hash, Iterable.empty).filter(tip >= _.theirAdd.cltvExpiry.toLong - LNParams.hcFulfillSafetyBlocks).filter(tip <= _.theirAdd.cltvExpiry.toLong - 3)
@@ -193,13 +189,15 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
 
   def allInChannelOutgoing: Map[FullPaymentTag, OutgoingAdds] = all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).groupBy(_.fullTag)
 
-  def allHosted: Iterable[ChannelHosted] = all.values.collect { case chan: ChannelHosted => chan }
+  def allIncomingRevealed(cs: Iterable[Commitments] = Nil): Map[ByteVector32, RevealedLocalFulfills] = cs.flatMap(_.revealedFulfills).groupBy(_.theirAdd.paymentHash)
 
-  def allNormal: Iterable[ChannelNormal] = all.values.collect { case chan: ChannelNormal => chan }
+  def allFromNode(nodeId: PublicKey): Iterable[ChanAndCommits] = all.values.flatMap(Channel.chanAndCommitsOpt).filter(_.commits.remoteInfo.nodeId == nodeId)
+
+  def allHostedCommits: Iterable[HostedCommits] = all.values.flatMap(Channel.chanAndCommitsOpt).collect { case ChanAndCommits(_, commits: HostedCommits) => commits }
 
   def hostedFromNode(nodeId: PublicKey): Option[ChannelHosted] = allFromNode(nodeId).collectFirst { case ChanAndCommits(chan: ChannelHosted, _) => chan }
 
-  def allFromNode(nodeId: PublicKey): Iterable[ChanAndCommits] = all.values.flatMap(Channel.chanAndCommitsOpt).filter(_.commits.remoteInfo.nodeId == nodeId)
+  def allNormal: Iterable[ChannelNormal] = all.values.collect { case chan: ChannelNormal => chan }
 
   def delayedRefunds: DelayedRefunds = {
     val commitsPublished = all.values.map(_.data).flatMap { case close: DATA_CLOSING => close.forceCloseCommitPublished case _ => None }

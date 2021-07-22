@@ -39,7 +39,7 @@ class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParame
 
   when(DISCONNECTED) {
     case Event(raw: ByteVector, null) =>
-      // Serialized data may become with much usage
+      // Serialized data may become big with much usage
       // Deserialzie it in this dedicated thread to not slow down UI
       val persisted = persistentDataCodec.decode(raw.toBitVector).require.value
       val blockChain = Blockchain(ewt.chainHash, checkpoints = Vector.empty, headersMap = Map.empty, bestchain = Vector.empty)
@@ -345,9 +345,9 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
 
   lazy val utxos: Seq[Utxo] = history.keys.toList.flatMap(getUtxos)
 
-  def currentReceiveAddresses: Address2PubKey = {
-    val privateKeys = if (firstUnusedAccountKeys.isEmpty) accountKeys else firstUnusedAccountKeys
-    privateKeys.map(ewt.textAddress).zip(privateKeys).toMap
+  def currentReceiveAddresses: Address2PubKey = firstUnusedAccountKeys match {
+    case keys if keys.isEmpty => accountKeys.map(ewt.textAddress).zip(accountKeys).toMap
+    case keys => keys.map(ewt.textAddress).zip(keys).toMap
   }
 
   // Remove status for each script hash for which we have pending requests, this will make us query script hash history for these script hashes again when we reconnect
@@ -356,8 +356,6 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
   def isTxKnown(txid: ByteVector32): Boolean = transactions.contains(txid) || pendingTransactionRequests.contains(txid) || pendingTransactions.exists(_.txid == txid)
 
   def isMine(txIn: TxIn): Boolean = ewt.extractPubKeySpentFrom(txIn).map(ewt.computePublicKeyScript).map(Script.write).exists(publicScriptMap.contains)
-
-  def isSpend(txIn: TxIn, scriptHash: ByteVector32): Boolean = ewt.extractPubKeySpentFrom(txIn).exists(pub => ewt.computeScriptHashFromPublicKey(pub) == scriptHash)
 
   def isReceive(txOut: TxOut, scriptHash: ByteVector32): Boolean = publicScriptMap.get(txOut.publicKeyScript).exists(key => ewt.computeScriptHashFromPublicKey(key.publicKey) == scriptHash)
 

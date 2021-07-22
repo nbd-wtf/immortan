@@ -246,7 +246,7 @@ case class OutgoingPaymentSenderData(cmd: SendMultiPart, parts: Map[ByteVector, 
 
   lazy val inFlightParts: Iterable[InFlightInfo] = parts.values.flatMap { case wait: WaitForRouteOrInFlight => wait.flight case _ => None }
   lazy val successfulUpdates: Iterable[ChannelUpdateExt] = inFlightParts.flatMap(_.route.routedPerChannelHop).toMap.values.map(_.edge.updExt)
-  lazy val closestCltvExpiry: Option[CltvExpiryDelta] = inFlightParts.map(_.route.weight.cltv).toList.sorted.headOption
+  lazy val closestCltvExpiry: Option[CltvExpiry] = inFlightParts.map(_.cmd.cltvExpiry).toList.sorted.headOption
   lazy val usedFee: MilliSatoshi = inFlightParts.map(_.route.fee).sum
 
   def usedRoutesAsString(denom: Denomination): String =

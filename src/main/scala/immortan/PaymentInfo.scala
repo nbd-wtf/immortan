@@ -3,11 +3,11 @@ package immortan
 import fr.acinq.eclair._
 import immortan.utils.ImplicitJsonFormats._
 import immortan.utils.{LNUrl, PayRequest, PayRequestMeta, PaymentRequestExt}
-import immortan.crypto.Tools.{Any2Some, Bytes, Fiat2Btc, SEPARATOR, ratio}
-import immortan.fsm.{IncomingPaymentProcessor, SendMultiPart, SplitInfo}
+import immortan.crypto.Tools.{Any2Some, Bytes, Fiat2Btc, SEPARATOR}
 import fr.acinq.eclair.channel.{DATA_CLOSING, HasNormalCommitments}
 import fr.acinq.bitcoin.{ByteVector32, Satoshi, Transaction}
 import fr.acinq.eclair.wire.{FullPaymentTag, PaymentTagTlv}
+import immortan.fsm.{SendMultiPart, SplitInfo}
 import immortan.ChannelMaster.TxConfirmedAtOpt
 import org.bouncycastle.util.encoders.Base64
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -31,13 +31,14 @@ object PaymentStatus {
 
 sealed trait TransactionDetails {
   val date: Date = new Date(seenAt)
+  val identity: String
   def seenAt: Long
 }
 
 case class PayLinkInfo(lnurlString: String, metaString: String, lastMsat: MilliSatoshi, lastDate: Long, lastCommentString: String, labelString: String) extends TransactionDetails {
   override val seenAt: Long = System.currentTimeMillis + lastDate // To make it always appear on top in timestamp-sorted lists on UI
-
   override val date: Date = new Date(lastDate) // To display real date of last usage in lists on UI
+  override val identity: String = lnurlString
 
   lazy val meta: PayRequestMeta = {
     val records = to[PayRequest.MetaDataRecords](metaString)
@@ -55,6 +56,7 @@ case class PayLinkInfo(lnurlString: String, metaString: String, lastMsat: MilliS
 
 case class DelayedRefunds(txToParent: Map[Transaction, TxConfirmedAtOpt], seenAt: Long = Long.MaxValue) extends TransactionDetails {
   lazy val totalAmount: MilliSatoshi = txToParent.keys.map(_.txOut.head.amount).sum.toMilliSatoshi
+  override val identity: String = "DelayedRefunds"
 }
 
 case class SplitParams(prExt: PaymentRequestExt, action: Option[PaymentAction], description: PaymentDescription, cmd: SendMultiPart, chainFee: MilliSatoshi)
@@ -62,6 +64,8 @@ case class SplitParams(prExt: PaymentRequestExt, action: Option[PaymentAction], 
 case class PaymentInfo(prString: String, preimage: ByteVector32, status: Int, seenAt: Long, descriptionString: String, actionString: String, paymentHash: ByteVector32,
                        paymentSecret: ByteVector32, received: MilliSatoshi, sent: MilliSatoshi, fee: MilliSatoshi, balanceSnapshot: MilliSatoshi, fiatRatesString: String,
                        chainFee: MilliSatoshi, incoming: Long) extends TransactionDetails {
+
+  override val identity: String = prString
 
   lazy val isIncoming: Boolean = 1 == incoming
 
@@ -74,8 +78,6 @@ case class PaymentInfo(prString: String, preimage: ByteVector32, status: Int, se
   lazy val prExt: PaymentRequestExt = PaymentRequestExt.fromRaw(prString)
 
   lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
-
-  def receivedRatio(fsm: IncomingPaymentProcessor): Long = ratio(received, fsm.lastAmountIn)
 }
 
 // Payment actions
@@ -91,45 +93,43 @@ case class MessageAction(domain: Option[String], message: String) extends Paymen
 
 case class UrlAction(domain: Option[String], description: String, url: String) extends PaymentAction {
   val finalMessage = s"<br>${description take 144}<br><br><font color=#0000FF><tt>$url</tt></font><br>"
-
   require(domain.forall(url.contains), "Payment action domain mismatch")
 }
 
 case class AESAction(domain: Option[String], description: String, ciphertext: String, iv: String) extends PaymentAction {
   val ciphertextBytes: Bytes = ByteVector.fromValidBase64(ciphertext).take(1024 * 4).toArray // up to ~2kb of encrypted data
-
   val ivBytes: Bytes = ByteVector.fromValidBase64(iv).take(24).toArray // 16 bytes
-
   val finalMessage = s"<br>${description take 144}"
 }
 
 // Payment descriptions
 
 sealed trait PaymentDescription {
-  val externalInfo: Option[String]
+  val proofTxid: Option[String]
   val split: Option[SplitInfo]
   val label: Option[String]
   val invoiceText: String
+
+  val externalInfo: Option[String]
   val queryText: String
 }
 
-case class PlainDescription(split: Option[SplitInfo], label: Option[String], invoiceText: String) extends PaymentDescription {
+case class PlainDescription(split: Option[SplitInfo], label: Option[String], invoiceText: String, proofTxid: Option[String] = None) extends PaymentDescription {
   val externalInfo: Option[String] = Some(invoiceText).find(_.nonEmpty)
-
-  val queryText: String = s"$invoiceText ${label getOrElse new String}"
+  val queryText: String = invoiceText + SEPARATOR + label.orNull
 }
 
-case class PlainMetaDescription(split: Option[SplitInfo], label: Option[String], invoiceText: String, meta: String) extends PaymentDescription {
+case class PlainMetaDescription(split: Option[SplitInfo], label: Option[String], invoiceText: String, meta: String, proofTxid: Option[String] = None) extends PaymentDescription {
+  val queryText: String = invoiceText + SEPARATOR + meta + SEPARATOR + label.orNull
   val externalInfo: Option[String] = List(meta, invoiceText).find(_.nonEmpty)
-
-  val queryText: String = s"$invoiceText $meta ${label getOrElse new String}"
 }
 
 // Relayed preimages
 
-case class RelayedPreimageInfo(paymentHashString: String,
-                               paymentSecretString: String, preimageString: String, relayed: MilliSatoshi,
-                               earned: MilliSatoshi, seenAt: Long) extends TransactionDetails {
+case class RelayedPreimageInfo(paymentHashString: String, paymentSecretString: String, preimageString: String,
+                               relayed: MilliSatoshi, earned: MilliSatoshi, seenAt: Long) extends TransactionDetails {
+
+  override val identity: String = paymentHashString
 
   lazy val preimage: ByteVector32 = ByteVector32.fromValidHex(preimageString)
 
@@ -145,6 +145,8 @@ case class RelayedPreimageInfo(paymentHashString: String,
 case class TxInfo(txString: String, txidString: String, depth: Long, receivedSat: Satoshi, sentSat: Satoshi, feeSat: Satoshi,
                   seenAt: Long, descriptionString: String, balanceSnapshot: MilliSatoshi, fiatRatesString: String,
                   incoming: Long, doubleSpent: Long) extends TransactionDetails {
+
+  override val identity: String = txString
 
   lazy val isIncoming: Boolean = 1L == incoming
   
@@ -171,13 +173,13 @@ case class PlainTxDescription(addresses: List[String], label: Option[String] = N
   override def toAddress: Option[String] = addresses.headOption
 }
 
+case class OpReturnTxDescription(preimages: List[ByteVector32], label: Option[String] = None) extends TxDescription {
+  def queryText(txid: ByteVector32): String = txid.toHex + SEPARATOR + preimages.map(_.toHex).mkString(SEPARATOR)
+}
+
 sealed trait ChanTxDescription extends TxDescription {
   override def withNodeId: Option[PublicKey] = Some(nodeId)
   def nodeId: PublicKey
-}
-
-case class OpReturnTxDescription(nodeId: PublicKey, preimage: ByteVector32, label: Option[String] = None) extends ChanTxDescription {
-  def queryText(txid: ByteVector32): String = txid.toHex + SEPARATOR + nodeId.toString + SEPARATOR + preimage.toHex
 }
 
 case class ChanFundingTxDescription(nodeId: PublicKey, label: Option[String] = None) extends ChanTxDescription {

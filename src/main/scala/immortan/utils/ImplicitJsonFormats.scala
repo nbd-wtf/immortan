@@ -102,8 +102,8 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
   implicit val plainTxDescriptionFmt: JsonFormat[PlainTxDescription] = taggedJsonFmt(jsonFormat[List[String], Option[String],
     PlainTxDescription](PlainTxDescription.apply, "addresses", "label"), tag = "PlainTxDescription")
 
-  implicit val opReturnTxDescriptionFmt: JsonFormat[OpReturnTxDescription] = taggedJsonFmt(jsonFormat[PublicKey, ByteVector32, Option[String],
-    OpReturnTxDescription](OpReturnTxDescription.apply, "nodeId", "preimage", "label"), tag = "OpReturnTxDescription")
+  implicit val opReturnTxDescriptionFmt: JsonFormat[OpReturnTxDescription] = taggedJsonFmt(jsonFormat[List[ByteVector32], Option[String],
+    OpReturnTxDescription](OpReturnTxDescription.apply, "preimages", "label"), tag = "OpReturnTxDescription")
 
   implicit val chanFundingTxDescriptionFmt: JsonFormat[ChanFundingTxDescription] = taggedJsonFmt(jsonFormat[PublicKey, Option[String],
     ChanFundingTxDescription](ChanFundingTxDescription.apply, "nodeId", "label"), tag = "ChanFundingTxDescription")
@@ -133,14 +133,13 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
     }
   }
 
-  implicit val splitInfoFmt: JsonFormat[SplitInfo] =
-    jsonFormat[MilliSatoshi, MilliSatoshi, SplitInfo](SplitInfo.apply, "totalSum", "myPart")
+  implicit val splitInfoFmt: JsonFormat[SplitInfo] = jsonFormat[MilliSatoshi, MilliSatoshi, SplitInfo](SplitInfo.apply, "totalSum", "myPart")
 
-  implicit val plainDescriptionFmt: JsonFormat[PlainDescription] = taggedJsonFmt(jsonFormat[Option[SplitInfo], Option[String], String,
-    PlainDescription](PlainDescription.apply, "split", "label", "invoiceText"), tag = "PlainDescription")
+  implicit val plainDescriptionFmt: JsonFormat[PlainDescription] = taggedJsonFmt(jsonFormat[Option[SplitInfo], Option[String], String, Option[String],
+    PlainDescription](PlainDescription.apply, "split", "label", "invoiceText", "proofTxid"), tag = "PlainDescription")
 
-  implicit val plainMetaDescriptionFmt: JsonFormat[PlainMetaDescription] = taggedJsonFmt(jsonFormat[Option[SplitInfo], Option[String], String, String,
-    PlainMetaDescription](PlainMetaDescription.apply, "split", "label", "invoiceText", "meta"), tag = "PlainMetaDescription")
+  implicit val plainMetaDescriptionFmt: JsonFormat[PlainMetaDescription] = taggedJsonFmt(jsonFormat[Option[SplitInfo], Option[String], String, String, Option[String],
+    PlainMetaDescription](PlainMetaDescription.apply, "split", "label", "invoiceText", "meta", "proofTxid"), tag = "PlainMetaDescription")
 
   // Payment action
 

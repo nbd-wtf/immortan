@@ -2,6 +2,7 @@ package immortan
 
 import immortan.utils._
 import fr.acinq.eclair._
+import immortan.sqlite._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
@@ -16,7 +17,6 @@ import scala.concurrent.{Await, ExecutionContextExecutor}
 import fr.acinq.eclair.router.Router.{PublicChannel, RouterConf}
 import fr.acinq.eclair.transactions.{DirectedHtlc, RemoteFulfill}
 import fr.acinq.eclair.channel.{ChannelKeys, LocalParams, PersistentChannelData}
-import immortan.sqlite.{ChannelTxFeesSummary, DBInterface, PaymentSummary, PreparedQuery, RelaySummary, RichCursor}
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.WalletReady
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
 import fr.acinq.eclair.router.ChannelUpdateExt
