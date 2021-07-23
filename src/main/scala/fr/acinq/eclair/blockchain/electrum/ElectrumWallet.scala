@@ -320,7 +320,6 @@ case class AccountAndXPrivKey(xPriv: ExtendedPrivateKey, master: ExtendedPrivate
 
 case class WalletParameters(headerDb: HeaderDb, walletDb: WalletDb, dustLimit: Satoshi, allowSpendUnconfirmed: Boolean) {
   lazy val emptyPersistentData: PersistentData = PersistentData(accountKeysCount = MAX_RECEIVE_ADDRESSES, changeKeysCount = MAX_RECEIVE_ADDRESSES)
-
   lazy val emptyPersistentDataBytes: ByteVector = persistentDataCodec.encode(emptyPersistentData).require.toByteVector
 }
 

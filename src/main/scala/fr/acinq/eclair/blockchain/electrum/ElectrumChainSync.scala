@@ -15,7 +15,8 @@ class ElectrumChainSync(client: ActorRef, headerDb: HeaderDb, chainHash: ByteVec
     // In case if anything at all goes wrong we just use an initial blockchain and resync it from checkpoint
     val blockchain = Blockchain.fromCheckpoints(checkpoints = CheckPoint.load(chainHash, headerDb), chainhash = chainHash)
     val headers = headerDb.getHeaders(startHeight = blockchain.checkpoints.size * RETARGETING_PERIOD, maxCount = Int.MaxValue)
-    Try apply Blockchain.addHeadersChunk(blockchain, blockchain.checkpoints.size * RETARGETING_PERIOD, headers) getOrElse blockchain
+//    Try apply Blockchain.addHeadersChunk(blockchain, blockchain.checkpoints.size * RETARGETING_PERIOD, headers) getOrElse blockchain
+    Blockchain.addHeadersChunk(blockchain, blockchain.checkpoints.size * RETARGETING_PERIOD, headers)
   } else Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header)
 
   client ! ElectrumClient.AddStatusListener(self)
@@ -56,7 +57,7 @@ class ElectrumChainSync(client: ActorRef, headerDb: HeaderDb, chainHash: ByteVec
       blockchain1Try match {
         case Success(blockchain1) =>
           val (blockchain2, chunks) = Blockchain.optimize(blockchain1)
-          for (chunk <- chunks grouped RETARGETING_PERIOD) headerDb.addHeaders(chunk.map(_.header), chunk.head.height)
+          headerDb.addHeaders(chunks.map(_.header), chunks.head.height)
           log.info(s"Got new headers chunk at ${blockchain2.tip.height}, requesting next chunk")
           client ! ElectrumClient.GetHeaders(blockchain2.tip.height + 1, RETARGETING_PERIOD)
           goto(SYNCING) using blockchain2
@@ -79,8 +80,8 @@ class ElectrumChainSync(client: ActorRef, headerDb: HeaderDb, chainHash: ByteVec
       blockchain1Try match {
         case Success(blockchain1) if difficultyOk =>
           val (blockchain2, chunks) = Blockchain.optimize(blockchain1)
-          for (chunk <- chunks grouped RETARGETING_PERIOD) headerDb.addHeaders(chunk.map(_.header), chunk.head.height)
-          log.info(s"Got new chain tip ${header.blockId} at $height, obtained header is $header, publishing chain")
+          headerDb.addHeaders(chunks.map(_.header), chunks.head.height)
+          log.info(s"Got new chain tip ${header.blockId} at $height")
           context.system.eventStream.publish(blockchain2)
           stay using blockchain2
 

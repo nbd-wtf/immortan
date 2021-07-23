@@ -83,7 +83,7 @@ case class Blockchain(chainHash: ByteVector32,
 object Blockchain {
 
   val RETARGETING_PERIOD = 2016 // on bitcoin, the difficulty re-targeting period is 2016 blocks
-  val MAX_REORG = 500 // we assume that there won't be a reorg of more than 500 blocks
+  val MAX_REORG = 144 // we assume that there won't be a reorg of more than 144 blocks
 
   /**
     *
@@ -110,7 +110,7 @@ object Blockchain {
     * @return a blockchain instance
     */
   def fromCheckpoints(chainhash: ByteVector32, checkpoints: Vector[CheckPoint]): Blockchain = {
-    Blockchain(chainhash, checkpoints, Map(), Vector())
+    Blockchain(chainhash, checkpoints, Map.empty, Vector.empty)
   }
 
   /**
@@ -304,7 +304,6 @@ object Blockchain {
   /**
     * Optimize blockchain
     *
-    * @param blockchain
     * @param acc internal accumulator
     * @return a (blockchain, indexes) tuple where headers that are old enough have been removed and new checkpoints added,
     *         and indexes is the list of header indexes that have been optimized out and must be persisted
@@ -318,7 +317,8 @@ object Blockchain {
       val checkpoints1 = blockchain.checkpoints :+ CheckPoint(saveme.last.hash, bestchain1.head.header.bits)
       optimize(blockchain.copy(headersMap = headersMap1, bestchain = bestchain1, checkpoints = checkpoints1), acc ++ saveme)
     } else {
-      (blockchain, acc)
+      val safeWithoutCheckpoint = blockchain.bestchain.dropRight(MAX_REORG)
+      (blockchain, acc ++ safeWithoutCheckpoint)
     }
   }
 
