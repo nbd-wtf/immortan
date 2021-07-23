@@ -97,7 +97,7 @@ class ElectrumClientSpec extends TestKitBaseClass with AnyFunSuiteLike {
     probe.send(client, GetMerkle(referenceTx.txid, 500000))
     val response = probe.expectMsgType[GetMerkleResponse]
     assert(response.txid == referenceTx.txid)
-    assert(response.block_height == 500000)
+    assert(response.blockHeight == 500000)
     assert(response.pos == 2690)
     assert(response.root == ByteVector32(hex"1f6231ed3de07345b607ec2a39b2d01bec2fe10dfb7f516ba4958a42691c9531"))
   }

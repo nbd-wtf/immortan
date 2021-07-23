@@ -365,8 +365,8 @@ object ElectrumClient {
   case class AddStatusListener(actor: ActorRef)
   case class RemoveStatusListener(actor: ActorRef)
 
-  sealed trait Request { def context_opt: Option[Any] = None }
-  sealed trait Response { def context_opt: Option[Any] = None }
+  sealed trait Request { def contextOpt: Option[Any] = None }
+  sealed trait Response { def contextOpt: Option[Any] = None }
 
   case class ServerVersion(clientName: String, protocolVersion: String) extends Request
   case class ServerVersionResponse(clientName: String, protocolVersion: String) extends Response
@@ -396,8 +396,8 @@ object ElectrumClient {
   case class GetTransactionIdFromPosition(height: Int, tx_pos: Int, merkle: Boolean = false) extends Request
   case class GetTransactionIdFromPositionResponse(txid: ByteVector32, height: Int, tx_pos: Int, merkle: Seq[ByteVector32]) extends Response
 
-  case class GetTransaction(txid: ByteVector32, override val context_opt: Option[Any] = None) extends Request
-  case class GetTransactionResponse(tx: Transaction, override val context_opt: Option[Any]) extends Response
+  case class GetTransaction(txid: ByteVector32, override val contextOpt: Option[Any] = None) extends Request
+  case class GetTransactionResponse(tx: Transaction, override val contextOpt: Option[Any]) extends Response
 
   case class GetHeader(height: Int) extends Request
   case class GetHeaderResponse(height: Int, header: BlockHeader) extends Response
@@ -410,11 +410,11 @@ object ElectrumClient {
     override def toString = s"GetHeadersResponse($start_height, ${headers.length}, ${headers.headOption}, ${headers.lastOption}, $max)"
   }
 
-  case class GetMerkle(txid: ByteVector32, height: Int, override val context_opt: Option[Any] = None) extends Request
-  case class GetMerkleResponse(txid: ByteVector32, merkle: List[ByteVector32], block_height: Int, pos: Int, override val context_opt: Option[Any]) extends Response {
+  case class GetMerkle(txid: ByteVector32, height: Int, override val contextOpt: Option[Any] = None) extends Request
+  case class GetMerkleResponse(txid: ByteVector32, merkle: List[ByteVector32], blockHeight: Int, pos: Int, override val contextOpt: Option[Any] = None) extends Response {
     lazy val root: ByteVector32 = {
       @tailrec
-      def loop(pos: Int, hashes: Seq[ByteVector32]): ByteVector32 = {
+      def loop(pos: Int, hashes: Seq[ByteVector32] = Nil): ByteVector32 = {
         if (hashes.length == 1) hashes.head
         else {
           val h = if (pos % 2 == 1) Crypto.hash256(hashes(1) ++ hashes.head) else Crypto.hash256(hashes.head ++ hashes(1))
