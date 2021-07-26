@@ -42,7 +42,7 @@ class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParame
       // Serialized data may become big with much usage
       // Deserialzie it in this dedicated thread to not slow down UI
       val persisted = persistentDataCodec.decode(raw.toBitVector).require.value
-      val firstAccountKeys = for (idx <- math.max(persisted.accountKeysCount - 1000, 0) until persisted.accountKeysCount) yield derivePublicKey(ewt.accountMaster, idx)
+      val firstAccountKeys = for (idx <- math.max(persisted.accountKeysCount - 500, 0) until persisted.accountKeysCount) yield derivePublicKey(ewt.accountMaster, idx)
       val firstChangeKeys = for (idx <- math.max(persisted.changeKeysCount - 250, 0) until persisted.changeKeysCount) yield derivePublicKey(ewt.changeMaster, idx)
 
       val data1 = ElectrumData(ewt, Blockchain(ewt.chainHash, checkpoints = Vector.empty, headersMap = Map.empty, bestchain = Vector.empty),

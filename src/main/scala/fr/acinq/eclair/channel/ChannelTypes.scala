@@ -154,9 +154,12 @@ final case class DATA_WAIT_FOR_FUNDING_SIGNED(remoteInfo: RemoteNodeInfo, channe
                                               fundingTxFee: Satoshi, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit, channelFlags: Byte,
                                               channelVersion: ChannelVersion, lastSent: FundingCreated) extends ChannelData
 
-final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: NormalCommits, fundingTx: Option[Transaction],
-                                                 waitingSince: Long, lastSent: Either[FundingCreated, FundingSigned],
-                                                 deferred: Option[FundingLocked] = None) extends ChannelData with HasNormalCommitments
+final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: NormalCommits, fundingTx: Option[Transaction], waitingSince: Long, lastSent: Either[FundingCreated, FundingSigned],
+                                                 deferred: Option[FundingLocked] = None) extends ChannelData with HasNormalCommitments {
+
+  // Remote peer may send a tx which is unrelated to our agreed upon channel funding, that is, we won't be able to spend our commit tx, check this right away!
+  def checkSpend(tx: Transaction): Unit = Transaction.correctlySpends(commitments.localCommit.publishableTxs.commitTx.tx, Seq(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+}
 
 final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: NormalCommits, shortChannelId: ShortChannelId, lastSent: FundingLocked) extends ChannelData with HasNormalCommitments
 

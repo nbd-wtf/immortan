@@ -152,12 +152,9 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
       // AWAITING CONFIRMATION
 
       case (wait: DATA_WAIT_FOR_FUNDING_CONFIRMED, event: WatchEventConfirmed, SLEEPING | WAIT_FUNDING_DONE) =>
-        // Remote peer may send a tx which is unrelated to our agreed upon channel funding, that is, we won't be able to spend our commit tx, check this right away!
-        def correct: Unit = Transaction.correctlySpends(wait.commitments.localCommit.publishableTxs.commitTx.tx, Seq(event.txConfirmedAt.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-
-        if (Try(correct).isFailure) StoreBecomeSend(DATA_CLOSING(wait.commitments, System.currentTimeMillis), CLOSING) else {
-          val shortChannelId = ShortChannelId(event.txConfirmedAt.blockHeight, event.txIndex, wait.commitments.commitInput.outPoint.index.toInt)
+        if (Try(wait checkSpend event.txConfirmedAt.tx).isFailure) StoreBecomeSend(DATA_CLOSING(wait.commitments, System.currentTimeMillis), CLOSING) else {
           val fundingLocked = FundingLocked(nextPerCommitmentPoint = wait.commitments.localParams.keys.commitmentPoint(1L), channelId = wait.channelId)
+          val shortChannelId = ShortChannelId(event.txConfirmedAt.blockHeight, event.txIndex, wait.commitments.commitInput.outPoint.index.toInt)
           StoreBecomeSend(DATA_WAIT_FOR_FUNDING_LOCKED(wait.commitments, shortChannelId, fundingLocked), state, fundingLocked)
           wait.deferred.foreach(process)
         }
@@ -424,7 +421,8 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
       // OFFLINE IN PERSISTENT STATES
 
       case (data1: HasNormalCommitments, CMD_SOCKET_OFFLINE, WAIT_FUNDING_DONE | OPEN) =>
-        val (wasUpdated, data2, localProposedAdds) = maybeRevertUnsignedOutgoing(data1)
+        // Do not persist if we had no proposed updates to protect against flapping channels
+        val (data2, localProposedAdds, wasUpdated) = maybeRevertUnsignedOutgoing(data1)
         if (wasUpdated) StoreBecomeSend(data2, SLEEPING) else BECOME(data1, SLEEPING)
         for (add <- localProposedAdds) events addRejectedLocally ChannelOffline(add)
 
@@ -648,18 +646,19 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
   def nextFeerate(norm: DATA_NORMAL, threshold: Double): Option[FeeratePerKw] =
     newFeerate(LNParams.feeRates.info, norm.commitments.localCommit.spec, threshold)
 
-  private def maybeRevertUnsignedOutgoing(data1: HasNormalCommitments) =
-    if (data1.commitments.localHasUnsignedOutgoingHtlcs || data1.commitments.remoteHasUnsignedOutgoingHtlcs) {
-      val remoteProposed = data1.commitments.remoteChanges.proposed.collect { case remoteUpdate: UpdateAddHtlc => remoteUpdate }
-      val localProposed = data1.commitments.localChanges.proposed.collect { case localUpdate: UpdateAddHtlc => localUpdate }
-      val data2 = data1.modifyAll(_.commitments.remoteChanges.proposed, _.commitments.localChanges.proposed).setTo(Nil)
-      val data3 = data2.modify(_.commitments.remoteNextHtlcId).using(_ - remoteProposed.size)
-      val data4 = data3.modify(_.commitments.localNextHtlcId).using(_ - localProposed.size)
-      (true, data4, localProposed)
-    } else (false, data1, Nil)
+  private def maybeRevertUnsignedOutgoing(data1: HasNormalCommitments): (HasNormalCommitments, List[UpdateAddHtlc], Boolean) = {
+    val hadProposed = data1.commitments.remoteChanges.proposed.nonEmpty || data1.commitments.localChanges.proposed.nonEmpty
+    val data2 = data1.modifyAll(_.commitments.remoteChanges.proposed, _.commitments.localChanges.proposed).setTo(Nil)
+    val remoteProposed = data1.commitments.remoteChanges.proposed.collect { case add: UpdateAddHtlc => add }
+    val localProposed = data1.commitments.localChanges.proposed.collect { case add: UpdateAddHtlc => add }
+    val data3 = data2.modify(_.commitments.remoteNextHtlcId).using(_ - remoteProposed.size)
+    val data4 = data3.modify(_.commitments.localNextHtlcId).using(_ - localProposed.size)
+    (data4, localProposed, hadProposed)
+  }
 
   private def handleChannelForceClosing(prev: HasNormalCommitments)(turnIntoClosing: HasNormalCommitments => DATA_CLOSING): Unit = {
-    val (_, closing1: DATA_CLOSING, localProposedAdds) = turnIntoClosing.andThen(maybeRevertUnsignedOutgoing)(prev)
+    val (closing1: DATA_CLOSING, localProposedAdds, _) = turnIntoClosing.andThen(maybeRevertUnsignedOutgoing)(prev)
+    // Here we don't care whether there were proposed updates since data type changes to CLOSING anyway
     StoreBecomeSend(closing1, CLOSING)
 
     // Unsigned outgoing HTLCs should be failed right away on any force-closing

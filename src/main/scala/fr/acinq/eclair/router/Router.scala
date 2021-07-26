@@ -46,34 +46,20 @@ object Router {
   trait Hop {
     def nodeId: PublicKey
     def nextNodeId: PublicKey
-    def asString(humanRouted: String): String
     def fee(amount: MilliSatoshi): MilliSatoshi
     def cltvExpiryDelta: CltvExpiryDelta
   }
 
-  /**
-   * A directed hop between two connected nodes using a specific channel.
-   */
   case class ChannelHop(edge: GraphEdge) extends Hop {
-    override def asString(humanRouted: String): String = s"${nodeId.value.toHex} ($humanRouted @ ${edge.desc.shortChannelId.toString})"
+    override def toString: String = s"node: ${nodeId.toString}, base: ${edge.updExt.update.feeBaseMsat}, ppm: ${edge.updExt.update.feeProportionalMillionths}, chanId: ${edge.desc.shortChannelId.toString}"
     override def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(edge.updExt.update.feeBaseMsat, edge.updExt.update.feeProportionalMillionths, amount)
     override val cltvExpiryDelta: CltvExpiryDelta = edge.updExt.update.cltvExpiryDelta
     override val nextNodeId: PublicKey = edge.desc.to
     override val nodeId: PublicKey = edge.desc.from
   }
 
-  /**
-   * A directed hop between two trampoline nodes.
-   * These nodes need not be connected and we don't need to know a route between them.
-   * The start node will compute the route to the end node itself when it receives our payment.
-   *
-   * @param nodeId          id of the start node.
-   * @param nextNodeId      id of the end node.
-   * @param cltvExpiryDelta cltv expiry delta.
-   * @param fee             total fee for that hop.
-   */
   case class NodeHop(nodeId: PublicKey, nextNodeId: PublicKey, cltvExpiryDelta: CltvExpiryDelta, fee: MilliSatoshi) extends Hop {
-    override def asString(humanRouted: String): String = s"${nodeId.value.toHex} ($humanRouted @ Trampoline)"
+    override def toString: String = s"Trampoline, node: ${nodeId.value.toHex}, fee reserve: $fee"
     override def fee(amount: MilliSatoshi): MilliSatoshi = fee
   }
 
@@ -96,7 +82,7 @@ object Router {
 
     def getEdgeForNode(nodeId: PublicKey): Option[GraphEdge] = routedPerChannelHop.collectFirst { case (_, chanHop: ChannelHop) if nodeId == chanHop.nodeId => chanHop.edge }
 
-    def asString(denom: Denomination): String = routedPerHop.collect { case (amt, hop) => hop.asString(denom asString amt).trim }.mkString("me ->", " -> ", s" -> payee, route fee: ${denom asString fee}")
+    def asString(denom: Denomination): String = routedPerHop.collect { case (_, hop) => hop.toString }.mkString(s"${weight.costs.head} -> ", " -> ", s" -> ${weight.costs.last}, route fee: $fee")
 
     require(hops.nonEmpty, "Route cannot be empty")
   }

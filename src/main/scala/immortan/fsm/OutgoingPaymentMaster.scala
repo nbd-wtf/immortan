@@ -48,7 +48,7 @@ case class UnreadableRemoteFailure(route: Route) extends PaymentFailure {
 }
 
 case class RemoteFailure(packet: Sphinx.DecryptedFailurePacket, route: Route) extends PaymentFailure {
-  def originChannelId: String = route.getEdgeForNode(packet.originNode).map(_.updExt.update.shortChannelId.toString).getOrElse("Trampoline")
+  def originChannelId: String = route.getEdgeForNode(packet.originNode).map(_.updExt.update.shortChannelId.toString).getOrElse("unknown channel")
   override def asString(denom: Denomination): String = s"• ${packet.failureMessage.message} @ $originChannelId: ${route asString denom}"
 }
 
@@ -56,10 +56,12 @@ case class RemoteFailure(packet: Sphinx.DecryptedFailurePacket, route: Route) ex
 
 case object ClearFailures
 case class CutIntoHalves(amount: MilliSatoshi)
+case class RemoveSenderFSM(fullTag: FullPaymentTag)
+case class CreateSenderFSM(fullTag: FullPaymentTag, listener: OutgoingPaymentListener)
+
 case class NodeFailed(failedNodeId: PublicKey, increment: Int)
 case class ChannelFailed(failedDescAndCap: DescAndCapacity, increment: Int)
-case class CreateSenderFSM(fullTag: FullPaymentTag, listener: OutgoingPaymentListener)
-case class RemoveSenderFSM(fullTag: FullPaymentTag)
+case class StampedChannelFailed(amount: MilliSatoshi, stamp: Long)
 
 case class SplitInfo(totalSum: MilliSatoshi, myPart: MilliSatoshi) {
   val sentRatio: Long = ratio(totalSum, myPart)
@@ -72,9 +74,25 @@ case class SendMultiPart(fullTag: FullPaymentTag, chainExpiry: Either[CltvExpiry
                          assistedEdges: Set[GraphEdge] = Set.empty, onionTlvs: Seq[OnionTlv] = Nil, userCustomTlvs: Seq[GenericTlv] = Nil)
 
 case class OutgoingPaymentMasterData(payments: Map[FullPaymentTag, OutgoingPaymentSender],
-                                     chanFailedAtAmount: Map[ChannelDesc, MilliSatoshi] = Map.empty,
+                                     chanFailedAtAmount: Map[DescAndCapacity, StampedChannelFailed] = Map.empty,
                                      nodeFailedWithUnknownUpdateTimes: Map[PublicKey, Int] = Map.empty,
-                                     chanFailedTimes: Map[ChannelDesc, Int] = Map.empty)
+                                     chanFailedTimes: Map[ChannelDesc, Int] = Map.empty) {
+
+  def withFailuresReduced(stampInFuture: Long): OutgoingPaymentMasterData = {
+    val node1 = nodeFailedWithUnknownUpdateTimes.mapValues(_ / 2)
+    val chan1 = chanFailedTimes.mapValues(_ / 2)
+
+    val acc = Map.empty[DescAndCapacity, StampedChannelFailed]
+    val amount1 = chanFailedAtAmount.foldLeft(acc) { case (acc1, dac ~ failed) =>
+      val ratio: Double = (stampInFuture - failed.stamp) / LNParams.failedChanRecoveryMsec
+      val failed1 = failed.copy(amount = failed.amount + (dac.capacity - failed.amount) * ratio)
+      if (failed1.amount >= dac.capacity) acc1 else acc1.updated(dac, failed1)
+    }
+
+    // Reduce failure times to give previously failing channels a chance, failed-at-amount is restored gradually
+    copy(nodeFailedWithUnknownUpdateTimes = node1, chanFailedTimes = chan1, chanFailedAtAmount = amount1)
+  }
+}
 
 // All current outgoing in-flight payments
 
@@ -94,9 +112,7 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
 
   def doProcess(change: Any): Unit = (change, state) match {
     case (ClearFailures, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
-      // Reduce failure times to give previously failing channels a chance
-      become(data.copy(nodeFailedWithUnknownUpdateTimes = data.nodeFailedWithUnknownUpdateTimes.mapValues(_ / 2),
-        chanFailedTimes = data.chanFailedTimes.mapValues(_ / 2), chanFailedAtAmount = Map.empty), state)
+      become(data.withFailuresReduced(System.currentTimeMillis), state)
 
     case (send: SendMultiPart, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
       for (edge <- send.assistedEdges) cm.pf process edge
@@ -120,9 +136,9 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
       // IMPLICIT GUARD: this message is ignored in all other states
       val currentUsedCapacities: mutable.Map[DescAndCapacity, MilliSatoshi] = usedCapacities
       val currentUsedDescs = mapKeys[DescAndCapacity, MilliSatoshi, ChannelDesc](currentUsedCapacities, _.desc, defVal = 0L.msat)
-      val ignoreChansFailedTimes = data.chanFailedTimes.collect { case (desc, failTimes) if failTimes >= LNParams.routerConf.maxChannelFailures => desc }
-      val ignoreChansCanNotHandle = currentUsedCapacities.collect { case (DescAndCapacity(desc, capacity), used) if used + req.amount >= capacity - req.amount / 32 => desc }
-      val ignoreChansFailedAtAmount = data.chanFailedAtAmount.collect { case (desc, failedAt) if failedAt - currentUsedDescs(desc) - req.amount / 8 <= req.amount => desc }
+      val ignoreChansFailedTimes = data.chanFailedTimes.collect { case (desc, times) if times >= LNParams.routerConf.maxChannelFailures => desc }
+      val ignoreChansCanNotHandle = currentUsedCapacities.collect { case (dac, used) if used + req.amount >= dac.capacity - req.amount / 32 => dac.desc }
+      val ignoreChansFailedAtAmount = data.chanFailedAtAmount.collect { case (dac, failedAt) if failedAt.amount - currentUsedDescs(dac.desc) - req.amount / 8 <= req.amount => dac.desc }
       val ignoreNodes = data.nodeFailedWithUnknownUpdateTimes.collect { case (nodeId, failTimes) if failTimes >= LNParams.routerConf.maxStrangeNodeFailures => nodeId }
       val req1 = req.copy(ignoreNodes = ignoreNodes.toSet, ignoreChannels = ignoreChansFailedTimes.toSet ++ ignoreChansCanNotHandle ++ ignoreChansFailedAtAmount)
       // Note: we may get many route request messages from payment FSMs with parts waiting for routes
@@ -142,11 +158,12 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
       me process CMDAskForRoute
 
     case (ChannelFailed(descAndCapacity, increment), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
-      // At this point an affected InFlight status IS STILL PRESENT so failedAtAmount = usedCapacities = sum(inFlight)
-      val newChanFailedAtAmount = data.chanFailedAtAmount.getOrElse(descAndCapacity.desc, Long.MaxValue.msat) min usedCapacities(descAndCapacity)
-      val atTimes1 = data.chanFailedTimes.updated(descAndCapacity.desc, data.chanFailedTimes.getOrElse(descAndCapacity.desc, 0) + increment)
-      val atAmount1 = data.chanFailedAtAmount.updated(descAndCapacity.desc, newChanFailedAtAmount)
-      become(data.copy(chanFailedAtAmount = atAmount1, chanFailedTimes = atTimes1), state)
+      // At this point an affected InFlight status IS STILL PRESENT so failedAtAmount1 = usedCapacities = sum(inFlight)
+      val amount1 = data.chanFailedAtAmount.get(descAndCapacity).map(_.amount).getOrElse(Long.MaxValue.msat) min usedCapacities(descAndCapacity)
+      val times1 = data.chanFailedTimes.updated(descAndCapacity.desc, data.chanFailedTimes.getOrElse(descAndCapacity.desc, 0) + increment)
+      val stampedChannelFailed = StampedChannelFailed(amount1, stamp = System.currentTimeMillis)
+      val fail1 = data.chanFailedAtAmount.updated(descAndCapacity, stampedChannelFailed)
+      become(data.copy(chanFailedAtAmount = fail1, chanFailedTimes = times1), state)
 
     case (NodeFailed(nodeId, increment), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
       val newNodeFailedTimes = data.nodeFailedWithUnknownUpdateTimes.getOrElse(nodeId, 0) + increment
@@ -246,7 +263,6 @@ case class OutgoingPaymentSenderData(cmd: SendMultiPart, parts: Map[ByteVector, 
 
   lazy val inFlightParts: Iterable[InFlightInfo] = parts.values.flatMap { case wait: WaitForRouteOrInFlight => wait.flight case _ => None }
   lazy val successfulUpdates: Iterable[ChannelUpdateExt] = inFlightParts.flatMap(_.route.routedPerChannelHop).toMap.values.map(_.edge.updExt)
-  lazy val closestCltvExpiry: Option[CltvExpiry] = inFlightParts.map(_.cmd.cltvExpiry).toList.sorted.headOption
   lazy val usedFee: MilliSatoshi = inFlightParts.map(_.route.fee).sum
 
   def usedRoutesAsString(denom: Denomination): String =

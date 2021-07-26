@@ -7,7 +7,7 @@ import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
-import immortan.utils.PayRequest.{AdditionalRoute, TagAndContent}
+import immortan.utils.PayRequest.{AdditionalRoutes, TagAndContent}
 import immortan.utils.FiatRates.{BitpayItemList, CoinGeckoItemMap}
 import fr.acinq.eclair.blockchain.electrum.db.{ChainWalletInfo, SigningWallet, WatchingWallet}
 import fr.acinq.eclair.wire.ChannelCodecs.extendedPublicKeyCodec
@@ -193,7 +193,7 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
     PayRequest](PayRequest.apply, "callback", "maxSendable", "minSendable", "metadata", "commentAllowed"), tag = "payRequest")
 
   implicit val payRequestFinalFmt: JsonFormat[PayRequestFinal] =
-    jsonFormat[Option[PaymentAction], Option[Boolean], List[AdditionalRoute], String,
+    jsonFormat[Option[PaymentAction], Option[Boolean], Option[AdditionalRoutes], String,
       PayRequestFinal](PayRequestFinal.apply, "successAction", "disposable", "routes", "pr")
 
   implicit val payRequestMetaFmt: JsonFormat[PayRequestMeta] = jsonFormat[List[TagAndContent], PayRequestMeta](PayRequestMeta.apply, "records")

@@ -41,7 +41,7 @@ case class PayLinkInfo(lnurlString: String, metaString: String, lastMsat: MilliS
   override val identity: String = lnurlString
 
   lazy val meta: PayRequestMeta = {
-    val records = to[PayRequest.MetaDataRecords](metaString)
+    val records = to[PayRequest.TagsAndContents](metaString)
     PayRequestMeta(records)
   }
 

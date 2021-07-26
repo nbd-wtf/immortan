@@ -4,7 +4,7 @@ import spray.json._
 import fr.acinq.eclair._
 import immortan.crypto.Tools._
 import immortan.utils.ImplicitJsonFormats._
-import immortan.utils.PayRequest.{AdditionalRoute, MetaDataRecords}
+import immortan.utils.PayRequest.{AdditionalRoutes, TagsAndContents}
 import fr.acinq.eclair.router.{Announcements, RouteCalculation}
 import immortan.{LNParams, PaymentAction, RemoteNodeInfo}
 import fr.acinq.eclair.wire.{ChannelUpdate, NodeAddress}
@@ -153,18 +153,21 @@ case class WithdrawRequest(callback: String, k1: String, maxWithdrawable: Long, 
 
 object PayRequest {
   type TagAndContent = List[String]
-  type MetaDataRecords = List[TagAndContent]
-  type KeyAndUpdate = (PublicKey, ChannelUpdate)
-  type AdditionalRoute = List[KeyAndUpdate]
+  type TagsAndContents = List[TagAndContent]
 
-  def routeToHops(additionalRoute: AdditionalRoute = Nil): List[PaymentRequest.ExtraHop] = for {
+  type KeyAndUpdate = (PublicKey, ChannelUpdate)
+
+  type AdditionalRoute = List[KeyAndUpdate]
+  type AdditionalRoutes = List[AdditionalRoute]
+
+  def routeToHops(additionalRoute: AdditionalRoute): List[PaymentRequest.ExtraHop] = for {
     (startNodeId: PublicKey, channelUpdate: ChannelUpdate) <- additionalRoute
     signatureOk = Announcements.checkSig(channelUpdate)(startNodeId)
     _ = require(signatureOk, "Route contains an invalid update")
   } yield channelUpdate extraHop startNodeId
 }
 
-case class PayRequestMeta(records: MetaDataRecords) {
+case class PayRequestMeta(records: TagsAndContents) {
   val texts: List[String] = records.collect { case List("text/plain", txt) => txt }
   val emails: List[String] = records.collect { case List("text/email", txt) => txt }
   val identities: List[String] = records.collect { case List("text/identity", txt) => txt }
@@ -192,7 +195,7 @@ case class PayRequest(callback: String, maxSendable: Long, minSendable: Long, me
   val callbackUri: Uri = LNUrl.checkHost(callback)
 
   val meta: PayRequestMeta = {
-    val records = to[MetaDataRecords](metadata)
+    val records = to[TagsAndContents](metadata)
     PayRequestMeta(records)
   }
 
@@ -204,9 +207,12 @@ case class PayRequest(callback: String, maxSendable: Long, minSendable: Long, me
   require(minSendable <= maxSendable, s"max=$maxSendable while min=$minSendable")
 }
 
-case class PayRequestFinal(successAction: Option[PaymentAction], disposable: Option[Boolean], routes: List[AdditionalRoute], pr: String) extends LNUrlData {
+case class PayRequestFinal(successAction: Option[PaymentAction], disposable: Option[Boolean], routes: Option[AdditionalRoutes], pr: String) extends LNUrlData {
 
-  val additionalRoutes: Set[GraphStructure.GraphEdge] = RouteCalculation.makeExtraEdges(routes.map(PayRequest.routeToHops), prExt.pr.nodeId)
+  val additionalRoutes: Set[GraphStructure.GraphEdge] = {
+    val hops = routes.getOrElse(Nil).map(PayRequest.routeToHops)
+    RouteCalculation.makeExtraEdges(hops, prExt.pr.nodeId)
+  }
 
   lazy val prExt: PaymentRequestExt = PaymentRequestExt.fromRaw(pr)
 

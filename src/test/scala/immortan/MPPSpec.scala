@@ -9,12 +9,23 @@ import com.softwaremill.quicklens._
 import immortan.utils.ChannelUtils._
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.CMD_SOCKET_OFFLINE
+import fr.acinq.eclair.router.Graph.GraphStructure.DescAndCapacity
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteUpdateFail}
 import fr.acinq.eclair.router.Router.ChannelDesc
 import org.scalatest.funsuite.AnyFunSuite
 
 
 class MPPSpec extends AnyFunSuite {
+  test("Gradually reduce failed-at-amount") {
+    val desc = ChannelDesc(ShortChannelId(3L), b, d)
+    val capacity = 2000000L.msat
+    val failedAt = 200000L.msat
+    val fail = Map(DescAndCapacity(desc,capacity) -> StampedChannelFailed(failedAt, System.currentTimeMillis))
+    val data1 = OutgoingPaymentMasterData(payments = Map.empty, chanFailedAtAmount = fail)
+    assert(data1.withFailuresReduced(System.currentTimeMillis + 150 * 1000L).chanFailedAtAmount.head._2.amount == failedAt + (capacity - failedAt) / 2)
+    assert(data1.withFailuresReduced(System.currentTimeMillis + 300 * 1000L).chanFailedAtAmount.isEmpty)
+  }
+
   test("Split between direct and non-direct channel") {
     LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (normalStore, _, cm) = makeChannelMasterWithBasicGraph
@@ -221,7 +232,7 @@ class MPPSpec extends AnyFunSuite {
 
     val desc = ChannelDesc(ShortChannelId(3L), b, d)
     // B -> D channel is now unable to handle the first split, but still usable for second split
-    cm.opm.data = cm.opm.data.copy(chanFailedAtAmount = Map(desc -> 200000L.msat))
+    cm.opm.data = cm.opm.data.copy(chanFailedAtAmount = Map(DescAndCapacity(desc, Long.MaxValue.msat) -> StampedChannelFailed(200000L.msat, System.currentTimeMillis)))
 
     cm.opm process CreateSenderFSM(tag, noopListener) // Create since FSM is missing
     cm.opm process CreateSenderFSM(tag, null) // Disregard since FSM will be present
@@ -262,7 +273,7 @@ class MPPSpec extends AnyFunSuite {
 
     val desc = ChannelDesc(ShortChannelId(3L), b, d)
     // B -> D channel is now unable to handle the first split, but still usable for second split
-    cm.opm.data = cm.opm.data.copy(chanFailedAtAmount = Map(desc -> 200000L.msat))
+    cm.opm.data = cm.opm.data.copy(chanFailedAtAmount = Map(DescAndCapacity(desc, Long.MaxValue.msat) -> StampedChannelFailed(200000L.msat, System.currentTimeMillis)))
 
     var results = List.empty[OutgoingPaymentSenderData]
     val listener: OutgoingPaymentListener = new OutgoingPaymentListener {
