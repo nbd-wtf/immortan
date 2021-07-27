@@ -30,6 +30,7 @@ object PaymentFailure {
   final val NOT_ENOUGH_FUNDS = "not-enough-funds"
   final val PAYMENT_NOT_SENDABLE = "payment-not-sendable"
   final val RUN_OUT_OF_RETRY_ATTEMPTS = "run-out-of-retry-attempts"
+  final val RUN_OUT_OF_CAPABLE_CHANNELS = "run-out-of-capable-channels"
   final val PEER_COULD_NOT_PARSE_ONION = "peer-could-not-parse-onion"
   final val NOT_RETRYING_NO_DETAILS = "not-retrying-no-details"
   final val TIMED_OUT = "timed-out"
@@ -40,16 +41,16 @@ sealed trait PaymentFailure {
 }
 
 case class LocalFailure(status: String, amount: MilliSatoshi) extends PaymentFailure {
-  override def asString(denom: Denomination): String = s"• Local failure: $status"
+  override def asString(denom: Denomination): String = s"- Local failure: $status"
 }
 
 case class UnreadableRemoteFailure(route: Route) extends PaymentFailure {
-  override def asString(denom: Denomination): String = s"• Remote failure at unknown channel: ${route asString denom}"
+  override def asString(denom: Denomination): String = s"- Remote failure at unknown channel: ${route asString denom}"
 }
 
 case class RemoteFailure(packet: Sphinx.DecryptedFailurePacket, route: Route) extends PaymentFailure {
   def originChannelId: String = route.getEdgeForNode(packet.originNode).map(_.updExt.update.shortChannelId.toString).getOrElse("unknown channel")
-  override def asString(denom: Denomination): String = s"• ${packet.failureMessage.message} @ $originChannelId: ${route asString denom}"
+  override def asString(denom: Denomination): String = s"- ${packet.failureMessage.message} @ $originChannelId: ${route asString denom}"
 }
 
 // Master commands and data
@@ -57,7 +58,7 @@ case class RemoteFailure(packet: Sphinx.DecryptedFailurePacket, route: Route) ex
 case object ClearFailures
 case class CutIntoHalves(amount: MilliSatoshi)
 case class RemoveSenderFSM(fullTag: FullPaymentTag)
-case class CreateSenderFSM(fullTag: FullPaymentTag, listener: OutgoingPaymentListener)
+case class CreateSenderFSM(listeners: Iterable[OutgoingPaymentListener], fullTag: FullPaymentTag)
 
 case class NodeFailed(failedNodeId: PublicKey, increment: Int)
 case class ChannelFailed(failedDescAndCap: DescAndCapacity, increment: Int)
@@ -180,8 +181,8 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
       become(data.copy(payments = data.payments - fullTag), state)
       ChannelMaster.next(ChannelMaster.stateUpdateStream)
 
-    case (CreateSenderFSM(fullTag, listener), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) if !data.payments.contains(fullTag) =>
-      val data1 = data.payments.updated(value = new OutgoingPaymentSender(fullTag, listener, me), key = fullTag)
+    case (CreateSenderFSM(listeners, fullTag), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) if !data.payments.contains(fullTag) =>
+      val data1 = data.payments.updated(value = new OutgoingPaymentSender(fullTag, listeners, me), key = fullTag)
       become(data.copy(payments = data1), state)
 
     // Following messages expect that target FSM is always present
@@ -287,7 +288,7 @@ trait OutgoingPaymentListener {
   def gotFirstPreimage(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = none
 }
 
-class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listener: OutgoingPaymentListener, opm: OutgoingPaymentMaster) extends StateMachine[OutgoingPaymentSenderData] { me =>
+class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listeners: Iterable[OutgoingPaymentListener], opm: OutgoingPaymentMaster) extends StateMachine[OutgoingPaymentSenderData] { me =>
   become(OutgoingPaymentSenderData(SendMultiPart(fullTag, Right(LNParams.minInvoiceExpiryDelta), SplitInfo(0L.msat, 0L.msat), LNParams.routerConf, invalidPubKey), Map.empty), INIT)
 
   def doProcess(msg: Any): Unit = (msg, state) match {
@@ -298,7 +299,7 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listener: OutgoingP
     case (reject: RemoteReject, SUCCEEDED) if reject.ourAdd.paymentHash == fullTag.paymentHash => become(data.withoutPartId(reject.ourAdd.partId), SUCCEEDED)
     case (reject: LocalReject, SUCCEEDED) if reject.localAdd.paymentHash == fullTag.paymentHash => become(data.withoutPartId(reject.localAdd.partId), SUCCEEDED)
     case (fulfill: RemoteFulfill, SUCCEEDED) if fulfill.ourAdd.paymentHash == fullTag.paymentHash => become(data.withoutPartId(fulfill.ourAdd.partId), SUCCEEDED)
-    case (bag: InFlightPayments, SUCCEEDED) if data.inFlightParts.isEmpty && !bag.out.contains(fullTag) => listener.wholePaymentSucceeded(data)
+    case (bag: InFlightPayments, SUCCEEDED) if data.inFlightParts.isEmpty && !bag.out.contains(fullTag) => for (listener <- listeners) listener.wholePaymentSucceeded(data)
 
     case (cmd: SendMultiPart, INIT | ABORTED) =>
       val chans = opm.rightNowSendable(cmd.allowedChans, cmd.totalFeeReserve)
@@ -311,9 +312,8 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listener: OutgoingP
 
     case (fulfill: RemoteFulfill, INIT | PENDING | ABORTED) if fulfill.ourAdd.paymentHash == fullTag.paymentHash =>
       // Provide listener with ORIGINAL data which has all used routes intact
-      val data1 = data.withoutPartId(fulfill.ourAdd.partId)
-      listener.gotFirstPreimage(data, fulfill)
-      become(data1, SUCCEEDED)
+      for (listener <- listeners) listener.gotFirstPreimage(data, fulfill)
+      become(data.withoutPartId(fulfill.ourAdd.partId), SUCCEEDED)
 
     case (CMDChanGotOnline, PENDING) =>
       data.parts.values.collectFirst {
@@ -367,7 +367,7 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listener: OutgoingP
             case _ if reject.isInstanceOf[InPrincipleNotSendable] => me abortMaybeNotify data.withoutPartId(wait.partId).withLocalFailure(PAYMENT_NOT_SENDABLE, wait.amount)
             case None if reject.isInstanceOf[ChannelOffline] => assignToChans(opm.rightNowSendable(data.cmd.allowedChans, feeLeftover), data.withoutPartId(wait.partId), wait.amount)
             case Some(otherCapableCnc) => become(data.copy(parts = data.parts + wait.oneMoreLocalAttempt(otherCapableCnc).tuple), PENDING)
-            case None => me abortMaybeNotify data.withoutPartId(wait.partId).withLocalFailure(RUN_OUT_OF_RETRY_ATTEMPTS, wait.amount)
+            case None => me abortMaybeNotify data.withoutPartId(wait.partId).withLocalFailure(RUN_OUT_OF_CAPABLE_CHANNELS, wait.amount)
           }
       }
 
@@ -537,8 +537,8 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listener: OutgoingP
   }
 
   def abortMaybeNotify(data1: OutgoingPaymentSenderData): Unit = {
-    val noLeftoversInChannels = !opm.cm.allInChannelOutgoing.contains(fullTag)
-    if (data1.inFlightParts.isEmpty && noLeftoversInChannels) listener.wholePaymentFailed(data1)
+    val isFinalized = data1.inFlightParts.isEmpty && !opm.cm.allInChannelOutgoing.contains(fullTag)
+    for (listener <- listeners if isFinalized) listener.wholePaymentFailed(data1)
     become(data1, ABORTED)
   }
 }

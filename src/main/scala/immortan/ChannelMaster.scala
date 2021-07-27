@@ -9,7 +9,6 @@ import immortan.PaymentStatus._
 import immortan.ChannelMaster._
 import fr.acinq.eclair.channel._
 import scala.concurrent.duration._
-
 import immortan.utils.{PaymentRequestExt, Rx}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -22,6 +21,7 @@ import fr.acinq.eclair.router.RouteCalculation
 import java.util.concurrent.atomic.AtomicLong
 import com.google.common.cache.LoadingCache
 import immortan.crypto.CanBeShutDown
+import scala.collection.mutable
 import rx.lang.scala.Subject
 import scala.util.Try
 
@@ -48,7 +48,6 @@ object ChannelMaster {
 
   def next(stream: Subject[Long] = null): Unit = stream.onNext(updateCounter.incrementAndGet)
   final val unknownReestablishStream: Subject[UnknownReestablish] = Subject[UnknownReestablish]
-  final val remoteFulfillStream: Subject[RemoteFulfill] = Subject[RemoteFulfill]
   final val hashRevealStream: Subject[ByteVector32] = Subject[ByteVector32]
 
   final val NO_PREIMAGE = ByteVector32.One
@@ -90,10 +89,11 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
   val getPaymentInfoMemo: LoadingCache[ByteVector32, PaymentInfoTry] = memoize(payBag.getPaymentInfo)
   val initResolveMemo: LoadingCache[UpdateAddHtlcExt, IncomingResolution] = memoize(initResolve)
   val getPreimageMemo: LoadingCache[ByteVector32, PreimageTry] = memoize(payBag.getPreimage)
+  val opm: OutgoingPaymentMaster = new OutgoingPaymentMaster(me)
 
-  val localPaymentListener: OutgoingPaymentListener = new OutgoingPaymentListener {
-    override def wholePaymentSucceeded(data: OutgoingPaymentSenderData): Unit =
-      opm process RemoveSenderFSM(data.cmd.fullTag)
+  // This is defined as mutable set so wallet implementation can append listeners of its own at runtime here
+  val localPaymentListeners: mutable.Set[OutgoingPaymentListener] = mutable.Set apply new OutgoingPaymentListener {
+    override def wholePaymentSucceeded(data: OutgoingPaymentSenderData): Unit = opm process RemoveSenderFSM(data.cmd.fullTag)
 
     override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = chanBag.db txWrap {
       // This method gets called after NO payment parts are left in system, irregardless of restarts
@@ -124,8 +124,6 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
       getPreimageMemo.invalidate(fulfill.ourAdd.paymentHash)
     }
   }
-
-  val opm: OutgoingPaymentMaster = new OutgoingPaymentMaster(me)
 
   var all = Map.empty[ByteVector32, Channel]
 
@@ -267,13 +265,13 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
   }
 
   def localSend(cmd: SendMultiPart): Unit = {
-    opm process CreateSenderFSM(cmd.fullTag, localPaymentListener)
+    opm process CreateSenderFSM(localPaymentListeners, cmd.fullTag)
     opm process ClearFailures
     opm process cmd
   }
 
   def localSendToSelf(sources: List[Channel], destinations: CommitsAndMax, preimage: ByteVector32, typicalChainTxFee: MilliSatoshi, capLNFeeToChain: Boolean): Unit = {
-    val prExt = makePrExt(maxSendable(sources).min(destinations.maxReceivable), destinations.commits, PlainDescription(split = None, label = None, new String), preimage)
+    val prExt = makePrExt(toReceive = maxSendable(sources).min(destinations.maxReceivable), destinations.commits, PlainDescription(split = None, label = None, invoiceText = new String), preimage)
     val keySendCmd = makeSendCmd(prExt, prExt.pr.amount.get, sources, typicalChainTxFee, capLNFeeToChain).copy(userCustomTlvs = GenericTlv(OnionCodecs.keySendNumber, preimage) :: Nil)
     localSend(keySendCmd)
   }
@@ -347,7 +345,7 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
     inFlightsBag.allTags.collect {
       case fullTag if PaymentTagTlv.TRAMPLOINE_ROUTED == fullTag.tag && !inProcessors.contains(fullTag) => inProcessors += new TrampolinePaymentRelayer(fullTag, me).tuple
       case fullTag if PaymentTagTlv.FINAL_INCOMING == fullTag.tag && !inProcessors.contains(fullTag) => inProcessors += new IncomingPaymentReceiver(fullTag, me).tuple
-      case fullTag if PaymentTagTlv.LOCALLY_SENT == fullTag.tag => opm process CreateSenderFSM(fullTag, localPaymentListener)
+      case fullTag if PaymentTagTlv.LOCALLY_SENT == fullTag.tag => opm process CreateSenderFSM(localPaymentListeners, fullTag)
     }
 
     // FSM exists because there were related HTLCs, none may be left now

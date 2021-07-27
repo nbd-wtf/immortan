@@ -167,7 +167,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
   }
 
   require(fullTag.tag == PaymentTagTlv.TRAMPLOINE_ROUTED)
-  cm.opm process CreateSenderFSM(fullTag, listener = self)
+  cm.opm process CreateSenderFSM(Set(self), fullTag)
   delayedCMDWorker.replaceWork(CMDTimeout)
   become(null, RECEIVING)
 

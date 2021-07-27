@@ -49,7 +49,6 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface) extends PaymentBag
 
   def updOkOutgoing(fulfill: RemoteFulfill, fee: MilliSatoshi): Unit = {
     db.change(PaymentTable.updOkOutgoingSql, fulfill.theirPreimage.toHex, fee.toLong: JLong, fulfill.ourAdd.paymentHash.toHex)
-    ChannelMaster.remoteFulfillStream.onNext(fulfill)
     ChannelMaster.next(ChannelMaster.paymentDbStream)
   }
 

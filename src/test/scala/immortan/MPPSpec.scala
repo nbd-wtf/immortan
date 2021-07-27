@@ -20,10 +20,11 @@ class MPPSpec extends AnyFunSuite {
     val desc = ChannelDesc(ShortChannelId(3L), b, d)
     val capacity = 2000000L.msat
     val failedAt = 200000L.msat
-    val fail = Map(DescAndCapacity(desc,capacity) -> StampedChannelFailed(failedAt, System.currentTimeMillis))
+    val stamp = System.currentTimeMillis
+    val fail = Map(DescAndCapacity(desc,capacity) -> StampedChannelFailed(failedAt, stamp))
     val data1 = OutgoingPaymentMasterData(payments = Map.empty, chanFailedAtAmount = fail)
-    assert(data1.withFailuresReduced(System.currentTimeMillis + 150 * 1000L).chanFailedAtAmount.head._2.amount == failedAt + (capacity - failedAt) / 2)
-    assert(data1.withFailuresReduced(System.currentTimeMillis + 300 * 1000L).chanFailedAtAmount.isEmpty)
+    assert(data1.withFailuresReduced(stamp + 150 * 1000L).chanFailedAtAmount.head._2.amount == failedAt + (capacity - failedAt) / 2)
+    assert(data1.withFailuresReduced(stamp + 300 * 1000L).chanFailedAtAmount.isEmpty)
   }
 
   test("Split between direct and non-direct channel") {
@@ -60,11 +61,11 @@ class MPPSpec extends AnyFunSuite {
     val send = SendMultiPart(tag, Left(CltvExpiry(9)), SplitInfo(190000000L.msat, 190000000L.msat), routerConf,
       targetNodeId = a, totalFeeReserve = 1900000L.msat, allowedChans = cm.all.values.toSeq)
 
-    cm.opm process CreateSenderFSM(tag, noopListener) // Create since FSM is missing
-    cm.opm process CreateSenderFSM(tag, null) // Disregard since FSM will be present
+    cm.opm process CreateSenderFSM(Set(noopListener), tag) // Create since FSM is missing
+    cm.opm process CreateSenderFSM(null, tag) // Disregard since FSM will be present
 
     // First created FSM has been retained
-    WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).listener == noopListener)
+    WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).listeners.head == noopListener)
     // Suppose this time we attempt a send when all channels are connected already
     cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
 
@@ -104,7 +105,7 @@ class MPPSpec extends AnyFunSuite {
     val send = SendMultiPart(tag, Left(CltvExpiry(9)), SplitInfo(600000L.msat, 600000L.msat), routerConf, targetNodeId = s,
       totalFeeReserve = 6000L.msat, allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
-    cm.opm process CreateSenderFSM(tag, noopListener)
+    cm.opm process CreateSenderFSM(Set(noopListener), tag)
     cm.opm process send
 
     // Our only channel is offline, sender FSM awaits for it to become operational
@@ -157,11 +158,11 @@ class MPPSpec extends AnyFunSuite {
 
     // Payment is going to be split in two, both of them will fail locally
     cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
-    cm.opm process CreateSenderFSM(tag, failedListener)
+    cm.opm process CreateSenderFSM(Set(failedListener), tag)
     cm.opm process send
 
     WAIT_UNTIL_TRUE(senderDataWhenFailed.size == 1) // We have got exactly one failure event
-    assert(senderDataWhenFailed.head.failures.head.asInstanceOf[LocalFailure].status == PaymentFailure.RUN_OUT_OF_RETRY_ATTEMPTS)
+    assert(senderDataWhenFailed.head.failures.head.asInstanceOf[LocalFailure].status == PaymentFailure.RUN_OUT_OF_CAPABLE_CHANNELS)
     assert(senderDataWhenFailed.head.inFlightParts.isEmpty)
   }
 
@@ -180,7 +181,7 @@ class MPPSpec extends AnyFunSuite {
     val send = SendMultiPart(tag, Left(CltvExpiry(9)), SplitInfo(400000L.msat, 400000L.msat), routerConf, targetNodeId = s,
       totalFeeReserve = 6000L.msat, allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
-    cm.opm process CreateSenderFSM(tag, noopListener)
+    cm.opm process CreateSenderFSM(Set(noopListener), tag)
     cm.opm process send
 
     // The only channel has been chosen because it is OPEN, but graph is not ready yet
@@ -234,11 +235,11 @@ class MPPSpec extends AnyFunSuite {
     // B -> D channel is now unable to handle the first split, but still usable for second split
     cm.opm.data = cm.opm.data.copy(chanFailedAtAmount = Map(DescAndCapacity(desc, Long.MaxValue.msat) -> StampedChannelFailed(200000L.msat, System.currentTimeMillis)))
 
-    cm.opm process CreateSenderFSM(tag, noopListener) // Create since FSM is missing
-    cm.opm process CreateSenderFSM(tag, null) // Disregard since FSM will be present
+    cm.opm process CreateSenderFSM(Set(noopListener), tag) // Create since FSM is missing
+    cm.opm process CreateSenderFSM(null, tag) // Disregard since FSM will be present
 
     // First created FSM has been retained
-    WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).listener == noopListener)
+    WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).listeners.head == noopListener)
     // Suppose this time we attempt a send when all channels are connected already
     cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
 
@@ -281,11 +282,11 @@ class MPPSpec extends AnyFunSuite {
       override def wholePaymentSucceeded(data: OutgoingPaymentSenderData): Unit = cm.opm process RemoveSenderFSM(data.cmd.fullTag)
     }
 
-    cm.opm process CreateSenderFSM(tag, listener) // Create since FSM is missing
-    cm.opm process CreateSenderFSM(tag, null) // Disregard since FSM will be present
+    cm.opm process CreateSenderFSM(Set(listener), tag) // Create since FSM is missing
+    cm.opm process CreateSenderFSM(null, tag) // Disregard since FSM will be present
 
     // First created FSM has been retained
-    WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).listener == listener)
+    WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).listeners.head == listener)
     // Suppose this time we attempt a send when all channels are connected already
     cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
 
@@ -338,13 +339,13 @@ class MPPSpec extends AnyFunSuite {
     val send3 = SendMultiPart(tag3, Left(CltvExpiry(9)), SplitInfo(200000L.msat, 200000L.msat), routerConf, targetNodeId = s,
       totalFeeReserve = 6000L.msat, allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
 
-    cm.opm process CreateSenderFSM(tag1, noopListener)
+    cm.opm process CreateSenderFSM(Set(noopListener), tag1)
     cm.opm process send1
 
-    cm.opm process CreateSenderFSM(tag2, noopListener)
+    cm.opm process CreateSenderFSM(Set(noopListener), tag2)
     cm.opm process send2
 
-    cm.opm process CreateSenderFSM(tag3, noopListener)
+    cm.opm process CreateSenderFSM(Set(noopListener), tag3)
     cm.opm process send3
 
     WAIT_UNTIL_TRUE {
@@ -384,7 +385,7 @@ class MPPSpec extends AnyFunSuite {
       override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = senderDataWhenFailed ::= data
     }
 
-    cm.opm process CreateSenderFSM(tag, listener)
+    cm.opm process CreateSenderFSM(Set(listener), tag)
     cm.opm process send
 
     WAIT_UNTIL_TRUE {
@@ -429,7 +430,7 @@ class MPPSpec extends AnyFunSuite {
 
     // Payment is going to be split in two, both of them will fail locally
     cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
-    cm.opm process CreateSenderFSM(tag, failedListener)
+    cm.opm process CreateSenderFSM(Set(failedListener), tag)
     cm.opm process send
 
     WAIT_UNTIL_TRUE {
@@ -453,7 +454,7 @@ class MPPSpec extends AnyFunSuite {
     val send = SendMultiPart(tag, Left(CltvExpiry(9)), SplitInfo(600000L.msat, 600000L.msat), routerConf, targetNodeId = d,
       totalFeeReserve = 6000L.msat, allowedChans = cm.all.values.toSeq)
 
-    cm.opm process CreateSenderFSM(tag, noopListener)
+    cm.opm process CreateSenderFSM(Set(noopListener), tag)
     // Suppose this time we attempt a send when all channels are connected already
     cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
 
