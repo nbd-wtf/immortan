@@ -1,19 +1,3 @@
-/*
- * Copyright 2019 ACINQ SAS
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package fr.acinq.eclair.router
 
 import fr.acinq.eclair._
@@ -37,7 +21,7 @@ case class ChannelUpdateExt(update: ChannelUpdate, crc32: Long, score: Long, use
 object Router {
   case class ChannelDesc(shortChannelId: ShortChannelId, from: PublicKey, to: PublicKey)
 
-  case class RouterConf(initRouteMaxLength: Int, initCltvMaxDelta: CltvExpiryDelta, maxChannelFailures: Int = 3, maxStrangeNodeFailures: Int = 6, maxRemoteAttempts: Int = 10)
+  case class RouterConf(initRouteMaxLength: Int, initCltvMaxDelta: CltvExpiryDelta = CltvExpiryDelta(2016), maxChannelFailures: Int = 4, maxStrangeNodeFailures: Int = 6, maxRemoteAttempts: Int = 6)
 
   case class PublicChannel(update1Opt: Option[ChannelUpdateExt], update2Opt: Option[ChannelUpdateExt], ann: ChannelAnnouncement) {
     def getChannelUpdateSameSideAs(cu: ChannelUpdate): Option[ChannelUpdateExt] = if (cu.position == ChannelUpdate.POSITION1NODE) update1Opt else update2Opt
@@ -82,7 +66,7 @@ object Router {
 
     def getEdgeForNode(nodeId: PublicKey): Option[GraphEdge] = routedPerChannelHop.collectFirst { case (_, chanHop: ChannelHop) if nodeId == chanHop.nodeId => chanHop.edge }
 
-    def asString(denom: Denomination): String = routedPerHop.collect { case (_, hop) => hop.toString }.mkString(s"${weight.costs.head} -> ", " -> ", s" -> ${weight.costs.last}, route fee: $fee")
+    def asString: String = routedPerHop.collect { case (_, hop) => hop.toString }.mkString(s"${weight.costs.head} -> ", " -> ", s" -> ${weight.costs.last}, route fee: $fee")
 
     require(hops.nonEmpty, "Route cannot be empty")
   }

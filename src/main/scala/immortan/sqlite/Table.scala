@@ -336,33 +336,37 @@ object ElectrumHeadersTable extends Table {
 }
 
 object PayMarketTable extends Table {
-  val (table, search, lnurl, meta, lastMsat, lastDate, lastHash, lastComment, label) =
-    ("paymarket", "search", "lnurl", "meta", "lastmsat", "lastdate", "lasthash", "lastcomment", "label")
+  val (table, search, domain, lnurlPay, nextLnurlWithdraw, meta, lastMsat, lastDate, lastHash, lastBalance, lastComment, label) =
+    ("paymarket", "search", "domain", "lnurlpay", "nextlnurlwithdraw", "meta", "lastmsat", "lastdate", "lasthash", "lastbalance", "lastcomment", "label")
 
-  val newSql = s"INSERT OR IGNORE INTO $table ($lnurl, $meta, $lastMsat, $lastDate, $lastHash, $lastComment, $label) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  val newSql = s"INSERT OR IGNORE INTO $table ($domain, $lnurlPay, $nextLnurlWithdraw, $meta, $lastMsat, $lastDate, $lastHash, $lastBalance, $lastComment, $label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
-  val newVirtualSql = s"INSERT INTO $fts$table ($search, $lnurl) VALUES (?, ?)"
+  val newVirtualSql = s"INSERT INTO $fts$table ($search, $domain) VALUES (?, ?)"
 
   val selectRecentSql = s"SELECT * FROM $table ORDER BY $lastDate DESC LIMIT ?"
 
-  val searchSql = s"SELECT * FROM $table WHERE $lnurl IN (SELECT $lnurl FROM $fts$table WHERE $search MATCH ?) LIMIT 50"
+  val searchSql = s"SELECT * FROM $table WHERE $domain IN (SELECT $domain FROM $fts$table WHERE $search MATCH ?) LIMIT 50"
 
-  val updInfoSql = s"UPDATE $table SET $meta = ?, $lastMsat = ?, $lastDate = ?, $lastHash = ?, $lastComment = ? WHERE $lnurl = ?"
+  val updPayInfoSql = s"UPDATE $table SET $meta = ?, $lastMsat = ?, $lastDate = ?, $lastHash = ?, $lastComment = ? WHERE $domain = ? AND $lnurlPay = ?"
 
-  val updLabelSql = s"UPDATE $table SET $label = ? WHERE $lnurl = ?"
+  val updWithdrawInfoSql = s"UPDATE $table SET $nextLnurlWithdraw = ?, $lastMsat = ?, $lastDate = ?, $lastHash = ? WHERE $domain = ? AND $nextLnurlWithdraw = ?"
 
-  val killSql = s"DELETE FROM $table WHERE $lnurl = ?"
+  val updBalanceSql = s"UPDATE $table SET $lastBalance = ? WHERE $domain = ? AND ($lnurlPay = ? OR $nextLnurlWithdraw = ?)"
+
+  val updLabelSql = s"UPDATE $table SET $label = ? WHERE $domain = ? AND ($lnurlPay = ? OR $nextLnurlWithdraw = ?)"
+
+  val killSql = s"DELETE FROM $table WHERE $domain = ? AND ($lnurlPay = ? OR $nextLnurlWithdraw = ?)"
 
   def createStatements: Seq[String] = {
     val createTable = s"""CREATE TABLE IF NOT EXISTS $table(
-      $IDAUTOINC, $lnurl STRING NOT NULL $UNIQUE, $meta STRING NOT NULL,
-      $lastMsat INTEGER NOT NULL, $lastDate INTEGER NOT NULL, $lastHash STRING NOT NULL,
-      $lastComment STRING NOT NULL, $label STRING NOT NULL
+      $IDAUTOINC, $domain STRING NOT NULL, $lnurlPay STRING NOT NULL, $nextLnurlWithdraw STRING NOT NULL,
+      $meta STRING NOT NULL, $lastMsat INTEGER NOT NULL, $lastDate INTEGER NOT NULL, $lastHash STRING NOT NULL,
+      $lastBalance STRING NOT NULL, $lastComment STRING NOT NULL, $label STRING NOT NULL
     )"""
 
-    // Payment links are searchable by their text descriptions (text metadata + domain name)
-    val addIndex1 = s"CREATE VIRTUAL TABLE IF NOT EXISTS $fts$table USING $fts($search, $lnurl)"
-    val addIndex2 = s"CREATE INDEX IF NOT EXISTS idx1$table ON $table ($lastDate)"
-    createTable :: addIndex1 :: addIndex2 :: Nil
+    val addIndex1 = s"CREATE VIRTUAL TABLE IF NOT EXISTS $fts$table USING $fts($search, $domain)"
+    val addIndex2 = s"CREATE UNIQUE INDEX IF NOT EXISTS idx2$table ON $table ($domain, $lnurlPay, $nextLnurlWithdraw)"
+    val addIndex3 = s"CREATE INDEX IF NOT EXISTS idx3$table ON $table ($lastDate)"
+    createTable :: addIndex1 :: addIndex2 :: addIndex3 :: Nil
   }
 }

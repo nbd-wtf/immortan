@@ -97,8 +97,7 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
 
     override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = chanBag.db txWrap {
       // This method gets called after NO payment parts are left in system, irregardless of restarts
-      val failureReport = data.failuresAsString(LNParams.denomination)
-      dataBag.putReport(data.cmd.fullTag.paymentHash, failureReport)
+      dataBag.putReport(data.cmd.fullTag.paymentHash, data.failuresAsString)
       payBag.updAbortedOutgoing(data.cmd.fullTag.paymentHash)
       opm process RemoveSenderFSM(data.cmd.fullTag)
     }
@@ -112,8 +111,7 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
 
         if (data.inFlightParts.nonEmpty) {
           // Sender FSM won't have in-flight parts after restart
-          val usedRoutesReport = data.usedRoutesAsString(LNParams.denomination)
-          dataBag.putReport(fulfill.ourAdd.paymentHash, usedRoutesReport)
+          dataBag.putReport(fulfill.ourAdd.paymentHash, data.usedRoutesAsString)
           // We only increment scores for normal channels, never for HCs
           data.successfulUpdates.foreach(pf.normalBag.incrementScore)
         }
@@ -259,7 +257,7 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
 
     val hash = Crypto.sha256(preimage)
     val invoiceKey = LNParams.secret.keys.fakeInvoiceKey(hash)
-    val hops = allowedChans.map(_.commits.updateOpt).zip(allowedChans).collect { case Some(upd) ~ cnc => upd.extraHop(cnc.commits.remoteInfo.nodeId) :: Nil }
+    val hops = allowedChans.map(_.commits.updateOpt).zip(allowedChans).collect { case Some(update) ~ cnc => update.extraHop(cnc.commits.remoteInfo.nodeId) :: Nil }
     val pr = PaymentRequest(LNParams.chainHash, Some(toReceive), hash, invoiceKey, description.invoiceText, LNParams.incomingFinalCltvExpiry, hops.toList)
     PaymentRequestExt.from(pr)
   }

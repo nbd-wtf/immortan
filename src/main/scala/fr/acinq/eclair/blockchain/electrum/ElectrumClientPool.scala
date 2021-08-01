@@ -39,15 +39,9 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(implic
   val addresses = collection.mutable.Map.empty[ActorRef, InetSocketAddress]
   val statusListeners = collection.mutable.HashSet.empty[ActorRef]
 
-  // on startup, we attempt to connect to a number of electrum clients
-  // they will send us an `ElectrumReady` message when they're connected, or
-  // terminate if they cannot connect
-  (0 until LNParams.maxChainConnectionsCount).foreach(_ => self ! Connect)
+  (0 until Math.min(LNParams.maxChainConnectionsCount, serverAddresses.size)).foreach(_ => self ! Connect)
 
-  log.debug("starting electrum pool with serverAddresses={}", serverAddresses)
-
-  // custom supervision strategy: always stop Electrum clients when there's a problem, we will automatically reconnect
-  // to another client
+  // Always stop Electrum clients when there's a problem, we will automatically reconnect to another client
   override def supervisorStrategy: SupervisorStrategy = OneForOneStrategy(loggingEnabled = true) {
     case _ => SupervisorStrategy.stop
   }
@@ -190,7 +184,6 @@ object ElectrumClientPool {
     val JObject(values) = JsonMethods.parse(stream)
     val addresses = values
       .toMap
-      .filterKeys(!_.endsWith(".onion"))
       .flatMap {
         case (name, fields)  =>
           if (sslEnabled) {
@@ -213,15 +206,8 @@ object ElectrumClientPool {
     stream.close()
   }
 
-  /**
-    *
-    * @param serverAddresses all addresses to choose from
-    * @param usedAddresses current connections
-    * @return a random address that we're not connected to yet
-    */
-  def pickAddress(serverAddresses: Set[ElectrumServerAddress], usedAddresses: Set[InetSocketAddress]): Option[ElectrumServerAddress] = {
-    Random.shuffle(serverAddresses.filterNot(a => usedAddresses.contains(a.address)).toSeq).headOption
-  }
+  def pickAddress(serverAddresses: Set[ElectrumServerAddress], usedAddresses: Set[InetSocketAddress] = Set.empty): Option[ElectrumServerAddress] =
+    Random.shuffle(serverAddresses.filterNot(usedAddresses contains _.address).toSeq).headOption
 
   sealed trait State
   case object Disconnected extends State

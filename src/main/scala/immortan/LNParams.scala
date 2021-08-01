@@ -75,7 +75,6 @@ object LNParams {
   var routerConf: RouterConf = _
   var syncParams: SyncParams = _
   var trampoline: TrampolineOn = _
-  var denomination: Denomination = _
   var fiatRates: FiatRates = _
   var feeRates: FeeRates = _
 
@@ -83,9 +82,9 @@ object LNParams {
   val blockCount: AtomicLong = new AtomicLong(0L)
 
   def isOperational: Boolean =
-    null != chainHash && null != secret && null != chainWallets && null != syncParams &&
-      null != trampoline && null != fiatRates && null != feeRates && null != denomination &&
-      null != cm && null != cm.inProcessors && null != cm.sendTo && null != routerConf && null != ourInit
+    null != chainHash && null != secret && null != chainWallets && null != syncParams && null != trampoline &&
+      null != fiatRates && null != feeRates && null != cm && null != cm.inProcessors && null != cm.sendTo &&
+      null != routerConf && null != ourInit
 
   implicit val timeout: Timeout = Timeout(30.seconds)
   implicit val system: ActorSystem = ActorSystem("immortan-actor-system")
@@ -152,11 +151,11 @@ class SyncParams {
   val phcSyncNodes: Set[RemoteNodeInfo] = Set.empty // Semi-trusted PHC-enabled nodes which can be used as seeds for PHC sync
 
   val maxPHCCapacity: MilliSatoshi = MilliSatoshi(1000000000000000L) // PHC can not be larger than 10 000 BTC
-  val minPHCCapacity: MilliSatoshi = MilliSatoshi(50000000000L) // PHC can not be smaller than 0.5 BTC
+  val minPHCCapacity: MilliSatoshi = MilliSatoshi(5000000000L) // PHC can not be smaller than 0.05 BTC
   val minNormalChansForPHC = 5 // How many normal chans a node must have to be eligible for PHCs
   val maxPHCPerNode = 2 // How many PHCs a node can have in total
 
-  val minCapacity: MilliSatoshi = MilliSatoshi(500000000L) // 500k sat
+  val minCapacity: MilliSatoshi = MilliSatoshi(750000000L) // 750k sat
   val maxNodesToSyncFrom = 3 // How many disjoint peers to use for majority sync
   val acceptThreshold = 1 // ShortIds and updates are accepted if confirmed by more than this peers
   val messagesToAsk = 500 // Ask for this many messages from peer before they say this chunk is done
@@ -169,6 +168,7 @@ class TestNetSyncParams extends SyncParams {
   val localhost: RemoteNodeInfo = RemoteNodeInfo(PublicKey(hex"038d5cdea665f68e597da00ae0612238bd30a06bdf08d34fa9af783b1f1b3ba9b7"), NodeAddress.unresolved(9735, host = 10, 0, 2, 2), "localhost")
   override val syncNodes: Set[RemoteNodeInfo] = Set(endurance, localhost, sbw)
   override val phcSyncNodes: Set[RemoteNodeInfo] = Set(localhost, sbw)
+  override val minCapacity: MilliSatoshi = MilliSatoshi(250000000L)
   override val minNormalChansForPHC = 1
   override val maxNodesToSyncFrom = 1
   override val acceptThreshold = 0

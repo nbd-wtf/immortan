@@ -8,9 +8,9 @@ import immortan.utils.PaymentUtils._
 import immortan.utils.ChannelUtils._
 import fr.acinq.bitcoin.{Block, Crypto}
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentRequest}
-import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteUpdateFail}
+import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteUpdateFail, RemoteUpdateMalform}
 import immortan.fsm.{IncomingPaymentProcessor, OutgoingPaymentMaster, TrampolinePaymentRelayer, TrampolineRevealed, TrampolineStopping}
-import fr.acinq.eclair.wire.{FullPaymentTag, PaymentTagTlv, PaymentTimeout, TemporaryNodeFailure, TrampolineFeeInsufficient, TrampolineOn, UpdateAddHtlc, UpdateFailHtlc}
+import fr.acinq.eclair.wire.{FullPaymentTag, PaymentTagTlv, PaymentTimeout, TemporaryNodeFailure, TrampolineFeeInsufficient, TrampolineOn, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc}
 import fr.acinq.eclair.payment.IncomingPacket.FinalPacket
 import org.scalatest.funsuite.AnyFunSuite
 import immortan.sqlite.Table
@@ -321,7 +321,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   test("Restart after first fail, wind down on second fail") {
     LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     LNParams.trampoline = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0.97D, logExponent = 3.9D, CltvExpiryDelta(72))
-    LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
+    LNParams.routerConf = routerConf.copy(maxRemoteAttempts = 0) // Replace with the one which allows for smaller parts
 
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
@@ -358,8 +358,8 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     // User has removed an outgoing HC meanwhile
     cm.all = Map.empty
 
-    cm.opm process RemoteUpdateFail(UpdateFailHtlc(out1.channelId, out1.id, randomBytes32.bytes), out1)
-    cm.opm process RemoteUpdateFail(UpdateFailHtlc(out2.channelId, out2.id, randomBytes32.bytes), out2)
+    cm.opm process RemoteUpdateMalform(UpdateFailMalformedHtlc(out1.channelId, out1.id, randomBytes32, failureCode = 1), out1)
+    cm.opm process RemoteUpdateFail(UpdateFailHtlc(out2.channelId, out2.id, randomBytes32.bytes), out2)// Finishes it
     WAIT_UNTIL_TRUE(fsm.data == null && fsm.state == IncomingPaymentProcessor.RECEIVING)
 
     // All outgoing parts have been cleared, but we still have incoming parts and maybe can try again (unless CLTV delta has expired)
@@ -411,9 +411,9 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     // User has removed an outgoing HC meanwhile
     cm.all = Map.empty
 
-    cm.opm process RemoteUpdateFail(UpdateFailHtlc(out1.channelId, out1.id, randomBytes32.bytes), out1)
+    cm.opm process RemoteUpdateMalform(UpdateFailMalformedHtlc(out1.channelId, out1.id, randomBytes32, failureCode = 1), out1)
     cm.opm process RemoteUpdateFail(UpdateFailHtlc(out1.channelId, out1.id, randomBytes32.bytes), out1) // Noisy event
-    cm.opm process RemoteUpdateFail(UpdateFailHtlc(out2.channelId, out2.id, randomBytes32.bytes), out2)
+    cm.opm process RemoteUpdateFail(UpdateFailHtlc(out2.channelId, out2.id, randomBytes32.bytes), out2) // Finishes it
 
     var replies = List.empty[Any]
     cm.sendTo = (change, _) => replies ::= change

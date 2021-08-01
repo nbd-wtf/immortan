@@ -130,7 +130,8 @@ case class HostedChannelRequest(uri: String, alias: Option[String], k1: String) 
 
 // LNURL-WITHDRAW
 
-case class WithdrawRequest(callback: String, k1: String, maxWithdrawable: Long, defaultDescription: String, minWithdrawable: Option[Long] = None) extends LNUrlData { me =>
+case class WithdrawRequest(callback: String, k1: String, maxWithdrawable: Long, defaultDescription: String, minWithdrawable: Option[Long],
+                           balance: Option[Long] = None, balanceCheck: Option[String] = None, payLink: Option[String] = None) extends LNUrlData { me =>
 
   def requestWithdraw(ext: PaymentRequestExt): Observable[String] = LNUrl.level2DataResponse {
     callbackUri.buildUpon.appendQueryParameter("pr", ext.raw).appendQueryParameter("k1", k1)
@@ -142,8 +143,14 @@ case class WithdrawRequest(callback: String, k1: String, maxWithdrawable: Long, 
 
   val minCanReceive: MilliSatoshi = minWithdrawable.map(_.msat).getOrElse(LNParams.minPayment).max(LNParams.minPayment)
 
+  val nextWithdrawRequestOpt: Option[LNUrl] = balanceCheck.map(LNUrl.apply)
+
+  val relatedPayLinkOpt: Option[LNUrl] = payLink.map(LNUrl.apply)
+
   val descriptionOpt: Option[String] = Some(defaultDescription).map(trimmed).filter(_.nonEmpty)
+
   val brDescription: String = descriptionOpt.map(desc => s"<br><br>$desc").getOrElse(new String)
+
   val descriptionOrEmpty: String = descriptionOpt.getOrElse(new String)
 
   require(minCanReceive <= maxWithdrawable.msat, s"$maxWithdrawable is less than min $minCanReceive")
@@ -181,7 +188,8 @@ case class PayRequestMeta(records: TagsAndContents) {
   } yield content
 }
 
-case class PayRequest(callback: String, maxSendable: Long, minSendable: Long, metadata: String, commentAllowed: Option[Int] = None) extends LNUrlData { me =>
+case class PayRequest(callback: String, maxSendable: Long, minSendable: Long, metadata: String,
+                      withdrawLink: Option[String], commentAllowed: Option[Int] = None) extends LNUrlData {
 
   def requestFinal(comment: Option[String], amount: MilliSatoshi): Observable[String] = LNUrl.level2DataResponse {
     val base: Uri.Builder = callbackUri.buildUpon.appendQueryParameter("amount", amount.toLong.toString)
@@ -191,6 +199,8 @@ case class PayRequest(callback: String, maxSendable: Long, minSendable: Long, me
   override def checkAgainstParent(lnUrl: LNUrl): Boolean = lnUrl.uri.getHost == callbackUri.getHost
 
   def metaDataHash: ByteVector32 = Crypto.sha256(ByteVector view metadata.getBytes)
+
+  val relatedWithdrawLinkOpt: Option[LNUrl] = withdrawLink.map(LNUrl.apply)
 
   val callbackUri: Uri = LNUrl.checkHost(callback)
 

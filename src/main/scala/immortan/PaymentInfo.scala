@@ -35,23 +35,27 @@ sealed trait TransactionDetails {
   def seenAt: Long
 }
 
-case class PayLinkInfo(lnurlString: String, metaString: String, lastMsat: MilliSatoshi, lastDate: Long, lastCommentString: String, labelString: String) extends TransactionDetails {
+case class PayLinkInfo(domain: String, payString: String, nextWithdrawString: String, metaString: String,
+                       lastMsat: MilliSatoshi, lastDate: Long, lastBalanceLong: Long, lastCommentString: String,
+                       labelString: String) extends TransactionDetails {
+
+  override val identity: String = domain + payString // Withdraw part may change, but domain + pay part always stays stable
   override val seenAt: Long = System.currentTimeMillis + lastDate // To make it always appear on top in timestamp-sorted lists on UI
   override val date: Date = new Date(lastDate) // To display real date of last usage in lists on UI
-  override val identity: String = lnurlString
-
-  lazy val meta: PayRequestMeta = {
-    val records = to[PayRequest.TagsAndContents](metaString)
-    PayRequestMeta(records)
-  }
 
   lazy val label: Option[String] = Option(labelString).filter(_.nonEmpty)
 
   lazy val lastComment: Option[String] = Option(lastCommentString).filter(_.nonEmpty)
 
-  lazy val imageBytesTry: Try[Bytes] = Try(Base64 decode meta.imageBase64s.head)
+  lazy val payLink: Option[LNUrl] = Try(payString).map(LNUrl.apply).toOption
 
-  lazy val lnurlLink: LNUrl = LNUrl(lnurlString)
+  lazy val nextWithdrawLink: Option[LNUrl] = Try(nextWithdrawString).map(LNUrl.apply).toOption
+
+  lazy val meta: PayRequestMeta = PayRequestMeta(Try(metaString) map to[PayRequest.TagsAndContents] getOrElse Nil)
+
+  lazy val lastBalance: Option[MilliSatoshi] = Option(lastBalanceLong).filter(0.>=).map(MilliSatoshi.apply)
+
+  lazy val imageBytes: Option[Bytes] = Try(Base64 decode meta.imageBase64s.head).toOption
 }
 
 case class DelayedRefunds(txToParent: Map[Transaction, TxConfirmedAtOpt], seenAt: Long = Long.MaxValue) extends TransactionDetails {
