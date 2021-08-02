@@ -47,7 +47,6 @@ object ChannelMaster {
   final val txDbStream: Subject[Long] = Subject[Long]
 
   def next(stream: Subject[Long] = null): Unit = stream.onNext(updateCounter.incrementAndGet)
-  final val unknownReestablishStream: Subject[UnknownReestablish] = Subject[UnknownReestablish]
   final val hashRevealStream: Subject[ByteVector32] = Subject[ByteVector32]
 
   final val NO_PREIMAGE = ByteVector32.One
@@ -137,7 +136,6 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
 
   override def onMessage(worker: CommsTower.Worker, message: LightningMessage): Unit = message match {
     case msg: Fail if msg.channelId == ByteVector32.Zeroes => allFromNode(worker.info.nodeId).foreach(_.chan process msg)
-    case msg: ChannelReestablish if !all.contains(msg.channelId) => unknownReestablishStream onNext UnknownReestablish(worker, msg)
     case msg: ChannelUpdate => allFromNode(worker.info.nodeId).foreach(_.chan process msg)
     case msg: HasChannelId => sendTo(msg, msg.channelId)
     case _ => // Do nothing

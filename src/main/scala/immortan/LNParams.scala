@@ -186,10 +186,6 @@ case class WalletSecret(keys: LightningNodeKeys, mnemonic: List[String], seed: B
 case class UpdateAddHtlcExt(theirAdd: UpdateAddHtlc, remoteInfo: RemoteNodeInfo)
 case class SwapInStateExt(state: SwapInState, nodeId: PublicKey)
 
-case class UnknownReestablish(worker: CommsTower.Worker, reestablish: ChannelReestablish) {
-  def sendFailExpectClose: Unit = worker.handler process Fail(reestablish.channelId, "please publish your local commitment")
-}
-
 // Interfaces
 
 trait NetworkBag {
