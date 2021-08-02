@@ -81,9 +81,8 @@ case class Blockchain(chainHash: ByteVector32,
 }
 
 object Blockchain {
-
   val RETARGETING_PERIOD = 2016 // on bitcoin, the difficulty re-targeting period is 2016 blocks
-  val MAX_REORG = 144 // we assume that there won't be a reorg of more than 144 blocks
+  val MAX_REORG = 72 // we assume that there won't be a reorg of more than 72 blocks
 
   /**
     *

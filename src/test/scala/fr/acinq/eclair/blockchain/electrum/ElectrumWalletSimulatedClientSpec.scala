@@ -177,14 +177,14 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(100000.sat, ewt.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
     wallet ! GetScriptHashHistoryResponse(scriptHash, TransactionHistoryItem(2, tx.txid) :: Nil)
 
-    // wallet will generate a new address and the corresponding subscription
-    client.expectMsgType[ScriptHashSubscription]
-
     while (listener.msgAvailable) {
       listener.receiveOne(100.milliseconds)
     }
 
     client.expectMsg(GetTransaction(tx.txid))
+
+
+
     wallet ! GetTransactionResponse(tx, None)
     // we think we have some unconfirmed funds
     assert(listener.expectMsgType[TransactionReceived].received == 100000.sat)
@@ -203,6 +203,10 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
           TestActor.KeepRunning
       }
     })
+
+    // wallet will generate a new address and the corresponding subscription
+    client.expectMsgType[ScriptHashSubscription]
+
     probe.send(wallet, GetMerkleResponse(tx.txid, ByteVector32(ByteVector.fill(32)(1)) :: Nil, 2, 0, None))
     watcher.expectTerminated(probe.ref)
     awaitCond(chainSync.stateName == ElectrumWallet.DISCONNECTED)

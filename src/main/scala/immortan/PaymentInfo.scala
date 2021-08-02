@@ -35,9 +35,9 @@ sealed trait TransactionDetails {
   def seenAt: Long
 }
 
-case class PayLinkInfo(domain: String, payString: String, nextWithdrawString: String, metaString: String,
-                       lastMsat: MilliSatoshi, lastDate: Long, lastBalanceLong: Long, lastCommentString: String,
-                       labelString: String) extends TransactionDetails {
+case class LNUrlLinkInfo(domain: String, locator: String, payString: String, nextWithdrawString: String, payMetaString: String, lastMsat: MilliSatoshi,
+                         lastDate: Long, lastHashString: String, lastPayNodeIdString: String, lastBalanceLong: Long, lastPayCommentString: String,
+                         labelString: String) extends TransactionDetails {
 
   override val identity: String = domain + payString // Withdraw part may change, but domain + pay part always stays stable
   override val seenAt: Long = System.currentTimeMillis + lastDate // To make it always appear on top in timestamp-sorted lists on UI
@@ -45,17 +45,17 @@ case class PayLinkInfo(domain: String, payString: String, nextWithdrawString: St
 
   lazy val label: Option[String] = Option(labelString).filter(_.nonEmpty)
 
-  lazy val lastComment: Option[String] = Option(lastCommentString).filter(_.nonEmpty)
+  lazy val lastComment: Option[String] = Option(lastPayCommentString).filter(_.nonEmpty)
 
   lazy val payLink: Option[LNUrl] = Try(payString).map(LNUrl.apply).toOption
 
   lazy val nextWithdrawLink: Option[LNUrl] = Try(nextWithdrawString).map(LNUrl.apply).toOption
 
-  lazy val meta: PayRequestMeta = PayRequestMeta(Try(metaString) map to[PayRequest.TagsAndContents] getOrElse Nil)
+  lazy val payMetaData: Try[PayRequestMeta] = Try(payMetaString) map to[PayRequest.TagsAndContents] map PayRequestMeta
 
-  lazy val lastBalance: Option[MilliSatoshi] = Option(lastBalanceLong).filter(0.>=).map(MilliSatoshi.apply)
+  lazy val lastBalance: Option[MilliSatoshi] = Option(lastBalanceLong).filter(0L.>=).map(MilliSatoshi.apply)
 
-  lazy val imageBytes: Option[Bytes] = Try(Base64 decode meta.imageBase64s.head).toOption
+  lazy val imageBytes: Option[Bytes] = payMetaData.map(_.imageBase64s.head).map(Base64.decode).toOption
 }
 
 case class DelayedRefunds(txToParent: Map[Transaction, TxConfirmedAtOpt], seenAt: Long = Long.MaxValue) extends TransactionDetails {

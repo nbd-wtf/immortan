@@ -335,11 +335,12 @@ object ElectrumHeadersTable extends Table {
   def createStatements: Seq[String] = s"CREATE TABLE IF NOT EXISTS $table($IDAUTOINC, $height INTEGER NOT NULL $UNIQUE, $blockHash TEXT NOT NULL, $header BLOB NOT NULL)" :: Nil
 }
 
-object PayMarketTable extends Table {
-  val (table, search, domain, lnurlPay, nextLnurlWithdraw, meta, lastMsat, lastDate, lastHash, lastBalance, lastComment, label) =
-    ("paymarket", "search", "domain", "lnurlpay", "nextlnurlwithdraw", "meta", "lastmsat", "lastdate", "lasthash", "lastbalance", "lastcomment", "label")
+object LNUrlTable extends Table {
+  val (table, search, domain, locator, lnurlPay, nextLnurlWithdraw, payMeta, lastMsat, lastDate, lastHash, lastPayNodeId, lastBalance, lastPayComment, label) =
+    ("lnurl", "search", "domain", "locator", "lnurlpay", "nextlnurlwithdraw", "paymeta", "lastmsat", "lastdate", "lasthash", "lastpaynodeid", "lastbalance", "lastcomment", "label")
 
-  val newSql = s"INSERT OR IGNORE INTO $table ($domain, $lnurlPay, $nextLnurlWithdraw, $meta, $lastMsat, $lastDate, $lastHash, $lastBalance, $lastComment, $label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  private val insert12 = s"$domain, $locator, $lnurlPay, $nextLnurlWithdraw, $payMeta, $lastMsat, $lastDate, $lastHash, $lastPayNodeId, $lastBalance, $lastPayComment, $label"
+  val newSql = s"INSERT OR IGNORE INTO $table ($insert12) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
   val newVirtualSql = s"INSERT INTO $fts$table ($search, $domain) VALUES (?, ?)"
 
@@ -347,26 +348,27 @@ object PayMarketTable extends Table {
 
   val searchSql = s"SELECT * FROM $table WHERE $domain IN (SELECT $domain FROM $fts$table WHERE $search MATCH ?) LIMIT 50"
 
-  val updPayInfoSql = s"UPDATE $table SET $meta = ?, $lastMsat = ?, $lastDate = ?, $lastHash = ?, $lastComment = ? WHERE $domain = ? AND $lnurlPay = ?"
+  val updPayInfoSql = s"UPDATE $table SET $payMeta = ?, $lastMsat = ?, $lastDate = ?, $lastHash = ?, $lastPayNodeId = ?, $lastPayComment = ? WHERE $locator = ?"
 
-  val updWithdrawInfoSql = s"UPDATE $table SET $nextLnurlWithdraw = ?, $lastMsat = ?, $lastDate = ?, $lastHash = ? WHERE $domain = ? AND $nextLnurlWithdraw = ?"
+  val updWithdrawInfoSql = s"UPDATE $table SET $locator = ?, $nextLnurlWithdraw = ?, $lastMsat = ?, $lastDate = ?, $lastHash = ? WHERE $locator = ?"
 
-  val updBalanceSql = s"UPDATE $table SET $lastBalance = ? WHERE $domain = ? AND ($lnurlPay = ? OR $nextLnurlWithdraw = ?)"
+  val updBalanceSql = s"UPDATE $table SET $nextLnurlWithdraw = ?, $lastBalance = ? WHERE $locator = ?"
 
-  val updLabelSql = s"UPDATE $table SET $label = ? WHERE $domain = ? AND ($lnurlPay = ? OR $nextLnurlWithdraw = ?)"
+  val updLabelSql = s"UPDATE $table SET $label = ? WHERE $locator = ?"
 
-  val killSql = s"DELETE FROM $table WHERE $domain = ? AND ($lnurlPay = ? OR $nextLnurlWithdraw = ?)"
+  val killSql = s"DELETE FROM $table WHERE $locator = ?"
 
   def createStatements: Seq[String] = {
     val createTable = s"""CREATE TABLE IF NOT EXISTS $table(
-      $IDAUTOINC, $domain STRING NOT NULL, $lnurlPay STRING NOT NULL, $nextLnurlWithdraw STRING NOT NULL,
-      $meta STRING NOT NULL, $lastMsat INTEGER NOT NULL, $lastDate INTEGER NOT NULL, $lastHash STRING NOT NULL,
-      $lastBalance STRING NOT NULL, $lastComment STRING NOT NULL, $label STRING NOT NULL
+      $IDAUTOINC, $domain STRING NOT NULL, $locator STRING NOT NULL $UNIQUE, $lnurlPay STRING NOT NULL,
+      $nextLnurlWithdraw STRING NOT NULL, $payMeta STRING NOT NULL, $lastMsat INTEGER NOT NULL,
+      $lastDate INTEGER NOT NULL, $lastHash STRING NOT NULL, $lastBalance STRING NOT NULL,
+      $lastPayComment STRING NOT NULL, $label STRING NOT NULL
     )"""
 
     val addIndex1 = s"CREATE VIRTUAL TABLE IF NOT EXISTS $fts$table USING $fts($search, $domain)"
-    val addIndex2 = s"CREATE UNIQUE INDEX IF NOT EXISTS idx2$table ON $table ($domain, $lnurlPay, $nextLnurlWithdraw)"
-    val addIndex3 = s"CREATE INDEX IF NOT EXISTS idx3$table ON $table ($lastDate)"
+    val addIndex2 = s"CREATE INDEX IF NOT EXISTS idx2$table ON $table ($lastDate)"
+    val addIndex3 = s"CREATE INDEX IF NOT EXISTS idx3$table ON $table ($domain)"
     createTable :: addIndex1 :: addIndex2 :: addIndex3 :: Nil
   }
 }

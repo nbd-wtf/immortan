@@ -2,6 +2,7 @@ package fr.acinq.eclair.blockchain.electrum
 
 import fr.acinq.bitcoin._
 import immortan.crypto.Tools._
+import scala.concurrent.duration._
 import fr.acinq.bitcoin.DeterministicWallet._
 import fr.acinq.eclair.blockchain.EclairWallet._
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
@@ -24,6 +25,7 @@ import scodec.bits.ByteVector
 class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParameters, ewt: ElectrumWalletType) extends FSM[State, ElectrumData] {
 
   def persistAndNotify(data: ElectrumData): ElectrumData = {
+    setTimer(KEY_REFILL, KEY_REFILL, 250.millis, repeat = false)
     if (data.lastReadyMessage contains data.currentReadyMessage) return data
     val data1 = data.copy(lastReadyMessage = data.currentReadyMessage.asSome)
     params.walletDb.persist(data1.toPersistent, data1.balance.totalBalance, ewt.xPub.publicKey)
@@ -73,9 +75,7 @@ class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParame
         stay using persistAndNotify(data1)
       } else stay
 
-    case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if !data.accountKeyMap.contains(scriptHash) && !data.changeKeyMap.contains(scriptHash) =>
-      log.warning(s"Received status $status for scriptHash $scriptHash which does not match any of our keys")
-      stay
+    case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, _), data) if !data.accountKeyMap.contains(scriptHash) && !data.changeKeyMap.contains(scriptHash) => stay
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if status.isEmpty =>
       val status1 = data.status.updated(scriptHash, status)
@@ -84,26 +84,8 @@ class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParame
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) =>
       val data1 = data.copy(status = data.status.updated(scriptHash, status), pendingHistoryRequests = data.pendingHistoryRequests + scriptHash)
-      val statusBytes = Try(ByteVector32 fromValidHex status).getOrElse(ByteVector32.Zeroes)
       client ! ElectrumClient.GetScriptHashHistory(scriptHash)
-
-      data.status.contains(statusBytes) match {
-        case false if data.changeKeyMap.contains(scriptHash) && data.firstUnusedChangeKey.isEmpty =>
-          val newKey: ExtendedPublicKey = derivePublicKey(ewt.changeMaster, data.changeKeys.last.path.lastChildNumber + 1)
-          client ! ElectrumClient.ScriptHashSubscription(ewt.computeScriptHashFromPublicKey(newKey.publicKey), self)
-          val data2 = data1.copy(changeKeys = data1.changeKeys :+ newKey)
-          stay using persistAndNotify(data2)
-
-        case false if data.firstUnusedAccountKeys.size <= MAX_RECEIVE_ADDRESSES && data.noAccountKeysWithoutStatus =>
-          val newKey: ExtendedPublicKey = derivePublicKey(ewt.accountMaster, data.accountKeys.last.path.lastChildNumber + 1)
-          client ! ElectrumClient.ScriptHashSubscription(ewt.computeScriptHashFromPublicKey(newKey.publicKey), self)
-          val data2 = data1.copy(accountKeys = data1.accountKeys :+ newKey)
-          stay using persistAndNotify(data2)
-
-        case _ =>
-          // This is not a new scriptHash
-          stay using persistAndNotify(data1)
-      }
+      stay using persistAndNotify(data1)
 
     case Event(ElectrumClient.GetScriptHashHistoryResponse(scriptHash, items), data) =>
       val pendingHeadersRequests1 = collection.mutable.HashSet.empty[GetHeaders]
@@ -237,6 +219,18 @@ class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParame
     case Event(ElectrumClient.BroadcastTransaction(tx), _) =>
       val notConnected = Error(code = -1, "wallet is not connected").asSome
       stay replying ElectrumClient.BroadcastTransactionResponse(tx, notConnected)
+
+    case Event(KEY_REFILL, data) if data.firstUnusedChangeKey.isEmpty =>
+      val newKey = derivePublicKey(ewt.changeMaster, data.changeKeys.last.path.lastChildNumber + 1)
+      client ! ElectrumClient.ScriptHashSubscription(ewt.computeScriptHashFromPublicKey(newKey.publicKey), self)
+      val data1 = data.copy(changeKeys = data.changeKeys :+ newKey)
+      stay using persistAndNotify(data1)
+
+    case Event(KEY_REFILL, data) if data.firstUnusedAccountKeys.size < MAX_RECEIVE_ADDRESSES =>
+      val newKey = derivePublicKey(ewt.changeMaster, data.accountKeys.last.path.lastChildNumber + 1)
+      client ! ElectrumClient.ScriptHashSubscription(ewt.computeScriptHashFromPublicKey(newKey.publicKey), self)
+      val data1 = data.copy(accountKeys = data.accountKeys :+ newKey)
+      stay using persistAndNotify(data1)
   }
 
   initialize
@@ -244,6 +238,8 @@ class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParame
 
 object ElectrumWallet {
   type TransactionHistoryItemList = List[ElectrumClient.TransactionHistoryItem]
+
+  final val KEY_REFILL = "key-refill"
 
   sealed trait State
 
@@ -330,8 +326,6 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
   lazy val firstUnusedChangeKey: Option[ExtendedPublicKey] = changeKeyMap.collectFirst { case Tuple2(scriptHash, privKey) if status.get(scriptHash).contains(new String) => privKey }
 
   lazy val publicScriptMap: Map[ByteVector, ExtendedPublicKey] = (accountKeys ++ changeKeys).map(key => Script.write(ewt computePublicKeyScript key.publicKey) -> key).toMap
-
-  lazy val noAccountKeysWithoutStatus: Boolean = accountKeyMap.keySet.forall(status.contains)
 
   lazy val utxos: Seq[Utxo] = history.keys.toList.flatMap(getUtxos)
 

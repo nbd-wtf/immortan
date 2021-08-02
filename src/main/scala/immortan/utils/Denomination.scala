@@ -12,8 +12,8 @@ object Denomination {
   formatFiatPrecise setDecimalFormatSymbols symbols
   formatFiat setDecimalFormatSymbols symbols
 
-  def btcBigDecimal2MSat(btc: BigDecimal): MilliSatoshi =
-    (btc * BtcDenomination.factor).toLong.msat
+  def satCeil(msat: MilliSatoshi): MilliSatoshi = (1000L * (msat.toLong / 1000D).ceil).toLong.msat
+  def btcBigDecimal2MSat(btc: BigDecimal): MilliSatoshi = (btc * BtcDenomination.factor).toLong.msat
 }
 
 trait Denomination { me =>
