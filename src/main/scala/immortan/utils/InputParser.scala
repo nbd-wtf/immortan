@@ -34,7 +34,7 @@ object InputParser {
 
   val lnPayReq: UnanchoredRegex = s"(?im).*?($prefixes)([0-9]{1,}[a-z0-9]+){1}".r.unanchored
 
-  val email: Regex = """^[a-zA-Z0-9\.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$""".r
+  val identifier: Regex = """^[a-zA-Z0-9\.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$""".r
 
   val lightning: String = "lightning:"
 
@@ -46,9 +46,9 @@ object InputParser {
     case lnUrl(prefix, data) => LNUrl.fromBech32(s"$prefix$data")
     case _ if rawInput.startsWith(bitcoin) => BitcoinUri.fromRaw(rawInput)
     case _ if rawInput.startsWith(bitcoin.toUpperCase) => BitcoinUri.fromRaw(rawInput.toLowerCase)
-    case _ if email.findFirstMatchIn(rawInput).isDefined => LNUrl.fromIdentifier(identifier = rawInput)
     case nodeLink(key, host, port) => RemoteNodeInfo(PublicKey.fromBin(ByteVector fromValidHex key), NodeAddress.fromParts(host, port.toInt), host)
     case shortNodeLink(key, host) => RemoteNodeInfo(PublicKey.fromBin(ByteVector fromValidHex key), NodeAddress.fromParts(host, port = 9735), host)
+    case _ if identifier.findFirstMatchIn(rawInput).isDefined => LNUrl.fromIdentifier(identifier = rawInput)
     case _ if rawInput.toLowerCase.startsWith(lightning) => PaymentRequestExt.fromUri(rawInput.toLowerCase)
     case lnPayReq(prefix, data) => PaymentRequestExt.fromRaw(s"$prefix$data")
     case _ => BitcoinUri.fromRaw(s"$bitcoin$rawInput")

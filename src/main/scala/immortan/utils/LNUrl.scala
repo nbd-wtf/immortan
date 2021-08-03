@@ -41,10 +41,12 @@ object LNUrl {
   }
 
   def guardResponse(raw: String): String = {
-    val validJson = Try(raw.parseJson.asJsObject.fields)
-    val hasError = validJson.map(_ apply "reason").map(json2String)
-    if (validJson.isFailure) throw new Exception(s"Invalid json from vendor: $raw")
-    if (hasError.isSuccess) throw new Exception(s"Error from vendor: ${hasError.get}")
+    val parseAttempt = Try(raw.parseJson.asJsObject.fields)
+    val hasErrorDescription = parseAttempt.map(_ apply "reason").map(json2String)
+    val hasError = parseAttempt.map(_ apply "status").map(json2String).filter(_.toUpperCase == "ERROR")
+    if (hasErrorDescription.isSuccess) throw new Exception(s"Error from vendor: ${hasErrorDescription.get}")
+    else if (hasError.isSuccess) throw new Exception(s"Error from vendor: no description provided")
+    else if (parseAttempt.isFailure) throw new Exception(s"Invalid json from vendor: $raw")
     raw
   }
 
@@ -210,7 +212,7 @@ case class PayRequest(callback: String, maxSendable: Long, minSendable: Long, me
   }
 
   private[this] val identifiers = meta.emails ++ meta.identities
-  require(identifiers.forall(id => InputParser.email.findFirstMatchIn(id).isDefined), "text/email or text/identity format is wrong")
+  require(identifiers.forall(id => InputParser.identifier.findFirstMatchIn(id).isDefined), "text/email or text/identity format is wrong")
   require(meta.imageBase64s.size <= 1, "There can be at most one image/png;base64 or image/jpeg;base64 entry in metadata")
   require(identifiers.size <= 1, "There can be at most one text/email or text/identity entry in metadata")
   require(meta.texts.size == 1, "There must be exactly one text/plain entry in metadata")

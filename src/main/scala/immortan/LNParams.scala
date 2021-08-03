@@ -168,7 +168,7 @@ class TestNetSyncParams extends SyncParams {
   val localhost: RemoteNodeInfo = RemoteNodeInfo(PublicKey(hex"038d5cdea665f68e597da00ae0612238bd30a06bdf08d34fa9af783b1f1b3ba9b7"), NodeAddress.unresolved(9735, host = 10, 0, 2, 2), "localhost")
   override val syncNodes: Set[RemoteNodeInfo] = Set(endurance, localhost, sbw)
   override val phcSyncNodes: Set[RemoteNodeInfo] = Set(localhost, sbw)
-  override val minCapacity: MilliSatoshi = MilliSatoshi(250000000L)
+  override val minCapacity: MilliSatoshi = MilliSatoshi(100000000L)
   override val minNormalChansForPHC = 1
   override val maxNodesToSyncFrom = 1
   override val acceptThreshold = 0
@@ -219,13 +219,12 @@ trait PaymentBag {
   def addSearchablePayment(search: String, paymentHash: ByteVector32)
   def searchPayments(rawSearchQuery: String): RichCursor
 
-  def replaceOutgoingPayment(prex: PaymentRequestExt, desc: PaymentDescription, action: Option[PaymentAction],
+  def replaceOutgoingPayment(prex: PaymentRequestExt, description: PaymentDescription, action: Option[PaymentAction],
                              finalAmount: MilliSatoshi, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc,
-                             chainFee: MilliSatoshi)
+                             chainFee: MilliSatoshi, seenAt: Long)
 
-  def replaceIncomingPayment(prex: PaymentRequestExt, preimage: ByteVector32,
-                             description: PaymentDescription, balanceSnap: MilliSatoshi,
-                             fiatRateSnap: Fiat2Btc)
+  def replaceIncomingPayment(prex: PaymentRequestExt, preimage: ByteVector32, description: PaymentDescription,
+                             balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc)
 
   def getPaymentInfo(paymentHash: ByteVector32): Try[PaymentInfo]
   def removePaymentInfo(paymentHash: ByteVector32)

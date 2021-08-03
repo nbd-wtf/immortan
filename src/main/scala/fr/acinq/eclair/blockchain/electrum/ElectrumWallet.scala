@@ -357,20 +357,21 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
       case None => Nil
 
       case Some(historyItems) =>
-        // This is the private key for this script hash
-        val key = accountOrChangeKey(scriptHash)
+        accountKeyMap.get(scriptHash) orElse changeKeyMap.get(scriptHash) map { key =>
+          // We definitely have a private key generated for corresponding scriptHash here
 
-        val unspents = for {
-          item <- historyItems
-          tx <- transactions.get(item.txHash).toList
-          (txOut, index) <- tx.txOut.zipWithIndex if isReceive(txOut, scriptHash)
-          unspent = ElectrumClient.UnspentItem(item.txHash, index, txOut.amount.toLong, item.height)
-        } yield Utxo(key, unspent)
+          val unspents = for {
+            item <- historyItems
+            tx <- transactions.get(item.txHash).toList
+            (txOut, index) <- tx.txOut.zipWithIndex if isReceive(txOut, scriptHash)
+            unspent = ElectrumClient.UnspentItem(item.txHash, index, txOut.amount.toLong, item.height)
+          } yield Utxo(key, unspent)
 
-        // Find all transactions that send to or receive from this script hash
-        val txs = historyItems.flatMap(transactions get _.txHash).flatMap(_.txIn).map(_.outPoint)
-        // Because we may have unconfirmed UTXOs that are spend by unconfirmed transactions
-        unspents.filterNot(utxo => txs contains utxo.item.outPoint)
+          // Find all transactions that send to or receive from this script hash
+          val txs = historyItems.flatMap(transactions get _.txHash).flatMap(_.txIn).map(_.outPoint)
+          // Because we may have unconfirmed UTXOs that are spend by unconfirmed transactions
+          unspents.filterNot(utxo => txs contains utxo.item.outPoint)
+        } getOrElse Nil
     }
 
   lazy val balance: GetBalanceResponse = GetBalanceResponse(utxos.map(_.item.value.sat).sum)

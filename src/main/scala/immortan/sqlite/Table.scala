@@ -31,26 +31,6 @@ object ChannelTable extends Table {
   def createStatements: Seq[String] = s"CREATE TABLE IF NOT EXISTS $table($IDAUTOINC, $channelId TEXT NOT NULL $UNIQUE, $data BLOB NOT NULL)" :: Nil
 }
 
-object ChainWalletTable extends Table {
-  val (table, info, xPub, data, lastBalance, label) = ("cwallet", "info", "xpub", "data", "lastbalance", "label")
-
-  val newSql = s"INSERT OR IGNORE INTO $table ($info, $xPub, $data, $lastBalance, $label) VALUES (?, ?, ?, ?, ?)"
-
-  val killSql = s"DELETE FROM $table WHERE $xPub = ?"
-
-  val updSql = s"UPDATE $table SET $data = ?, $lastBalance = ? WHERE $xPub = ?"
-
-  val updLabelSql = s"UPDATE $table SET $label = ? WHERE $xPub = ?"
-
-  val selectSql = s"SELECT * FROM $table"
-
-  def createStatements: Seq[String] =
-    s"""CREATE TABLE IF NOT EXISTS $table(
-      $IDAUTOINC, $info TEXT NOT NULL, $xPub TEXT NOT NULL $UNIQUE,
-      $data BLOB NOT NULL, $lastBalance INTEGER NOT NULL, $label TEXT NOT NULL
-    )""" :: Nil
-}
-
 object HtlcInfoTable extends Table {
   val (table, sid, commitNumber, paymentHash160, cltvExpiry) = ("htlcinfo", "sid", "cnumber", "hash160", "cltv")
 
@@ -177,6 +157,26 @@ object HostedExcludedChannelTable extends ExcludedChannelTable("hosted_excluded_
 
 // Database #3, unrecoverable, but not critically important data, will not go to backup
 
+object ChainWalletTable extends Table {
+  val (table, info, xPub, data, lastBalance, label) = ("cwallet", "info", "xpub", "data", "lastbalance", "label")
+
+  val newSql = s"INSERT OR IGNORE INTO $table ($info, $xPub, $data, $lastBalance, $label) VALUES (?, ?, ?, ?, ?)"
+
+  val killSql = s"DELETE FROM $table WHERE $xPub = ?"
+
+  val updSql = s"UPDATE $table SET $data = ?, $lastBalance = ? WHERE $xPub = ?"
+
+  val updLabelSql = s"UPDATE $table SET $label = ? WHERE $xPub = ?"
+
+  val selectSql = s"SELECT * FROM $table"
+
+  def createStatements: Seq[String] =
+    s"""CREATE TABLE IF NOT EXISTS $table(
+      $IDAUTOINC, $info TEXT NOT NULL, $xPub TEXT NOT NULL $UNIQUE,
+      $data BLOB NOT NULL, $lastBalance INTEGER NOT NULL, $label TEXT NOT NULL
+    )""" :: Nil
+}
+
 object RelayTable extends Table {
   val (table, hash, secret, preimage, seenAt, relayed, earned) = ("relay", "hash", "secret", "preimage", "seen", "relayed", "earned")
 
@@ -203,8 +203,7 @@ object PaymentTable extends Table {
     ("psearch", "payment", "pr", "preimage", "status", "seenAt", "desc", "action", "hash", "secret", "received", "sent", "fee", "balance", "fiatrates", "chainfee", "incoming")
 
   private val inserts = s"$pr, $preimage, $status, $seenAt, $description, $action, $hash, $secret, $receivedMsat, $sentMsat, $feeMsat, $balanceMsat, $fiatRates, $chainFeeMsat, $incoming"
-
-  val newSql: String = s"INSERT OR IGNORE INTO $table ($inserts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  val newSql = s"INSERT OR IGNORE INTO $table ($inserts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
   val newVirtualSql = s"INSERT INTO $fts$table ($search, $hash) VALUES (?, ?)"
 

@@ -59,13 +59,13 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface) extends PaymentBag
   }
 
   def replaceOutgoingPayment(prex: PaymentRequestExt, description: PaymentDescription, action: Option[PaymentAction],
-                             finalAmount: MilliSatoshi, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc, chainFee: MilliSatoshi): Unit =
+                             finalAmount: MilliSatoshi, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc,
+                             chainFee: MilliSatoshi, seenAt: Long): Unit =
     db txWrap {
       removePaymentInfo(prex.pr.paymentHash)
-      db.change(PaymentTable.newSql, prex.raw, ChannelMaster.NO_PREIMAGE.toHex, PaymentStatus.PENDING: JInt, System.currentTimeMillis: JLong, description.toJson.compactPrint,
+      db.change(PaymentTable.newSql, prex.raw, ChannelMaster.NO_PREIMAGE.toHex, PaymentStatus.PENDING: JInt, seenAt: JLong, description.toJson.compactPrint,
         action.map(_.toJson.compactPrint).getOrElse(PaymentInfo.NO_ACTION), prex.pr.paymentHash.toHex, prex.pr.paymentSecret.get.toHex, 0L: JLong /* RECEIVED AMOUNT = 0 FOR OUTGOING */,
-        finalAmount.toLong: JLong /* SENT IS KNOWN */, 0L: JLong /* FEE IS UNCERTAIN YET */, balanceSnap.toLong: JLong, fiatRateSnap.toJson.compactPrint,
-        chainFee.toLong: JLong, 0: JInt /* INCOMING TYPE = 0 */)
+        finalAmount.toLong: JLong, 0L: JLong /* FEE IS UNCERTAIN YET */, balanceSnap.toLong: JLong, fiatRateSnap.toJson.compactPrint, chainFee.toLong: JLong, 0: JInt /* INCOMING */)
       ChannelMaster.next(ChannelMaster.paymentDbStream)
     }
 

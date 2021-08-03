@@ -167,12 +167,12 @@ case class IPv6(ipv6: Inet6Address, port: Int) extends NodeAddress {
 }
 
 case class Tor2(tor2: String, port: Int) extends OnionAddress {
-  override def socketAddress: InetSocketAddress = InetSocketAddress.createUnresolved(tor2 + NodeAddress.onionSuffix, port)
+  override def socketAddress: InetSocketAddress = new InetSocketAddress(tor2 + NodeAddress.onionSuffix, port)
   override def toString: String = s"$tor2${NodeAddress.onionSuffix}:$port"
 }
 
 case class Tor3(tor3: String, port: Int) extends OnionAddress {
-  override def socketAddress: InetSocketAddress = InetSocketAddress.createUnresolved(tor3 + NodeAddress.onionSuffix, port)
+  override def socketAddress: InetSocketAddress = new InetSocketAddress(tor3 + NodeAddress.onionSuffix, port)
   override def toString: String = s"$tor3${NodeAddress.onionSuffix}:$port"
 }
 
