@@ -102,6 +102,10 @@ class ElectrumChainSync(client: ActorRef, headerDb: HeaderDb, chainHash: ByteVec
           log.error("Electrum peer sent bad headers")
           stay replying PoisonPill
       }
+
+    case Event(ElectrumWallet.ProvideBlockChainFor(target), blockchain) =>
+      target ! blockchain
+      stay
   }
 
   whenUnhandled {

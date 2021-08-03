@@ -168,7 +168,7 @@ object ChainWalletTable extends Table {
 
   val updLabelSql = s"UPDATE $table SET $label = ? WHERE $xPub = ?"
 
-  val selectSql = s"SELECT * FROM $table"
+  val selectSql = s"SELECT * FROM $table ORDER BY $id DESC"
 
   def createStatements: Seq[String] =
     s"""CREATE TABLE IF NOT EXISTS $table(

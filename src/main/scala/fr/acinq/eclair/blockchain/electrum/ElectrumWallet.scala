@@ -242,45 +242,31 @@ object ElectrumWallet {
   final val KEY_REFILL = "key-refill"
 
   sealed trait State
-
   case object DISCONNECTED extends State
-
   case object WAITING_FOR_TIP extends State
-
   case object SYNCING extends State
-
   case object RUNNING extends State
 
   sealed trait Request
-
   sealed trait Response
 
   case object GetBalance extends Request
-
   case class GetBalanceResponse(totalBalance: Satoshi) extends Response
 
   case object GetCurrentReceiveAddresses extends Request
-
   case class GetCurrentReceiveAddressesResponse(address2PubKey: Address2PubKey) extends Response
 
   case class CompleteTransaction(tx: Transaction, feeRatePerKw: FeeratePerKw, sequenceFlag: Long) extends Request
-
   case class CompleteTransactionResponse(result: Option[TxAndFee] = None) extends Response
 
   case class SendAll(publicKeyScript: ByteVector, extraUtxos: List[TxOut], feeRatePerKw: FeeratePerKw, sequenceFlag: Long) extends Request
-
   case class SendAllResponse(result: Option[TxAndFee] = None) extends Response
+
+  case class ProvideBlockChainFor(target: ActorRef) extends Request
 
   case class CommitTransaction(tx: Transaction) extends Request
 
-  case class SendTransaction(tx: Transaction) extends Request
-
-  case class SendTransactionReponse(tx: Transaction) extends Response
-
-  case class AmountBelowDustLimit(dustLimit: Satoshi) extends Response
-
   case class IsDoubleSpent(tx: Transaction) extends Request
-
   case class IsDoubleSpentResponse(tx: Transaction, depth: Long, isDoubleSpent: Boolean) extends Response
 
   sealed trait WalletEvent {
@@ -295,8 +281,6 @@ object ElectrumWallet {
   def doubleSpend(tx1: Transaction, tx2: Transaction): Boolean = tx1.txIn.map(_.outPoint).toSet.intersect(tx2.txIn.map(_.outPoint).toSet).nonEmpty
 
   def computeDepth(currentHeight: Long, txHeight: Long): Long = if (txHeight <= 0L) 0L else currentHeight - txHeight + 1L
-
-  def computeFee(weight: Int, feeRatePerKw: Long): Satoshi = Satoshi(weight * feeRatePerKw / 1000L)
 
   def totalAmount(utxos: Seq[Utxo] = Nil): Satoshi = utxos.map(_.item.value).sum.sat
 }
