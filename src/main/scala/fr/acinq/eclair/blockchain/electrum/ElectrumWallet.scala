@@ -25,6 +25,7 @@ import scodec.bits.ByteVector
 class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParameters, ewt: ElectrumWalletType) extends FSM[State, ElectrumData] {
 
   def persistAndNotify(data: ElectrumData): ElectrumData = {
+    // TODO: looks like this may not persist data with another key added and later this key will be lost
     setTimer(KEY_REFILL, KEY_REFILL, 250.millis, repeat = false)
     if (data.lastReadyMessage contains data.currentReadyMessage) return data
     val data1 = data.copy(lastReadyMessage = data.currentReadyMessage.asSome)
@@ -355,7 +356,10 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
           val txs = historyItems.flatMap(transactions get _.txHash).flatMap(_.txIn).map(_.outPoint)
           // Because we may have unconfirmed UTXOs that are spend by unconfirmed transactions
           unspents.filterNot(utxo => txs contains utxo.item.outPoint)
-        } getOrElse Nil
+        } getOrElse {
+          println(s"-- $historyItems")
+          Nil
+        }
     }
 
   lazy val balance: GetBalanceResponse = GetBalanceResponse(utxos.map(_.item.value.sat).sum)

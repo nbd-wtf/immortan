@@ -5,7 +5,6 @@ import fr.acinq.eclair._
 import immortan.Channel._
 import fr.acinq.eclair.wire._
 import immortan.crypto.Tools._
-import immortan.PaymentStatus._
 import immortan.ChannelMaster._
 import fr.acinq.eclair.channel._
 import scala.concurrent.duration._
@@ -272,12 +271,10 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
     localSend(keySendCmd)
   }
 
-  def checkIfSendable(paymentHash: ByteVector32): Option[Int] =
-    opm.data.payments.values.find(fsm => fsm.fullTag.tag == PaymentTagTlv.LOCALLY_SENT && fsm.fullTag.paymentHash == paymentHash) match {
-      case Some(outgoingFSM) if PENDING == outgoingFSM.state || INIT == outgoingFSM.state => Some(PaymentInfo.NOT_SENDABLE_IN_FLIGHT) // This payment is pending in FSM
-      case _ if getPreimageMemo.get(paymentHash).isSuccess => Some(PaymentInfo.NOT_SENDABLE_SUCCESS) // Preimage has already been revealed for in/out payment
-      case _ => None // Has never been either sent or requested, or ABORTED by now
-    }
+  def checkIfSendable(paymentHash: ByteVector32): Option[Int] = {
+    val isActive = opm.data.payments.values.exists(fsm => fsm.fullTag.tag == PaymentTagTlv.LOCALLY_SENT && fsm.fullTag.paymentHash == paymentHash)
+    if (isActive) Some(PaymentInfo.NOT_SENDABLE_IN_FLIGHT) else if (getPreimageMemo.get(paymentHash).isSuccess) Some(PaymentInfo.NOT_SENDABLE_SUCCESS) else None
+  }
 
   // These are executed in Channel context
 
