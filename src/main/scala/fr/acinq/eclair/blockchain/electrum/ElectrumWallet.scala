@@ -25,8 +25,7 @@ import scodec.bits.ByteVector
 class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParameters, ewt: ElectrumWalletType) extends FSM[State, ElectrumData] {
 
   def persistAndNotify(data: ElectrumData): ElectrumData = {
-    // TODO: looks like this may not persist data with another key added and later this key will be lost
-    setTimer(KEY_REFILL, KEY_REFILL, 250.millis, repeat = false)
+    setTimer(KEY_REFILL, KEY_REFILL, 200.millis, repeat = false)
     if (data.lastReadyMessage contains data.currentReadyMessage) return data
     val data1 = data.copy(lastReadyMessage = data.currentReadyMessage.asSome)
     params.walletDb.persist(data1.toPersistent, data1.balance.totalBalance, ewt.xPub.publicKey)
@@ -45,8 +44,8 @@ class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParame
       // Serialized data may become big with much usage
       // Deserialzie it in this dedicated thread to not slow down UI
       val persisted = persistentDataCodec.decode(raw.toBitVector).require.value
-      val firstAccountKeys = for (idx <- math.max(persisted.accountKeysCount - 500, 0) until persisted.accountKeysCount) yield derivePublicKey(ewt.accountMaster, idx)
-      val firstChangeKeys = for (idx <- math.max(persisted.changeKeysCount - 250, 0) until persisted.changeKeysCount) yield derivePublicKey(ewt.changeMaster, idx)
+      val firstAccountKeys = for (idx <- math.max(persisted.accountKeysCount - 400, 0) until persisted.accountKeysCount) yield derivePublicKey(ewt.accountMaster, idx)
+      val firstChangeKeys = for (idx <- math.max(persisted.changeKeysCount - 400, 0) until persisted.changeKeysCount) yield derivePublicKey(ewt.changeMaster, idx)
 
       val data1 = ElectrumData(ewt, Blockchain(ewt.chainHash, checkpoints = Vector.empty, headersMap = Map.empty, bestchain = Vector.empty),
         firstAccountKeys.toVector, firstChangeKeys.toVector, persisted.status, persisted.transactions, persisted.history, persisted.proofs,
@@ -223,14 +222,22 @@ class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParame
 
     case Event(KEY_REFILL, data) if data.firstUnusedChangeKey.isEmpty =>
       val newKey = derivePublicKey(ewt.changeMaster, data.changeKeys.last.path.lastChildNumber + 1)
-      client ! ElectrumClient.ScriptHashSubscription(ewt.computeScriptHashFromPublicKey(newKey.publicKey), self)
-      val data1 = data.copy(changeKeys = data.changeKeys :+ newKey)
+      val newKeyScriptHash = ewt.computeScriptHashFromPublicKey(newKey.publicKey)
+      client ! ElectrumClient.ScriptHashSubscription(newKeyScriptHash, self)
+
+      val changeKeys1 = data.changeKeys :+ newKey
+      val status1 = data.status.updated(newKeyScriptHash, new String)
+      val data1 = data.copy(status = status1, changeKeys = changeKeys1)
       stay using persistAndNotify(data1)
 
     case Event(KEY_REFILL, data) if data.firstUnusedAccountKeys.size < MAX_RECEIVE_ADDRESSES =>
-      val newKey = derivePublicKey(ewt.changeMaster, data.accountKeys.last.path.lastChildNumber + 1)
-      client ! ElectrumClient.ScriptHashSubscription(ewt.computeScriptHashFromPublicKey(newKey.publicKey), self)
-      val data1 = data.copy(accountKeys = data.accountKeys :+ newKey)
+      val newKey = derivePublicKey(ewt.accountMaster, data.accountKeys.last.path.lastChildNumber + 1)
+      val newKeyScriptHash = ewt.computeScriptHashFromPublicKey(newKey.publicKey)
+      client ! ElectrumClient.ScriptHashSubscription(newKeyScriptHash, self)
+
+      val accountKeys1 = data.accountKeys :+ newKey
+      val status1 = data.status.updated(newKeyScriptHash, new String)
+      val data1 = data.copy(status = status1, accountKeys = accountKeys1)
       stay using persistAndNotify(data1)
   }
 
@@ -356,10 +363,7 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
           val txs = historyItems.flatMap(transactions get _.txHash).flatMap(_.txIn).map(_.outPoint)
           // Because we may have unconfirmed UTXOs that are spend by unconfirmed transactions
           unspents.filterNot(utxo => txs contains utxo.item.outPoint)
-        } getOrElse {
-          println(s"-- $historyItems")
-          Nil
-        }
+        } getOrElse Nil
     }
 
   lazy val balance: GetBalanceResponse = GetBalanceResponse(utxos.map(_.item.value.sat).sum)

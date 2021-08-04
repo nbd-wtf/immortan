@@ -12,7 +12,7 @@ object EclairWallet {
   type DepthAndDoubleSpent = (Long, Boolean)
   type Address2PubKey = Map[String, ExtendedPublicKey]
   final val OPT_IN_FULL_RBF = TxIn.SEQUENCE_FINAL - 2
-  final val MAX_RECEIVE_ADDRESSES = 5
+  final val MAX_RECEIVE_ADDRESSES = 4
 
   final val BIP32 = "BIP32"
   final val BIP44 = "BIP44"
