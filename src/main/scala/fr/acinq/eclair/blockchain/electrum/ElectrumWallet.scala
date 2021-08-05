@@ -47,10 +47,9 @@ class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParame
       val firstAccountKeys = for (idx <- math.max(persisted.accountKeysCount - 400, 0) until persisted.accountKeysCount) yield derivePublicKey(ewt.accountMaster, idx)
       val firstChangeKeys = for (idx <- math.max(persisted.changeKeysCount - 400, 0) until persisted.changeKeysCount) yield derivePublicKey(ewt.changeMaster, idx)
 
-      val data1 = ElectrumData(ewt, Blockchain(ewt.chainHash, checkpoints = Vector.empty, headersMap = Map.empty, bestchain = Vector.empty),
-        firstAccountKeys.toVector, firstChangeKeys.toVector, persisted.status, persisted.transactions, persisted.history, persisted.proofs,
-        pendingHistoryRequests = Set.empty, pendingHeadersRequests = Set.empty, pendingTransactionRequests = Set.empty,
-        pendingTransactions = persisted.pendingTransactions)
+      val data1 = ElectrumData(ewt, Blockchain(ewt.chainHash, checkpoints = Vector.empty, headersMap = Map.empty, bestchain = Vector.empty), firstAccountKeys.toVector,
+        firstChangeKeys.toVector, persisted.status, persisted.transactions, persisted.history, persisted.proofs, pendingHistoryRequests = Set.empty, pendingHeadersRequests = Set.empty,
+        pendingTransactionRequests = Set.empty, pendingTransactions = persisted.pendingTransactions)
       stay using data1
 
     case Event(blockchain1: Blockchain, data) =>
@@ -270,26 +269,21 @@ object ElectrumWallet {
   case class SendAll(publicKeyScript: ByteVector, extraUtxos: List[TxOut], feeRatePerKw: FeeratePerKw, sequenceFlag: Long) extends Request
   case class SendAllResponse(result: Option[TxAndFee] = None) extends Response
 
-  case class ProvideBlockChainFor(target: ActorRef) extends Request
+  case class ChainFor(target: ActorRef) extends Request
 
   case class CommitTransaction(tx: Transaction) extends Request
 
   case class IsDoubleSpent(tx: Transaction) extends Request
   case class IsDoubleSpentResponse(tx: Transaction, depth: Long, isDoubleSpent: Boolean) extends Response
 
-  sealed trait WalletEvent {
-    def sameXpub(that: ElectrumEclairWallet): Boolean = that.ewt.xPub == xPub
-    val xPub: ExtendedPublicKey
-  }
+  sealed trait WalletEvent { val xPub: ExtendedPublicKey }
 
   case class TransactionReceived(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi, walletAddreses: List[String], xPub: ExtendedPublicKey, feeOpt: Option[Satoshi] = None) extends WalletEvent
 
   case class WalletReady(balance: Satoshi, height: Long, heightsCode: Int, xPub: ExtendedPublicKey) extends WalletEvent
 
   def doubleSpend(tx1: Transaction, tx2: Transaction): Boolean = tx1.txIn.map(_.outPoint).toSet.intersect(tx2.txIn.map(_.outPoint).toSet).nonEmpty
-
   def computeDepth(currentHeight: Long, txHeight: Long): Long = if (txHeight <= 0L) 0L else currentHeight - txHeight + 1L
-
   def totalAmount(utxos: Seq[Utxo] = Nil): Satoshi = utxos.map(_.item.value).sum.sat
 }
 

@@ -103,7 +103,7 @@ class ElectrumChainSync(client: ActorRef, headerDb: HeaderDb, chainHash: ByteVec
           stay replying PoisonPill
       }
 
-    case Event(ElectrumWallet.ProvideBlockChainFor(target), blockchain) =>
+    case Event(ElectrumWallet.ChainFor(target), blockchain) =>
       target ! blockchain
       stay
   }
