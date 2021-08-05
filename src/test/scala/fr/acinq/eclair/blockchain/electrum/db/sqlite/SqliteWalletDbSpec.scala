@@ -100,8 +100,8 @@ class SqliteWalletDbSpec extends AnyFunSuite {
     val data = randomPersistentData
     val key = randomKey.publicKey
     val core = SigningWallet(EclairWallet.BIP49, isRemovable = true)
-    val info = CompleteChainWalletInfo(core, key, persistentDataCodec.encode(data).require.toByteVector, Satoshi(1000L), "label")
-    db.addChainWallet(info)
+    val info = CompleteChainWalletInfo(core, persistentDataCodec.encode(data).require.toByteVector, Satoshi(1000L), "label")
+    db.addChainWallet(info, key)
     val List(check) = db.listWallets.toList
     assert(check === info)
   }
