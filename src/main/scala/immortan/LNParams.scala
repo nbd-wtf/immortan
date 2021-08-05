@@ -132,6 +132,8 @@ object LNParams {
 
   def defaultTrampolineOn = TrampolineOn(minPayment, maximumMsat = 1000000000L.msat, feeBaseMsat = 10000L.msat, feeProportionalMillionths = 1000L, exponent = 0.0, logExponent = 0.0, minRoutingCltvExpiryDelta)
 
+  def updateChainWallet(walletExt: WalletExt): Unit = synchronized(chainWallets = walletExt)
+
   // Defined here since when modified it takes implicit parameters
 
   case class WalletExt(wallets: List[ElectrumEclairWallet], catcher: ActorRef, sync: ActorRef, pool: ActorRef, watcher: ActorRef, params: WalletParameters) extends CanBeShutDown { me =>
@@ -139,8 +141,6 @@ object LNParams {
     def lastBalanceUpdated(event: WalletReady): WalletExt = me.modify(_.wallets.eachWhere(_.ewt.xPub == event.xPub).info.lastBalance).setTo(event.balance)
 
     override def becomeShutDown: Unit = wallets.map(_.walletRef) ++ List(catcher, sync, pool, watcher) foreach (_ ! PoisonPill)
-
-    def findByPubKey(publicKey: PublicKey): Option[ElectrumEclairWallet] = wallets.find(_.ewt.xPub.publicKey == publicKey)
 
     def findByTag(tag: String): Option[ElectrumEclairWallet] = wallets.find(_.ewt.tag == tag)
 
@@ -176,6 +176,14 @@ object LNParams {
       eclairWallet.walletRef ! params.emptyPersistentDataBytes
       sync ! ElectrumWallet.ChainFor(eclairWallet.walletRef)
       me + eclairWallet
+    }
+
+    def withoutWallet(wallet: ElectrumEclairWallet): WalletExt = {
+      require(wallet.info.core.isRemovable, "Can not remove wallet")
+      params.walletDb.remove(wallet.ewt.xPub.publicKey)
+      val wallets1 = wallets diff List(wallet)
+      wallet.walletRef ! PoisonPill
+      copy(wallets = wallets1)
     }
   }
 }
