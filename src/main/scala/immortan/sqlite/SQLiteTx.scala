@@ -28,7 +28,7 @@ class SQLiteTx(val db: DBInterface) {
   }
 
   def updStatus(txid: ByteVector32, depth: Long, doubleSpent: Boolean): Unit = {
-    db.change(TxTable.updStatusSql, depth: JLong, if (doubleSpent) 1L: JLong else 0L: JLong, txid.toHex)
+    db.change(TxTable.updStatusSql, depth: JLong, if (doubleSpent) 1L: JLong else 0L: JLong, System.currentTimeMillis: JLong /* UPDATED */, txid.toHex)
     ChannelMaster.next(ChannelMaster.txDbStream)
   }
 
@@ -41,14 +41,15 @@ class SQLiteTx(val db: DBInterface) {
   def addTx(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi, feeOpt: Option[Satoshi], xPub: ExtendedPublicKey,
             description: TxDescription, isIncoming: Long, balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc): Unit = {
 
-    db.change(TxTable.newSql, tx.toString, tx.txid.toHex, xPub.publicKey.toString /* WHICH WALLET DOES IT COME FROM */, depth: JLong,
-      received.toLong: JLong, sent.toLong: JLong, feeOpt.map(_.toLong: JLong).getOrElse(0L: JLong), System.currentTimeMillis: JLong,
+    db.change(TxTable.newSql, tx.toString, tx.txid.toHex, xPub.publicKey.toString /* WHICH WALLET DOES IT COME FROM */, depth: JLong, received.toLong: JLong,
+      sent.toLong: JLong, feeOpt.map(_.toLong: JLong).getOrElse(0L: JLong), System.currentTimeMillis: JLong /* SEEN */, System.currentTimeMillis: JLong /* UPDATED */,
       description.toJson.compactPrint, balanceSnap.toLong: JLong, fiatRateSnap.toJson.compactPrint, isIncoming: JLong, 0L: JLong)
     ChannelMaster.next(ChannelMaster.txDbStream)
   }
 
   def toTxInfo(rc: RichCursor): TxInfo =
     TxInfo(rc string TxTable.rawTx, rc string TxTable.txid, rc long TxTable.depth, Satoshi(rc long TxTable.receivedSat),
-      Satoshi(rc long TxTable.sentSat), Satoshi(rc long TxTable.feeSat), rc long TxTable.firstSeen, rc string TxTable.description,
-      MilliSatoshi(rc long TxTable.balanceMsat), rc string TxTable.fiatRates, rc long TxTable.incoming, rc long TxTable.doubleSpent)
+      Satoshi(rc long TxTable.sentSat), Satoshi(rc long TxTable.feeSat), rc long TxTable.seenAt, rc long TxTable.updatedAt,
+      rc string TxTable.description, MilliSatoshi(rc long TxTable.balanceMsat), rc string TxTable.fiatRates,
+      rc long TxTable.incoming, rc long TxTable.doubleSpent)
 }

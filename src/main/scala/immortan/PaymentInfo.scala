@@ -30,9 +30,14 @@ object PaymentStatus {
 }
 
 sealed trait TransactionDetails {
+  // We order items on UI by when they were first seen
+  // We hide items depending on when they were updated
+  def updatedAt: Long
+  def seenAt: Long
+
+  // What user will see as item date
   val date: Date = new Date(seenAt)
   val identity: String
-  def seenAt: Long
 }
 
 case class LNUrlLinkInfo(domain: String, locator: String, payString: String, nextWithdrawString: String, payMetaString: String, lastMsat: MilliSatoshi,
@@ -41,6 +46,7 @@ case class LNUrlLinkInfo(domain: String, locator: String, payString: String, nex
 
   override val identity: String = domain + payString // Withdraw part may change, but domain + pay part always stays stable
   override val seenAt: Long = System.currentTimeMillis + lastDate // To make it always appear on top in timestamp-sorted lists on UI
+  override val updatedAt: Long = lastDate // To properly hide it if user chooses an update-filtered view
   override val date: Date = new Date(lastDate) // To display real date of last usage in lists on UI
 
   lazy val label: Option[String] = Option(labelString).filter(_.nonEmpty)
@@ -58,16 +64,18 @@ case class LNUrlLinkInfo(domain: String, locator: String, payString: String, nex
   lazy val imageBytes: Option[Bytes] = payMetaData.map(_.imageBase64s.head).map(Base64.decode).toOption
 }
 
-case class DelayedRefunds(txToParent: Map[Transaction, TxConfirmedAtOpt], seenAt: Long = Long.MaxValue) extends TransactionDetails {
+case class DelayedRefunds(txToParent: Map[Transaction, TxConfirmedAtOpt] = Map.empty) extends TransactionDetails {
+  override val seenAt: Long = Long.MaxValue // To make it always appear on top in timestamp-sorted lists on UI
+  override val updatedAt: Long = Long.MaxValue // To never hide it if user chooses an update-filtered view
   lazy val totalAmount: MilliSatoshi = txToParent.keys.map(_.txOut.head.amount).sum.toMilliSatoshi
   override val identity: String = "DelayedRefunds"
 }
 
 case class SplitParams(prExt: PaymentRequestExt, action: Option[PaymentAction], description: PaymentDescription, cmd: SendMultiPart, chainFee: MilliSatoshi)
 
-case class PaymentInfo(prString: String, preimage: ByteVector32, status: Int, seenAt: Long, descriptionString: String, actionString: String, paymentHash: ByteVector32,
-                       paymentSecret: ByteVector32, received: MilliSatoshi, sent: MilliSatoshi, fee: MilliSatoshi, balanceSnapshot: MilliSatoshi, fiatRatesString: String,
-                       chainFee: MilliSatoshi, incoming: Long) extends TransactionDetails {
+case class PaymentInfo(prString: String, preimage: ByteVector32, status: Int, seenAt: Long, updatedAt: Long, descriptionString: String, actionString: String,
+                       paymentHash: ByteVector32, paymentSecret: ByteVector32, received: MilliSatoshi, sent: MilliSatoshi, fee: MilliSatoshi, balanceSnapshot: MilliSatoshi,
+                       fiatRatesString: String, chainFee: MilliSatoshi, incoming: Long) extends TransactionDetails {
 
   override val identity: String = prString
 
@@ -130,8 +138,9 @@ case class PlainMetaDescription(split: Option[SplitInfo], label: Option[String],
 
 // Relayed preimages
 
-case class RelayedPreimageInfo(paymentHashString: String, paymentSecretString: String, preimageString: String,
-                               relayed: MilliSatoshi, earned: MilliSatoshi, seenAt: Long) extends TransactionDetails {
+case class RelayedPreimageInfo(paymentHashString: String,
+                               paymentSecretString: String, preimageString: String, relayed: MilliSatoshi,
+                               earned: MilliSatoshi, seenAt: Long, updatedAt: Long) extends TransactionDetails {
 
   override val identity: String = paymentHashString
 
@@ -147,7 +156,7 @@ case class RelayedPreimageInfo(paymentHashString: String, paymentSecretString: S
 // Tx descriptions
 
 case class TxInfo(txString: String, txidString: String, depth: Long, receivedSat: Satoshi, sentSat: Satoshi, feeSat: Satoshi,
-                  seenAt: Long, descriptionString: String, balanceSnapshot: MilliSatoshi, fiatRatesString: String,
+                  seenAt: Long, updatedAt: Long, descriptionString: String, balanceSnapshot: MilliSatoshi, fiatRatesString: String,
                   incoming: Long, doubleSpent: Long) extends TransactionDetails {
 
   override val identity: String = txString
@@ -155,6 +164,8 @@ case class TxInfo(txString: String, txidString: String, depth: Long, receivedSat
   lazy val isIncoming: Boolean = 1L == incoming
   
   lazy val isDoubleSpent: Boolean = 1L == doubleSpent
+
+  lazy val isConfirmed: Boolean = depth >= LNParams.minDepthBlocks
 
   lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
 
