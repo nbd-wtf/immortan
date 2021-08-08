@@ -1,8 +1,8 @@
 package immortan.sqlite
 
+import fr.acinq.eclair._
 import java.lang.{Long => JLong}
 import immortan.{ChannelMaster, LNUrlLinkInfo}
-import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.bitcoin.Crypto
 import scodec.bits.ByteVector
 
@@ -27,12 +27,13 @@ class SQLiteLNUrl(db: DBInterface) {
     ChannelMaster.next(ChannelMaster.payMarketDbStream)
   }
 
-  def saveLink(locator: String, info: LNUrlLinkInfo): Unit = db txWrap {
-    db.change(LNUrlTable.newSql, info.domain, locator, info.payString, info.nextWithdrawString, info.payMetaString, info.lastMsat.toLong: JLong,
-      info.lastDate: JLong, info.lastHashString, info.lastPayNodeIdString, info.lastBalanceLong: JLong, info.lastPayCommentString, info.label)
+  def saveLink(locator: String, info: LNUrlLinkInfo, proof: Crypto.PrivateKey = randomKey): Unit = db txWrap {
+    db.change(LNUrlTable.newSql, info.domain, locator, info.payString, info.nextWithdrawString, info.payMetaString,
+      info.lastMsat.toLong: JLong, info.lastDate: JLong, info.lastHashString, info.lastPayNodeIdString,
+      info.lastBalanceLong: JLong, info.lastPayCommentString, proof.value.toHex, info.label)
 
     db.change(LNUrlTable.updPayInfoSql, info.payMetaString, info.lastMsat.toLong: JLong, info.lastDate: JLong,
-      info.lastHashString, info.lastPayNodeIdString, info.lastPayCommentString, info.domain)
+      info.lastHashString, info.lastPayNodeIdString, info.lastPayCommentString, proof.value.toHex, info.locator)
 
     db.change(LNUrlTable.newVirtualSql, info.payMetaData.get.queryText, info.domain)
     ChannelMaster.next(ChannelMaster.payMarketDbStream)

@@ -334,11 +334,11 @@ object ElectrumHeadersTable extends Table {
 }
 
 object LNUrlTable extends Table {
-  val (table, search, domain, locator, lnurlPay, nextLnurlWithdraw, payMeta, lastMsat, lastDate, lastHash, lastPayNodeId, lastBalance, lastPayComment, label) =
-    ("lnurl", "search", "domain", "locator", "lnurlpay", "nextlnurlwithdraw", "paymeta", "lastmsat", "lastdate", "lasthash", "lastpaynodeid", "lastbalance", "lastcomment", "label")
+  val (table, search, domain, locator, lnurlPay, nextLnurlWithdraw, payMeta, lastMsat, lastDate, lastHash, lastPayNodeId, lastBalance, lastPayComment, lastProof, label) =
+    ("lnurl", "search", "domain", "locator", "lnurlpay", "nextlnurlwithdraw", "paymeta", "lastmsat", "lastdate", "lasthash", "lastpaynodeid", "lastbalance", "lastcomment", "lastproof", "label")
 
-  private val inserts = s"$domain, $locator, $lnurlPay, $nextLnurlWithdraw, $payMeta, $lastMsat, $lastDate, $lastHash, $lastPayNodeId, $lastBalance, $lastPayComment, $label"
-  val newSql = s"INSERT OR IGNORE INTO $table ($inserts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  private val inserts = s"$domain, $locator, $lnurlPay, $nextLnurlWithdraw, $payMeta, $lastMsat, $lastDate, $lastHash, $lastPayNodeId, $lastBalance, $lastPayComment, $lastProof, $label"
+  val newSql = s"INSERT OR IGNORE INTO $table ($inserts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
   val newVirtualSql = s"INSERT INTO $fts$table ($search, $domain) VALUES (?, ?)"
 
@@ -346,7 +346,7 @@ object LNUrlTable extends Table {
 
   val searchSql = s"SELECT * FROM $table WHERE $domain IN (SELECT $domain FROM $fts$table WHERE $search MATCH ?) LIMIT 50"
 
-  val updPayInfoSql = s"UPDATE $table SET $payMeta = ?, $lastMsat = ?, $lastDate = ?, $lastHash = ?, $lastPayNodeId = ?, $lastPayComment = ? WHERE $locator = ?"
+  val updPayInfoSql = s"UPDATE $table SET $payMeta = ?, $lastMsat = ?, $lastDate = ?, $lastHash = ?, $lastPayNodeId = ?, $lastPayComment = ?, $lastProof = ? WHERE $locator = ?"
 
   val updWithdrawInfoSql = s"UPDATE $table SET $locator = ?, $nextLnurlWithdraw = ?, $lastMsat = ?, $lastDate = ?, $lastHash = ? WHERE $locator = ?"
 
@@ -361,7 +361,7 @@ object LNUrlTable extends Table {
       $IDAUTOINC, $domain STRING NOT NULL, $locator STRING NOT NULL $UNIQUE, $lnurlPay STRING NOT NULL,
       $nextLnurlWithdraw STRING NOT NULL, $payMeta STRING NOT NULL, $lastMsat INTEGER NOT NULL,
       $lastDate INTEGER NOT NULL, $lastHash STRING NOT NULL, $lastBalance STRING NOT NULL,
-      $lastPayComment STRING NOT NULL, $label STRING NOT NULL
+      $lastPayComment STRING NOT NULL, $lastProof STRING NOT NULL, $label STRING NOT NULL
     )"""
 
     val addIndex1 = s"CREATE VIRTUAL TABLE IF NOT EXISTS $fts$table USING $fts($search, $domain)"

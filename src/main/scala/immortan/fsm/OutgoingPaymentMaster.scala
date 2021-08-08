@@ -520,8 +520,6 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listeners: Iterable
     val otherOpt = singleCapableCncCandidates.collectFirst { case (cnc, sendable) if sendable >= wait.amount => cnc }
     val keepSendingAsOnePart = wait.remoteAttempts < data.cmd.routerConf.maxRemoteAttempts
 
-    println(s"-- ${wait.partId.take(4)}: amount: ${wait.amount}, keepSendingAsOnePart: $keepSendingAsOnePart, wait.remoteAttempts: ${wait.remoteAttempts}")
-
     otherOpt match {
       case Some(otherCapableCnc) if keepSendingAsOnePart => become(data.copy(parts = data.parts + wait.oneMoreRemoteAttempt(otherCapableCnc).tuple), PENDING)
       case _ if canBeSplit(wait.amount) => become(data, PENDING) doProcess CutIntoHalves(wait.amount)
