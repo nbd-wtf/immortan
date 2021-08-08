@@ -173,8 +173,7 @@ object ChainWalletTable extends Table {
   def createStatements: Seq[String] =
     s"""CREATE TABLE IF NOT EXISTS $table(
       $IDAUTOINC, $info TEXT NOT NULL, $xPub TEXT NOT NULL $UNIQUE,
-      $data BLOB NOT NULL, $lastBalance INTEGER NOT NULL,
-      $label TEXT NOT NULL
+      $data BLOB NOT NULL, $lastBalance INTEGER NOT NULL, $label TEXT NOT NULL
     )""" :: Nil
 }
 

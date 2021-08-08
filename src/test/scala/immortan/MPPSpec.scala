@@ -127,11 +127,11 @@ class MPPSpec extends AnyFunSuite {
     WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).data.inFlightParts.size == 2)
     val List(part1, part2) = cm.opm.data.payments(tag).data.inFlightParts
     // First chosen route can not handle a second part so another route is chosen
-    WAIT_UNTIL_TRUE(part1.route.hops.map(_.nodeId) == Seq(invalidPubKey, a, c, d))
-    WAIT_UNTIL_TRUE(part2.route.hops.map(_.nodeId) == Seq(invalidPubKey, a, b, d))
+    WAIT_UNTIL_TRUE(part2.route.hops.map(_.nodeId) == Seq(invalidPubKey, a, c, d))
+    WAIT_UNTIL_TRUE(part1.route.hops.map(_.nodeId) == Seq(invalidPubKey, a, b, d))
     WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).data.usedFee == 24L.msat)
-    WAIT_UNTIL_TRUE(part1.cmd.firstAmount == 300012L.msat)
     WAIT_UNTIL_TRUE(part2.cmd.firstAmount == 300012L.msat)
+    WAIT_UNTIL_TRUE(part1.cmd.firstAmount == 300012L.msat)
   }
 
   test("Halt on excessive local failures") {
@@ -465,8 +465,8 @@ class MPPSpec extends AnyFunSuite {
 
     WAIT_UNTIL_TRUE {
       val List(part1, part2) = cm.opm.data.payments(tag).data.parts.values.collect { case inFlight: WaitForRouteOrInFlight => inFlight }
-      assert(part1.flight.get.route.fee == 8L.msat) // First part takes a very cheap route, but that route can't handle the second part
-      assert(part2.flight.get.route.fee == 5984L.msat) // Another route is very expensive, but we can afford it because first part took very little, so we are still within fee bounds for a payment as a whole
+      assert(part2.flight.get.route.fee == 8L.msat) // One part takes a very cheap route, but that route can't handle the second part
+      assert(part1.flight.get.route.fee == 5984L.msat) // Another route is very expensive, but we can afford it because first part took very little, so we are still within fee bounds for a payment as a whole
       part1.amount == part2.amount
     }
   }

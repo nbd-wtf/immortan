@@ -319,11 +319,9 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listeners: Iterable
       }
 
     case (CMDAskForRoute, PENDING) =>
-      data.parts.values.collectFirst {
-        case wait: WaitForRouteOrInFlight if wait.flight.isEmpty =>
-          val fakeLocalEdge = mkFakeLocalEdge(from = invalidPubKey, wait.cnc.commits.remoteInfo.nodeId)
-          val routeParams = RouteParams(feeLeftover, data.cmd.routerConf.initRouteMaxLength, data.cmd.routerConf.routeMaxCltv)
-          opm process RouteRequest(fullTag, wait.partId, source = invalidPubKey, data.cmd.targetNodeId, wait.amount, fakeLocalEdge, routeParams)
+      data.parts.values.toList.collect { case wait: WaitForRouteOrInFlight if wait.flight.isEmpty => wait }.sortBy(_.amount).lastOption.foreach { wait =>
+        val routeParams = RouteParams(feeReserve = feeLeftover, routeMaxLength = data.cmd.routerConf.initRouteMaxLength, routeMaxCltv = data.cmd.routerConf.routeMaxCltv)
+        opm process RouteRequest(fullTag, wait.partId, invalidPubKey, data.cmd.targetNodeId, wait.amount, mkFakeLocalEdge(invalidPubKey, wait.cnc.commits.remoteInfo.nodeId), routeParams)
       }
 
     case (fail: NoRouteAvailable, PENDING) =>
@@ -521,6 +519,8 @@ class OutgoingPaymentSender(val fullTag: FullPaymentTag, val listeners: Iterable
     val singleCapableCncCandidates = shuffle(opm.rightNowSendable(data.cmd.allowedChans, feeLeftover).toSeq)
     val otherOpt = singleCapableCncCandidates.collectFirst { case (cnc, sendable) if sendable >= wait.amount => cnc }
     val keepSendingAsOnePart = wait.remoteAttempts < data.cmd.routerConf.maxRemoteAttempts
+
+    println(s"-- ${wait.partId.take(4)}: amount: ${wait.amount}, keepSendingAsOnePart: $keepSendingAsOnePart, wait.remoteAttempts: ${wait.remoteAttempts}")
 
     otherOpt match {
       case Some(otherCapableCnc) if keepSendingAsOnePart => become(data.copy(parts = data.parts + wait.oneMoreRemoteAttempt(otherCapableCnc).tuple), PENDING)
