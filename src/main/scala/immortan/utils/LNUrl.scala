@@ -22,7 +22,9 @@ import scala.util.Try
 object LNUrl {
   def fromIdentifier(identifier: String): LNUrl = {
     val (user, domain) = identifier.splitAt(identifier indexOf '@')
-    LNUrl(s"https://$domain/.well-known/lnurlp/$user")
+    val isOnionDomain: Boolean = domain.endsWith(NodeAddress.onionSuffix)
+    if (isOnionDomain) LNUrl(s"http://$domain/.well-known/lnurlp/$user")
+    else LNUrl(s"https://$domain/.well-known/lnurlp/$user")
   }
 
   def fromBech32(bech32url: String): LNUrl = {
@@ -32,7 +34,9 @@ object LNUrl {
   }
 
   def checkHost(host: String): Uri = Uri.parse(host) match { case uri =>
-    require(host.startsWith("https://"), "URI must be HTTPS")
+    val isOnion = host.startsWith("http://") && uri.getHost.endsWith(NodeAddress.onionSuffix)
+    val isSSLPlain = host.startsWith("https://") && !uri.getHost.endsWith(NodeAddress.onionSuffix)
+    require(isSSLPlain || isOnion, "URI is neither Plain/HTTPS nor Onion/HTTP request")
     uri
   }
 
