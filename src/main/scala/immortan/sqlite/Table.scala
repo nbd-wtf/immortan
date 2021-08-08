@@ -364,9 +364,23 @@ object LNUrlTable extends Table {
       $lastPayComment STRING NOT NULL, $lastProof STRING NOT NULL, $label STRING NOT NULL
     )"""
 
-    val addIndex1 = s"CREATE VIRTUAL TABLE IF NOT EXISTS $fts$table USING $fts($search, $domain)"
+    val addSearchTable = s"CREATE VIRTUAL TABLE IF NOT EXISTS $fts$table USING $fts($search, $domain)"
     val addIndex2 = s"CREATE INDEX IF NOT EXISTS idx2$table ON $table ($lastDate)"
     val addIndex3 = s"CREATE INDEX IF NOT EXISTS idx3$table ON $table ($domain)"
-    createTable :: addIndex1 :: addIndex2 :: addIndex3 :: Nil
+    createTable :: addSearchTable :: addIndex2 :: addIndex3 :: Nil
+  }
+}
+
+object UsedDomainsTable extends Table {
+  val (table, domain, stamp, protocol) = ("useddomains", "domain", "stamp", "protocol")
+
+  val newSql = s"INSERT INTO $table ($domain, $stamp, $protocol) VALUES (?, ?, ?)"
+
+  val selectCountSql = s"SELECT COUNT($domain) FROM $table WHERE $domain = ?"
+
+  def createStatements: Seq[String] = {
+    val createTable = s"CREATE TABLE IF NOT EXISTS $table($IDAUTOINC, $domain STRING NOT NULL, $stamp INTEGER NOT NULL, $protocol STRING NOT NULL)"
+    val addIndex1 = s"CREATE INDEX IF NOT EXISTS idx1$table ON $table ($domain)"
+    createTable :: addIndex1 :: Nil
   }
 }
