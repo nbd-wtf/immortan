@@ -19,18 +19,18 @@ object ElectrumWalletType {
   }
 
   def makeSigningType(tag: String, secrets: AccountAndXPrivKey, chainHash: ByteVector32): ElectrumWalletType = tag match {
-    case EclairWallet.BIP32 => ElectrumWallet32(secrets.asSome, publicKey(secrets.xPriv), chainHash, tag)
-    case EclairWallet.BIP44 => ElectrumWallet32(secrets.asSome, publicKey(secrets.xPriv), chainHash, tag)
-    case EclairWallet.BIP49 => ElectrumWallet49(secrets.asSome, publicKey(secrets.xPriv), chainHash, tag)
-    case EclairWallet.BIP84 => ElectrumWallet84(secrets.asSome, publicKey(secrets.xPriv), chainHash, tag)
+    case EclairWallet.BIP32 => ElectrumWallet32(secrets.asSome, publicKey(secrets.xPriv), chainHash)
+    case EclairWallet.BIP44 => ElectrumWallet32(secrets.asSome, publicKey(secrets.xPriv), chainHash)
+    case EclairWallet.BIP49 => ElectrumWallet49(secrets.asSome, publicKey(secrets.xPriv), chainHash)
+    case EclairWallet.BIP84 => ElectrumWallet84(secrets.asSome, publicKey(secrets.xPriv), chainHash)
     case _ => throw new RuntimeException
   }
 
   def makeWatchingType(tag: String, xPub: ExtendedPublicKey, chainHash: ByteVector32): ElectrumWalletType = tag match {
-    case EclairWallet.BIP32 => ElectrumWallet32(secrets = None, xPub, chainHash, tag)
-    case EclairWallet.BIP44 => ElectrumWallet32(secrets = None, xPub, chainHash, tag)
-    case EclairWallet.BIP49 => ElectrumWallet49(secrets = None, xPub, chainHash, tag)
-    case EclairWallet.BIP84 => ElectrumWallet84(secrets = None, xPub, chainHash, tag)
+    case EclairWallet.BIP32 => ElectrumWallet32(secrets = None, xPub, chainHash)
+    case EclairWallet.BIP44 => ElectrumWallet32(secrets = None, xPub, chainHash)
+    case EclairWallet.BIP49 => ElectrumWallet49(secrets = None, xPub, chainHash)
+    case EclairWallet.BIP84 => ElectrumWallet84(secrets = None, xPub, chainHash)
     case _ => throw new RuntimeException
   }
 
@@ -63,8 +63,7 @@ object ElectrumWalletType {
   }
 }
 
-abstract class ElectrumWalletType(val tag: String) {
-
+abstract class ElectrumWalletType {
   val secrets: Option[AccountAndXPrivKey]
 
   val xPub: ExtendedPublicKey
@@ -91,7 +90,7 @@ abstract class ElectrumWalletType(val tag: String) {
   def signTransaction(usableUtxos: Seq[Utxo], tx: Transaction): Transaction
 }
 
-case class ElectrumWallet32(secrets: Option[AccountAndXPrivKey], xPub: ExtendedPublicKey, chainHash: ByteVector32, initTag: String = EclairWallet.BIP32) extends ElectrumWalletType(initTag) {
+case class ElectrumWallet32(secrets: Option[AccountAndXPrivKey], xPub: ExtendedPublicKey, chainHash: ByteVector32) extends ElectrumWalletType {
 
   override def textAddress(key: ExtendedPublicKey): String = computeP2PkhAddress(key.publicKey, chainHash)
 
@@ -124,7 +123,7 @@ case class ElectrumWallet32(secrets: Option[AccountAndXPrivKey], xPub: ExtendedP
   }
 }
 
-case class ElectrumWallet49(secrets: Option[AccountAndXPrivKey], xPub: ExtendedPublicKey, chainHash: ByteVector32, initTag: String = EclairWallet.BIP49) extends ElectrumWalletType(initTag) {
+case class ElectrumWallet49(secrets: Option[AccountAndXPrivKey], xPub: ExtendedPublicKey, chainHash: ByteVector32) extends ElectrumWalletType {
 
   override def textAddress(key: ExtendedPublicKey): String = computeBIP49Address(key.publicKey, chainHash)
 
@@ -161,7 +160,7 @@ case class ElectrumWallet49(secrets: Option[AccountAndXPrivKey], xPub: ExtendedP
   }
 }
 
-case class ElectrumWallet84(secrets: Option[AccountAndXPrivKey], xPub: ExtendedPublicKey, chainHash: ByteVector32, initTag: String = EclairWallet.BIP84) extends ElectrumWalletType(initTag) {
+case class ElectrumWallet84(secrets: Option[AccountAndXPrivKey], xPub: ExtendedPublicKey, chainHash: ByteVector32) extends ElectrumWalletType {
 
   override def textAddress(key: ExtendedPublicKey): String = computeBIP84Address(key.publicKey, chainHash)
 

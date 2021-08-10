@@ -35,6 +35,13 @@ object Channel {
     case _ => throw new RuntimeException
   }.toMap
 
+  def totalBalance(chans: Iterable[Channel] = Nil): MilliSatoshi =
+    chans.collect { case chan if isOperationalOrWaiting(chan) => chan.data }.map {
+      case data: HasNormalCommitments => data.commitments.latestReducedRemoteSpec.toRemote
+      case data: HostedCommits => data.nextLocalSpec.toLocal
+      case _ => MilliSatoshi(0L)
+    }.sum
+
   def chanAndCommitsOpt(chan: Channel): Option[ChanAndCommits] = chan.data match {
     case data: HasNormalCommitments => ChanAndCommits(chan, data.commitments).asSome
     case data: HostedCommits => ChanAndCommits(chan, data).asSome

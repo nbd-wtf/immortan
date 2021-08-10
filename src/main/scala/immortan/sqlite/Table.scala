@@ -168,7 +168,7 @@ object ChainWalletTable extends Table {
 
   val updLabelSql = s"UPDATE $table SET $label = ? WHERE $xPub = ?"
 
-  val selectSql = s"SELECT * FROM $table ORDER BY $id DESC"
+  val selectSql = s"SELECT * FROM $table ORDER BY $id ASC"
 
   def createStatements: Seq[String] =
     s"""CREATE TABLE IF NOT EXISTS $table(
@@ -251,10 +251,10 @@ object PaymentTable extends Table {
 }
 
 object TxTable extends Table {
-  val (search, table, rawTx, txid, xPub, depth, receivedSat, sentSat, feeSat, seenAt, updatedAt, description, balanceMsat, fiatRates, incoming, doubleSpent) =
-    ("tsearch", "txs", "raw", "txid", "xpub", "depth", "received", "sent", "fee", "seen", "updated", "desc", "balance", "fiatrates", "incoming", "doublespent")
+  val (search, table, rawTx, txid, pub, depth, receivedSat, sentSat, feeSat, seenAt, updatedAt, description, balanceMsat, fiatRates, incoming, doubleSpent) =
+    ("tsearch", "txs", "raw", "txid", "pub", "depth", "received", "sent", "fee", "seen", "updated", "desc", "balance", "fiatrates", "incoming", "doublespent")
 
-  private val inserts = s"$rawTx, $txid, $xPub, $depth, $receivedSat, $sentSat, $feeSat, $seenAt, $updatedAt, $description, $balanceMsat, $fiatRates, $incoming, $doubleSpent"
+  private val inserts = s"$rawTx, $txid, $pub, $depth, $receivedSat, $sentSat, $feeSat, $seenAt, $updatedAt, $description, $balanceMsat, $fiatRates, $incoming, $doubleSpent"
   val newSql = s"INSERT OR IGNORE INTO $table ($inserts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
   val newVirtualSql = s"INSERT INTO $fts$table ($search, $txid) VALUES (?, ?)"
@@ -275,13 +275,13 @@ object TxTable extends Table {
 
   def createStatements: Seq[String] = {
     val createTable = s"""CREATE TABLE IF NOT EXISTS $table(
-      $IDAUTOINC, $rawTx TEXT NOT NULL, $txid TEXT NOT NULL $UNIQUE, $xPub TEXT NOT NULL, $depth INTEGER NOT NULL, $receivedSat INTEGER NOT NULL,
+      $IDAUTOINC, $rawTx TEXT NOT NULL, $txid TEXT NOT NULL $UNIQUE, $pub TEXT NOT NULL, $depth INTEGER NOT NULL, $receivedSat INTEGER NOT NULL,
       $sentSat INTEGER NOT NULL, $feeSat INTEGER NOT NULL, $seenAt INTEGER NOT NULL, $updatedAt INTEGER NOT NULL, $description TEXT NOT NULL,
       $balanceMsat INTEGER NOT NULL, $fiatRates TEXT NOT NULL, $incoming INTEGER NOT NULL, $doubleSpent INTEGER NOT NULL
     )"""
 
     val addSearchTable = s"CREATE VIRTUAL TABLE IF NOT EXISTS $fts$table USING $fts($search, $txid)"
-    val addIndex1 = s"CREATE INDEX IF NOT EXISTS idx1$table ON $table ($xPub)"
+    val addIndex1 = s"CREATE INDEX IF NOT EXISTS idx1$table ON $table ($pub)"
     createTable :: addIndex1 :: addSearchTable :: Nil
   }
 }

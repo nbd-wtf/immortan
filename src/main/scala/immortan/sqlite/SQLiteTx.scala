@@ -48,8 +48,7 @@ class SQLiteTx(val db: DBInterface) {
   }
 
   def toTxInfo(rc: RichCursor): TxInfo =
-    TxInfo(rc string TxTable.rawTx, rc string TxTable.txid, rc long TxTable.depth, Satoshi(rc long TxTable.receivedSat),
-      Satoshi(rc long TxTable.sentSat), Satoshi(rc long TxTable.feeSat), rc long TxTable.seenAt, rc long TxTable.updatedAt,
-      rc string TxTable.description, MilliSatoshi(rc long TxTable.balanceMsat), rc string TxTable.fiatRates,
-      rc long TxTable.incoming, rc long TxTable.doubleSpent)
+    TxInfo(rc string TxTable.rawTx, rc string TxTable.txid, rc string TxTable.pub, rc long TxTable.depth, Satoshi(rc long TxTable.receivedSat),
+      Satoshi(rc long TxTable.sentSat), Satoshi(rc long TxTable.feeSat), rc long TxTable.seenAt, rc long TxTable.updatedAt, rc string TxTable.description,
+      MilliSatoshi(rc long TxTable.balanceMsat), rc string TxTable.fiatRates, rc long TxTable.incoming, rc long TxTable.doubleSpent)
 }

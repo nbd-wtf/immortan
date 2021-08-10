@@ -61,7 +61,7 @@ object LNParams {
   val minForceClosableOutgoingHtlcAmountToFeeRatio = 5 // When peer sends a suspiciously low feerate, how much higher than trim threshold should our outgoing HTLC be for us to force-close
   val minPayment: MilliSatoshi = MilliSatoshi(1000L) // We can neither send nor receive LN payments which are below this value
   val minFundingSatoshis: Satoshi = Satoshi(200000L) // Proposed channels of capacity less than this are not allowed
-  val minDustLimit: Satoshi = Satoshi(546L)
+  val minDustLimit: Satoshi = Satoshi(330L)
   val minDepthBlocks: Int = 3
 
   // Variables to be assigned at runtime
@@ -111,8 +111,8 @@ object LNParams {
 
   // We make sure force-close pays directly to wallet
   def makeChannelParams(chainWallet: WalletExt, isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {
-    val walletKey = Await.result(chainWallet.lnWallet.getReceiveAddresses, atMost = 40.seconds).values.head.publicKey
-    makeChannelParams(Script.write(Script.pay2wpkh(walletKey).toList), walletKey, isFunder, fundingAmount)
+    val walletKey = Await.result(chainWallet.lnWallet.getReceiveAddresses, atMost = 40.seconds).address2PubKey.values.head
+    makeChannelParams(Script.write(Script.pay2wpkh(walletKey.publicKey).toList), walletKey.publicKey, isFunder, fundingAmount)
   }
 
   // We make sure that funder and fundee key path end differently
@@ -138,18 +138,20 @@ object LNParams {
 
   case class WalletExt(wallets: List[ElectrumEclairWallet], catcher: ActorRef, sync: ActorRef, pool: ActorRef, watcher: ActorRef, params: WalletParameters) extends CanBeShutDown { me =>
 
-    def lastBalanceUpdated(event: WalletReady): WalletExt = me.modify(_.wallets.eachWhere(_.ewt.xPub == event.xPub).info.lastBalance).setTo(event.balance)
+    def withBalanceUpdated(event: WalletReady): WalletExt = me.modify(_.wallets.eachWhere(_.ewt.xPub == event.xPub).info.lastBalance).setTo(event.balance)
 
-    override def becomeShutDown: Unit = wallets.map(_.walletRef) ++ List(catcher, sync, pool, watcher) foreach (_ ! PoisonPill)
-
-    def findByTag(tag: String): Option[ElectrumEclairWallet] = wallets.find(_.ewt.tag == tag)
+    def findByTag(tag: String): Option[ElectrumEclairWallet] = wallets.find(_.info.core.walletType == tag)
 
     def + (wallet: ElectrumEclairWallet): WalletExt = copy(wallets = wallet :: wallets)
 
+    def mostFundedWallet: ElectrumEclairWallet = wallets.maxBy(_.info.lastBalance)
+
     lazy val lnWallet: ElectrumEclairWallet = findByTag(EclairWallet.BIP84).filter(_.ewt.secrets.isDefined).get
 
+    lazy val totalBalance: MilliSatoshi = chainWallets.wallets.map(_.info.lastBalance).sum.toMilliSatoshi
+
     def makeSigningWalletParts(core: SigningWallet, lastBalance: Satoshi, label: String): ElectrumEclairWallet = {
-      val ewt = ElectrumWalletType.makeSigningType(tag = core.walletType, LNParams.secret.keys.master, LNParams.chainHash)
+      val ewt = ElectrumWalletType.makeSigningType(core.walletType, LNParams.secret.keys.master, LNParams.chainHash)
       val walletRef = system.actorOf(Props apply new ElectrumWallet(pool, sync, params, ewt), core.walletType)
       val infoNoPersistent = CompleteChainWalletInfo(core, data = ByteVector.empty, lastBalance, label)
       ElectrumEclairWallet(walletRef, ewt, infoNoPersistent)
@@ -184,6 +186,12 @@ object LNParams {
       val wallets1 = wallets diff List(wallet)
       wallet.walletRef ! PoisonPill
       copy(wallets = wallets1)
+    }
+
+    override def becomeShutDown: Unit = {
+      val actors = List(catcher, sync, pool, watcher)
+      val allActors = wallets.map(_.walletRef) ++ actors
+      allActors.foreach(_ ! PoisonPill)
     }
   }
 }

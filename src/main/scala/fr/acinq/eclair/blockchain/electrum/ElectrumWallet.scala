@@ -261,7 +261,7 @@ object ElectrumWallet {
   case class GetBalanceResponse(totalBalance: Satoshi) extends Response
 
   case object GetCurrentReceiveAddresses extends Request
-  case class GetCurrentReceiveAddressesResponse(address2PubKey: Address2PubKey) extends Response
+  case class GetCurrentReceiveAddressesResponse(address2PubKey: Map[String, ExtendedPublicKey] = Map.empty) extends Response
 
   case class CompleteTransaction(tx: Transaction, feeRatePerKw: FeeratePerKw, sequenceFlag: Long) extends Request
   case class CompleteTransactionResponse(result: Option[TxAndFee] = None) extends Response
@@ -315,7 +315,7 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
 
   lazy val utxos: Seq[Utxo] = history.keys.toList.flatMap(getUtxos)
 
-  def currentReceiveAddresses: Address2PubKey = firstUnusedAccountKeys match {
+  def currentReceiveAddresses: Map[String, ExtendedPublicKey] = firstUnusedAccountKeys match {
     case keys if keys.isEmpty => accountKeys.map(ewt.textAddress).zip(accountKeys).toMap
     case keys => keys.map(ewt.textAddress).zip(keys).toMap
   }

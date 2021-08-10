@@ -155,9 +155,9 @@ case class RelayedPreimageInfo(paymentHashString: String,
 
 // Tx descriptions
 
-case class TxInfo(txString: String, txidString: String, depth: Long, receivedSat: Satoshi, sentSat: Satoshi, feeSat: Satoshi,
-                  seenAt: Long, updatedAt: Long, descriptionString: String, balanceSnapshot: MilliSatoshi, fiatRatesString: String,
-                  incoming: Long, doubleSpent: Long) extends TransactionDetails {
+case class TxInfo(txString: String, txidString: String, pubKeyString: String, depth: Long, receivedSat: Satoshi, sentSat: Satoshi, feeSat: Satoshi,
+                  seenAt: Long, updatedAt: Long, descriptionString: String, balanceSnapshot: MilliSatoshi, fiatRatesString: String, incoming: Long,
+                  doubleSpent: Long) extends TransactionDetails {
 
   override val identity: String = txString
 
@@ -170,6 +170,8 @@ case class TxInfo(txString: String, txidString: String, depth: Long, receivedSat
   lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
 
   lazy val description: TxDescription = to[TxDescription](descriptionString)
+
+  lazy val pubKey: PublicKey = PublicKey(ByteVector32 fromValidHex txidString)
 
   lazy val txid: ByteVector32 = ByteVector32.fromValidHex(txidString)
 
