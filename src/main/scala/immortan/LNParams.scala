@@ -101,6 +101,7 @@ object LNParams {
       (BasicMultiPartPayment, FeatureSupport.Optional),
       (VariableLengthOnion, FeatureSupport.Optional),
       (TrampolineRouting, FeatureSupport.Optional),
+      (ShutdownAnySegwit, FeatureSupport.Optional),
       (StaticRemoteKey, FeatureSupport.Optional),
       (HostedChannels, FeatureSupport.Optional),
       (PaymentSecret, FeatureSupport.Optional),

@@ -12,11 +12,11 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.blockchain.TxConfirmedAt
 import fr.acinq.eclair.crypto.Generators
 import scodec.bits.ByteVector
+import scala.util.Try
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
 import immortan.crypto.Tools.{Any2Some, newFeerate}
 import immortan.{ChannelBag, LNParams}
-import scala.util.{Success, Try}
 
 
 object Helpers {
@@ -125,11 +125,12 @@ object Helpers {
       case _ => c.revokedCommitPublished.find(_.isCommitConfirmed).map(RevokedClose)
     }
 
-    def isValidFinalScriptPubkey(scriptPubKey: ByteVector): Boolean = Try(Script parse scriptPubKey) match {
-      case Success(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubkeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) if pubkeyHash.size == 20 => true
-      case Success(OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil) if scriptHash.size == 20 => true
-      case Success(OP_0 :: OP_PUSHDATA(pubkeyHash, _) :: Nil) if pubkeyHash.size == 20 => true
-      case Success(OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil) if scriptHash.size == 32 => true
+    def isValidFinalScriptPubkey(scriptPubKey: ByteVector): Boolean = Try(Script parse scriptPubKey).toOption.exists {
+      case (OP_1 | OP_2 | OP_3 | OP_4 | OP_5 | OP_6 | OP_7 | OP_8 | OP_9 | OP_10 | OP_11 | OP_12 | OP_13 | OP_14 | OP_15 | OP_16) :: OP_PUSHDATA(exe, _) :: Nil if 2 <= exe.length && exe.length <= 40 => true
+      case OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubkeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil if pubkeyHash.size == 20 => true
+      case OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil if scriptHash.size == 20 => true
+      case OP_0 :: OP_PUSHDATA(pubkeyHash, _) :: Nil if pubkeyHash.size == 20 => true
+      case OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil if scriptHash.size == 32 => true
       case _ => false
     }
 

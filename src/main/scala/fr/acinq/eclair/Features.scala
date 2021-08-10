@@ -26,18 +26,24 @@ import scodec.bits.{BitVector, ByteVector}
 sealed trait FeatureSupport
 
 object FeatureSupport {
-  case object Mandatory extends FeatureSupport { override def toString: String = "mandatory" }
-  case object Optional extends FeatureSupport { override def toString: String = "optional" }
+  case object Mandatory extends FeatureSupport {
+    override def toString: String = "mandatory"
+  }
+
+  case object Optional extends FeatureSupport {
+    override def toString: String = "optional"
+  }
 }
 
 trait Feature {
   def rfcName: String
+
   def mandatory: Int
+
   def optional: Int = mandatory + 1
 
   def supportBit(support: FeatureSupport): Int = support match {
-    case Mandatory => mandatory
-    case Optional => optional
+    case Mandatory => mandatory case Optional => optional
   }
 
   override def toString: String = rfcName
@@ -48,8 +54,7 @@ case class UnknownFeature(bitIndex: Int)
 case class Features(activated: Map[Feature, FeatureSupport], unknown: Set[UnknownFeature] = Set.empty) {
 
   def hasFeature(feature: Feature, support: Option[FeatureSupport] = None): Boolean = support match {
-    case Some(s) => activated.get(feature).contains(s)
-    case None => activated.contains(feature)
+    case Some(s) => activated.get(feature).contains(s) case None => activated.contains(feature)
   }
 
   def hasPluginFeature(feature: UnknownFeature): Boolean = unknown.contains(feature)
@@ -67,7 +72,7 @@ case class Features(activated: Map[Feature, FeatureSupport], unknown: Set[Unknow
   }
 
   def toByteVector: ByteVector = {
-    val activatedFeatureBytes = toByteVectorFromIndex(activated.map { case (feature, support) => feature.supportBit(support) }.toSet)
+    val activatedFeatureBytes = toByteVectorFromIndex(activated.map { case (feature, support) => feature supportBit support }.toSet)
     val unknownFeatureBytes = toByteVectorFromIndex(unknown.map(_.bitIndex))
     val maxSize = activatedFeatureBytes.size.max(unknownFeatureBytes.size)
     activatedFeatureBytes.padLeft(maxSize) | unknownFeatureBytes.padLeft(maxSize)
@@ -77,7 +82,7 @@ case class Features(activated: Map[Feature, FeatureSupport], unknown: Set[Unknow
     if (indexes.isEmpty) return ByteVector.empty
     // When converting from BitVector to ByteVector, scodec pads right instead of left, so we make sure we pad to bytes *before* setting feature bits.
     var buf = BitVector.fill(indexes.max + 1)(high = false).bytes.bits
-    indexes.foreach { i => buf = buf.set(i) }
+    indexes.foreach { index => buf = buf.set(index) }
     buf.reverse.bytes
   }
 }
@@ -166,21 +171,16 @@ object Features {
     val mandatory = 32774
   }
 
-  val knownFeatures: Set[Feature] = Set(
-    ChannelRangeQueriesExtended,
-    OptionDataLossProtect,
-    BasicMultiPartPayment,
-    ChannelRangeQueries,
-    VariableLengthOnion,
-    InitialRoutingSync,
-    TrampolineRouting,
-    TrampolinePayment,
-    StaticRemoteKey,
-    HostedChannels,
-    PaymentSecret,
-    ChainSwap,
-    Wumbo
-  )
+  case object ShutdownAnySegwit extends Feature {
+    val rfcName = "Any shutdown script"
+    val mandatory = 26
+  }
+
+  val knownFeatures: Set[Feature] =
+    Set(ChannelRangeQueriesExtended, OptionDataLossProtect, BasicMultiPartPayment,
+      ChannelRangeQueries, VariableLengthOnion, InitialRoutingSync, TrampolineRouting,
+      ShutdownAnySegwit, TrampolinePayment, StaticRemoteKey, HostedChannels, PaymentSecret,
+      ChainSwap, Wumbo)
 
   private val featuresDependency = Map(
     ChannelRangeQueriesExtended -> (ChannelRangeQueries :: Nil),
@@ -203,5 +203,4 @@ object Features {
   def canUseFeature(localFeatures: Features, remoteFeatures: Features, feature: Feature): Boolean = {
     localFeatures.hasFeature(feature) && remoteFeatures.hasFeature(feature)
   }
-
 }
