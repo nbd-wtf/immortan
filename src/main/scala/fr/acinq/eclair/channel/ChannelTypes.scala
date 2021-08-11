@@ -233,11 +233,13 @@ case class ChannelKeys(path: KeyPath, shaSeed: ByteVector32, fundingKey: Extende
   def commitmentPoint(index: Long): PublicKey = Generators.perCommitPoint(shaSeed, index)
 }
 
-final case class LocalParams(keys: ChannelKeys, dustLimit: Satoshi, maxHtlcValueInFlightMsat: UInt64, channelReserve: Satoshi, htlcMinimum: MilliSatoshi,
-                             toSelfDelay: CltvExpiryDelta, maxAcceptedHtlcs: Int, isFunder: Boolean, defaultFinalScriptPubKey: ByteVector, walletStaticPaymentBasepoint: PublicKey)
+final case class LocalParams(keys: ChannelKeys, dustLimit: Satoshi, maxHtlcValueInFlightMsat: UInt64, channelReserve: Satoshi,
+                             htlcMinimum: MilliSatoshi, toSelfDelay: CltvExpiryDelta, maxAcceptedHtlcs: Int, isFunder: Boolean,
+                             defaultFinalScriptPubKey: ByteVector, walletStaticPaymentBasepoint: PublicKey)
 
-final case class RemoteParams(dustLimit: Satoshi, maxHtlcValueInFlightMsat: UInt64, channelReserve: Satoshi, htlcMinimum: MilliSatoshi, toSelfDelay: CltvExpiryDelta, maxAcceptedHtlcs: Int,
-                              fundingPubKey: PublicKey, revocationBasepoint: PublicKey, paymentBasepoint: PublicKey, delayedPaymentBasepoint: PublicKey, htlcBasepoint: PublicKey)
+final case class RemoteParams(dustLimit: Satoshi, maxHtlcValueInFlightMsat: UInt64, channelReserve: Satoshi, htlcMinimum: MilliSatoshi,
+                              toSelfDelay: CltvExpiryDelta, maxAcceptedHtlcs: Int, fundingPubKey: PublicKey, revocationBasepoint: PublicKey,
+                              paymentBasepoint: PublicKey, delayedPaymentBasepoint: PublicKey, htlcBasepoint: PublicKey, shutdownScript: Option[ByteVector] = None)
 
 case class ChannelVersion(bits: BitVector) {
   val commitmentFormat: CommitmentFormat = DefaultCommitmentFormat

@@ -166,7 +166,8 @@ object ChannelCodecs {
       ("revocationBasepoint" | publicKey) ::
       ("paymentBasepoint" | publicKey) ::
       ("delayedPaymentBasepoint" | publicKey) ::
-      ("htlcBasepoint" | publicKey)
+      ("htlcBasepoint" | publicKey) ::
+      ("shutdownScript" | optional(bool8, bytes))
   }.as[RemoteParams]
 
   val remoteNodeInfoCodec = {
