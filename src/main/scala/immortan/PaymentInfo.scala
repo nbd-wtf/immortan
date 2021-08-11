@@ -171,7 +171,7 @@ case class TxInfo(txString: String, txidString: String, pubKeyString: String, de
 
   lazy val description: TxDescription = to[TxDescription](descriptionString)
 
-  lazy val pubKey: PublicKey = PublicKey(ByteVector32 fromValidHex txidString)
+  lazy val pubKey: PublicKey = PublicKey(ByteVector fromValidHex pubKeyString)
 
   lazy val txid: ByteVector32 = ByteVector32.fromValidHex(txidString)
 

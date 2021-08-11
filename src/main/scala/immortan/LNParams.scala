@@ -141,6 +141,8 @@ object LNParams {
 
     def withBalanceUpdated(event: WalletReady): WalletExt = me.modify(_.wallets.eachWhere(_.ewt.xPub == event.xPub).info.lastBalance).setTo(event.balance)
 
+    def findByPubKey(pub: PublicKey): Option[ElectrumEclairWallet] = wallets.find(_.ewt.xPub.publicKey == pub)
+
     def findByTag(tag: String): Option[ElectrumEclairWallet] = wallets.find(_.info.core.walletType == tag)
 
     def + (wallet: ElectrumEclairWallet): WalletExt = copy(wallets = wallet :: wallets)
