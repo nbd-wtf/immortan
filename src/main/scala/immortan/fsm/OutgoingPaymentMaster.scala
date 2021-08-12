@@ -269,7 +269,8 @@ case class OutgoingPaymentSenderData(cmd: SendMultiPart, parts: Map[ByteVector, 
     }
 
     def translateFails(failureList: Failures): String = failureList.map(_.asString).mkString("\n\n")
-    byAmount.mapValues(translateFails).map { case (amount, fails) => s"» $amount:\n\n$fails" }.mkString("\n\n")
+    val bySortedAmount = byAmount.mapValues(translateFails).toSeq.sortBy { case (amount, _) => -amount }
+    bySortedAmount.map { case (amount, fails) => s"» $amount:\n\n$fails" }.mkString("\n\n")
   }
 
   lazy val inFlightParts: Iterable[InFlightInfo] = parts.values.flatMap { case wait: WaitForRouteOrInFlight => wait.flight case _ => None }
