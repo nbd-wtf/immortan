@@ -8,10 +8,11 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.blockchain.TxConfirmedAt
 import fr.acinq.eclair.crypto.ShaChain
-
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, ExtendedPublicKey, KeyPath}
 import fr.acinq.bitcoin.{OutPoint, Transaction, TxOut}
+import fr.acinq.eclair.{FeatureSupport, Features}
 import immortan.{HostedCommits, RemoteNodeInfo}
+import scodec.bits.ByteVector
 import scodec.{Attempt, Codec}
 
 
@@ -36,8 +37,6 @@ object ChannelCodecs {
       ("path" | keyPathCodec) ::
       ("parent" | int64)
   }.as[ExtendedPublicKey]
-
-  val channelVersionCodec: Codec[ChannelVersion] = bits(ChannelVersion.LENGTH_BITS).as[ChannelVersion]
 
   val outPointCodec: Codec[OutPoint] = lengthDelimited(bytes.xmap(d => OutPoint.read(d.toArray), OutPoint.write))
 
@@ -142,6 +141,11 @@ object ChannelCodecs {
       ("htlcKey" | extendedPrivateKeyCodec)
   }.as[ChannelKeys]
 
+  val channelFeaturesCodec = lengthDelimited(bytes).xmap(
+    (b: ByteVector) => ChannelFeatures(Features(b).activated.keySet), // We make no difference between mandatory/optional, both are considered activated
+    (cf: ChannelFeatures) => Features(cf.activated.map(_ -> FeatureSupport.Mandatory).toMap).toByteVector // We encode features as mandatory, by convention
+  )
+
   val localParamsCodec = {
     ("keys" | channelKeysCodec) ::
       ("dustLimit" | satoshi) ::
@@ -179,7 +183,7 @@ object ChannelCodecs {
   val commitmentsCodec = {
     (byte withContext "channelFlags") ::
       (bytes32 withContext "channelId") ::
-      (channelVersionCodec withContext "channelVersion") ::
+      (channelFeaturesCodec withContext "channelFeatures") ::
       (either(bool8, waitingForRevocationCodec, publicKey) withContext "remoteNextCommitInfo") ::
       (byteAligned(ShaChain.shaChainCodec) withContext "remotePerCommitmentSecrets") ::
       (optional(bool8, lengthDelimited(channelUpdateCodec)) withContext "updateOpt") ::

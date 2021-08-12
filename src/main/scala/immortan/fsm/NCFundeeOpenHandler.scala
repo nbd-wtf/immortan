@@ -1,7 +1,7 @@
 package immortan.fsm
 
 import immortan.{ChannelListener, ChannelMaster, ChannelNormal, CommsTower, ConnectionListener, LNParams, RemoteNodeInfo}
-import fr.acinq.eclair.channel.{ChannelVersion, DATA_WAIT_FOR_FUNDING_CONFIRMED, INPUT_INIT_FUNDEE, PersistentChannelData}
+import fr.acinq.eclair.channel.{ChannelFeatures, DATA_WAIT_FOR_FUNDING_CONFIRMED, INPUT_INIT_FUNDEE, PersistentChannelData}
 import fr.acinq.eclair.wire.{HasChannelId, HasTemporaryChannelId, Init, LightningMessage, OpenChannel}
 import immortan.Channel.{WAIT_FOR_ACCEPT, WAIT_FUNDING_DONE}
 import immortan.ChannelListener.{Malfunction, Transition}
@@ -28,8 +28,9 @@ abstract class NCFundeeOpenHandler(info: RemoteNodeInfo, theirOpen: OpenChannel,
     }
 
     override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = {
+      val stickyChannelFeatures = ChannelFeatures.pickChannelFeatures(LNParams.ourInit.features, theirInit.features)
       val localParams = LNParams.makeChannelParams(freshChannel.chainWallet, isFunder = false, theirOpen.fundingSatoshis)
-      freshChannel process INPUT_INIT_FUNDEE(info, localParams, theirInit, ChannelVersion.STATIC_REMOTEKEY, theirOpen)
+      freshChannel process INPUT_INIT_FUNDEE(info, localParams, theirInit, stickyChannelFeatures, theirOpen)
     }
 
     override def onBecome: PartialFunction[Transition, Unit] = {

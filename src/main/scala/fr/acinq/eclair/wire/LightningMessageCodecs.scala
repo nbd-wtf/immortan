@@ -278,7 +278,7 @@ object LightningMessageCodecs {
       (uint16 withContext "maxAcceptedHtlcs") ::
       (millisatoshi withContext "channelCapacityMsat") ::
       (millisatoshi withContext "initialClientBalanceMsat") ::
-      (channelVersionCodec withContext "version")
+      (channelFeaturesCodec withContext "features")
   }.as[InitHostedChannel]
 
   lazy val hostedChannelBrandingCodec = {

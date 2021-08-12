@@ -97,16 +97,16 @@ object LNParams {
     Init(Features(
       (ChannelRangeQueries, FeatureSupport.Optional),
       (ChannelRangeQueriesExtended, FeatureSupport.Optional),
-      (OptionDataLossProtect, FeatureSupport.Optional),
-      (BasicMultiPartPayment, FeatureSupport.Optional),
+      (BasicMultiPartPayment, FeatureSupport.Mandatory),
+      (OptionDataLossProtect, FeatureSupport.Mandatory),
       (VariableLengthOnion, FeatureSupport.Optional),
       (TrampolineRouting, FeatureSupport.Optional),
       (ShutdownAnySegwit, FeatureSupport.Optional),
-      (StaticRemoteKey, FeatureSupport.Optional),
+      (StaticRemoteKey, FeatureSupport.Mandatory),
       (HostedChannels, FeatureSupport.Optional),
       (PaymentSecret, FeatureSupport.Optional),
       (ChainSwap, FeatureSupport.Optional),
-      (Wumbo, FeatureSupport.Optional)
+      (Wumbo, FeatureSupport.Mandatory)
     ), tlvStream)
   }
 

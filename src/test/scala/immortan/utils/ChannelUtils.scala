@@ -7,7 +7,7 @@ import immortan.fsm.{OutgoingPaymentListener, OutgoingPaymentSenderData}
 import fr.acinq.eclair.wire.{InitHostedChannel, LastCrossSignedState, NodeAddress}
 import immortan.{ChannelMaster, HostedCommits, PathFinder, RemoteNodeInfo}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.ChannelVersion
+import fr.acinq.eclair.channel.ChannelFeatures
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.ByteVector64
 import fr.acinq.bitcoin.SatoshiLong
@@ -31,7 +31,8 @@ object ChannelUtils {
     }
 
   def makeHostedCommits(nodeId: PublicKey, alias: String, toLocal: MilliSatoshi = 100000000L.msat): HostedCommits = {
-    val initMessage = InitHostedChannel(UInt64(toLocal.underlying + 100000000L), 10.msat, 20, 200000000L.msat, 0.msat, ChannelVersion.STANDARD)
+    val features = ChannelFeatures(Features.HostedChannels, Features.ResizeableHostedChannels)
+    val initMessage = InitHostedChannel(UInt64(toLocal.underlying + 100000000L), 10.msat, 20, 200000000L.msat, 0.msat, features)
 
     val lcss: LastCrossSignedState = LastCrossSignedState(isHost = false, refundScriptPubKey = randomBytes(119), initMessage, blockDay = 100, localBalanceMsat = toLocal,
       remoteBalanceMsat = 100000000L.msat, localUpdates = 201, remoteUpdates = 101, incomingHtlcs = Nil, outgoingHtlcs = Nil, remoteSigOfLocal = ByteVector64.Zeroes,

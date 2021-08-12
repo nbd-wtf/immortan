@@ -8,7 +8,7 @@ import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, Sho
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering, Protocol, Satoshi}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.ChannelVersion
+import fr.acinq.eclair.channel.ChannelFeatures
 import fr.acinq.eclair.router.Announcements
 import java.nio.charset.StandardCharsets
 import com.google.common.base.Charsets
@@ -246,7 +246,7 @@ trait HostedChannelMessage extends LightningMessage
 case class InvokeHostedChannel(chainHash: ByteVector32, refundScriptPubKey: ByteVector, secret: ByteVector = ByteVector.empty) extends HostedChannelMessage
 
 case class InitHostedChannel(maxHtlcValueInFlightMsat: UInt64, htlcMinimumMsat: MilliSatoshi, maxAcceptedHtlcs: Int, channelCapacityMsat: MilliSatoshi,
-                             initialClientBalanceMsat: MilliSatoshi, version: ChannelVersion) extends HostedChannelMessage
+                             initialClientBalanceMsat: MilliSatoshi, features: ChannelFeatures) extends HostedChannelMessage
 
 case class HostedChannelBranding(rgbColor: Color, pngIcon: Option[ByteVector], contactInfo: String) extends HostedChannelMessage
 

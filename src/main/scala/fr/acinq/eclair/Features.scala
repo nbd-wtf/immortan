@@ -1,27 +1,8 @@
-/*
- * Copyright 2019 ACINQ SAS
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package fr.acinq.eclair
 
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import scodec.bits.{BitVector, ByteVector}
 
-/**
- * Created by PM on 13/02/2017.
- */
 
 sealed trait FeatureSupport
 
@@ -45,50 +26,53 @@ trait Feature {
   def supportBit(support: FeatureSupport): Int = support match {
     case Mandatory => mandatory case Optional => optional
   }
-
-  override def toString: String = rfcName
 }
 
 case class UnknownFeature(bitIndex: Int)
 
 case class Features(activated: Map[Feature, FeatureSupport], unknown: Set[UnknownFeature] = Set.empty) {
 
-  def hasFeature(feature: Feature, support: Option[FeatureSupport] = None): Boolean = support match {
-    case Some(s) => activated.get(feature).contains(s) case None => activated.contains(feature)
-  }
-
-  def hasPluginFeature(feature: UnknownFeature): Boolean = unknown.contains(feature)
-
-  /** NB: this method is not reflexive, see [[Features.areCompatible]] if you want symmetric validation. */
-  def areSupported(remoteFeatures: Features): Boolean = {
-    // we allow unknown odd features (it's ok to be odd)
-    val unknownFeaturesOk = remoteFeatures.unknown.forall(_.bitIndex % 2 == 1)
-    // we verify that we activated every mandatory feature they require
-    val knownFeaturesOk = remoteFeatures.activated.forall {
-      case (_, Optional) => true
-      case (feature, Mandatory) => hasFeature(feature)
+  def hasFeature(feature: Feature, support: Option[FeatureSupport] = None): Boolean =
+    support match {
+      case Some(sup) => activated.get(feature).contains(sup)
+      case None => activated.contains(feature)
     }
+
+  def areSupported(remoteFeatures: Features): Boolean = {
+    val knownFeaturesOk = remoteFeatures.activated.forall {
+      case (feature, Mandatory) => hasFeature(feature)
+      case (_, Optional) => true
+    }
+
+    val unknownFeaturesOk = remoteFeatures.unknown.forall(1 == _.bitIndex % 2)
     unknownFeaturesOk && knownFeaturesOk
   }
 
   def toByteVector: ByteVector = {
-    val activatedFeatureBytes = toByteVectorFromIndex(activated.map { case (feature, support) => feature supportBit support }.toSet)
-    val unknownFeatureBytes = toByteVectorFromIndex(unknown.map(_.bitIndex))
-    val maxSize = activatedFeatureBytes.size.max(unknownFeatureBytes.size)
-    activatedFeatureBytes.padLeft(maxSize) | unknownFeatureBytes.padLeft(maxSize)
+    val unknownIndexes = for (feature <- unknown) yield feature.bitIndex
+    val activatedIndexes = activated.map { case (feature, sup) => feature supportBit sup }
+
+    val activatedBytes = toByteVectorFromIndex(activatedIndexes.toSet)
+    val unknownBytes = toByteVectorFromIndex(unknownIndexes)
+    val max = activatedBytes.size.max(unknownBytes.size)
+
+    activatedBytes.padLeft(max) | unknownBytes.padLeft(max)
   }
 
-  private def toByteVectorFromIndex(indexes: Set[Int]): ByteVector = {
+  private def toByteVectorFromIndex(indexes: Set[Int] = Set.empty): ByteVector = {
     if (indexes.isEmpty) return ByteVector.empty
-    // When converting from BitVector to ByteVector, scodec pads right instead of left, so we make sure we pad to bytes *before* setting feature bits.
+
     var buf = BitVector.fill(indexes.max + 1)(high = false).bytes.bits
-    indexes.foreach { index => buf = buf.set(index) }
+    indexes.foreach { index => buf = buf set index }
     buf.reverse.bytes
   }
 }
 
 object Features {
-  val empty: Features = Features(Map.empty[Feature, FeatureSupport])
+  val empty: Features = {
+    val noFeatures = Map.empty[Feature, FeatureSupport]
+    Features(noFeatures)
+  }
 
   def apply(features: (Feature, FeatureSupport)*): Features = Features(features.toMap)
 
@@ -100,6 +84,7 @@ object Features {
       case (true, idx) if knownFeatures.exists(_.mandatory == idx) => Right((knownFeatures.find(_.mandatory == idx).get, Mandatory))
       case (true, idx) => Left(UnknownFeature(idx))
     }
+
     Features(
       activated = all.collect { case Right((feature, support)) => feature -> support }.toMap,
       unknown = all.collect { case Left(inf) => inf }.toSet
@@ -163,12 +148,17 @@ object Features {
 
   case object HostedChannels extends Feature {
     val rfcName = "Hosted channels"
-    val mandatory = 32772
+    val mandatory = 32972
+  }
+
+  case object ResizeableHostedChannels extends Feature {
+    val rfcName = "Resizeable Hosted channels"
+    val mandatory = 32974
   }
 
   case object TrampolineRouting extends Feature {
     val rfcName = "Trampoline routing"
-    val mandatory = 32774
+    val mandatory = 33174
   }
 
   case object ShutdownAnySegwit extends Feature {
@@ -179,28 +169,14 @@ object Features {
   val knownFeatures: Set[Feature] =
     Set(ChannelRangeQueriesExtended, OptionDataLossProtect, BasicMultiPartPayment,
       ChannelRangeQueries, VariableLengthOnion, InitialRoutingSync, TrampolineRouting,
-      ShutdownAnySegwit, TrampolinePayment, StaticRemoteKey, HostedChannels, PaymentSecret,
-      ChainSwap, Wumbo)
+      ShutdownAnySegwit, TrampolinePayment, StaticRemoteKey, HostedChannels,
+      ResizeableHostedChannels, PaymentSecret, ChainSwap, Wumbo)
 
-  private val featuresDependency = Map(
-    ChannelRangeQueriesExtended -> (ChannelRangeQueries :: Nil),
-    BasicMultiPartPayment -> (PaymentSecret :: Nil),
-    PaymentSecret -> (VariableLengthOnion :: Nil),
-    TrampolinePayment -> (PaymentSecret :: Nil)
-  )
+  // Returns true if both feature sets are compatible
+  def areCompatible(ours: Features, theirs: Features): Boolean =
+    ours.areSupported(theirs) && theirs.areSupported(ours)
 
-  case class FeatureException(message: String) extends IllegalArgumentException(message)
-
-  def validateFeatureGraph(features: Features): Option[FeatureException] = featuresDependency.collectFirst {
-    case (feature, dependencies) if features.hasFeature(feature) && dependencies.exists(d => !features.hasFeature(d)) =>
-      FeatureException(s"$feature is set but is missing a dependency (${dependencies.filter(d => !features.hasFeature(d)).mkString(" and ")})")
-  }
-
-  /** Returns true if both feature sets are compatible. */
-  def areCompatible(ours: Features, theirs: Features): Boolean = ours.areSupported(theirs) && theirs.areSupported(ours)
-
-  /** returns true if both have at least optional support */
-  def canUseFeature(localFeatures: Features, remoteFeatures: Features, feature: Feature): Boolean = {
+  // returns true if both have at least optional support
+  def canUseFeature(localFeatures: Features, remoteFeatures: Features, feature: Feature): Boolean =
     localFeatures.hasFeature(feature) && remoteFeatures.hasFeature(feature)
-  }
 }

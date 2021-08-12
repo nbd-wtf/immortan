@@ -1,6 +1,5 @@
 package fr.acinq.eclair.channel
 
-import scodec.bits._
 import fr.acinq.eclair._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.wire._
@@ -9,7 +8,6 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.blockchain.{MakeFundingTxResponse, TxConfirmedAt}
 import fr.acinq.eclair.transactions.{CommitmentSpec, Transactions}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import scodec.bits.{BitVector, ByteVector}
 import immortan.{LNParams, RemoteNodeInfo}
 
 import fr.acinq.eclair.crypto.Sphinx.PacketAndSecrets
@@ -17,6 +15,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.wire.Onion.FinalPayload
 import fr.acinq.eclair.payment.IncomingPacket
 import fr.acinq.eclair.crypto.Generators
+import scodec.bits.ByteVector
 import immortan.crypto.Tools
 
 
@@ -29,10 +28,10 @@ case class ChannelNotAbleToSend(localAdd: UpdateAddHtlc) extends LocalReject
 case class InPrincipleNotSendable(localAdd: UpdateAddHtlc) extends LocalReject
 
 
-case class INPUT_INIT_FUNDEE(remoteInfo: RemoteNodeInfo, localParams: LocalParams, remoteInit: Init, channelVersion: ChannelVersion, theirOpen: OpenChannel)
+case class INPUT_INIT_FUNDEE(remoteInfo: RemoteNodeInfo, localParams: LocalParams, remoteInit: Init, channelFeatures: ChannelFeatures, theirOpen: OpenChannel)
 case class INPUT_INIT_FUNDER(remoteInfo: RemoteNodeInfo, temporaryChannelId: ByteVector32, fakeFunding: MakeFundingTxResponse, pushAmount: MilliSatoshi,
                              fundingFeeratePerKw: FeeratePerKw, initialFeeratePerKw: FeeratePerKw, localParams: LocalParams, remoteInit: Init,
-                             channelFlags: Byte, channelVersion: ChannelVersion)
+                             channelFlags: Byte, channelFeatures: ChannelFeatures)
 
 
 sealed trait BitcoinEvent
@@ -152,7 +151,7 @@ final case class DATA_WAIT_FOR_FUNDING_CREATED(initFundee: INPUT_INIT_FUNDEE, re
 
 final case class DATA_WAIT_FOR_FUNDING_SIGNED(remoteInfo: RemoteNodeInfo, channelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingTx: Transaction,
                                               fundingTxFee: Satoshi, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit, channelFlags: Byte,
-                                              channelVersion: ChannelVersion, lastSent: FundingCreated) extends ChannelData
+                                              channelFeatures: ChannelFeatures, lastSent: FundingCreated) extends ChannelData
 
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: NormalCommits, fundingTx: Option[Transaction], waitingSince: Long, lastSent: Either[FundingCreated, FundingSigned],
                                                  deferred: Option[FundingLocked] = None) extends ChannelData with HasNormalCommitments {
@@ -240,29 +239,6 @@ final case class LocalParams(keys: ChannelKeys, dustLimit: Satoshi, maxHtlcValue
 final case class RemoteParams(dustLimit: Satoshi, maxHtlcValueInFlightMsat: UInt64, channelReserve: Satoshi, htlcMinimum: MilliSatoshi,
                               toSelfDelay: CltvExpiryDelta, maxAcceptedHtlcs: Int, fundingPubKey: PublicKey, revocationBasepoint: PublicKey,
                               paymentBasepoint: PublicKey, delayedPaymentBasepoint: PublicKey, htlcBasepoint: PublicKey, shutdownScript: Option[ByteVector] = None)
-
-case class ChannelVersion(bits: BitVector) {
-  val commitmentFormat: CommitmentFormat = DefaultCommitmentFormat
-  def | (other: ChannelVersion): ChannelVersion = ChannelVersion(bits | other.bits)
-}
-
-object ChannelVersion {
-  val LENGTH_BITS: Int = 4 * 8
-  private val USE_PUBKEY_KEYPATH_BIT = 0
-  private val USE_STATIC_REMOTEKEY_BIT = 1
-
-  val ZEROES: ChannelVersion = ChannelVersion(bin"00000000000000000000000000000000")
-
-  val STANDARD: ChannelVersion = ZEROES | fromBit(USE_PUBKEY_KEYPATH_BIT)
-
-  val STATIC_REMOTEKEY: ChannelVersion = STANDARD | fromBit(USE_STATIC_REMOTEKEY_BIT)
-
-  def fromBit(bit: Int): ChannelVersion = ChannelVersion(BitVector.low(LENGTH_BITS).set(bit).reverse)
-}
-
-object HostedChannelVersion {
-  val RESIZABLE: ChannelVersion = ChannelVersion.STANDARD | ChannelVersion.fromBit(1)
-}
 
 // Channel exceptions
 

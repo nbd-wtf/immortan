@@ -9,7 +9,7 @@ import scala.concurrent.duration._
 import fr.acinq.eclair.blockchain._
 import com.softwaremill.quicklens._
 import fr.acinq.eclair.transactions._
-import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, Transaction}
 import fr.acinq.eclair.transactions.Transactions.TxOwner
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing
@@ -71,7 +71,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
 
 
       case (wait: DATA_WAIT_FOR_FUNDING_INTERNAL, realFunding: MakeFundingTxResponse, WAIT_FOR_ACCEPT) =>
-        val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Helpers.Funding.makeFirstCommitTxs(wait.initFunder.channelVersion,
+        val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Helpers.Funding.makeFirstCommitTxs(wait.initFunder.channelFeatures,
           wait.initFunder.localParams, wait.remoteParams, realFunding.fundingAmount, wait.initFunder.pushAmount, wait.initFunder.initialFeeratePerKw,
           realFunding.fundingTx.hash, realFunding.fundingTxOutputIndex, wait.remoteFirstPerCommitmentPoint)
 
@@ -79,26 +79,26 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
         require(realFunding.fundingAmount == wait.initFunder.fakeFunding.fundingAmount)
         require(realFunding.fundingPubkeyScript == localCommitTx.input.txOut.publicKeyScript)
 
-        val localSigOfRemoteTx = Transactions.sign(remoteCommitTx, wait.initFunder.localParams.keys.fundingKey.privateKey, TxOwner.Remote, wait.initFunder.channelVersion.commitmentFormat)
+        val localSigOfRemoteTx = Transactions.sign(remoteCommitTx, wait.initFunder.localParams.keys.fundingKey.privateKey, TxOwner.Remote, wait.initFunder.channelFeatures.commitmentFormat)
         val fundingCreated = FundingCreated(wait.initFunder.temporaryChannelId, realFunding.fundingTx.hash, realFunding.fundingTxOutputIndex, localSigOfRemoteTx)
 
         val data1 = DATA_WAIT_FOR_FUNDING_SIGNED(wait.initFunder.remoteInfo, channelId = toLongId(realFunding.fundingTx.hash, realFunding.fundingTxOutputIndex), wait.initFunder.localParams,
           wait.remoteParams, realFunding.fundingTx, realFunding.fee, localSpec, localCommitTx, RemoteCommit(index = 0L, remoteSpec, remoteCommitTx.tx.txid, wait.remoteFirstPerCommitmentPoint),
-          wait.lastSent.channelFlags, wait.initFunder.channelVersion, fundingCreated)
+          wait.lastSent.channelFlags, wait.initFunder.channelFeatures, fundingCreated)
 
         BECOME(data1, WAIT_FOR_ACCEPT)
         SEND(fundingCreated)
 
 
       case (wait: DATA_WAIT_FOR_FUNDING_SIGNED, signed: FundingSigned, WAIT_FOR_ACCEPT) =>
-        val localSigOfLocalTx = Transactions.sign(wait.localCommitTx, wait.localParams.keys.fundingKey.privateKey, TxOwner.Local, wait.channelVersion.commitmentFormat)
+        val localSigOfLocalTx = Transactions.sign(wait.localCommitTx, wait.localParams.keys.fundingKey.privateKey, TxOwner.Local, wait.channelFeatures.commitmentFormat)
         val signedLocalCommitTx = Transactions.addSigs(wait.localCommitTx, wait.localParams.keys.fundingKey.publicKey, wait.remoteParams.fundingPubKey, localSigOfLocalTx, signed.signature)
 
         // Make sure their supplied signature is correct before committing
         require(Transactions.checkSpendable(signedLocalCommitTx).isSuccess)
 
         val publishableTxs = PublishableTxs(signedLocalCommitTx, Nil)
-        val commits = NormalCommits(wait.channelFlags, wait.channelId, wait.channelVersion, Right(randomKey.publicKey), ShaChain.init, updateOpt = None,
+        val commits = NormalCommits(wait.channelFlags, wait.channelId, wait.channelFeatures, Right(randomKey.publicKey), ShaChain.init, updateOpt = None,
           postCloseOutgoingResolvedIds = Set.empty, wait.remoteInfo, wait.localParams, wait.remoteParams, LocalCommit(index = 0L, wait.localSpec, publishableTxs),
           wait.remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 0L, remoteNextHtlcId = 0L, signedLocalCommitTx.input)
 
@@ -127,17 +127,17 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
 
 
       case (wait: DATA_WAIT_FOR_FUNDING_CREATED, created: FundingCreated, WAIT_FOR_ACCEPT) =>
-        val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Helpers.Funding.makeFirstCommitTxs(wait.initFundee.channelVersion, wait.initFundee.localParams,
+        val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Helpers.Funding.makeFirstCommitTxs(wait.initFundee.channelFeatures, wait.initFundee.localParams,
           wait.remoteParams, wait.initFundee.theirOpen.fundingSatoshis, wait.initFundee.theirOpen.pushMsat, wait.initFundee.theirOpen.feeratePerKw, created.fundingTxid,
           created.fundingOutputIndex, wait.initFundee.theirOpen.firstPerCommitmentPoint)
 
-        val localSigOfLocalTx = Transactions.sign(localCommitTx, wait.initFundee.localParams.keys.fundingKey.privateKey, TxOwner.Local, wait.initFundee.channelVersion.commitmentFormat)
+        val localSigOfLocalTx = Transactions.sign(localCommitTx, wait.initFundee.localParams.keys.fundingKey.privateKey, TxOwner.Local, wait.initFundee.channelFeatures.commitmentFormat)
         val signedLocalCommitTx = Transactions.addSigs(localCommitTx, wait.initFundee.localParams.keys.fundingKey.publicKey, wait.remoteParams.fundingPubKey, localSigOfLocalTx, created.signature)
-        val localSigOfRemoteTx = Transactions.sign(remoteCommitTx, wait.initFundee.localParams.keys.fundingKey.privateKey, TxOwner.Remote, wait.initFundee.channelVersion.commitmentFormat)
+        val localSigOfRemoteTx = Transactions.sign(remoteCommitTx, wait.initFundee.localParams.keys.fundingKey.privateKey, TxOwner.Remote, wait.initFundee.channelFeatures.commitmentFormat)
         val fundingSigned = FundingSigned(channelId = toLongId(created.fundingTxid, created.fundingOutputIndex), signature = localSigOfRemoteTx)
 
         val publishableTxs = PublishableTxs(signedLocalCommitTx, Nil)
-        val commits = NormalCommits(wait.initFundee.theirOpen.channelFlags, fundingSigned.channelId, wait.initFundee.channelVersion, Right(randomKey.publicKey), ShaChain.init, updateOpt = None,
+        val commits = NormalCommits(wait.initFundee.theirOpen.channelFlags, fundingSigned.channelId, wait.initFundee.channelFeatures, Right(randomKey.publicKey), ShaChain.init, updateOpt = None,
           postCloseOutgoingResolvedIds = Set.empty[Long], wait.initFundee.remoteInfo, wait.initFundee.localParams, wait.remoteParams, LocalCommit(index = 0L, localSpec, publishableTxs),
           RemoteCommit(index = 0L, remoteSpec, remoteCommitTx.tx.txid, remotePerCommitmentPoint = wait.initFundee.theirOpen.firstPerCommitmentPoint), LocalChanges(Nil, Nil, Nil),
           RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 0L, remoteNextHtlcId = 0L, signedLocalCommitTx.input)
@@ -192,7 +192,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
 
       case (norm: DATA_NORMAL, CurrentBlockCount(tip), OPEN | SLEEPING) =>
         val sentExpiredRouted = norm.commitments.allOutgoing.exists(add => tip > add.cltvExpiry.toLong && add.fullTag.tag == PaymentTagTlv.TRAMPLOINE_ROUTED)
-        val threshold = Transactions.receivedHtlcTrimThreshold(norm.commitments.remoteParams.dustLimit, norm.commitments.remoteCommit.spec, norm.commitments.channelVersion.commitmentFormat)
+        val threshold = Transactions.receivedHtlcTrimThreshold(norm.commitments.remoteParams.dustLimit, norm.commitments.remoteCommit.spec, norm.commitments.channelFeatures.commitmentFormat)
         val largeReceivedRevealed = norm.commitments.revealedFulfills.filter(_.theirAdd.amountMsat > threshold * LNParams.minForceClosableIncomingHtlcAmountToFeeRatio)
         val expiredReceivedRevealed = largeReceivedRevealed.exists(tip > _.theirAdd.cltvExpiry.toLong - LNParams.ncFulfillSafetyBlocks)
         if (sentExpiredRouted || expiredReceivedRevealed) throw ChannelTransitionFail(norm.channelId)
@@ -318,8 +318,8 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
         // We have something to sign and remote unused pubKey, don't forget to store revoked HTLC data
 
         val (commits1, commitSigMessage, nextRemoteCommit) = norm.commitments.sendCommit
-        val out = Transactions.trimOfferedHtlcs(norm.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, norm.commitments.channelVersion.commitmentFormat)
-        val in = Transactions.trimReceivedHtlcs(norm.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, norm.commitments.channelVersion.commitmentFormat)
+        val out = Transactions.trimOfferedHtlcs(norm.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, norm.commitments.channelFeatures.commitmentFormat)
+        val in = Transactions.trimReceivedHtlcs(norm.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, norm.commitments.channelFeatures.commitmentFormat)
         // This includes hashing and db calls on potentially dozens of in-flight HTLCs, do this in separate thread but throw if it fails to know early
         Rx.ioQueue.foreach(_ => bag.putHtlcInfos(out ++ in, norm.shortChannelId, nextRemoteCommit.index), throw _)
         StoreBecomeSend(norm.copy(commitments = commits1), OPEN, commitSigMessage)
