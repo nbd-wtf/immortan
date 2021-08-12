@@ -162,7 +162,7 @@ final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: NormalCommits, fun
 
 final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: NormalCommits, shortChannelId: ShortChannelId, lastSent: FundingLocked) extends ChannelData with HasNormalCommitments
 
-final case class DATA_NORMAL(commitments: NormalCommits, shortChannelId: ShortChannelId, feeUpdateRequired: Boolean = false,
+final case class DATA_NORMAL(commitments: NormalCommits, shortChannelId: ShortChannelId, feeUpdateRequired: Boolean = false, extParams: List[ByteVector] = Nil,
                              localShutdown: Option[Shutdown] = None, remoteShutdown: Option[Shutdown] = None) extends ChannelData with HasNormalCommitments
 
 object DATA_NEGOTIATING {

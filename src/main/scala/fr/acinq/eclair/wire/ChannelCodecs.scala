@@ -198,6 +198,7 @@ object ChannelCodecs {
       (uint64overflow withContext "localNextHtlcId") ::
       (uint64overflow withContext "remoteNextHtlcId") ::
       (inputInfoCodec withContext "commitInput") ::
+      (listOfN(uint16, varsizebinarydata) withContext "extParams") ::
       (int64 withContext "startedAt")
   }.as[NormalCommits]
 
@@ -257,6 +258,7 @@ object ChannelCodecs {
     (commitmentsCodec withContext "commitments") ::
       (shortchannelid withContext "shortChannelId") ::
       (bool8 withContext "feeUpdateRequired") ::
+      (listOfN(uint16, varsizebinarydata) withContext "extParams") ::
       (optional(bool8, lengthDelimited(shutdownCodec)) withContext "localShutdown") ::
       (optional(bool8, lengthDelimited(shutdownCodec)) withContext "remoteShutdown")
   }.as[DATA_NORMAL]
@@ -298,6 +300,7 @@ object ChannelCodecs {
       (optional(bool8, lengthDelimited(failCodec)) withContext "remoteError") ::
       (optional(bool8, lengthDelimited(resizeChannelCodec)) withContext "resizeProposal") ::
       (optional(bool8, lengthDelimited(stateOverrideCodec)) withContext "overrideProposal") ::
+      (listOfN(uint16, varsizebinarydata) withContext "extParams") ::
       (int64 withContext "startedAt")
   }.as[HostedCommits]
 

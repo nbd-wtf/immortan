@@ -13,6 +13,7 @@ import immortan.{LNParams, RemoteNodeInfo, UpdateAddHtlcExt}
 import fr.acinq.eclair.channel.Helpers.HashToPreimage
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.bitcoin.Crypto.PublicKey
+import scodec.bits.ByteVector
 import immortan.utils.Rx
 
 
@@ -40,6 +41,7 @@ trait Commitments {
   def channelId: ByteVector32
   def remoteInfo: RemoteNodeInfo
   def updateOpt: Option[ChannelUpdate]
+  def extParams: List[ByteVector]
   def startedAt: Long
 
   def minSendable: MilliSatoshi
@@ -62,7 +64,7 @@ trait Commitments {
 case class NormalCommits(channelFlags: Byte, channelId: ByteVector32, channelFeatures: ChannelFeatures, remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey],
                          remotePerCommitmentSecrets: ShaChain, updateOpt: Option[ChannelUpdate], postCloseOutgoingResolvedIds: Set[Long], remoteInfo: RemoteNodeInfo, localParams: LocalParams,
                          remoteParams: RemoteParams, localCommit: LocalCommit, remoteCommit: RemoteCommit, localChanges: LocalChanges, remoteChanges: RemoteChanges, localNextHtlcId: Long,
-                         remoteNextHtlcId: Long, commitInput: InputInfo, startedAt: Long = System.currentTimeMillis) extends Commitments { me =>
+                         remoteNextHtlcId: Long, commitInput: InputInfo, extParams: List[ByteVector] = Nil, startedAt: Long = System.currentTimeMillis) extends Commitments { me =>
 
   lazy val minSendable: MilliSatoshi = remoteParams.htlcMinimum.max(localParams.htlcMinimum)
 

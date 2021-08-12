@@ -42,6 +42,7 @@ object ChannelUtils {
       CommitmentSpec(feeratePerKw = FeeratePerKw(0.sat), toLocal = toLocal, toRemote = 100000000L.msat),
       lastCrossSignedState = lcss, nextLocalUpdates = Nil, nextRemoteUpdates = Nil, updateOpt = None,
       postErrorOutgoingResolvedIds = Set.empty, localError = None, remoteError = None,
+      extParams = List.fill(secureRandom.nextInt(10))(randomBytes(secureRandom.nextInt(1000))),
       startedAt = System.currentTimeMillis)
   }
 
