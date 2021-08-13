@@ -49,7 +49,6 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface) extends PaymentBag
 
   def updOkIncoming(receivedAmount: MilliSatoshi, paymentHash: ByteVector32): Unit = {
     db.change(PaymentTable.updOkIncomingSql, receivedAmount.toLong: JLong, System.currentTimeMillis: JLong /* SEEN */, System.currentTimeMillis: JLong /* UPDATED */, paymentHash.toHex)
-    ChannelMaster.hashRevealStream.onNext(paymentHash)
     ChannelMaster.next(ChannelMaster.paymentDbStream)
   }
 

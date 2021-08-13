@@ -46,7 +46,7 @@ object ChannelMaster {
   final val txDbStream: Subject[Long] = Subject[Long]
 
   def next(stream: Subject[Long] = null): Unit = stream.onNext(updateCounter.incrementAndGet)
-  final val hashRevealStream: Subject[ByteVector32] = Subject[ByteVector32]
+  final val inFinalized: Subject[IncomingProcessorData] = Subject[IncomingProcessorData]
 
   final val NO_PREIMAGE = ByteVector32.One
   final val NO_SECRET = ByteVector32.Zeroes
@@ -123,9 +123,16 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
 
   var all = Map.empty[ByteVector32, Channel]
 
+  var inProcessors = Map.empty[FullPaymentTag, IncomingPaymentProcessor]
+
   var sendTo: (Any, ByteVector32) => Unit = (change, channelId) => all.get(channelId).foreach(_ process change)
 
-  var inProcessors = Map.empty[FullPaymentTag, IncomingPaymentProcessor]
+  def finalizeIncoming(data: IncomingProcessorData): Unit = {
+    // Let subscribers know after no incoming payment parts are left
+    // payment itself may be fulfilled with preimage revealed or failed
+    inProcessors -= data.fullTag
+    inFinalized.onNext(data)
+  }
 
   // CONNECTION LISTENER
 
