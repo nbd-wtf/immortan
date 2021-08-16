@@ -61,7 +61,7 @@ object LNParams {
   val minForceClosableOutgoingHtlcAmountToFeeRatio = 5 // When peer sends a suspiciously low feerate, how much higher than trim threshold should our outgoing HTLC be for us to force-close
   val minPayment: MilliSatoshi = MilliSatoshi(1000L) // We can neither send nor receive LN payments which are below this value
   val minFundingSatoshis: Satoshi = Satoshi(200000L) // Proposed channels of capacity less than this are not allowed
-  val minDustLimit: Satoshi = Satoshi(330L)
+  val minDustLimit: Satoshi = Satoshi(546L)
   val minDepthBlocks: Int = 3
 
   // Variables to be assigned at runtime
@@ -200,10 +200,9 @@ object LNParams {
 }
 
 class SyncParams {
-  val blw: RemoteNodeInfo = RemoteNodeInfo(PublicKey(hex"03144fcc73cea41a002b2865f98190ab90e4ff58a2ce24d3870f5079081e42922d"), NodeAddress.unresolved(9735, host = 5, 9, 83, 143), "BLW Den")
   val lightning: RemoteNodeInfo = RemoteNodeInfo(PublicKey(hex"03baa70886d9200af0ffbd3f9e18d96008331c858456b16e3a9b41e735c6208fef"), NodeAddress.unresolved(9735, host = 45, 20, 67, 1), "LIGHTNING")
   val conductor: RemoteNodeInfo = RemoteNodeInfo(PublicKey(hex"03c436af41160a355fc1ed230a64f6a64bcbd2ae50f12171d1318f9782602be601"), NodeAddress.unresolved(9735, host = 18, 191, 89, 219), "Conductor")
-  val silentBob: RemoteNodeInfo = RemoteNodeInfo(PublicKey(hex"02e9046555a9665145b0dbd7f135744598418df7d61d3660659641886ef1274844"), NodeAddress.unresolved(9735, host = 31, 17, 70, 80), "SilentBob")
+  val silentBob: RemoteNodeInfo = RemoteNodeInfo(PublicKey(hex"02e9046555a9665145b0dbd7f135744598418df7d61d3660659641886ef1274844"), NodeAddress.unresolved(9735, host = 31, 16, 52, 37), "SilentBob")
   val lntxbot: RemoteNodeInfo = RemoteNodeInfo(PublicKey(hex"02c16cca44562b590dd279c942200bdccfd4f990c3a69fad620c10ef2f8228eaff"), NodeAddress.unresolved(9735, host = 5, 2, 67, 89), "LNTXBOT")
   val acinq: RemoteNodeInfo = RemoteNodeInfo(PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), NodeAddress.unresolved(9735, host = 34, 239, 230, 56), "ACINQ")
   val syncNodes: Set[RemoteNodeInfo] = Set(lightning, conductor, silentBob, lntxbot, acinq) // Nodes with extended queries support used as seeds for normal sync
@@ -214,8 +213,8 @@ class SyncParams {
   val minNormalChansForPHC = 5 // How many normal chans a node must have to be eligible for PHCs
   val maxPHCPerNode = 2 // How many PHCs a node can have in total
 
-  val minCapacity: MilliSatoshi = MilliSatoshi(750000000L) // 750k sat
-  val maxNodesToSyncFrom = 3 // How many disjoint peers to use for majority sync
+  val minCapacity: MilliSatoshi = MilliSatoshi(500000000L) // 500k sat
+  val maxNodesToSyncFrom = 2 // How many disjoint peers to use for majority sync
   val acceptThreshold = 1 // ShortIds and updates are accepted if confirmed by more than this peers
   val messagesToAsk = 500 // Ask for this many messages from peer before they say this chunk is done
   val chunksToWait = 4 // Wait for at least this much chunk iterations from any peer before recording results

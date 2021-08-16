@@ -19,18 +19,18 @@ object ElectrumWalletType {
   }
 
   def makeSigningType(tag: String, secrets: AccountAndXPrivKey, chainHash: ByteVector32): ElectrumWalletType = tag match {
-    case EclairWallet.BIP32 => ElectrumWallet32(secrets.asSome, publicKey(secrets.xPriv), chainHash)
-    case EclairWallet.BIP44 => ElectrumWallet32(secrets.asSome, publicKey(secrets.xPriv), chainHash)
-    case EclairWallet.BIP49 => ElectrumWallet49(secrets.asSome, publicKey(secrets.xPriv), chainHash)
-    case EclairWallet.BIP84 => ElectrumWallet84(secrets.asSome, publicKey(secrets.xPriv), chainHash)
+    case EclairWallet.BIP32 => new ElectrumWallet32(secrets.asSome, publicKey(secrets.xPriv), chainHash)
+    case EclairWallet.BIP44 => new ElectrumWallet44(secrets.asSome, publicKey(secrets.xPriv), chainHash)
+    case EclairWallet.BIP49 => new ElectrumWallet49(secrets.asSome, publicKey(secrets.xPriv), chainHash)
+    case EclairWallet.BIP84 => new ElectrumWallet84(secrets.asSome, publicKey(secrets.xPriv), chainHash)
     case _ => throw new RuntimeException
   }
 
   def makeWatchingType(tag: String, xPub: ExtendedPublicKey, chainHash: ByteVector32): ElectrumWalletType = tag match {
-    case EclairWallet.BIP32 => ElectrumWallet32(secrets = None, xPub, chainHash)
-    case EclairWallet.BIP44 => ElectrumWallet32(secrets = None, xPub, chainHash)
-    case EclairWallet.BIP49 => ElectrumWallet49(secrets = None, xPub, chainHash)
-    case EclairWallet.BIP84 => ElectrumWallet84(secrets = None, xPub, chainHash)
+    case EclairWallet.BIP32 => new ElectrumWallet32(secrets = None, xPub, chainHash)
+    case EclairWallet.BIP44 => new ElectrumWallet44(secrets = None, xPub, chainHash)
+    case EclairWallet.BIP49 => new ElectrumWallet49(secrets = None, xPub, chainHash)
+    case EclairWallet.BIP84 => new ElectrumWallet84(secrets = None, xPub, chainHash)
     case _ => throw new RuntimeException
   }
 
@@ -70,9 +70,11 @@ abstract class ElectrumWalletType {
 
   val chainHash: ByteVector32
 
+  val changeMaster: ExtendedPublicKey = derivePublicKey(xPub, 1L :: Nil)
+
   val accountMaster: ExtendedPublicKey = derivePublicKey(xPub, 0L :: Nil)
 
-  val changeMaster: ExtendedPublicKey = derivePublicKey(xPub, 1L :: Nil)
+  def xPubPrefix: Int
 
   def textAddress(key: ExtendedPublicKey): String
 
@@ -80,17 +82,23 @@ abstract class ElectrumWalletType {
 
   def extractPubKeySpentFrom(txIn: TxIn): Option[PublicKey]
 
+  def addUtxosWithDummySig(usableUtxos: Seq[Utxo], tx: Transaction, sequenceFlag: Long): Transaction
+
+  def signTransaction(usableUtxos: Seq[Utxo], tx: Transaction): Transaction
+
   def computeScriptHashFromPublicKey(key: PublicKey): ByteVector32 = {
     val serializedPubKeyScript: Seq[ScriptElt] = computePublicKeyScript(key)
     Crypto.sha256(Script write serializedPubKeyScript).reverse
   }
-
-  def addUtxosWithDummySig(usableUtxos: Seq[Utxo], tx: Transaction, sequenceFlag: Long): Transaction
-
-  def signTransaction(usableUtxos: Seq[Utxo], tx: Transaction): Transaction
 }
 
-case class ElectrumWallet32(secrets: Option[AccountAndXPrivKey], xPub: ExtendedPublicKey, chainHash: ByteVector32) extends ElectrumWalletType {
+class ElectrumWallet44(val secrets: Option[AccountAndXPrivKey], val xPub: ExtendedPublicKey, val chainHash: ByteVector32) extends ElectrumWalletType {
+
+  override def xPubPrefix: Int = chainHash match {
+    case Block.LivenetGenesisBlock.hash => xpub
+    case Block.TestnetGenesisBlock.hash => tpub
+    case _ => throw new RuntimeException
+  }
 
   override def textAddress(key: ExtendedPublicKey): String = computeP2PkhAddress(key.publicKey, chainHash)
 
@@ -123,7 +131,20 @@ case class ElectrumWallet32(secrets: Option[AccountAndXPrivKey], xPub: ExtendedP
   }
 }
 
-case class ElectrumWallet49(secrets: Option[AccountAndXPrivKey], xPub: ExtendedPublicKey, chainHash: ByteVector32) extends ElectrumWalletType {
+class ElectrumWallet32(override val secrets: Option[AccountAndXPrivKey], override val xPub: ExtendedPublicKey, override val chainHash: ByteVector32) extends ElectrumWallet44(secrets, xPub, chainHash) {
+
+  override val changeMaster: ExtendedPublicKey = derivePublicKey(xPub, 1)
+
+  override val accountMaster: ExtendedPublicKey = xPub
+}
+
+class ElectrumWallet49(val secrets: Option[AccountAndXPrivKey], val xPub: ExtendedPublicKey, val chainHash: ByteVector32) extends ElectrumWalletType {
+
+  override def xPubPrefix: Int = chainHash match {
+    case Block.LivenetGenesisBlock.hash => ypub
+    case Block.TestnetGenesisBlock.hash => upub
+    case _ => throw new RuntimeException
+  }
 
   override def textAddress(key: ExtendedPublicKey): String = computeBIP49Address(key.publicKey, chainHash)
 
@@ -160,7 +181,13 @@ case class ElectrumWallet49(secrets: Option[AccountAndXPrivKey], xPub: ExtendedP
   }
 }
 
-case class ElectrumWallet84(secrets: Option[AccountAndXPrivKey], xPub: ExtendedPublicKey, chainHash: ByteVector32) extends ElectrumWalletType {
+class ElectrumWallet84(val secrets: Option[AccountAndXPrivKey], val xPub: ExtendedPublicKey, val chainHash: ByteVector32) extends ElectrumWalletType {
+
+  override def xPubPrefix: Int = chainHash match {
+    case Block.LivenetGenesisBlock.hash => zpub
+    case Block.TestnetGenesisBlock.hash => vpub
+    case _ => throw new RuntimeException
+  }
 
   override def textAddress(key: ExtendedPublicKey): String = computeBIP84Address(key.publicKey, chainHash)
 
