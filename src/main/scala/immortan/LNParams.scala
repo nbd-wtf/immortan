@@ -106,7 +106,7 @@ object LNParams {
       (HostedChannels, FeatureSupport.Optional),
       (PaymentSecret, FeatureSupport.Optional),
       (ChainSwap, FeatureSupport.Optional),
-      (Wumbo, FeatureSupport.Mandatory)
+      (Wumbo, FeatureSupport.Optional)
     ), tlvStream)
   }
 
