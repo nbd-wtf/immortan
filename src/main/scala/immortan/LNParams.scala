@@ -97,12 +97,12 @@ object LNParams {
     Init(Features(
       (ChannelRangeQueries, FeatureSupport.Optional),
       (ChannelRangeQueriesExtended, FeatureSupport.Optional),
-      (BasicMultiPartPayment, FeatureSupport.Mandatory),
-      (OptionDataLossProtect, FeatureSupport.Mandatory),
+      (BasicMultiPartPayment, FeatureSupport.Optional),
+      (OptionDataLossProtect, FeatureSupport.Optional),
       (VariableLengthOnion, FeatureSupport.Optional),
       (TrampolineRouting, FeatureSupport.Optional),
       (ShutdownAnySegwit, FeatureSupport.Optional),
-      (StaticRemoteKey, FeatureSupport.Mandatory),
+      (StaticRemoteKey, FeatureSupport.Optional),
       (HostedChannels, FeatureSupport.Optional),
       (PaymentSecret, FeatureSupport.Optional),
       (ChainSwap, FeatureSupport.Optional),
@@ -123,7 +123,7 @@ object LNParams {
   // Note: we set local maxHtlcValueInFlightMsat to channel capacity to simplify calculations
   def makeChannelParams(defFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: PublicKey, isFunder: Boolean, keyPath: DeterministicWallet.KeyPath, fundingAmount: Satoshi): LocalParams =
     LocalParams(ChannelKeys.fromPath(secret.keys.master, keyPath), minDustLimit, UInt64(fundingAmount.toMilliSatoshi.toLong), channelReserve = (fundingAmount * 0.001).max(minDustLimit),
-      minPayment, maxToLocalDelay, maxAcceptedHtlcs = 5, isFunder, defFinalScriptPubkey, walletStaticPaymentBasepoint)
+      minPayment, maxToLocalDelay, maxAcceptedHtlcs = 10, isFunder, defFinalScriptPubkey, walletStaticPaymentBasepoint)
 
   def currentBlockDay: Long = blockCount.get / blocksPerDay
 
