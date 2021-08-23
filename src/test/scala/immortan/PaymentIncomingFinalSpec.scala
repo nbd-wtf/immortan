@@ -158,7 +158,7 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
     WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
   }
 
-  test("Fail an unknown payment after timeout") {
+  test("Fail an unknown payment right away") {
     LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
     val (_, _, cm) = makeChannelMasterWithBasicGraph
@@ -176,7 +176,7 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
 
     fsm doProcess IncomingPaymentProcessor.CMDTimeout
     WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
-    WAIT_UNTIL_TRUE(fsm.data.asInstanceOf[IncomingAborted].failure contains PaymentTimeout)
+    WAIT_UNTIL_TRUE(fsm.data.asInstanceOf[IncomingAborted].failure.isEmpty)
 
     // All parts have been cleared in channels
     fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
