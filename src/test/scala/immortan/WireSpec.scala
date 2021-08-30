@@ -5,8 +5,8 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.crypto.SphinxSpec._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, SatoshiLong}
-import fr.acinq.eclair.channel.{CMD_ADD_HTLC, ChannelFeatures}
 import fr.acinq.eclair.crypto.Sphinx.PaymentPacket
+import fr.acinq.eclair.channel.CMD_ADD_HTLC
 import org.scalatest.funsuite.AnyFunSuite
 import immortan.crypto.Tools
 
@@ -87,7 +87,7 @@ class WireSpec extends AnyFunSuite {
     val add1 = UpdateAddHtlc(randomBytes32, id = 1000L, cmd.firstAmount, cmd.fullTag.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet, cmd.encryptedTag)
     val add2 = UpdateAddHtlc(randomBytes32, id = 1000L, cmd.firstAmount, cmd.fullTag.paymentHash, cmd.cltvExpiry, cmd.packetAndSecrets.packet)
 
-    val features = ChannelFeatures(Features.HostedChannels, Features.ResizeableHostedChannels)
+    val features = List(Features.HostedChannels.mandatory, Features.ResizeableHostedChannels.mandatory)
     val init = InitHostedChannel(UInt64(1000000000L), htlcMinimumMsat = 100.msat, maxAcceptedHtlcs = 12, channelCapacityMsat = 10000000000L.msat, 100000L.msat, features)
 
     val lcss = LastCrossSignedState(isHost = false, refundScriptPubKey = randomBytes(78), init, blockDay = 12594, localBalanceMsat = 100000L.msat,
