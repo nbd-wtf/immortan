@@ -73,28 +73,25 @@ case class LNUrl(request: String) {
   }
 
   def level1DataResponse: Observable[LNUrlData] = Rx.ioQueue.map { _ =>
-    val lnUrlData = to[LNUrlData](LNUrl noRedirectGuardedGet uri.toString)
-    require(lnUrlData.checkAgainstParent(this), "1st/2nd level callback domain mismatch")
-    lnUrlData
+    to[LNUrlData](LNUrl noRedirectGuardedGet uri.toString)
   }
 }
 
-sealed trait LNUrlData {
-  def checkAgainstParent(lnUrl: LNUrl): Boolean = true
-}
+sealed trait LNUrlData
 
 sealed trait CallbackLNUrlData extends LNUrlData {
-  override def checkAgainstParent(lnUrl: LNUrl): Boolean = lnUrl.uri.getHost.toLowerCase == callbackUri.getHost.toLowerCase
-
-  val callback: String
 
   val callbackUri: Uri = LNUrl.checkHost(callback)
+
+  def callback: String
 }
 
 // LNURL-CHANNEL
 
 sealed trait HasRemoteInfo {
+
   val remoteInfo: RemoteNodeInfo
+
   def cancel: Unit = none
 }
 
@@ -136,8 +133,9 @@ case class HostedChannelRequest(uri: String, alias: Option[String], k1: String) 
 
 // LNURL-WITHDRAW
 
-case class WithdrawRequest(callback: String, k1: String, maxWithdrawable: Long, defaultDescription: String, minWithdrawable: Option[Long],
-                           balance: Option[Long] = None, balanceCheck: Option[String] = None, payLink: Option[String] = None) extends CallbackLNUrlData { me =>
+case class WithdrawRequest(callback: String, k1: String, maxWithdrawable: Long, defaultDescription: String,
+                           minWithdrawable: Option[Long], balance: Option[Long] = None, balanceCheck: Option[String] = None,
+                           payLink: Option[String] = None) extends CallbackLNUrlData { me =>
 
   def requestWithdraw(ext: PaymentRequestExt): Observable[String] = LNUrl.level2DataResponse {
     callbackUri.buildUpon.appendQueryParameter("pr", ext.raw).appendQueryParameter("k1", k1)
@@ -177,9 +175,13 @@ object PayRequest {
 }
 
 case class PayRequestMeta(records: TagsAndContents) {
+
   val texts: List[String] = records.collect { case List("text/plain", txt) => txt }
+
   val emails: List[String] = records.collect { case List("text/email", txt) => txt }
+
   val identities: List[String] = records.collect { case List("text/identifier", txt) => txt }
+
   val textPlain: String = trimmed(texts.head)
 
   val queryText = s"${emails.headOption orElse identities.headOption getOrElse new String} $textPlain"
@@ -190,8 +192,7 @@ case class PayRequestMeta(records: TagsAndContents) {
   } yield content
 }
 
-case class PayRequest(callback: String, maxSendable: Long, minSendable: Long, metadata: String,
-                      withdrawLink: Option[String], commentAllowed: Option[Int] = None) extends CallbackLNUrlData {
+case class PayRequest(callback: String, maxSendable: Long, minSendable: Long, metadata: String, commentAllowed: Option[Int] = None) extends CallbackLNUrlData {
 
   def requestFinal(comment: Option[String], amount: MilliSatoshi): Observable[String] = LNUrl.level2DataResponse {
     val base = callbackUri.buildUpon.appendQueryParameter("amount", amount.toLong.toString)
@@ -199,8 +200,6 @@ case class PayRequest(callback: String, maxSendable: Long, minSendable: Long, me
   }
 
   def metaDataHash: ByteVector32 = Crypto.sha256(ByteVector view metadata.getBytes)
-
-  val relatedWithdrawLinkOpt: Option[LNUrl] = withdrawLink.map(LNUrl.apply)
 
   val meta: PayRequestMeta = {
     val records = to[TagsAndContents](metadata)
@@ -217,10 +216,7 @@ case class PayRequest(callback: String, maxSendable: Long, minSendable: Long, me
 
 case class PayRequestFinal(successAction: Option[PaymentAction], disposable: Option[Boolean], routes: Option[AdditionalRoutes], pr: String) extends LNUrlData {
 
-  val additionalRoutes: Set[GraphStructure.GraphEdge] = {
-    val hops = routes.getOrElse(Nil).map(PayRequest.routeToHops)
-    RouteCalculation.makeExtraEdges(hops, prExt.pr.nodeId)
-  }
+  val additionalRoutes: Set[GraphStructure.GraphEdge] = RouteCalculation.makeExtraEdges(routes.getOrElse(Nil).map(PayRequest.routeToHops), prExt.pr.nodeId)
 
   lazy val prExt: PaymentRequestExt = PaymentRequestExt.fromRaw(pr)
 
