@@ -28,7 +28,6 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Split between direct and non-direct channel") {
-    LNParams.minSplit = LNParams.minPayment
     LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (normalStore, _, cm) = makeChannelMasterWithBasicGraph
 
@@ -90,7 +89,6 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Split after no route found on first attempt") {
-    LNParams.minSplit = LNParams.minPayment
     LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
@@ -137,7 +135,6 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Halt on excessive local failures") {
-    LNParams.minSplit = LNParams.minPayment
     LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
@@ -170,7 +167,6 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Switch channel on first one becoming SLEEPING") {
-    LNParams.minSplit = LNParams.minPayment
     LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
@@ -221,7 +217,6 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Correctly process failed-at-amount") {
-    LNParams.minSplit = LNParams.minPayment
     LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
@@ -260,7 +255,6 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Correctly process fulfilled payment") {
-    LNParams.minSplit = LNParams.minPayment
     LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
@@ -317,7 +311,6 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Handle multiple competing payments") {
-    LNParams.minSplit = LNParams.minPayment
     LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
@@ -370,7 +363,6 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Fail on local timeout") {
-    LNParams.minSplit = LNParams.minPayment
     LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
@@ -413,7 +405,6 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Halt fast on terminal failure") {
-    LNParams.minSplit = LNParams.minPayment
     LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
@@ -452,7 +443,6 @@ class MPPSpec extends AnyFunSuite {
   }
 
   test("Smaller part takes disproportionally larger fee from reserve") {
-    LNParams.minSplit = LNParams.minPayment
     LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
