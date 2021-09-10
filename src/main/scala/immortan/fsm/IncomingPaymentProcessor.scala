@@ -65,7 +65,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster) ex
         case None => cm.getPreimageMemo.get(fullTag.paymentHash).toOption match {
           case Some(paymentPreimage) => becomeRevealed(paymentPreimage, new String, adds) // Did not ask but fulfill since we happen to have a preimage
           case None if keySend.nonEmpty => if (gotAllParts) becomeRevealed(keySend.get, new String, adds) // Either reveal preimage or keep waiting
-          case None => becomeAborted(IncomingAborted(None, fullTag), adds)
+          case None => becomeAborted(IncomingAborted(None, fullTag), adds) // This is not a keysend and we don't have a preimage
         }
 
         case Some(info) if info.isIncoming && PaymentStatus.SUCCEEDED == info.status => becomeRevealed(info.preimage, info.description.queryText, adds) // Already revealed, but not finalized
@@ -265,7 +265,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
         val inner = firstOpt(adds).get.innerPayload
         val totalFeeReserve = lastAmountIn - inner.amountToForward - relayFee(inner, LNParams.trampoline)
         val extraEdges = RouteCalculation.makeExtraEdges(inner.invoiceRoutingInfo.getOrElse(Nil), inner.outgoingNodeId)
-        val routerConf = LNParams.routerConf.copy(routeMaxCltv = expiryIn(adds) - inner.outgoingCltv - LNParams.ourRoutingOurCltvExpiryDelta)
+        val routerConf = LNParams.routerConf.copy(routeMaxCltv = expiryIn(adds) - inner.outgoingCltv - LNParams.ourRoutingCltvExpiryDelta)
         // It makes no sense to try to route out a payment through channels used by peer to route it in, this also includes possible unused multiple channels from same peer
         val allowedChans = cm.all -- adds.map(_.add.channelId).flatMap(cm.all.get).flatMap(Channel.chanAndCommitsOpt).map(_.commits.remoteInfo.nodeId).flatMap(cm.allFromNode).map(_.commits.channelId)
         val send = SendMultiPart(fullTag, Left(inner.outgoingCltv), SplitInfo(inner.amountToForward, inner.amountToForward), routerConf, inner.outgoingNodeId, totalFeeReserve, allowedChans.values.toSeq)
