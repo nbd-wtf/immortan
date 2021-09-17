@@ -7,7 +7,7 @@ import immortan.utils.PaymentUtils._
 import fr.acinq.eclair.wire.{GenericTlv, OnionCodecs, PaymentTimeout}
 import immortan.fsm.{IncomingAborted, IncomingPaymentProcessor, IncomingPaymentReceiver, IncomingRevealed}
 import fr.acinq.eclair.channel.{CMD_FAIL_MALFORMED_HTLC, ReasonableLocal}
-import immortan.utils.ChannelUtils.makeChannelMasterWithBasicGraph
+import immortan.utils.ChannelUtils.{makeChannelMasterWithBasicGraph, makeHostedCommits}
 import org.scalatest.funsuite.AnyFunSuite
 import fr.acinq.bitcoin.Crypto
 
@@ -65,6 +65,11 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
     val invoice = recordIncomingPaymentToFakeNodeId(amount = Some(100000L.msat), preimage, cm.payBag, remoteNodeInfo)
     val add1 = makeRemoteAddToFakeNodeId(partAmount = 35000L.msat, totalAmount = 100000L.msat, invoice.paymentHash, invoice.paymentSecret.get, remoteNodeInfo)
 
+    // Need this to put something into cm.all so we can accept up to maxInChannelHtlcs parts
+    val hcs1 = makeHostedCommits(nodeId = a, alias = "local-channel")
+    cm.chanBag.put(hcs1)
+    cm.all = Channel.load(Set(cm), cm.chanBag)
+
     val fsm = new IncomingPaymentReceiver(add1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: Nil)
 
@@ -95,6 +100,37 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
     WAIT_UNTIL_TRUE(fsm2.data.asInstanceOf[IncomingRevealed].preimage == preimage)
     WAIT_UNTIL_TRUE(cm.getPreimageMemo(invoice.paymentHash).get == preimage)
     WAIT_UNTIL_TRUE(cm.getPaymentInfoMemo(invoice.paymentHash).get.received == 100000L.msat) // Original amount is retained
+  }
+
+  test("Fail multipart incoming payment when we run out of slots") {
+    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
+    val (_, _, cm) = makeChannelMasterWithBasicGraph
+
+    // Need this to put something into cm.all so we can accept up to maxInChannelHtlcs parts
+    val hcs1 = makeHostedCommits(nodeId = a, alias = "local-channel")
+    cm.chanBag.put(hcs1)
+    cm.all = Channel.load(Set(cm), cm.chanBag)
+
+    val preimage = randomBytes32
+    val invoice = recordIncomingPaymentToFakeNodeId(amount = Some(100000L.msat), preimage, cm.payBag, remoteNodeInfo)
+    val add1 = makeRemoteAddToFakeNodeId(partAmount = 1000L.msat, totalAmount = 100000L.msat, invoice.paymentHash, invoice.paymentSecret.get, remoteNodeInfo)
+    val add2 = makeRemoteAddToFakeNodeId(partAmount = 1000L.msat, totalAmount = 100000L.msat, invoice.paymentHash, invoice.paymentSecret.get, remoteNodeInfo)
+    val add3 = makeRemoteAddToFakeNodeId(partAmount = 1000L.msat, totalAmount = 100000L.msat, invoice.paymentHash, invoice.paymentSecret.get, remoteNodeInfo)
+    val add4 = makeRemoteAddToFakeNodeId(partAmount = 1000L.msat, totalAmount = 100000L.msat, invoice.paymentHash, invoice.paymentSecret.get, remoteNodeInfo)
+    val add5 = makeRemoteAddToFakeNodeId(partAmount = 1000L.msat, totalAmount = 100000L.msat, invoice.paymentHash, invoice.paymentSecret.get, remoteNodeInfo)
+    val add6 = makeRemoteAddToFakeNodeId(partAmount = 1000L.msat, totalAmount = 100000L.msat, invoice.paymentHash, invoice.paymentSecret.get, remoteNodeInfo)
+    val add7 = makeRemoteAddToFakeNodeId(partAmount = 1000L.msat, totalAmount = 100000L.msat, invoice.paymentHash, invoice.paymentSecret.get, remoteNodeInfo)
+    val add8 = makeRemoteAddToFakeNodeId(partAmount = 1000L.msat, totalAmount = 100000L.msat, invoice.paymentHash, invoice.paymentSecret.get, remoteNodeInfo)
+    val add9 = makeRemoteAddToFakeNodeId(partAmount = 1000L.msat, totalAmount = 100000L.msat, invoice.paymentHash, invoice.paymentSecret.get, remoteNodeInfo)
+    val add10 = makeRemoteAddToFakeNodeId(partAmount = 1000L.msat, totalAmount = 100000L.msat, invoice.paymentHash, invoice.paymentSecret.get, remoteNodeInfo)
+
+    val fsm = new IncomingPaymentReceiver(add1.fullTag, cm)
+    fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: Nil)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.RECEIVING)
+    fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: add2 :: add3 :: add4 :: add5 :: add6 :: add7 :: add8 :: add9 :: add10 :: Nil)
+    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
+    WAIT_UNTIL_TRUE(fsm.data.asInstanceOf[IncomingAborted].failure.isEmpty)
   }
 
   test("Fulfill multipart keysend payment") {
@@ -131,6 +167,11 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
     LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
     val (_, _, cm) = makeChannelMasterWithBasicGraph
+
+    // Need this to put something into cm.all so we can accept up to maxInChannelHtlcs parts
+    val hcs1 = makeHostedCommits(nodeId = a, alias = "local-channel")
+    cm.chanBag.put(hcs1)
+    cm.all = Channel.load(Set(cm), cm.chanBag)
 
     val preimage = randomBytes32
     val invoice = recordIncomingPaymentToFakeNodeId(amount = Some(100000L.msat), preimage, cm.payBag, remoteNodeInfo)
@@ -188,6 +229,11 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
     val (_, _, cm) = makeChannelMasterWithBasicGraph
 
+    // Need this to put something into cm.all so we can accept up to maxInChannelHtlcs parts
+    val hcs1 = makeHostedCommits(nodeId = a, alias = "local-channel")
+    cm.chanBag.put(hcs1)
+    cm.all = Channel.load(Set(cm), cm.chanBag)
+
     val preimage = randomBytes32
     val invoice = recordIncomingPaymentToFakeNodeId(amount = Some(100000L.msat), preimage, cm.payBag, remoteNodeInfo)
     val add1 = makeRemoteAddToFakeNodeId(partAmount = 35000L.msat, totalAmount = 100000L.msat, invoice.paymentHash, invoice.paymentSecret.get, remoteNodeInfo)
@@ -207,6 +253,11 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
     LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
     val (_, _, cm) = makeChannelMasterWithBasicGraph
+
+    // Need this to put something into cm.all so we can accept up to maxInChannelHtlcs parts
+    val hcs1 = makeHostedCommits(nodeId = a, alias = "local-channel")
+    cm.chanBag.put(hcs1)
+    cm.all = Channel.load(Set(cm), cm.chanBag)
 
     val preimage = randomBytes32
     val invoice = recordIncomingPaymentToFakeNodeId(amount = Some(100000L.msat), preimage, cm.payBag, remoteNodeInfo)
