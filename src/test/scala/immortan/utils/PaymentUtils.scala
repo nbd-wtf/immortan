@@ -30,7 +30,7 @@ object PaymentUtils {
   def recordIncomingPaymentToFakeNodeId(amount: Option[MilliSatoshi], preimage: ByteVector32, payBag: PaymentBag, remoteInfo: RemoteNodeInfo): PaymentRequest = {
     val invoice = PaymentRequest(Block.TestnetGenesisBlock.hash, amount, Crypto.sha256(preimage), remoteInfo.nodeSpecificPrivKey, "Invoice", CltvExpiryDelta(18), Nil)
     val prExt = PaymentRequestExt(uri = Failure(new RuntimeException), invoice, PaymentRequest.write(invoice))
-    val desc = PlainMetaDescription(None, None, "Invoice", "Invoice meta")
+    val desc = PlainMetaDescription(None, None, None, None, "Invoice", "Invoice meta")
     payBag.replaceIncomingPayment(prExt, preimage, desc, balanceSnap = 1000L.msat, fiatRateSnap = Map("USD" -> 12D))
     invoice
   }

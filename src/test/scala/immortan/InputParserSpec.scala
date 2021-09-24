@@ -18,10 +18,10 @@ class InputParserSpec extends AnyFunSuite {
     val uri4 = s"lightning:$req"
 
     assert(InputParser.parse(uri3.toUpperCase).asInstanceOf[PaymentRequestExt].splits.isEmpty)
-    assert(List(100.msat, 2000.msat, 300000.msat) == PaymentRequestExt.fromUri(uri1).splits)
-    assert(List(2000.msat, 6000.msat) == PaymentRequestExt.fromUri(uri2).splits)
-    assert(PaymentRequestExt.fromUri(uri3).splits.isEmpty)
-    assert(PaymentRequestExt.fromUri(uri4).splits.isEmpty)
+    assert(List(100.msat, 2000.msat, 300000.msat) == PaymentRequestExt.fromUri(PaymentRequestExt.removePrefix(uri1)).splits)
+    assert(List(2000.msat, 6000.msat) == PaymentRequestExt.fromUri(PaymentRequestExt.removePrefix(uri2)).splits)
+    assert(PaymentRequestExt.fromUri(PaymentRequestExt.removePrefix(uri3)).splits.isEmpty)
+    assert(PaymentRequestExt.fromUri(PaymentRequestExt.removePrefix(uri4)).splits.isEmpty)
   }
 
   test("Parse chain uri") {

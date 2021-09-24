@@ -4,15 +4,12 @@ import spray.json._
 import fr.acinq.eclair._
 import immortan.crypto.Tools._
 import immortan.utils.ImplicitJsonFormats._
-import immortan.utils.PayRequest.{AdditionalRoutes, TagsAndContents}
-import fr.acinq.eclair.router.{Announcements, RouteCalculation}
 import immortan.{LNParams, PaymentAction, RemoteNodeInfo}
-import fr.acinq.eclair.wire.{ChannelUpdate, NodeAddress}
-import fr.acinq.bitcoin.{Bech32, ByteVector32, Crypto}
-import fr.acinq.eclair.router.Graph.GraphStructure
+import fr.acinq.bitcoin.{Bech32, ByteVector32, ByteVector64, Crypto}
+import immortan.utils.PayRequest.TagsAndContents
 import com.github.kevinsawicki.http.HttpRequest
-import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.wire.NodeAddress
 import rx.lang.scala.Observable
 import scodec.bits.ByteVector
 import immortan.utils.uri.Uri
@@ -158,21 +155,26 @@ case class WithdrawRequest(callback: String, k1: String, maxWithdrawable: Long, 
 
 // LNURL-PAY
 
+case class LNUrlAuthSpec(host: String, k1: ByteVector32) {
+  val linkingPrivKey: Crypto.PrivateKey = LNParams.secret.keys.makeLinkingKey(host)
+  val linkingPubKey: String = linkingPrivKey.publicKey.toString
+
+  def signature: ByteVector64 = Crypto.sign(k1, linkingPrivKey)
+  def derSignatureHex: String = Crypto.compact2der(signature).toHex
+}
+
 object PayRequest {
   type TagAndContent = List[String]
   type TagsAndContents = List[TagAndContent]
-
-  type KeyAndUpdate = (PublicKey, ChannelUpdate)
-
-  type AdditionalRoute = List[KeyAndUpdate]
-  type AdditionalRoutes = List[AdditionalRoute]
-
-  def routeToHops(additionalRoute: AdditionalRoute): List[PaymentRequest.ExtraHop] = for {
-    (startNodeId: PublicKey, channelUpdate: ChannelUpdate) <- additionalRoute
-    signatureOk = Announcements.checkSig(channelUpdate)(startNodeId)
-    _ = require(signatureOk, "Route contains an invalid update")
-  } yield channelUpdate extraHop startNodeId
 }
+
+case class ExpectedAuth(k1: ByteVector32, isMandatory: Boolean) {
+  def getRecord(host: String): PayRequest.TagAndContent = LNUrlAuthSpec(host, k1) match { case spec =>
+    List("application/lnurl-auth", spec.linkingPubKey.toString, spec.derSignatureHex)
+  }
+}
+
+case class ExpectedIds(wantsAuth: Option[ExpectedAuth], wantsRandomKey: Boolean)
 
 case class PayRequestMeta(records: TagsAndContents) {
 
@@ -181,6 +183,22 @@ case class PayRequestMeta(records: TagsAndContents) {
   val emails: List[String] = records.collect { case List("text/email", txt) => txt }
 
   val identities: List[String] = records.collect { case List("text/identifier", txt) => txt }
+
+  val expectedIds: Option[ExpectedIds] = records.collectFirst {
+    case "application/payer-ids" +: actualRestOfExpectedRecords =>
+      val base = ExpectedIds(wantsAuth = None, wantsRandomKey = false)
+
+      actualRestOfExpectedRecords.map(_.toJson).foldLeft(base) {
+        case base1 ~ JsArray(JsString("application/lnurl-auth") +: JsBoolean(isMandatory) +: JsString(k1) +: _) =>
+          base1.copy(wantsAuth = ExpectedAuth(ByteVector32.fromValidHex(k1), isMandatory).asSome)
+
+        case base1 ~ JsArray(JsString("application/pubkey") +: _) =>
+          base1.copy(wantsRandomKey = true)
+
+        case base1 ~ _ =>
+          base1
+      }
+  }
 
   val textPlain: String = trimmed(texts.head)
 
@@ -194,16 +212,12 @@ case class PayRequestMeta(records: TagsAndContents) {
 
 case class PayRequest(callback: String, maxSendable: Long, minSendable: Long, metadata: String, commentAllowed: Option[Int] = None) extends CallbackLNUrlData {
 
-  def requestFinal(comment: Option[String], amount: MilliSatoshi): Observable[String] = LNUrl.level2DataResponse {
-    val base = callbackUri.buildUpon.appendQueryParameter("amount", amount.toLong.toString)
-    if (comment.isDefined) base.appendQueryParameter("comment", comment.get) else base
-  }
-
   def metaDataHash: ByteVector32 = Crypto.sha256(ByteVector view metadata.getBytes)
 
   val meta: PayRequestMeta = {
     val records = to[TagsAndContents](metadata)
-    PayRequestMeta(records)
+    // No reason to have too much records
+    PayRequestMeta(records take 10)
   }
 
   private[this] val identifiers = meta.emails ++ meta.identities
@@ -214,9 +228,7 @@ case class PayRequest(callback: String, maxSendable: Long, minSendable: Long, me
   require(minSendable <= maxSendable, s"max=$maxSendable while min=$minSendable")
 }
 
-case class PayRequestFinal(successAction: Option[PaymentAction], disposable: Option[Boolean], routes: Option[AdditionalRoutes], pr: String) extends LNUrlData {
-
-  val additionalRoutes: Set[GraphStructure.GraphEdge] = RouteCalculation.makeExtraEdges(routes.getOrElse(Nil).map(PayRequest.routeToHops), prExt.pr.nodeId)
+case class PayRequestFinal(successAction: Option[PaymentAction], disposable: Option[Boolean], pr: String) extends LNUrlData {
 
   lazy val prExt: PaymentRequestExt = PaymentRequestExt.fromRaw(pr)
 
