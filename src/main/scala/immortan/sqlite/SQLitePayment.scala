@@ -26,9 +26,13 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface) extends PaymentBag
     ChannelMaster.next(ChannelMaster.paymentDbStream)
   }
 
-  def addSearchablePayment(search: String, paymentHash: ByteVector32): Unit = db.change(PaymentTable.newVirtualSql, search, paymentHash.toHex)
+  def addSearchablePayment(search: String, paymentHash: ByteVector32): Unit = {
+    val newVirtualSqlPQ = db.makePreparedQuery(PaymentTable.newVirtualSql)
+    db.change(newVirtualSqlPQ, search.toLowerCase, paymentHash.toHex)
+    newVirtualSqlPQ.close
+  }
 
-  def searchPayments(rawSearchQuery: String): RichCursor = db.search(PaymentTable.searchSql, rawSearchQuery)
+  def searchPayments(rawSearchQuery: String): RichCursor = db.search(PaymentTable.searchSql, rawSearchQuery.toLowerCase)
 
   def listRecentPayments(limit: Int): RichCursor = {
     val failedHidingThreshold = System.currentTimeMillis - 60 * 60 * 24 * 1000L
@@ -36,10 +40,12 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface) extends PaymentBag
     db.select(PaymentTable.selectRecentSql, expiryHidingThreshold.toString, failedHidingThreshold.toString, limit.toString)
   }
 
-  def updDescription(description: PaymentDescription, paymentHash: ByteVector32): Unit = {
-    db.change(PaymentTable.updateDescriptionSql, description.toJson.compactPrint, paymentHash.toHex)
-    for (label <- description.label) addSearchablePayment(label, paymentHash)
+  def updDescription(description: PaymentDescription, payHash: ByteVector32): Unit = {
+    val updateDescriptionSqlPQ = db.makePreparedQuery(PaymentTable.updateDescriptionSql)
+    db.change(updateDescriptionSqlPQ, description.toJson.compactPrint, payHash.toHex)
+    for (label <- description.label) addSearchablePayment(label, payHash)
     ChannelMaster.next(ChannelMaster.paymentDbStream)
+    updateDescriptionSqlPQ.close
   }
 
   def updOkOutgoing(fulfill: RemoteFulfill, fee: MilliSatoshi): Unit = {
@@ -61,20 +67,24 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface) extends PaymentBag
                              balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc, chainFee: MilliSatoshi, seenAt: Long): Unit =
     db txWrap {
       removePaymentInfo(prex.pr.paymentHash)
-      db.change(PaymentTable.newSql, prex.raw, ChannelMaster.NO_PREIMAGE.toHex, PaymentStatus.PENDING: JInt, seenAt: JLong, System.currentTimeMillis: JLong /* UPDATED */, description.toJson.compactPrint,
+      val newSqlPQ = db.makePreparedQuery(PaymentTable.newSql)
+      db.change(newSqlPQ, prex.raw, ChannelMaster.NO_PREIMAGE.toHex, PaymentStatus.PENDING: JInt, seenAt: JLong, System.currentTimeMillis: JLong /* UPDATED */, description.toJson.compactPrint,
         action.map(_.toJson.compactPrint).getOrElse(PaymentInfo.NO_ACTION), prex.pr.paymentHash.toHex, prex.pr.paymentSecret.get.toHex, 0L: JLong /* RECEIVED AMOUNT = 0 FOR OUTGOING PAYMENT */,
         finalAmount.toLong: JLong, 0L: JLong /* FEE IS UNCERTAIN YET */, balanceSnap.toLong: JLong, fiatRateSnap.toJson.compactPrint, chainFee.toLong: JLong, 0: JInt /* INCOMING TYPE = 0 */)
       ChannelMaster.next(ChannelMaster.paymentDbStream)
+      newSqlPQ.close
     }
 
   def replaceIncomingPayment(prex: PaymentRequestExt, preimage: ByteVector32, description: PaymentDescription,
                              balanceSnap: MilliSatoshi, fiatRateSnap: Fiat2Btc): Unit =
     db txWrap {
       removePaymentInfo(prex.pr.paymentHash)
-      db.change(PaymentTable.newSql, prex.raw, preimage.toHex, PaymentStatus.PENDING: JInt, System.currentTimeMillis: JLong /* SEEN */, System.currentTimeMillis: JLong /* UPDATED */, description.toJson.compactPrint,
+      val newSqlPQ = db.makePreparedQuery(PaymentTable.newSql)
+      db.change(newSqlPQ, prex.raw, preimage.toHex, PaymentStatus.PENDING: JInt, System.currentTimeMillis: JLong /* SEEN */, System.currentTimeMillis: JLong /* UPDATED */, description.toJson.compactPrint,
         PaymentInfo.NO_ACTION, prex.pr.paymentHash.toHex, prex.pr.paymentSecret.get.toHex, prex.pr.amount.getOrElse(0L.msat).toLong: JLong /* 0 WHEN UNDEFINED */, 0L: JLong /* SENT = 0 MSAT, NOTHING TO SEND */,
         0L: JLong /* NO FEE FOR INCOMING PAYMENT */, balanceSnap.toLong: JLong, fiatRateSnap.toJson.compactPrint, 0L: JLong /* NO CHAIN FEE FOR INCOMING PAYMENTS */, 1: JInt /* INCOMING TYPE = 1 */)
       ChannelMaster.next(ChannelMaster.paymentDbStream)
+      newSqlPQ.close
     }
 
   def paymentSummary: Try[PaymentSummary] =
@@ -83,10 +93,11 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface) extends PaymentBag
     }
 
   def toPaymentInfo(rc: RichCursor): PaymentInfo =
-    PaymentInfo(prString = rc string PaymentTable.pr, preimage = ByteVector32.fromValidHex(rc string PaymentTable.preimage), status = rc int PaymentTable.status,
-      seenAt = rc long PaymentTable.seenAt, updatedAt = rc long PaymentTable.updatedAt, description = to[PaymentDescription](rc string PaymentTable.description), actionString = rc string PaymentTable.action,
-      paymentHash = ByteVector32.fromValidHex(rc string PaymentTable.hash), paymentSecret = ByteVector32.fromValidHex(rc string PaymentTable.secret), received = MilliSatoshi(rc long PaymentTable.receivedMsat),
-      sent = MilliSatoshi(rc long PaymentTable.sentMsat), fee = MilliSatoshi(rc long PaymentTable.feeMsat), balanceSnapshot = MilliSatoshi(rc long PaymentTable.balanceMsat), fiatRatesString = rc string PaymentTable.fiatRates,
+    PaymentInfo(prString = rc string PaymentTable.pr, preimage = ByteVector32.fromValidHex(rc string PaymentTable.preimage),
+      status = rc int PaymentTable.status, seenAt = rc long PaymentTable.seenAt, updatedAt = rc long PaymentTable.updatedAt, description = to[PaymentDescription](rc string PaymentTable.description),
+      actionString = rc string PaymentTable.action, paymentHash = ByteVector32.fromValidHex(rc string PaymentTable.hash), paymentSecret = ByteVector32.fromValidHex(rc string PaymentTable.secret),
+      received = MilliSatoshi(rc long PaymentTable.receivedMsat), sent = MilliSatoshi(rc long PaymentTable.sentMsat), fee = MilliSatoshi(rc long PaymentTable.feeMsat),
+      balanceSnapshot = MilliSatoshi(rc long PaymentTable.balanceMsat), fiatRatesString = rc string PaymentTable.fiatRates,
       chainFee = MilliSatoshi(rc long PaymentTable.chainFeeMsat), incoming = rc long PaymentTable.incoming)
 
   // Preimage storage

@@ -12,7 +12,7 @@ trait Table {
 }
 
 object Table {
-  val DEFAULT_LIMIT = new AtomicInteger(10)
+  val DEFAULT_LIMIT = new AtomicInteger(20)
 }
 
 // Database #1, essential data, exportable to backup
@@ -365,16 +365,14 @@ object LNUrlPayTable extends Table {
   }
 }
 
-object UsedDomainsTable extends Table {
-  val (table, domain, stamp, protocol) = ("useddomains", "domain", "stamp", "protocol")
+object LogTable extends Table {
+  val (table, stamp, tag, content) = ("log", "stamp", "tag", "content")
 
-  val newSql = s"INSERT INTO $table ($domain, $stamp, $protocol) VALUES (?, ?, ?)"
+  val newSql = s"INSERT INTO $table ($stamp, $tag, $content) VALUES (?, ?, ?)"
 
-  val selectCountSql = s"SELECT COUNT($domain) FROM $table WHERE $domain = ?"
+  val recentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 50"
 
-  def createStatements: Seq[String] = {
-    val createTable = s"CREATE TABLE IF NOT EXISTS $table($IDAUTOINC, $domain STRING NOT NULL, $stamp INTEGER NOT NULL, $protocol STRING NOT NULL)"
-    val addIndex1 = s"CREATE INDEX IF NOT EXISTS idx1$table ON $table ($domain)"
-    createTable :: addIndex1 :: Nil
-  }
+  val countSql = s"SELECT COUNT(*) FROM $table"
+
+  def createStatements: Seq[String] = s"""CREATE TABLE IF NOT EXISTS $table($IDAUTOINC, $stamp INTEGER NOT NULL, $tag STRING NOT NULL, $content STRING NOT NULL)""" :: Nil
 }
