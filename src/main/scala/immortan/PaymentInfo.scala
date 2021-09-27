@@ -36,7 +36,7 @@ object SemanticOrder {
 
   private def orderIdOrBaseId(details: TransactionDetails) = details.description.semanticOrder match { case Some(ord) => ord.id case None => details.identity }
 
-  private def parentAndOrderId(details: TransactionDetails) = details.description.semanticOrder match { case Some(ord) => !ord.isParent -> ord.order case None => true -> Long.MaxValue }
+  private def parentAndOrderId(details: TransactionDetails) = details.description.semanticOrder match { case Some(ord) => ord.order case None => Long.MaxValue }
 
   private def collapseChildren(items: SemanticGroup) = {
     items.tail.foreach(_.isExpandedItem = false)
@@ -50,7 +50,7 @@ object SemanticOrder {
       .flatten
 }
 
-case class SemanticOrder(id: String, isParent: Boolean, order: Long)
+case class SemanticOrder(id: String, order: Long)
 
 sealed trait TransactionDescription {
   val semanticOrder: Option[SemanticOrder]
@@ -221,9 +221,19 @@ sealed trait TxDescription extends TransactionDescription {
   def queryText(txid: ByteVector32): String
   def withNodeId: Option[PublicKey] = None
   def toAddress: Option[String] = None
+  def canBeCPFPd: Boolean = false
 }
 
-case class PlainTxDescription(addresses: List[String], label: Option[String] = None, semanticOrder: Option[SemanticOrder] = None) extends TxDescription {
+sealed trait CPFPEnabledTxDescription extends TxDescription {
+  override def canBeCPFPd: Boolean = cpfpBy.isEmpty
+  val cpfpBy: Option[ByteVector32]
+  val cpfpOf: Option[ByteVector32]
+}
+
+case class PlainTxDescription(addresses: List[String], label: Option[String] = None,
+                              semanticOrder: Option[SemanticOrder] = None, cpfpBy: Option[ByteVector32] = None,
+                              cpfpOf: Option[ByteVector32] = None) extends CPFPEnabledTxDescription {
+
   def queryText(txid: ByteVector32): String = txid.toHex + SEPARATOR + addresses.mkString(SEPARATOR) + SEPARATOR + label.getOrElse(new String)
   override def toAddress: Option[String] = addresses.headOption
 }
@@ -241,15 +251,24 @@ case class ChanFundingTxDescription(nodeId: PublicKey, label: Option[String] = N
   def queryText(txid: ByteVector32): String = txid.toHex + SEPARATOR + nodeId.toString + SEPARATOR + label.getOrElse(new String)
 }
 
-case class ChanRefundingTxDescription(nodeId: PublicKey, label: Option[String] = None, semanticOrder: Option[SemanticOrder] = None) extends ChanTxDescription {
+case class ChanRefundingTxDescription(nodeId: PublicKey, label: Option[String] = None,
+                                      semanticOrder: Option[SemanticOrder] = None, cpfpBy: Option[ByteVector32] = None,
+                                      cpfpOf: Option[ByteVector32] = None) extends CPFPEnabledTxDescription {
+
   def queryText(txid: ByteVector32): String = txid.toHex + SEPARATOR + nodeId.toString + SEPARATOR + label.getOrElse(new String)
 }
 
-case class HtlcClaimTxDescription(nodeId: PublicKey, label: Option[String] = None, semanticOrder: Option[SemanticOrder] = None) extends ChanTxDescription {
+case class HtlcClaimTxDescription(nodeId: PublicKey, label: Option[String] = None,
+                                  semanticOrder: Option[SemanticOrder] = None, cpfpBy: Option[ByteVector32] = None,
+                                  cpfpOf: Option[ByteVector32] = None) extends CPFPEnabledTxDescription {
+
   def queryText(txid: ByteVector32): String = txid.toHex + SEPARATOR + nodeId.toString + SEPARATOR + label.getOrElse(new String)
 }
 
-case class PenaltyTxDescription(nodeId: PublicKey, label: Option[String] = None, semanticOrder: Option[SemanticOrder] = None) extends ChanTxDescription {
+case class PenaltyTxDescription(nodeId: PublicKey, label: Option[String] = None,
+                                semanticOrder: Option[SemanticOrder] = None, cpfpBy: Option[ByteVector32] = None,
+                                cpfpOf: Option[ByteVector32] = None) extends CPFPEnabledTxDescription {
+
   def queryText(txid: ByteVector32): String = txid.toHex + SEPARATOR + nodeId.toString + SEPARATOR + label.getOrElse(new String)
 }
 
