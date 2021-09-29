@@ -140,7 +140,7 @@ class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParame
     case Event(GetTransactionResponse(tx, contextOpt), data) =>
       val data1 = data.copy(pendingTransactionRequests = data.pendingTransactionRequests - tx.txid)
 
-      data.computeTransactionDelta(tx) map { case (received, sent, feeOpt) =>
+      data.computeTransactionDelta(tx) map { case (_, feeOpt, received, sent) =>
         for (pendingTx <- data.pendingTransactions) self ! GetTransactionResponse(pendingTx, contextOpt)
         context.system.eventStream publish data.transactionReceived(tx, feeOpt, received, sent, ewt.xPub)
         val data2 = data1.copy(transactions = data.transactions.updated(tx.txid, tx), pendingTransactions = Nil)
@@ -185,9 +185,9 @@ class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParame
     case Event(commit: CommitTransaction, data) =>
       val data1 = data.commitTransaction(commit.tx)
       // We use the initial state to compute the effect of the tx
-      val (received, sent, fee) = data.computeTransactionDelta(commit.tx).get
+      val (_, feeOpt, received, sent) = data.computeTransactionDelta(commit.tx).get
       // We notify here because the tx won't be downloaded again (it has been added to the state at commit)
-      context.system.eventStream publish data1.transactionReceived(commit.tx, fee, received, sent, ewt.xPub)
+      context.system.eventStream publish data1.transactionReceived(commit.tx, feeOpt, received, sent, ewt.xPub)
       stay using persistAndNotify(data1) replying true
   }
 
@@ -211,13 +211,13 @@ class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParame
     case Event(GetBalance, data) => stay replying data.balance
 
     case Event(CompleteTransaction(tx, feeRatePerKw, sequenceFlag), data) =>
-      Try apply data.completeTransaction(tx, feeRatePerKw, params.dustLimit, params.allowSpendUnconfirmed, sequenceFlag) match {
+      Try apply data.completeTransaction(tx, feeRatePerKw, params.dustLimit, sequenceFlag) match {
         case Success(txAndFee) => stay replying CompleteTransactionResponse(txAndFee.asSome)
         case _ => stay replying CompleteTransactionResponse(None)
       }
 
     case Event(SendAll(publicKeyScript, feeRatePerKw, sequenceFlag, fromOutpoints, extraOutUtxos), data) =>
-      val inUtxos = if (fromOutpoints.nonEmpty) data.utxos.filter(fromOutpoints contains _.item.outPoint) else data.utxos
+      val inUtxos = if (fromOutpoints.nonEmpty) data.utxos.filter(utxo => fromOutpoints contains utxo.item.outPoint) else data.utxos
       Try apply data.spendAll(publicKeyScript, inUtxos, extraOutUtxos, feeRatePerKw, params.dustLimit, sequenceFlag) match {
         case Success(txAndFee) => stay replying SendAllResponse(txAndFee.asSome)
         case _ => stay replying SendAllResponse(None)
@@ -293,7 +293,7 @@ case class Utxo(key: ExtendedPublicKey, item: ElectrumClient.UnspentItem)
 
 case class AccountAndXPrivKey(xPriv: ExtendedPrivateKey, master: ExtendedPrivateKey)
 
-case class WalletParameters(headerDb: HeaderDb, walletDb: WalletDb, dustLimit: Satoshi, allowSpendUnconfirmed: Boolean) {
+case class WalletParameters(headerDb: HeaderDb, walletDb: WalletDb, dustLimit: Satoshi) {
   lazy val emptyPersistentData: PersistentData = PersistentData(accountKeysCount = MAX_RECEIVE_ADDRESSES, changeKeysCount = MAX_RECEIVE_ADDRESSES)
   lazy val emptyPersistentDataBytes: ByteVector = persistentDataCodec.encode(emptyPersistentData).require.toByteVector
 }
@@ -313,7 +313,11 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
 
   lazy val firstUnusedChangeKey: Option[ExtendedPublicKey] = changeKeyMap.collectFirst { case Tuple2(scriptHash, privKey) if status.get(scriptHash).contains(new String) => privKey }
 
-  lazy val publicScriptMap: Map[ByteVector, ExtendedPublicKey] = (accountKeys ++ changeKeys).map(key => Script.write(ewt computePublicKeyScript key.publicKey) -> key).toMap
+  lazy val publicScriptAccountMap: Map[ByteVector, ExtendedPublicKey] = accountKeys.map(key => Script.write(ewt computePublicKeyScript key.publicKey) -> key).toMap
+
+  lazy val publicScriptChangeMap: Map[ByteVector, ExtendedPublicKey] = changeKeys.map(key => Script.write(ewt computePublicKeyScript key.publicKey) -> key).toMap
+
+  lazy val publicScriptMap: Map[ByteVector, ExtendedPublicKey] = publicScriptAccountMap ++ publicScriptChangeMap
 
   lazy val utxos: Seq[Utxo] = history.keys.toList.flatMap(getUtxos)
 
@@ -330,8 +334,6 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
   def isMine(txIn: TxIn): Boolean = ewt.extractPubKeySpentFrom(txIn).map(ewt.computePublicKeyScript).map(Script.write).exists(publicScriptMap.contains)
 
   def isReceive(txOut: TxOut, scriptHash: ByteVector32): Boolean = publicScriptMap.get(txOut.publicKeyScript).exists(key => ewt.computeScriptHashFromPublicKey(key.publicKey) == scriptHash)
-
-  def accountOrChangeKey(scriptHash: ByteVector32): ExtendedPublicKey = accountKeyMap.get(scriptHash) match { case None => changeKeyMap(scriptHash) case Some(key) => key }
 
   def toPersistent: PersistentData = PersistentData(accountKeys.length, changeKeys.length, status, transactions, Map.empty, history, proofs, pendingTransactions)
 
@@ -358,7 +360,7 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
           } yield Utxo(key, unspent)
 
           // Find all transactions that send to or receive from this script hash
-          val txs = historyItems.flatMap(transactions get _.txHash).flatMap(_.txIn).map(_.outPoint)
+          val txs = historyItems.flatMap(item => transactions get item.txHash).flatMap(_.txIn).map(_.outPoint)
           // Because we may have unconfirmed UTXOs that are spend by unconfirmed transactions
           unspents.filterNot(utxo => txs contains utxo.item.outPoint)
         } getOrElse Nil
@@ -371,49 +373,53 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
     TransactionReceived(tx, computeTransactionDepth(tx.txid), received, sent, walletAddresses, xPub, feeOpt)
   }
 
-  type SatOpt = Option[Satoshi]
-
-  type ReceivedSentFee = (Satoshi, Satoshi, SatOpt)
+  type ReceivedSentFee = (Seq[TxOut], Option[Satoshi], Satoshi, Satoshi)
 
   def computeTransactionDelta(tx: Transaction): Option[ReceivedSentFee] = {
     // Computes the effect of this transaction on the wallet
     val ourInputs = tx.txIn.filter(isMine)
 
-    val missingParent = ourInputs.exists { txIn =>
-      !transactions.contains(txIn.outPoint.txid)
+    for (txIn <- ourInputs) {
+      // Can only be computed if all our inputs have parents
+      val hasParent = transactions.contains(txIn.outPoint.txid)
+      if (!hasParent) return None
     }
 
-    if (missingParent) None else {
-      val received = tx.txOut.filter(isMine).map(_.amount).sum
-      val sent = ourInputs.map(txIn => transactions(txIn.outPoint.txid) txOut txIn.outPoint.index.toInt).map(_.amount).sum
-      val feeOpt = if (ourInputs.size == tx.txIn.size) Some(sent - tx.txOut.map(_.amount).sum) else None
-      (received, sent, feeOpt).asSome
-    }
+    val spentOuts = ourInputs.map(txIn => transactions(txIn.outPoint.txid) txOut txIn.outPoint.index.toInt)
+
+    val mineReceived = tx.txOut.filter(isMine).map(_.amount).sum
+    val totalReceived = tx.txOut.map(_.amount).sum
+    val sent = spentOuts.map(_.amount).sum
+
+    if (ourInputs.size != tx.txIn.size) (spentOuts, None, mineReceived, sent).asSome
+    else (spentOuts, Some(sent - totalReceived), mineReceived, sent).asSome
   }
 
-  def completeTransaction(tx: Transaction, feeRatePerKw: FeeratePerKw, dustLimit: Satoshi, allowSpendUnconfirmed: Boolean, sequenceFlag: Long): TxAndFee = {
-    val usable = if (allowSpendUnconfirmed) utxos.sortBy(_.item.value) else utxos.filter(_.item.height > 0).sortBy(_.item.value)
-    val amount = tx.txOut.map(_.amount).sum
+  type TxOutOption = Option[TxOut]
 
-    def computeFee(candidates: Seq[Utxo], change: Option[TxOut] = None): Satoshi = {
-      val tx1 = ewt.addUtxosWithDummySig(usableUtxos = candidates, tx, sequenceFlag = sequenceFlag)
+  def completeTransaction(tx: Transaction, feeRatePerKw: FeeratePerKw, dustLimit: Satoshi, sequenceFlag: Long): TxAndFee = {
+
+    def computeFee(candidates: Seq[Utxo], change: TxOutOption) = {
+      val tx1 = ewt.addUtxosWithDummySig(usableUtxos = candidates, tx, sequenceFlag)
       val weight = change.map(tx1.addOutput).getOrElse(tx1).weight(Protocol.PROTOCOL_VERSION)
       Transactions.weight2fee(feeRatePerKw, weight)
     }
 
+    val usable = utxos.sortBy(_.item.value)
+    val amountToSend = tx.txOut.map(_.amount).sum
     val changeKey = firstUnusedChangeKey.getOrElse(changeKeys.head)
     val changeScript = ewt.computePublicKeyScript(changeKey.publicKey)
-    val changeTxOut = TxOut(Satoshi(0), changeScript)
+    val changeTxOut = TxOut(Satoshi(0L), changeScript)
 
     @tailrec
-    def loop(current: Seq[Utxo], remaining: Seq[Utxo] = Nil): (Seq[Utxo], Option[TxOut]) = current.map(_.item.value).sum.sat match {
-      case total if total - computeFee(current, None) < amount && remaining.isEmpty => throw new RuntimeException("Insufficient funds")
-      case total if total - computeFee(current, None) < amount => loop(remaining.head +: current, remaining.tail)
+    def loop(current: Seq[Utxo], remaining: Seq[Utxo] = Nil): (Seq[Utxo], TxOutOption) = current.map(_.item.value).sum.sat match {
+      case total if total - computeFee(current, None) < amountToSend && remaining.isEmpty => throw new RuntimeException("Insufficient funds")
+      case total if total - computeFee(current, None) < amountToSend => loop(remaining.head +: current, remaining.tail)
 
-      case total if total - computeFee(current, None) <= amount + dustLimit => (current, None)
-      case total if total - computeFee(current, changeTxOut.asSome) <= amount + dustLimit && remaining.isEmpty => (current, None)
-      case total if total - computeFee(current, changeTxOut.asSome) <= amount + dustLimit => loop(remaining.head +: current, remaining.tail)
-      case total => (current, changeTxOut.copy(amount = total - computeFee(current, changeTxOut.asSome) - amount).asSome)
+      case total if total - computeFee(current, None) <= amountToSend + dustLimit => (current, None)
+      case total if total - computeFee(current, changeTxOut.asSome) <= amountToSend + dustLimit && remaining.isEmpty => (current, None)
+      case total if total - computeFee(current, changeTxOut.asSome) <= amountToSend + dustLimit => loop(remaining.head +: current, remaining.tail)
+      case total => (current, changeTxOut.copy(amount = total - computeFee(current, changeTxOut.asSome) - amountToSend).asSome)
     }
 
     val (selected, changeOpt) = loop(Seq.empty, usable)
@@ -421,9 +427,8 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
     val tx2 = changeOpt.map(tx1.addOutput).getOrElse(tx1)
     val tx3 = ewt.signTransaction(utxos, tx2)
 
-    val fee = selected.map(_.item.value.sat).sum - tx3.txOut.map(_.amount).sum
-    require(tx.txIn.isEmpty, "Cannot complete a tx that already has inputs")
-    require(amount > dustLimit, "Amount to send is below dust limit")
+    val fee = selected.map(_.item.value).sum.sat - tx3.txOut.map(_.amount).sum
+    require(amountToSend > dustLimit, "Amount to send is below dust limit")
     TxAndFee(tx3, fee)
   }
 
@@ -451,8 +456,7 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
     copy(transactions = transactions1, history = history2)
   }
 
-  def spendAll(publicKeyScript: ByteVector, usableInUtxos: Seq[Utxo], extraOutUtxos: List[TxOut],
-               feeRatePerKw: FeeratePerKw, dustLimit: Satoshi, sequenceFlag: Long): TxAndFee = {
+  def spendAll(publicKeyScript: ByteVector, usableInUtxos: Seq[Utxo], extraOutUtxos: List[TxOut], feeRatePerKw: FeeratePerKw, dustLimit: Satoshi, sequenceFlag: Long): TxAndFee = {
 
     val txOut = TxOut(amount = usableInUtxos.map(_.item.value.sat).sum, publicKeyScript)
     val tx1 = ewt.addUtxosWithDummySig(usableInUtxos, Transaction(version = 2, Nil, txOut :: extraOutUtxos, lockTime = 0), sequenceFlag)

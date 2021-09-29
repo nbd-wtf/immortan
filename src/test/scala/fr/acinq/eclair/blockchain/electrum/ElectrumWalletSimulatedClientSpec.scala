@@ -70,7 +70,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
 
   private val socketAddress = InetSocketAddress.createUnresolved("0.0.0.0", 9735)
   private val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, ChainWalletTable, ElectrumHeadersTable)
-  private val walletParameters = WalletParameters(new SQLiteData(connection), new SQLiteChainWallet(connection), dustLimit = 546L.sat, allowSpendUnconfirmed = true)
+  private val walletParameters = WalletParameters(new SQLiteData(connection), new SQLiteChainWallet(connection), dustLimit = 546L.sat)
   private val chainSync = TestFSMRef(new ElectrumChainSync(client.ref, walletParameters.headerDb, ewt.chainHash))
   private val wallet = TestFSMRef(new ElectrumWallet(client.ref, chainSync, walletParameters, ewt))
   sender.send(wallet, walletParameters.emptyPersistentDataBytes)
