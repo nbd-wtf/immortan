@@ -104,9 +104,4 @@ class WireSpec extends AnyFunSuite {
     val sids = List.fill(iterations)(Tools.hostedShortChanId(randomBytes32, hostNodeId))
     assert(sids.size == sids.toSet.size)
   }
-
-  def hostedChanId(pubkey1: ByteVector, pubkey2: ByteVector) = {
-    val pubkey1First: Boolean = LexicographicalOrdering.isLessThan(pubkey1, pubkey2)
-    if (pubkey1First) Crypto.sha256(pubkey1 ++ pubkey2) else Crypto.sha256(pubkey2 ++ pubkey1)
-  }
 }
