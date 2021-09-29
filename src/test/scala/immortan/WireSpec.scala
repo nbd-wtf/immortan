@@ -1,15 +1,15 @@
 package immortan
 
 import fr.acinq.eclair._
+import fr.acinq.bitcoin._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.crypto.SphinxSpec._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
-import fr.acinq.bitcoin.{Bech32, ByteVector32, ByteVector64, Crypto, LexicographicalOrdering, OP_0, OP_PUSHDATA, SatoshiLong, Script}
 import fr.acinq.eclair.crypto.Sphinx.PaymentPacket
 import fr.acinq.eclair.channel.CMD_ADD_HTLC
 import org.scalatest.funsuite.AnyFunSuite
-import immortan.crypto.Tools
 import scodec.bits.ByteVector
+import immortan.crypto.Tools
 
 
 class WireSpec extends AnyFunSuite {
@@ -108,17 +108,5 @@ class WireSpec extends AnyFunSuite {
   def hostedChanId(pubkey1: ByteVector, pubkey2: ByteVector) = {
     val pubkey1First: Boolean = LexicographicalOrdering.isLessThan(pubkey1, pubkey2)
     if (pubkey1First) Crypto.sha256(pubkey1 ++ pubkey2) else Crypto.sha256(pubkey2 ++ pubkey1)
-  }
-
-  test("X") {
-    val id1 = ByteVector.fromValidHex("03d1b1a7f1c6691c0f5f8d1be59cc399e46aba5f35253b26d88b835aaa72d751de")
-    val id2 = ByteVector.fromValidHex("03144fcc73cea41a002b2865f98190ab90e4ff58a2ce24d3870f5079081e42922d")
-    println(hostedChanId(id1, id2))
-  }
-
-  test("Y") {
-    val List(OP_0, OP_PUSHDATA(bv, _)) = Script.parse(ByteVector.fromValidHex("0014659bb6aef9abe12950a3e0169426252c35e076ea"))
-
-    println(s"-- ${Bech32.encodeWitnessAddress("bc", 0.toByte, bv)}")
   }
 }
