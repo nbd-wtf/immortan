@@ -258,6 +258,11 @@ object ElectrumWallet {
 
   final val KEY_REFILL = "key-refill"
 
+  // RBF
+  final val GENERATION_FAIL = 0
+  final val PARENTS_MISSING = 1
+  final val FOREIGN_INPUTS = 2
+
   sealed trait State
   case object DISCONNECTED extends State
   case object WAITING_FOR_TIP extends State
@@ -281,7 +286,7 @@ object ElectrumWallet {
 
   case class RBFBump(tx: Transaction, feeRatePerKw: FeeratePerKw, sequenceFlag: Long) extends Request
   case class RBFReroute(tx: Transaction, feeRatePerKw: FeeratePerKw, publicKeyScript: ByteVector, sequenceFlag: Long) extends Request
-  case class RBFResponse(result: Option[TxAndFee] = None) extends Response
+  case class RBFResponse(result: Either[Int, TxAndFee] = GENERATION_FAIL.asLeft) extends Response
 
   case class ChainFor(target: ActorRef) extends Request
 
@@ -409,8 +414,8 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
 
   private def rbfReroute(publicKeyScript: ByteVector, spentUtxos: Seq[Utxo], feeRatePerKw: FeeratePerKw, dustLimit: Satoshi, sequenceFlag: Long) = {
     spendAll(publicKeyScript, spentUtxos, Nil, feeRatePerKw, dustLimit, sequenceFlag) match {
-      case Success(txAndFee) => RBFResponse(txAndFee.asSome)
-      case _ => RBFResponse(None)
+      case Success(txAndFee) => RBFResponse(txAndFee.asRight)
+      case _ => RBFResponse(GENERATION_FAIL.asLeft)
     }
   }
 
@@ -424,17 +429,17 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
 
       case delta if delta.feeOpt.isDefined =>
         completeTransaction(tx1, bump.feeRatePerKw, dustLimit, bump.sequenceFlag, leftUtxos, delta.spentUtxos) match {
-          case Success(txAndFee) => RBFResponse(txAndFee.asSome)
-          case _ => RBFResponse(None)
+          case Success(txAndFee) => RBFResponse(txAndFee.asRight)
+          case _ => RBFResponse(GENERATION_FAIL.asLeft)
         }
 
-      case _ => RBFResponse(None)
-    } getOrElse RBFResponse(None)
+      case _ => RBFResponse(FOREIGN_INPUTS.asLeft)
+    } getOrElse RBFResponse(PARENTS_MISSING.asLeft)
   }
 
   def rbfReroute(bump: RBFReroute, dustLimit: Satoshi): RBFResponse = computeTransactionDelta(bump.tx) map { delta =>
     rbfReroute(bump.publicKeyScript, delta.spentUtxos, bump.feeRatePerKw, dustLimit, bump.sequenceFlag)
-  } getOrElse RBFResponse(None)
+  } getOrElse RBFResponse(PARENTS_MISSING.asLeft)
 
   type TxOutOption = Option[TxOut]
 

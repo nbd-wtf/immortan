@@ -170,7 +170,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     assert(state3.balance.totalBalance == state2.balance.totalBalance - spendTx1.txOut.map(_.amount).sum - fee1)
     assert(state3.utxos.length == 1) // Only change output is left
 
-    val TxAndFee(tx2, fee2) = state3.rbfBump(RBFBump(tx1, feerate, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.get
+    val TxAndFee(tx2, fee2) = state3.rbfBump(RBFBump(tx1, feerate, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.right.get
     assert(tx1.txIn.map(_.outPoint).toSet == tx2.txIn.map(_.outPoint).toSet) // Bumped tx spends the same utxos as original one
     assert(tx1.txOut.filterNot(state3.isMine).toSet == tx2.txOut.filterNot(state3.isMine).toSet) // Recipient gets the same amount
     assert(tx1.txOut.filter(state3.isMine).head.amount - tx2.txOut.filter(state3.isMine).head.amount == fee2 - fee1) // Fee is taken from change output
@@ -196,7 +196,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     assert(state4.balance.totalBalance == state3.balance.totalBalance - spendTx1.txOut.map(_.amount).sum - fee1)
     assert(state4.utxos.length == 2) // Only change and unused outputs are left
 
-    val TxAndFee(tx2, fee2) = state4.rbfBump(RBFBump(tx1, feerate, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.get
+    val TxAndFee(tx2, fee2) = state4.rbfBump(RBFBump(tx1, feerate, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.right.get
     assert(tx1.txIn.map(_.outPoint).toSet.subsetOf(tx2.txIn.map(_.outPoint).toSet)) // Bumped tx spends original outputs and adds another one
     assert(tx1.txOut.filterNot(state4.isMine).toSet == tx2.txOut.filterNot(state4.isMine).toSet) // Recipient gets the same amount
     assert(tx2.txOut.filter(state4.isMine).map(_.amount).sum == state3.balance.totalBalance - tx2.txOut.filterNot(state4.isMine).map(_.amount).sum - fee2) // Our change output is larger
@@ -215,7 +215,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val TxAndFee(tx1, fee) = state3.spendAll(Script.write(pay2wpkh), state3.utxos, Nil, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF).get
     val state4 = state3.commitTransaction(tx1)
 
-    val TxAndFee(tx2, fee2) = state4.rbfBump(RBFBump(tx1, feerate, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.get
+    val TxAndFee(tx2, fee2) = state4.rbfBump(RBFBump(tx1, feerate, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.right.get
     assert(tx1.txOut.map(_.publicKeyScript) == tx2.txOut.map(_.publicKeyScript) && tx1.txOut.size == 1) // Both txs spend to the same address not belonging to us
     assert(tx2.txOut.map(_.amount).sum == state3.balance.totalBalance - fee2) // Bumped draining transaction has an increased fee
     assert(tx1.txIn.map(_.outPoint).toSet == tx2.txIn.map(_.outPoint).toSet) // Both txs spend same inputs
@@ -232,7 +232,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val state4 = state3.commitTransaction(tx1)
 
     val rerouteScript = Script.write(Script.pay2wpkh(ByteVector.fill(20)(2)))
-    val TxAndFee(tx2, fee2) = state4.rbfReroute(RBFReroute(tx1, feerate, rerouteScript, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.get
+    val TxAndFee(tx2, fee2) = state4.rbfReroute(RBFReroute(tx1, feerate, rerouteScript, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.right.get
     assert(tx2.txOut.head.publicKeyScript == rerouteScript && tx2.txOut.size == 1) // Cancelling tx sends funds to a different destination
     assert(tx2.txOut.map(_.amount).sum == state3.balance.totalBalance - fee2) // Bumped draining transaction has an increased fee
     assert(tx1.txIn.map(_.outPoint).toSet == tx2.txIn.map(_.outPoint).toSet) // Both txs spend same inputs
