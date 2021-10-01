@@ -51,20 +51,30 @@ class InputParserSpec extends AnyFunSuite {
   test("Internet identifiers") {
     val wrong1 = "abc@a"
     val wrong2 = "abc@9"
+    val wrong3 = "-fsdf@sdfds.com"
+    val wrong4 = "-a@abc.com"
+    val wrong5 = "a-@abc.com"
 
     val correct1 = "user@website.com"
     val correct2 = "us_er.na_me@website.com"
     val correct3 = "user-name.name@web-site.com"
     val correct4 = "100rub-123123123123@lnurl-pay.me"
     val correct5 = "123123123123@cards.lnurl-pay.to.me"
+    val correct6 = "a@abc.com"
+    val correct7 = "ab@abc.com"
 
     assert(InputParser.identifier.findFirstMatchIn(wrong1).isEmpty)
     assert(InputParser.identifier.findFirstMatchIn(wrong2).isEmpty)
+    assert(InputParser.identifier.findFirstMatchIn(wrong3).isEmpty)
+    assert(InputParser.identifier.findFirstMatchIn(wrong4).isEmpty)
+    assert(InputParser.identifier.findFirstMatchIn(wrong5).isEmpty)
 
     assert(InputParser.identifier.findFirstMatchIn(correct1).isDefined)
     assert(InputParser.identifier.findFirstMatchIn(correct2).isDefined)
     assert(InputParser.identifier.findFirstMatchIn(correct3).isDefined)
     assert(InputParser.identifier.findFirstMatchIn(correct4).isDefined)
     assert(InputParser.identifier.findFirstMatchIn(correct5).isDefined)
+    assert(InputParser.identifier.findFirstMatchIn(correct6).isDefined)
+    assert(InputParser.identifier.findFirstMatchIn(correct7).isDefined)
   }
 }
