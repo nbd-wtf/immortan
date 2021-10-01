@@ -47,4 +47,24 @@ class InputParserSpec extends AnyFunSuite {
     assert(uri3.prExt.isDefined)
     assert(uri3.isValid)
   }
+
+  test("Internet identifiers") {
+    val wrong1 = "abc@a"
+    val wrong2 = "abc@9"
+
+    val correct1 = "user@website.com"
+    val correct2 = "us_er.na_me@website.com"
+    val correct3 = "user-name.name@web-site.com"
+    val correct4 = "100rub-123123123123@lnurl-pay.me"
+    val correct5 = "123123123123@cards.lnurl-pay.to.me"
+
+    assert(InputParser.identifier.findFirstMatchIn(wrong1).isEmpty)
+    assert(InputParser.identifier.findFirstMatchIn(wrong2).isEmpty)
+
+    assert(InputParser.identifier.findFirstMatchIn(correct1).isDefined)
+    assert(InputParser.identifier.findFirstMatchIn(correct2).isDefined)
+    assert(InputParser.identifier.findFirstMatchIn(correct3).isDefined)
+    assert(InputParser.identifier.findFirstMatchIn(correct4).isDefined)
+    assert(InputParser.identifier.findFirstMatchIn(correct5).isDefined)
+  }
 }
