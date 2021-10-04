@@ -162,7 +162,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
 
     WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
-    val history = cm.payBag.listRecentRelays(Table.DEFAULT_LIMIT.get).headTry(cm.payBag.toRelayedPreimageInfo).get
+    val history = cm.payBag.listRecentRelays(10).headTry(cm.payBag.toRelayedPreimageInfo).get
     WAIT_UNTIL_TRUE(history.relayed == pr.amount.get)
     WAIT_UNTIL_TRUE(history.earned == 6984L.msat)
   }

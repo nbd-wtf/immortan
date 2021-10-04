@@ -1,7 +1,6 @@
 package immortan.sqlite
 
 import immortan.PaymentStatus.{SUCCEEDED, PENDING, ABORTED}
-import java.util.concurrent.atomic.AtomicInteger
 
 
 trait Table {
@@ -9,10 +8,6 @@ trait Table {
   val Tuple2(id, fts) = Tuple2("_id", "fts4")
   val IDAUTOINC = s"$id INTEGER PRIMARY KEY AUTOINCREMENT"
   val UNIQUE = "UNIQUE"
-}
-
-object Table {
-  val DEFAULT_LIMIT = new AtomicInteger(20)
 }
 
 // Database #1, essential data, exportable to backup
