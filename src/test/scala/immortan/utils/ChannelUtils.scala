@@ -7,10 +7,8 @@ import immortan.fsm.{OutgoingPaymentListener, OutgoingPaymentSenderData}
 import fr.acinq.eclair.wire.{InitHostedChannel, LastCrossSignedState, NodeAddress}
 import immortan.{ChannelMaster, HostedCommits, PathFinder, RemoteNodeInfo}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.ChannelFeatures
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.ByteVector64
-import fr.acinq.bitcoin.SatoshiLong
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, SatoshiLong}
 import immortan.crypto.Tools
 
 
@@ -46,11 +44,13 @@ object ChannelUtils {
       startedAt = System.currentTimeMillis)
   }
 
-  def makeChannelMaster: (SQLiteNetwork, SQLiteNetwork, ChannelMaster) = {
+  def makeChannelMaster(secrets: Iterable[ByteVector32] = Nil): (SQLiteNetwork, SQLiteNetwork, ChannelMaster) = {
     val (normalStore, hostedStore) = SQLiteUtils.getSQLiteNetworkStores
     val essentialInterface = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, ChannelTable, PreimageTable)
     val notEssentialInterface = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, PaymentTable, RelayTable, DataTable, ElectrumHeadersTable)
-    val payBag = new SQLitePayment(notEssentialInterface, essentialInterface)
+    val payBag = new SQLitePayment(notEssentialInterface, essentialInterface) {
+      override def listPendingSecrets: Set[ByteVector32] = secrets.toSet
+    }
     val chanBag = new SQLiteChannel(essentialInterface, null)
     val dataBag = new SQLiteData(notEssentialInterface)
 
@@ -61,9 +61,9 @@ object ChannelUtils {
     (normalStore, hostedStore, cm)
   }
 
-  def makeChannelMasterWithBasicGraph: (SQLiteNetwork, SQLiteNetwork, ChannelMaster) = {
-    val (normalStore, hostedStore, cm) = makeChannelMaster
+  def makeChannelMasterWithBasicGraph(secrets: Iterable[ByteVector32] = Nil): (SQLiteNetwork, SQLiteNetwork, Iterable[ByteVector32], ChannelMaster) = {
+    val (normalStore, hostedStore, cm) = makeChannelMaster(secrets)
     GraphUtils.fillBasicGraph(normalStore)
-    (normalStore, hostedStore, cm)
+    (normalStore, hostedStore, secrets, cm)
   }
 }

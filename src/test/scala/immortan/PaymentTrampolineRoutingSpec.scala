@@ -19,15 +19,16 @@ import immortan.sqlite.Table
 class PaymentTrampolineRoutingSpec extends AnyFunSuite {
   test("Correctly parse trampoline routed payments sent to our fake nodeId") {
     LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
+
     val ourParams = TrampolineOn(minimumMsat = 1000L.msat, maximumMsat = 10000000L.msat, feeBaseMsat = 10L.msat, feeProportionalMillionths = 100, exponent = 0D, logExponent = 0D, CltvExpiryDelta(72))
-    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(100000L.msat), randomBytes32, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(100000L.msat), randomBytes32, randomBytes32, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer)
     val outerPaymentSecret = randomBytes32
 
-    val (_, _, cm) = makeChannelMasterWithBasicGraph
     val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerLegacyTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, d, CltvExpiryDelta(720), trampolineFees = 1000L.msat)
-    val reasonableTrampoline1 = createResolution(pr, 11000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
-    val reasonableTrampoline2 = createResolution(pr, 90000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline1 = createResolution(pr, 11000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret, cm).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline2 = createResolution(pr, 90000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret, cm).asInstanceOf[ReasonableTrampoline]
     val fsm = new TrampolinePaymentRelayer(fullTag = FullPaymentTag(null, null, PaymentTagTlv.TRAMPLOINE_ROUTED), cm) { lastAmountIn = List(reasonableTrampoline1, reasonableTrampoline2).map(_.add.amountMsat).sum  }
     assert(fsm.validateRelay(ourParams, List(reasonableTrampoline1, reasonableTrampoline2), LNParams.blockCount.get).isEmpty)
   }
@@ -41,9 +42,9 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
-    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, aP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is A which we do not have direct channels with
+    val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), randomBytes32, randomBytes32, aP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is A which we do not have direct channels with
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
-    val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val outerPaymentSecret = randomBytes32
     val feeReserve = 7000L.msat
@@ -55,7 +56,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
 
     val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerLegacyTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, a, CltvExpiryDelta(720), feeReserve)
-    val reasonableTrampoline1 = createResolution(pr, 707000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline1 = createResolution(pr, 707000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret, cm).asInstanceOf[ReasonableTrampoline]
 
     val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
@@ -76,9 +77,9 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
-    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, aP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is A which we do not have direct channels with
+    val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, randomBytes32, aP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is A which we do not have direct channels with
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
-    val (_, _, cm) = makeChannelMasterWithBasicGraph
 
     val outerPaymentSecret = randomBytes32
     val feeReserve = 7000L.msat
@@ -91,7 +92,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val (_, trampolineExpiry, trampolineOnion) = createInnerNativeTrampoline(partAmount = 400000L.msat, pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, a, CltvExpiryDelta(720), feeReserve)
     val theirAdd = createTrampolineAdd(pr, outerPartAmount = 404000L.msat, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, trampolineAmountTotal = 404000L.msat, trampolineExpiry, trampolineOnion, outerPaymentSecret)
-    val reasonableTrampoline1 = ChannelMaster.initResolve(UpdateAddHtlcExt(theirAdd = theirAdd, remoteInfo = remoteNodeInfo)).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline1 = cm.initResolve(UpdateAddHtlcExt(theirAdd = theirAdd, remoteInfo = remoteNodeInfo)).asInstanceOf[ReasonableTrampoline]
 
     val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
@@ -116,9 +117,9 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
-    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is D which we do not have direct channels with
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, randomBytes32, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is D which we do not have direct channels with
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
-    val (_, _, cm) = makeChannelMasterWithBasicGraph
+    val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
     val outerPaymentSecret = randomBytes32
     val feeReserve = 7000L.msat
 
@@ -129,9 +130,9 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
 
     val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerLegacyTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, d, CltvExpiryDelta(720), feeReserve)
-    val reasonableTrampoline1 = createResolution(pr, 105000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
-    val reasonableTrampoline2 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
-    val reasonableTrampoline3 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline1 = createResolution(pr, 105000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret, cm).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline2 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret, cm).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline3 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret, cm).asInstanceOf[ReasonableTrampoline]
 
     val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
@@ -172,10 +173,9 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 
     val preimage = randomBytes32
-    val paymentHash = Crypto.sha256(preimage)
-    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is D which we do not have direct channels with
+    val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), randomBytes32, randomBytes32, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is D which we do not have direct channels with
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
-    val (_, _, cm) = makeChannelMasterWithBasicGraph
     val outerPaymentSecret = randomBytes32
     val feeReserve = 7000L.msat
 
@@ -183,7 +183,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     cm.sendTo = (change, _) => replies ::= change
 
     val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerLegacyTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, d, CltvExpiryDelta(720), feeReserve)
-    val reasonableTrampoline1 = createResolution(pr, 105000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline1 = createResolution(pr, 105000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret, cm).asInstanceOf[ReasonableTrampoline]
 
     val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
@@ -207,10 +207,9 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     LNParams.routerConf = routerConf // Replace with the one which allows for smaller parts
 
     val preimage = randomBytes32
-    val paymentHash = Crypto.sha256(preimage)
-    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is D which we do not have direct channels with
+    val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), randomBytes32, randomBytes32, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is D which we do not have direct channels with
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
-    val (_, _, cm) = makeChannelMasterWithBasicGraph
     val outerPaymentSecret = randomBytes32
     val feeReserve = 7000L.msat
 
@@ -223,7 +222,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     cm.all = Channel.load(Set(cm), cm.chanBag)
 
     val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerLegacyTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, d, CltvExpiryDelta(720), feeReserve)
-    val reasonableTrampoline1 = createResolution(pr, 707000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline1 = createResolution(pr, 707000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret, cm).asInstanceOf[ReasonableTrampoline]
 
     val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
@@ -248,9 +247,9 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
-    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is D which we do not have direct channels with
+    val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, randomBytes32, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is D which we do not have direct channels with
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
-    val (_, _, cm) = makeChannelMasterWithBasicGraph
     val outerPaymentSecret = randomBytes32
     val feeReserve = 7000L.msat
 
@@ -265,7 +264,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.CLOSING))
 
     val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerLegacyTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, d, CltvExpiryDelta(720), feeReserve)
-    val reasonableTrampoline1 = createResolution(pr, 707000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline1 = createResolution(pr, 707000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret, cm).asInstanceOf[ReasonableTrampoline]
 
     val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
@@ -287,9 +286,9 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
-    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, eP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is E which is not in a graph!
+    val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, randomBytes32, eP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is E which is not in a graph!
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
-    val (_, _, cm) = makeChannelMasterWithBasicGraph
     val outerPaymentSecret = randomBytes32
     val feeReserve = 7000L.msat
 
@@ -303,7 +302,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
 
     val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerLegacyTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, e, CltvExpiryDelta(720), feeReserve)
-    val reasonableTrampoline1 = createResolution(pr, 707000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline1 = createResolution(pr, 707000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret, cm).asInstanceOf[ReasonableTrampoline]
 
     val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
@@ -325,9 +324,9 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
-    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is D which we do not have direct channels with
+    val (normalStore, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, randomBytes32, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is D which we do not have direct channels with
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
-    val (normalStore, _, cm) = makeChannelMaster
     fillDirectGraph(normalStore)
 
     // s -> us -> a == d
@@ -342,9 +341,9 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
 
     val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerLegacyTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, d, CltvExpiryDelta(720), feeReserve)
-    val reasonableTrampoline1 = createResolution(pr, 105000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
-    val reasonableTrampoline2 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
-    val reasonableTrampoline3 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline1 = createResolution(pr, 105000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret, cm).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline2 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret, cm).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline3 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret, cm).asInstanceOf[ReasonableTrampoline]
 
     val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
@@ -377,9 +376,9 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
-    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is D which we do not have direct channels with
+    val (normalStore, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, randomBytes32, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is D which we do not have direct channels with
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
-    val (normalStore, _, cm) = makeChannelMaster
     fillDirectGraph(normalStore)
 
     // s -> us -> a == d
@@ -394,9 +393,9 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
 
     val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerLegacyTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, d, CltvExpiryDelta(720), feeReserve)
-    val reasonableTrampoline1 = createResolution(pr, 105000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
-    val reasonableTrampoline2 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
-    val reasonableTrampoline3 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline1 = createResolution(pr, 105000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret, cm).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline2 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret, cm).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline3 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret, cm).asInstanceOf[ReasonableTrampoline]
 
     val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)
@@ -433,9 +432,9 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
-    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is D which we do not have direct channels with
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), paymentHash, randomBytes32, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is D which we do not have direct channels with
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
-    val (normalStore, _, cm) = makeChannelMaster
+    val (normalStore, _, cm) = makeChannelMaster(Nil)
     fillDirectGraph(normalStore)
 
     // s -> us -> a == d
@@ -450,9 +449,9 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
 
     val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) = createInnerLegacyTrampoline(pr, remoteNodeInfo.nodeId, remoteNodeInfo.nodeSpecificPubKey, d, CltvExpiryDelta(720), feeReserve)
-    val reasonableTrampoline1 = createResolution(pr, 105000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
-    val reasonableTrampoline2 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
-    val reasonableTrampoline3 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline1 = createResolution(pr, 105000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret, cm).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline2 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret, cm).asInstanceOf[ReasonableTrampoline]
+    val reasonableTrampoline3 = createResolution(pr, 301000L.msat, remoteNodeInfo, trampolineAmountTotal, trampolineExpiry, trampolineOnion, outerPaymentSecret, cm).asInstanceOf[ReasonableTrampoline]
 
     val fsm = new TrampolinePaymentRelayer(reasonableTrampoline1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil)

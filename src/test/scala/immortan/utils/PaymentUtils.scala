@@ -27,8 +27,8 @@ object PaymentUtils {
     UpdateAddHtlc(randomBytes32, System.currentTimeMillis + secureRandom.nextInt(1000), firstAmount, paymentHash, firstExpiry, onion.packet)
   }
 
-  def recordIncomingPaymentToFakeNodeId(amount: Option[MilliSatoshi], preimage: ByteVector32, payBag: PaymentBag, remoteInfo: RemoteNodeInfo): PaymentRequest = {
-    val invoice = PaymentRequest(Block.TestnetGenesisBlock.hash, amount, Crypto.sha256(preimage), remoteInfo.nodeSpecificPrivKey, "Invoice", CltvExpiryDelta(18), Nil)
+  def recordIncomingPaymentToFakeNodeId(amount: Option[MilliSatoshi], preimage: ByteVector32, secret: ByteVector32, payBag: PaymentBag, remoteInfo: RemoteNodeInfo): PaymentRequest = {
+    val invoice = PaymentRequest(Block.TestnetGenesisBlock.hash, amount, Crypto.sha256(preimage), secret, remoteInfo.nodeSpecificPrivKey, "Invoice", CltvExpiryDelta(18), Nil)
     val prExt = PaymentRequestExt(uri = Failure(new RuntimeException), invoice, PaymentRequest.write(invoice))
     val desc = PlainMetaDescription(None, None, None, None, "Invoice", "Invoice meta")
     payBag.replaceIncomingPayment(prExt, preimage, desc, balanceSnap = 1000L.msat, fiatRateSnap = Map("USD" -> 12D))
@@ -36,10 +36,10 @@ object PaymentUtils {
   }
 
   def makeRemoteAddToFakeNodeId(partAmount: MilliSatoshi, totalAmount: MilliSatoshi, paymentHash: ByteVector32, paymentSecret: ByteVector32,
-                                remoteInfo: RemoteNodeInfo, cltvDelta: Int = LNParams.cltvRejectThreshold, tlvs: Seq[GenericTlv] = Nil): ReasonableLocal = {
+                                remoteInfo: RemoteNodeInfo, cm: ChannelMaster, cltvDelta: Int = LNParams.cltvRejectThreshold, tlvs: Seq[GenericTlv] = Nil): ReasonableLocal = {
 
     val addFromRemote1 = createFinalAdd(partAmount, totalAmount, paymentHash, paymentSecret, from = remoteInfo.nodeId, to = remoteInfo.nodeSpecificPubKey, cltvDelta, tlvs)
-    ChannelMaster.initResolve(UpdateAddHtlcExt(theirAdd = addFromRemote1, remoteInfo = remoteInfo)).asInstanceOf[ReasonableLocal]
+    cm.initResolve(UpdateAddHtlcExt(theirAdd = addFromRemote1, remoteInfo = remoteInfo)).asInstanceOf[ReasonableLocal]
   }
 
   def makeInFlightPayments(out: OutgoingAdds, in: ReasonableResolutions): InFlightPayments = InFlightPayments(out.groupBy(_.fullTag), in.groupBy(_.fullTag))
@@ -85,8 +85,9 @@ object PaymentUtils {
     UpdateAddHtlc(randomBytes32, System.currentTimeMillis + secureRandom.nextInt(1000), firstAmount, pr.paymentHash, firstExpiry, onion.packet)
   }
 
-  def createResolution(pr: PaymentRequest, partAmount: MilliSatoshi, info: RemoteNodeInfo, tAmountTotal: MilliSatoshi, tExpiry: CltvExpiry, tOnion: Sphinx.PacketAndSecrets, secret: ByteVector32): IncomingResolution = {
+  def createResolution(pr: PaymentRequest, partAmount: MilliSatoshi, info: RemoteNodeInfo, tAmountTotal: MilliSatoshi,
+                       tExpiry: CltvExpiry, tOnion: Sphinx.PacketAndSecrets, secret: ByteVector32, cm: ChannelMaster): IncomingResolution = {
     val remoteAdd = createTrampolineAdd(pr, partAmount, from = info.nodeId, toTrampoline = info.nodeSpecificPubKey, tAmountTotal, tExpiry, tOnion, secret)
-    ChannelMaster.initResolve(UpdateAddHtlcExt(theirAdd = remoteAdd, remoteInfo = info))
+    cm.initResolve(UpdateAddHtlcExt(theirAdd = remoteAdd, remoteInfo = info))
   }
 }

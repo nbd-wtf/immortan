@@ -8,7 +8,6 @@ import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.crypto.Sphinx.PaymentPacket
 import fr.acinq.eclair.channel.CMD_ADD_HTLC
 import org.scalatest.funsuite.AnyFunSuite
-import scodec.bits.ByteVector
 import immortan.crypto.Tools
 
 

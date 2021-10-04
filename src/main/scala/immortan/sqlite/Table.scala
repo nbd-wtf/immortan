@@ -212,10 +212,8 @@ object PaymentTable extends Table {
 
   // Selecting
 
-  val selectByHashSql = s"SELECT * FROM $table WHERE $hash = ?"
-
   val selectRecentSql: String = {
-    val recentFailed = s"($updatedAt > ? AND $status = $ABORTED)" // Skip all payments which have been failed a long time ago
+    val recentFailed = s"($updatedAt > ? AND $status = $ABORTED AND $incoming = 0)" // Skip outgoing which have been failed a long time ago
     val nonFailedOutgoing = s"($updatedAt > 0 AND $status <> $ABORTED AND $incoming = 0)" // Select all outgoing payments which are not failed yet
     val recentPendingIncoming = s"($updatedAt > ? AND $status = $PENDING AND $incoming = 1)" // Skip unfulfilled incoming payments which are expired
     val allFulfilledIncoming = s"($updatedAt > 0 AND $status = $SUCCEEDED AND $incoming = 1)" // Select all incoming payments which are fulfilled by now
@@ -224,15 +222,19 @@ object PaymentTable extends Table {
 
   val selectSummarySql = s"SELECT SUM($feeMsat), SUM($chainFeeMsat), SUM($receivedMsat), SUM($sentMsat), COUNT($id) FROM $table WHERE $status = $SUCCEEDED"
 
-  val searchSql = s"SELECT * FROM $table WHERE $hash IN (SELECT $hash FROM $fts$table WHERE $search MATCH ? LIMIT 50)"
+  val searchSql = s"SELECT * FROM $table WHERE $hash IN (SELECT DISTINCT $hash FROM $fts$table WHERE $search MATCH ? LIMIT 50)"
+
+  val selectPendingIncomingSql = s"SELECT * FROM $table WHERE ($updatedAt > ? AND $status = $PENDING AND $incoming = 1)"
+
+  val selectByHashSql = s"SELECT * FROM $table WHERE $hash = ?"
 
   // Updating
 
-  val updOkOutgoingSql = s"UPDATE $table SET $status = $SUCCEEDED, $preimage = ?, $feeMsat = ?, $updatedAt = ? WHERE $hash = ? AND ($updatedAt > 0 AND status <> $SUCCEEDED AND $incoming = 0)"
+  val updOkOutgoingSql = s"UPDATE $table SET $status = $SUCCEEDED, $preimage = ?, $feeMsat = ?, $updatedAt = ? WHERE $hash = ? AND ($updatedAt > 0 AND $status <> $SUCCEEDED AND $incoming = 0)"
 
-  val updOkIncomingSql = s"UPDATE $table SET $status = $SUCCEEDED, $receivedMsat = ?, $seenAt = ?, $updatedAt = ? WHERE $hash = ? AND ($updatedAt > 0 AND status <> $SUCCEEDED AND $incoming = 1)"
+  val updOkIncomingSql = s"UPDATE $table SET $status = $SUCCEEDED, $receivedMsat = ?, $seenAt = ?, $updatedAt = ? WHERE $hash = ? AND ($updatedAt > 0 AND $status <> $SUCCEEDED AND $incoming = 1)"
 
-  val updStatusSql = s"UPDATE $table SET $status = ?, $updatedAt = ? WHERE $hash = ? AND ($updatedAt > 0 AND status <> $SUCCEEDED)"
+  val updStatusSql = s"UPDATE $table SET $status = ?, $updatedAt = ? WHERE $hash = ? AND ($updatedAt > 0 AND $status <> $SUCCEEDED)"
 
   val updateDescriptionSql = s"UPDATE $table SET $description = ? WHERE $hash = ?"
 
@@ -265,7 +267,7 @@ object TxTable extends Table {
 
   val selectSummarySql = s"SELECT SUM($feeSat), SUM($receivedSat), SUM($sentSat), COUNT($id) FROM $table WHERE $doubleSpent = 0"
 
-  val searchSql = s"SELECT * FROM $table WHERE $txid IN (SELECT $txid FROM $fts$table WHERE $search MATCH ? LIMIT 50)"
+  val searchSql = s"SELECT * FROM $table WHERE $txid IN (SELECT DISTINCT $txid FROM $fts$table WHERE $search MATCH ? LIMIT 50)"
 
   // Updating
 
@@ -343,7 +345,7 @@ object LNUrlPayTable extends Table {
 
   val selectRecentSql = s"SELECT * FROM $table ORDER BY $updatedAt DESC LIMIT ?"
 
-  val searchSql = s"SELECT * FROM $table WHERE $domain IN (SELECT $domain FROM $fts$table WHERE $search MATCH ?) LIMIT 50"
+  val searchSql = s"SELECT * FROM $table WHERE $domain IN (SELECT DISTINCT $domain FROM $fts$table WHERE $search MATCH ?) LIMIT 50"
 
   val updInfoSql = s"UPDATE $table SET $payMeta = ?, $updatedAt = ?, $description = ?, $lastNodeId = ?, $lastComment = ? WHERE $pay = ?"
 
