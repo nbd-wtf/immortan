@@ -77,4 +77,12 @@ class InputParserSpec extends AnyFunSuite {
     assert(InputParser.identifier.findFirstMatchIn(correct6).isDefined)
     assert(InputParser.identifier.findFirstMatchIn(correct7).isDefined)
   }
+
+  test("Detect non-ascii chars") {
+    val allAscii = "https://www.website.com.ua"
+    val nonAscii = "https://www.websוte.com.ua"
+
+    assert(LNUrl(allAscii).warnUri == LNUrl(allAscii).uri.getHost)
+    assert(LNUrl(nonAscii).warnUri == "www.webs[<u><b>ו</b></u>]te.com.ua")
+  }
 }
