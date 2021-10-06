@@ -83,6 +83,6 @@ class InputParserSpec extends AnyFunSuite {
     val nonAscii = "https://www.websוte.com.ua"
 
     assert(LNUrl(allAscii).warnUri == LNUrl(allAscii).uri.getHost)
-    assert(LNUrl(nonAscii).warnUri == "www.webs[<u><b>ו</b></u>]te.com.ua")
+    assert(LNUrl(nonAscii).warnUri == "www.webs<b>[ו]</b>te.com.ua")
   }
 }

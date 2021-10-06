@@ -60,7 +60,7 @@ case class LNUrl(request: String) {
   val uri: Uri = LNUrl.checkHost(request)
   val warnUri: String = uri.getHost.map { char =>
     if (CharMatcher.ascii matches char) char.toString
-    else s"[<u><b>$char</b></u>]"
+    else s"<b>[$char]</b>"
   }.mkString
 
   lazy val k1: Try[String] = Try(uri getQueryParameter "k1")
