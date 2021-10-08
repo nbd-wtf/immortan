@@ -165,7 +165,8 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val pay2pkh = Script.pay2pkh(ByteVector.fill(20)(1))
     val spendTx1 = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(3), pay2pkh) :: Nil, lockTime = 0)
     val TxAndFee(tx1, fee1) = state2.completeTransaction(spendTx1, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF, state2.utxos).get
-    val state3 = state2.commitTransaction(tx1)
+    val changeScriptHash = ewt.computeScriptHashFromPublicKey(state2.publicScriptChangeMap(tx1.txOut.filter(state2.isMine).head.publicKeyScript).publicKey) // Change utxo updated
+    val state3 = state2.commitTransaction(tx1).copy(status = state2.status.updated(changeScriptHash, "used-change-utxo"))
 
     assert(state3.balance.totalBalance == state2.balance.totalBalance - spendTx1.txOut.map(_.amount).sum - fee1)
     assert(state3.utxos.length == 1) // Only change output is left
@@ -177,7 +178,8 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     assert(fee1 * 10 == fee2)
 
     val state4 = state3.commitTransaction(tx2)
-    assert(state4.balance.totalBalance == state3.balance.totalBalance + tx2.txOut.filter(state3.isMine).head.amount) // We now have 2 unconfirmed change outputs
+    assert(state4.withOverridingTxids.balance.totalBalance == state3.balance.totalBalance - fee2 + fee1) // But former unconfirmed change utxo gets overridden and thrown out
+    assert(state4.withOverridingTxids.overriddenPendingTxids == Map(tx1.txid -> tx2.txid))
   }
 
   test("RBF-bump adding new utxos") {
@@ -191,7 +193,8 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val pay2pkh = Script.pay2pkh(ByteVector.fill(20)(1))
     val spendTx1 = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1.9999), pay2pkh) :: Nil, lockTime = 0)
     val TxAndFee(tx1, fee1) = state3.completeTransaction(spendTx1, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF, state2.utxos).get
-    val state4 = state3.commitTransaction(tx1)
+    val changeScriptHash = ewt.computeScriptHashFromPublicKey(state3.publicScriptChangeMap(tx1.txOut.filter(state3.isMine).head.publicKeyScript).publicKey) // Change utxo updated
+    val state4 = state3.commitTransaction(tx1).copy(status = state3.status.updated(changeScriptHash, "used-change-utxo"))
 
     assert(state4.balance.totalBalance == state3.balance.totalBalance - spendTx1.txOut.map(_.amount).sum - fee1)
     assert(state4.utxos.length == 2) // Only change and unused outputs are left
@@ -200,8 +203,11 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     assert(tx1.txIn.map(_.outPoint).toSet.subsetOf(tx2.txIn.map(_.outPoint).toSet)) // Bumped tx spends original outputs and adds another one
     assert(tx1.txOut.filterNot(state4.isMine).toSet == tx2.txOut.filterNot(state4.isMine).toSet) // Recipient gets the same amount
     assert(tx2.txOut.filter(state4.isMine).map(_.amount).sum == state3.balance.totalBalance - tx2.txOut.filterNot(state4.isMine).map(_.amount).sum - fee2) // Our change output is larger
-    assert(tx1.txOut.filter(state4.isMine).map(_.amount).sum == state3.balance.totalBalance - tx1.txOut.filterNot(state4.isMine).map(_.amount).sum - fee1 - 1.btc) // Two competing txs
     assert(fee2 > fee1)
+
+    val state5 = state4.commitTransaction(tx2)
+    assert(state5.withOverridingTxids.balance.totalBalance == state4.balance.totalBalance - fee2 + fee1) //Former unconfirmed change utxo gets overridden and thrown out
+    assert(state5.withOverridingTxids.overriddenPendingTxids == Map(tx1.txid -> tx2.txid))
   }
 
   test("RBF-bump draining a wallet") {
@@ -213,16 +219,20 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
 
     val pay2wpkh = Script.pay2wpkh(ByteVector.fill(20)(1))
     val TxAndFee(tx1, fee) = state3.spendAll(Script.write(pay2wpkh), state3.utxos, Nil, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF).get
-    val state4 = state3.commitTransaction(tx1)
+    val state4 = state3.commitTransaction(tx1) // No change utxo
 
     val TxAndFee(tx2, fee2) = state4.rbfBump(RBFBump(tx1, feerate, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.right.get
     assert(tx1.txOut.map(_.publicKeyScript) == tx2.txOut.map(_.publicKeyScript) && tx1.txOut.size == 1) // Both txs spend to the same address not belonging to us
     assert(tx2.txOut.map(_.amount).sum == state3.balance.totalBalance - fee2) // Bumped draining transaction has an increased fee
     assert(tx1.txIn.map(_.outPoint).toSet == tx2.txIn.map(_.outPoint).toSet) // Both txs spend same inputs
     assert(fee * 10 == fee2)
+
+    val state5 = state4.commitTransaction(tx2)
+    assert(state5.withOverridingTxids.balance.totalBalance == state5.balance.totalBalance)
+    assert(state5.withOverridingTxids.balance.totalBalance == 0L.sat)
   }
 
-  test("RBF-cancel") {
+  test("RBF-cancel of spend all") {
     val state1 = addFunds(state, state.accountKeys(0), 1.btc)
     val state2 = addFunds(state1, state1.accountKeys(1), 2.btc)
     val state3 = addFunds(state2, state2.changeKeys(0), 3.btc)
@@ -231,12 +241,47 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val TxAndFee(tx1, fee) = state3.spendAll(Script.write(pay2wpkh), state3.utxos, Nil, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF).get
     val state4 = state3.commitTransaction(tx1)
 
-    val rerouteScript = Script.write(Script.pay2wpkh(ByteVector.fill(20)(2)))
+    val rerouteScript = state3.publicScriptChangeMap.head._1
     val TxAndFee(tx2, fee2) = state4.rbfReroute(RBFReroute(tx1, feerate, rerouteScript, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.right.get
     assert(tx2.txOut.head.publicKeyScript == rerouteScript && tx2.txOut.size == 1) // Cancelling tx sends funds to a different destination
     assert(tx2.txOut.map(_.amount).sum == state3.balance.totalBalance - fee2) // Bumped draining transaction has an increased fee
     assert(tx1.txIn.map(_.outPoint).toSet == tx2.txIn.map(_.outPoint).toSet) // Both txs spend same inputs
     assert(fee * 10 == fee2)
+
+    val state5 = state4.commitTransaction(tx2)
+    assert(state5.withOverridingTxids.balance.totalBalance == state5.balance.totalBalance)
+    assert(state5.withOverridingTxids.balance.totalBalance == state3.balance.totalBalance - fee2)
+  }
+
+  test("RBF-cancel of spend with change") {
+    val state1 = addFunds(state, state.accountKeys(0), 2.btc)
+    val state2 = addFunds(state1, state.accountKeys(1), 2.btc)
+
+    assert(GetBalanceResponse(400000000.sat) == state2.balance)
+    assert(state2.utxos.length == 2)
+
+    val pay2pkh = Script.pay2pkh(ByteVector.fill(20)(1))
+    val spendTx1 = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(3), pay2pkh) :: Nil, lockTime = 0)
+    val TxAndFee(tx1, fee1) = state2.completeTransaction(spendTx1, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF, state2.utxos).get
+    val changeScriptHash = ewt.computeScriptHashFromPublicKey(state2.publicScriptChangeMap(tx1.txOut.filter(state2.isMine).head.publicKeyScript).publicKey) // Change utxo updated
+    val state3 = state2.commitTransaction(tx1).copy(status = state2.status.updated(changeScriptHash, "used-change-utxo-1"))
+
+    assert(state3.balance.totalBalance == state2.balance.totalBalance - spendTx1.txOut.map(_.amount).sum - fee1)
+    assert(state3.utxos.length == 1) // Only change output is left
+
+    val rerouteKey = state3.firstUnusedChangeKey.get
+    val rerouteScript = state3.publicScriptChangeMap.find(_._2 == rerouteKey).get._1
+    val TxAndFee(tx2, fee2) = state3.rbfReroute(RBFReroute(tx1, feerate, rerouteScript, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.right.get
+    assert(tx2.txOut.head.publicKeyScript == rerouteScript && tx2.txOut.size == 1) // Cancelling tx sends funds to our change address
+    assert(tx2.txOut.head.amount == state2.balance.totalBalance - fee2) // Bumped draining transaction has an increased fee
+    assert(tx1.txIn.map(_.outPoint).toSet == tx2.txIn.map(_.outPoint).toSet) // Both txs spend same inputs
+
+    val changeScriptHash1 = ewt.computeScriptHashFromPublicKey(rerouteKey.publicKey) // New change utxo updated
+    val state4 = state3.commitTransaction(tx2).copy(status = state3.status.updated(changeScriptHash1, "used-change-utxo-2"))
+    assert(state4.utxos.length == 2) // Two competing change outputs
+    assert(state4.withOverridingTxids.utxos.length == 1) // But one output is overridden
+    assert(state4.withOverridingTxids.overriddenPendingTxids == Map(tx1.txid -> tx2.txid))
+    assert(state4.withOverridingTxids.balance.totalBalance == state2.balance.totalBalance - fee2)
   }
 
   test("CPFP") {

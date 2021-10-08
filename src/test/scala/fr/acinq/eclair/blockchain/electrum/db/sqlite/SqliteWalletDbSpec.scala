@@ -61,7 +61,7 @@ class SqliteWalletDbSpec extends AnyFunSuite {
       changeKeysCount = 10,
       status = (for (i <- 0 until random.nextInt(100)) yield randomBytes32 -> random.nextInt(100000).toHexString).toMap,
       transactions = transactions.map(tx => tx.hash -> tx).toMap,
-      overriddenPendingTxids = transactions.map(_.txid).toSet,
+      overriddenPendingTxids = transactions.map(tx => tx.txid -> tx.txid).toMap,
       history = (for (i <- 0 until random.nextInt(100)) yield randomBytes32 -> randomHistoryItems).toMap,
       proofs = (for (i <- 0 until random.nextInt(100)) yield randomBytes32 -> randomProof).toMap,
       pendingTransactions = transactions.toList
