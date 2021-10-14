@@ -138,18 +138,17 @@ abstract class StateMachine[T] { me =>
   }
 
   def doProcess(change: Any): Unit
-  var TOTAL_INTERVAL_SECONDS: Long = 90
+  var TOTAL_INTERVAL_SECONDS: Long = 60
   var secondsLeft: Long = _
   var state: Int = -1
   var data: T = _
 
   lazy val delayedCMDWorker: ThrottledWork[String, Long] =
     new ThrottledWork[String, Long] {
-      def work(cmd: String): Observable[Long] = {
+      def work(cmd: String): Observable[Long] =
         Observable.interval(1.second).doOnSubscribe {
           secondsLeft = TOTAL_INTERVAL_SECONDS
         }
-      }
 
       def process(cmd: String, tickUpdateInterval: Long): Unit = {
         secondsLeft = TOTAL_INTERVAL_SECONDS - (tickUpdateInterval + 1)
