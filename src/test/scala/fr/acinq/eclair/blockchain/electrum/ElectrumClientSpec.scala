@@ -106,7 +106,6 @@ class ElectrumClientSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val probe1 = TestProbe()
     probe1.send(client, HeaderSubscription(probe1.ref))
     val HeaderSubscriptionResponse(_, header) = probe1.expectMsgType[HeaderSubscriptionResponse]
-    println(s"received header for block ${header.blockId}")
   }
 
   test("scripthash subscription") {

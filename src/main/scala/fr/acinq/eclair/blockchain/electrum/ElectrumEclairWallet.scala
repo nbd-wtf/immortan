@@ -70,7 +70,6 @@ case class ElectrumEclairWallet(walletRef: ActorRef, ewt: ElectrumWalletType, in
     val completeTx = CompleteTransaction(sendAll.publicKeyScript, amount, feeRatePerKw, OPT_IN_FULL_RBF)
 
     (walletRef ? GetBalance).mapTo[GetBalanceResponse] flatMap { chainBalance =>
-      println("-- 0")
       val command = if (chainBalance.totalBalance == amount) sendAll else completeTx
       (walletRef ? command).mapTo[GenerateTxResponseTry].map(_.get)
     }
