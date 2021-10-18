@@ -1,18 +1,18 @@
 package immortan.utils
 
-import fr.acinq.eclair._
-import immortan.utils.GraphUtils._
-import fr.acinq.eclair.wire.{GenericTlv, Onion, OnionTlv, UpdateAddHtlc}
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
-import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, NodeHop}
-import fr.acinq.eclair.payment.{OutgoingPacket, PaymentRequest}
-import immortan.ChannelMaster.{OutgoingAdds, ReasonableResolutions}
-import immortan.{ChannelMaster, InFlightPayments, LNParams, PaymentBag, PlainMetaDescription, RemoteNodeInfo, UpdateAddHtlcExt}
-import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
+import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{IncomingResolution, ReasonableLocal}
+import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.payment.{OutgoingPacket, PaymentRequest}
 import fr.acinq.eclair.router.ChannelUpdateExt
 import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
+import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, NodeHop}
+import fr.acinq.eclair.wire.{GenericTlv, Onion, OnionTlv, UpdateAddHtlc}
+import immortan.ChannelMaster.{OutgoingAdds, ReasonableResolutions}
+import immortan.utils.GraphUtils._
+import immortan._
 
 import scala.util.Failure
 
@@ -30,7 +30,7 @@ object PaymentUtils {
   def recordIncomingPaymentToFakeNodeId(amount: Option[MilliSatoshi], preimage: ByteVector32, secret: ByteVector32, payBag: PaymentBag, remoteInfo: RemoteNodeInfo): PaymentRequest = {
     val invoice = PaymentRequest(Block.TestnetGenesisBlock.hash, amount, Crypto.sha256(preimage), secret, remoteInfo.nodeSpecificPrivKey, "Invoice", CltvExpiryDelta(18), Nil)
     val prExt = PaymentRequestExt(uri = Failure(new RuntimeException), invoice, PaymentRequest.write(invoice))
-    val desc = PlainMetaDescription(None, None, None, None, "Invoice", "Invoice meta")
+    val desc = PaymentDescription(None, None, None, "Invoice", None)
     payBag.replaceIncomingPayment(prExt, preimage, desc, balanceSnap = 1000L.msat, fiatRateSnap = Map("USD" -> 12D))
     invoice
   }

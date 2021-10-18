@@ -128,18 +128,18 @@ class GraphSpec extends AnyFunSuite {
   }
 
   test("Hosted channel parameters do not matter") {
-    val routeRequest: RouteRequest = makeRouteRequest(500000000L.msat, getParams(routerConf, 500000000L.msat, offChainFeeRatio), fromNode = s, fromLocalEdge = null)
+    val routeRequest: RouteRequest = makeRouteRequest(1000000000L.msat, getParams(routerConf, 1000000000L.msat, offChainFeeRatio), fromNode = s, fromLocalEdge = null)
 
     val graph = DirectedGraph (
-      makeEdge(ShortChannelId(1L), s, a, 1000.msat, 100, cltvDelta = CltvExpiryDelta(576), minHtlc = 10000.msat, maxHtlc = 5000000000L.msat) ::
-        makeEdge(ShortChannelId(2L), a, b, 1000.msat, 100, cltvDelta = CltvExpiryDelta(576), minHtlc = 10000.msat, maxHtlc = 5000000000L.msat) ::
-        makeEdge(ShortChannelId(3L), a, c, 100.msat, 10, cltvDelta = CltvExpiryDelta(9), minHtlc = 10000.msat, maxHtlc = 500000000000L.msat).modify(_.updExt.useHeuristics).setTo(false) :: // Disregard better params
-        makeEdge(ShortChannelId(4L), b, d, 1000.msat, 100, cltvDelta = CltvExpiryDelta(576), minHtlc = 10000.msat, maxHtlc = 5000000000L.msat) ::
-        makeEdge(ShortChannelId(5L), c, d, 1000.msat, 100, cltvDelta = CltvExpiryDelta(576), minHtlc = 10000.msat, maxHtlc = 6000000000L.msat) ::
+      makeEdge(ShortChannelId(1L), s, a, 1000.msat, 100, cltvDelta = CltvExpiryDelta(576), minHtlc = 10000.msat, maxHtlc = 50000000000L.msat) ::
+        makeEdge(ShortChannelId(2L), a, b, 1000.msat, 100, cltvDelta = CltvExpiryDelta(576), minHtlc = 10000.msat, maxHtlc = 50000000000L.msat) ::
+        makeEdge(ShortChannelId(3L), a, c, 1000.msat, 200, cltvDelta = CltvExpiryDelta(1000), minHtlc = 10000.msat, maxHtlc = 5000000000L.msat).modify(_.updExt.useHeuristics).setTo(false) ::
+        makeEdge(ShortChannelId(4L), b, d, 1000.msat, 100, cltvDelta = CltvExpiryDelta(576), minHtlc = 10000.msat, maxHtlc = 50000000000L.msat) ::
+        makeEdge(ShortChannelId(5L), c, d, 1000.msat, 100, cltvDelta = CltvExpiryDelta(576), minHtlc = 10000.msat, maxHtlc = 50000000000L.msat) ::
         Nil
     )
 
     val RouteFound(route, _, _) = RouteCalculation.handleRouteRequest(graph, routeRequest)
-    assert(route.hops.map(_.nodeId) == s :: a :: b :: Nil)
+    assert(route.hops.map(_.nodeId) == s :: a :: c :: Nil)
   }
 }

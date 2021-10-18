@@ -1,25 +1,27 @@
 package immortan
 
-import fr.acinq.eclair._
-import immortan.Channel._
-import fr.acinq.eclair.wire._
-import immortan.crypto.Tools._
-import fr.acinq.eclair.channel._
-import scala.concurrent.duration._
-import fr.acinq.eclair.blockchain._
 import com.softwaremill.quicklens._
-import fr.acinq.eclair.transactions._
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, Transaction}
-import fr.acinq.eclair.transactions.Transactions.TxOwner
+import fr.acinq.eclair._
+import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.GenerateTxResponse
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing
-import fr.acinq.eclair.payment.OutgoingPacket
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import immortan.sqlite.ChannelTxFeesTable
-import scala.collection.immutable.Queue
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
-import scodec.bits.ByteVector
+import fr.acinq.eclair.payment.OutgoingPacket
+import fr.acinq.eclair.transactions.Transactions.TxOwner
+import fr.acinq.eclair.transactions._
+import fr.acinq.eclair.wire._
+import immortan.Channel._
+import immortan.crypto.Tools._
+import immortan.sqlite.ChannelTxFeesTable
 import immortan.utils.Rx
+import scodec.bits.ByteVector
+
+import scala.collection.immutable.Queue
+import scala.concurrent.duration._
 import scala.util.Try
 
 
@@ -50,7 +52,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
         val ChannelKeys(_, _, fundingKey, revocationKey, _, delayedPaymentKey, htlcKey) = init.localParams.keys
         val emptyUpfrontShutdown: TlvStream[OpenChannelTlv] = TlvStream(ChannelTlv UpfrontShutdownScript ByteVector.empty)
 
-        val open = OpenChannel(LNParams.chainHash, init.temporaryChannelId, init.fakeFunding.fundingAmount, init.pushAmount, init.localParams.dustLimit, init.localParams.maxHtlcValueInFlightMsat,
+        val open = OpenChannel(LNParams.chainHash, init.temporaryChannelId, init.fakeFunding.toTxOut.amount, init.pushAmount, init.localParams.dustLimit, init.localParams.maxHtlcValueInFlightMsat,
           init.localParams.channelReserve, init.localParams.htlcMinimum, init.initialFeeratePerKw, init.localParams.toSelfDelay, init.localParams.maxAcceptedHtlcs, fundingPubkey = fundingKey.publicKey,
           revocationBasepoint = revocationKey.publicKey, paymentBasepoint = init.localParams.walletStaticPaymentBasepoint, delayedPaymentBasepoint = delayedPaymentKey.publicKey,
           htlcBasepoint = htlcKey.publicKey, init.localParams.keys.commitmentPoint(index = 0L), init.channelFlags, emptyUpfrontShutdown)
@@ -70,20 +72,23 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
         BECOME(data1, WAIT_FOR_ACCEPT)
 
 
-      case (wait: DATA_WAIT_FOR_FUNDING_INTERNAL, realFunding: MakeFundingTxResponse, WAIT_FOR_ACCEPT) =>
-        val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Helpers.Funding.makeFirstCommitTxs(wait.initFunder.channelFeatures,
-          wait.initFunder.localParams, wait.remoteParams, realFunding.fundingAmount, wait.initFunder.pushAmount, wait.initFunder.initialFeeratePerKw,
-          realFunding.fundingTx.hash, realFunding.fundingTxOutputIndex, wait.remoteFirstPerCommitmentPoint)
+      case (wait: DATA_WAIT_FOR_FUNDING_INTERNAL, realFunding: GenerateTxResponse, WAIT_FOR_ACCEPT) =>
+        val fundingOutputIndex = realFunding.tx.txOut.indexOf(realFunding.toTxOut)
 
+        val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Helpers.Funding.makeFirstCommitTxs(wait.initFunder.channelFeatures,
+          wait.initFunder.localParams, wait.remoteParams, realFunding.toTxOut.amount, wait.initFunder.pushAmount, wait.initFunder.initialFeeratePerKw,
+          realFunding.tx.hash, fundingOutputIndex, wait.remoteFirstPerCommitmentPoint)
+
+        require(fundingOutputIndex >= 0)
         require(realFunding.fee == wait.initFunder.fakeFunding.fee)
-        require(realFunding.fundingAmount == wait.initFunder.fakeFunding.fundingAmount)
-        require(realFunding.fundingPubkeyScript == localCommitTx.input.txOut.publicKeyScript)
+        require(realFunding.toTxOut.amount == wait.initFunder.fakeFunding.toTxOut.amount)
+        require(realFunding.toPublicKeyScript == localCommitTx.input.txOut.publicKeyScript)
 
         val localSigOfRemoteTx = Transactions.sign(remoteCommitTx, wait.initFunder.localParams.keys.fundingKey.privateKey, TxOwner.Remote, wait.initFunder.channelFeatures.commitmentFormat)
-        val fundingCreated = FundingCreated(wait.initFunder.temporaryChannelId, realFunding.fundingTx.hash, realFunding.fundingTxOutputIndex, localSigOfRemoteTx)
+        val fundingCreated = FundingCreated(wait.initFunder.temporaryChannelId, realFunding.tx.hash, fundingOutputIndex, localSigOfRemoteTx)
 
-        val data1 = DATA_WAIT_FOR_FUNDING_SIGNED(wait.initFunder.remoteInfo, channelId = toLongId(realFunding.fundingTx.hash, realFunding.fundingTxOutputIndex), wait.initFunder.localParams,
-          wait.remoteParams, realFunding.fundingTx, realFunding.fee, localSpec, localCommitTx, RemoteCommit(index = 0L, remoteSpec, remoteCommitTx.tx.txid, wait.remoteFirstPerCommitmentPoint),
+        val data1 = DATA_WAIT_FOR_FUNDING_SIGNED(wait.initFunder.remoteInfo, channelId = toLongId(realFunding.tx.hash, fundingOutputIndex), wait.initFunder.localParams,
+          wait.remoteParams, realFunding.tx, realFunding.fee, localSpec, localCommitTx, RemoteCommit(index = 0L, remoteSpec, remoteCommitTx.tx.txid, wait.remoteFirstPerCommitmentPoint),
           wait.lastSent.channelFlags, wait.initFunder.channelFeatures, fundingCreated)
 
         BECOME(data1, WAIT_FOR_ACCEPT)
@@ -166,7 +171,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
 
 
       case (wait: DATA_WAIT_FOR_FUNDING_LOCKED, locked: FundingLocked, WAIT_FUNDING_DONE) =>
-        val commits1 = wait.commitments.modify(_.remoteNextCommitInfo) setTo Right(locked.nextPerCommitmentPoint)
+        val commits1 = wait.commitments.copy(remoteNextCommitInfo = locked.nextPerCommitmentPoint.asRight)
         StoreBecomeSend(DATA_NORMAL(commits1, wait.shortChannelId), OPEN)
 
       // MAIN LOOP
@@ -199,11 +204,11 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
 
 
       case (some: HasNormalCommitments, remoteInfo: RemoteNodeInfo, SLEEPING) if some.commitments.remoteInfo.nodeId == remoteInfo.nodeId =>
-        StoreBecomeSend(some.modify(_.commitments.remoteInfo).setTo(remoteInfo.safeAlias), SLEEPING)
+        StoreBecomeSend(some withNewCommits some.commitments.copy(remoteInfo = remoteInfo.safeAlias), SLEEPING)
 
 
       case (norm: DATA_NORMAL, update: ChannelUpdate, OPEN | SLEEPING) if update.shortChannelId == norm.shortChannelId && norm.commitments.updateOpt.forall(_.core != update.core) =>
-        StoreBecomeSend(norm.modify(_.commitments.updateOpt).setTo(update.asSome), state)
+        StoreBecomeSend(norm withNewCommits norm.commitments.copy(updateOpt = update.asSome), state)
 
 
       // It is assumed that LNParams.feeRates.info is updated at this point
@@ -648,14 +653,16 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
   def nextFeerate(norm: DATA_NORMAL, threshold: Double): Option[FeeratePerKw] =
     newFeerate(LNParams.feeRates.info, norm.commitments.localCommit.spec, threshold)
 
-  private def maybeRevertUnsignedOutgoing(data1: HasNormalCommitments): (HasNormalCommitments, List[UpdateAddHtlc], Boolean) = {
+  private def maybeRevertUnsignedOutgoing(data1: HasNormalCommitments) = {
     val hadProposed = data1.commitments.remoteChanges.proposed.nonEmpty || data1.commitments.localChanges.proposed.nonEmpty
-    val data2 = data1.modifyAll(_.commitments.remoteChanges.proposed, _.commitments.localChanges.proposed).setTo(Nil)
-    val remoteProposed = data1.commitments.remoteChanges.proposed.collect { case add: UpdateAddHtlc => add }
-    val localProposed = data1.commitments.localChanges.proposed.collect { case add: UpdateAddHtlc => add }
-    val data3 = data2.modify(_.commitments.remoteNextHtlcId).using(_ - remoteProposed.size)
-    val data4 = data3.modify(_.commitments.localNextHtlcId).using(_ - localProposed.size)
-    (data4, localProposed, hadProposed)
+    val remoteProposed = data1.commitments.remoteChanges.proposed.collect { case updateAddHtlc: UpdateAddHtlc => updateAddHtlc }
+    val localProposed = data1.commitments.localChanges.proposed.collect { case updateAddHtlc: UpdateAddHtlc => updateAddHtlc }
+
+    val commitsNoChanges = data1.commitments.modifyAll(_.remoteChanges.proposed, _.localChanges.proposed).setTo(Nil)
+    val commitsNoRemoteUpdates = commitsNoChanges.modify(_.remoteNextHtlcId).using(_ - remoteProposed.size)
+    val commits = commitsNoRemoteUpdates.modify(_.localNextHtlcId).using(_ - localProposed.size)
+
+    (data1 withNewCommits commits, localProposed, hadProposed)
   }
 
   private def handleChannelForceClosing(prev: HasNormalCommitments)(turnIntoClosing: HasNormalCommitments => DATA_CLOSING): Unit = {
@@ -671,12 +678,18 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel { me =>
 
   private def maybeStartNegotiations(data1: DATA_NORMAL, remote: Shutdown): Unit = {
     val local = data1.localShutdown getOrElse Shutdown(data1.channelId, data1.commitments.localParams.defaultFinalScriptPubKey)
-    if (data1.commitments.hasPendingHtlcsOrFeeUpdate) StoreBecomeSend(data1.copy(localShutdown = local.asSome, remoteShutdown = remote.asSome), OPEN, local)
-    else if (!data1.commitments.localParams.isFunder) StoreBecomeSend(DATA_NEGOTIATING(data1.commitments, local, remote), OPEN, local)
-    else {
+
+    if (data1.commitments.hasPendingHtlcsOrFeeUpdate) {
+      StoreBecomeSend(data1.copy(localShutdown = local.asSome, remoteShutdown = remote.asSome), OPEN, local)
+    } else if (data1.commitments.localParams.isFunder) {
       val (closingTx, closingSigned) = Closing.makeFirstClosingTx(data1.commitments, local.scriptPubKey, remote.scriptPubKey, LNParams.feeRates.info.onChainFeeConf)
       val data2 = DATA_NEGOTIATING(data1.commitments, local, remote, List(ClosingTxProposed(closingTx.tx, closingSigned) :: Nil), bestUnpublishedClosingTxOpt = None)
-      if (data1.localShutdown.isDefined) StoreBecomeSend(data2, OPEN, closingSigned) else StoreBecomeSend(data2, OPEN, local, closingSigned)
+      if (data1.localShutdown.isDefined) StoreBecomeSend(data2, OPEN, closingSigned)
+      else StoreBecomeSend(data2, OPEN, local, closingSigned)
+    } else {
+      val data2 = DATA_NEGOTIATING(data1.commitments, local, remote)
+      if (data1.localShutdown.isDefined) StoreBecomeSend(data2, OPEN)
+      else StoreBecomeSend(data2, OPEN, local)
     }
   }
 

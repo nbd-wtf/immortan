@@ -16,11 +16,12 @@
 
 package fr.acinq.eclair.router
 
-import fr.acinq.eclair._
-import fr.acinq.eclair.router.Router._
-import scala.collection.JavaConversions._
-import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair._
+import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.Router._
+
+import scala.collection.JavaConversions._
 import scala.collection.mutable
 
 
@@ -193,15 +194,15 @@ object Graph {
         val cltvFactor = normalize(edge.updExt.update.cltvExpiryDelta.toInt, CLTV_LOW, CLTV_HIGH)
         ageFactor + capFactor + cltvFactor + successFactor
       } else {
-        // Max out all heuristics except success rate on assisted and hosted channels
-        // this makes these channels less likely to be used for routing at first
-        1 + 1 + 1 + successFactor
+        // Minimize all heuristics except success rate on assisted and hosted channels
+        // this makes these channels more likely to be used for routing at first
+        successFactor
       }
 
       val totalCost = if (edge.desc.from == sender) prev.costs else addEdgeFees(edge, prev.costs.head) +: prev.costs
       val totalCltv = if (edge.desc.from == sender) prev.cltv else prev.cltv + edge.updExt.update.cltvExpiryDelta
 
-      // Every heuristic adds 0 - 100 imgainary SAT to edge weight (which is based on fee cost in msat), the better heuristic is the less SAT it adds
+      // Every heuristic adds 0 - 100 imgainary SAT to edge weight (which is based on fee cost in msat), the smaller heuristic is the less SAT it adds
       val totalWeight = if (edge.desc.from == sender) prev.weight else prev.weight + totalCost.head.toLong + factor * 100000L
       RichWeight(totalCost, prev.length + 1, totalCltv, totalWeight)
     }

@@ -19,7 +19,7 @@ package fr.acinq.eclair.blockchain.electrum
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet._
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.blockchain.{EclairWallet, TxAndFee}
+import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWalletBasicSpec._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -74,11 +74,11 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
 
     val pub = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5.btc, Script.pay2pkh(pub)) :: Nil, lockTime = 0)
-    val TxAndFee(tx1, fee1) = state1.completeTransaction(tx, feerate, dustLimit, TxIn.SEQUENCE_FINAL, state1.utxos).get
-    val Some(TransactionDelta(_, Some(fee), _, _)) = state1.computeTransactionDelta(tx1)
-    assert(fee == fee1)
+    val Success(response1) = state1.completeTransaction(tx, feerate, dustLimit, TxIn.SEQUENCE_FINAL, state1.utxos)
+    val Some(TransactionDelta(_, Some(fee), _, _)) = state1.computeTransactionDelta(response1.tx)
+    assert(fee == response1.fee)
 
-    val state2 = state1.commitTransaction(tx1)
+    val state2 = state1.commitTransaction(response1.tx)
     val GetBalanceResponse(confirmed4) = state2.balance
     assert(confirmed1 - confirmed4 >= btc2satoshi(0.5.btc))
   }
@@ -94,11 +94,11 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
   test("compute the effect of tx") {
     val state1 = addFunds(state, state.accountKeys.head, 1.btc)
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5.btc, Script.pay2wsh(randomBytes32)) :: Nil, lockTime = 0)
-    val TxAndFee(tx1, fee1) = state1.completeTransaction(tx, feerate, dustLimit, TxIn.SEQUENCE_FINAL, state1.utxos).get
+    val Success(response1) = state1.completeTransaction(tx, feerate, dustLimit, TxIn.SEQUENCE_FINAL, state1.utxos)
 
-    val Some(TransactionDelta(_, Some(fee), received, sent)) = state1.computeTransactionDelta(tx1)
-    assert(fee == fee1)
+    val Some(TransactionDelta(_, Some(fee), received, sent)) = state1.computeTransactionDelta(response1.tx)
     assert(sent - received - fee == btc2satoshi(0.5.btc))
+    assert(fee == response1.fee)
   }
 
   test("use actual transaction weight to compute fees") {
@@ -106,36 +106,36 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
 
     {
       val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(5000000.sat, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
-      val TxAndFee(tx1, fee1) = state1.completeTransaction(tx, feerate, dustLimit, TxIn.SEQUENCE_FINAL, state1.utxos).get
-      val Some(TransactionDelta(_, Some(fee), _, _)) = state1.computeTransactionDelta(tx1)
-      assert(fee == fee1)
-      val actualFeeRate = Transactions.fee2rate(fee, tx1.weight())
+      val Success(response1) = state1.completeTransaction(tx, feerate, dustLimit, TxIn.SEQUENCE_FINAL, state1.utxos)
+      val Some(TransactionDelta(_, Some(fee), _, _)) = state1.computeTransactionDelta(response1.tx)
+      assert(fee == response1.fee)
+      val actualFeeRate = Transactions.fee2rate(fee, response1.tx.weight())
       assert(isFeerateOk(actualFeeRate, feerate))
     }
     {
       val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(5000000.sat - dustLimit, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
-      val TxAndFee(tx1, fee1) = state1.completeTransaction(tx, feerate, dustLimit, TxIn.SEQUENCE_FINAL, state1.utxos).get
-      val Some(TransactionDelta(_, Some(fee), _, _)) = state1.computeTransactionDelta(tx1)
-      assert(fee == fee1)
-      val actualFeeRate = Transactions.fee2rate(fee, tx1.weight())
+      val Success(response1) = state1.completeTransaction(tx, feerate, dustLimit, TxIn.SEQUENCE_FINAL, state1.utxos)
+      val Some(TransactionDelta(_, Some(fee), _, _)) = state1.computeTransactionDelta(response1.tx)
+      assert(fee == response1.fee)
+      val actualFeeRate = Transactions.fee2rate(fee, response1.tx.weight())
       assert(isFeerateOk(actualFeeRate, feerate))
     }
     {
       // with a huge fee rate that will force us to use an additional input when we complete our tx
       val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(3000000.sat, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
-      val TxAndFee(tx1, fee1) = state1.completeTransaction(tx, feerate * 100, dustLimit, TxIn.SEQUENCE_FINAL, state1.utxos).get
-      val Some(TransactionDelta(_, Some(fee), _, _)) = state1.computeTransactionDelta(tx1)
-      assert(fee == fee1)
-      val actualFeeRate = Transactions.fee2rate(fee, tx1.weight())
+      val Success(response1) = state1.completeTransaction(tx, feerate * 100, dustLimit, TxIn.SEQUENCE_FINAL, state1.utxos)
+      val Some(TransactionDelta(_, Some(fee), _, _)) = state1.computeTransactionDelta(response1.tx)
+      assert(fee == response1.fee)
+      val actualFeeRate = Transactions.fee2rate(fee, response1.tx.weight())
       assert(isFeerateOk(actualFeeRate, feerate * 100))
     }
     {
       // with a tiny fee rate that will force us to use an additional input when we complete our tx
       val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(0.09), Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
-      val TxAndFee(tx1, fee1) = state1.completeTransaction(tx, feerate / 10, dustLimit, TxIn.SEQUENCE_FINAL, state1.utxos).get
-      val Some(TransactionDelta(_, Some(fee), _, _)) = state1.computeTransactionDelta(tx1)
-      assert(fee == fee1)
-      val actualFeeRate = Transactions.fee2rate(fee, tx1.weight())
+      val Success(response1) = state1.completeTransaction(tx, feerate / 10, dustLimit, TxIn.SEQUENCE_FINAL, state1.utxos)
+      val Some(TransactionDelta(_, Some(fee), _, _)) = state1.computeTransactionDelta(response1.tx)
+      assert(fee == response1.fee)
+      val actualFeeRate = Transactions.fee2rate(fee, response1.tx.weight())
       assert(isFeerateOk(actualFeeRate, feerate / 10))
     }
   }
@@ -148,11 +148,11 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     assert(GetBalanceResponse(350000000.sat) == state3.balance)
 
     val pay2wpkh = Script.pay2wpkh(ByteVector.fill(20)(1))
-    val TxAndFee(tx, fee) = state3.spendAll(Script.write(pay2wpkh), state3.utxos, Nil, feerate, dustLimit, TxIn.SEQUENCE_FINAL).get
-    val Some(TransactionDelta(_, Some(fee1), received, _)) = state3.computeTransactionDelta(tx)
+    val Success(response1) = state3.spendAll(Script.write(pay2wpkh), state3.utxos, Nil, feerate, dustLimit, TxIn.SEQUENCE_FINAL)
+    val Some(TransactionDelta(_, Some(fee1), received, _)) = state3.computeTransactionDelta(response1.tx)
     assert(received === 0.sat)
-    assert(fee == fee1)
-    assert(tx.txOut.map(_.amount).sum + fee == state3.balance.totalBalance)
+    assert(response1.fee == fee1)
+    assert(response1.tx.txOut.map(_.amount).sum + response1.fee == state3.balance.totalBalance)
   }
 
   test("RBF-bump reusing old utxos") {
@@ -164,22 +164,22 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
 
     val pay2pkh = Script.pay2pkh(ByteVector.fill(20)(1))
     val spendTx1 = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(3), pay2pkh) :: Nil, lockTime = 0)
-    val TxAndFee(tx1, fee1) = state2.completeTransaction(spendTx1, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF, state2.utxos).get
-    val changeScriptHash = ewt.computeScriptHashFromPublicKey(state2.publicScriptChangeMap(tx1.txOut.filter(state2.isMine).head.publicKeyScript).publicKey) // Change utxo updated
-    val state3 = state2.commitTransaction(tx1).copy(status = state2.status.updated(changeScriptHash, "used-change-utxo"))
+    val Success(response1) = state2.completeTransaction(spendTx1, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF, state2.utxos)
+    val changeScriptHash = ewt.computeScriptHashFromPublicKey(state2.publicScriptChangeMap(response1.tx.txOut.filter(state2.isMine).head.publicKeyScript).publicKey) // Change utxo updated
+    val state3 = state2.commitTransaction(response1.tx).copy(status = state2.status.updated(changeScriptHash, "used-change-utxo"))
 
-    assert(state3.balance.totalBalance == state2.balance.totalBalance - spendTx1.txOut.map(_.amount).sum - fee1)
+    assert(state3.balance.totalBalance == state2.balance.totalBalance - spendTx1.txOut.map(_.amount).sum - response1.fee)
     assert(state3.utxos.length == 1) // Only change output is left
 
-    val TxAndFee(tx2, fee2) = state3.rbfBump(RBFBump(tx1, feerate, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.right.get
-    assert(tx1.txIn.map(_.outPoint).toSet == tx2.txIn.map(_.outPoint).toSet) // Bumped tx spends the same utxos as original one
-    assert(tx1.txOut.filterNot(state3.isMine).toSet == tx2.txOut.filterNot(state3.isMine).toSet) // Recipient gets the same amount
-    assert(tx1.txOut.filter(state3.isMine).head.amount - tx2.txOut.filter(state3.isMine).head.amount == fee2 - fee1) // Fee is taken from change output
-    assert(fee1 * 10 == fee2)
+    val response2 = state3.rbfBump(RBFBump(response1.tx, feerate, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.right.get
+    assert(response1.tx.txIn.map(_.outPoint).toSet == response2.tx.txIn.map(_.outPoint).toSet) // Bumped tx spends the same utxos as original one
+    assert(response1.tx.txOut.filterNot(state3.isMine).toSet == response2.tx.txOut.filterNot(state3.isMine).toSet) // Recipient gets the same amount
+    assert(response1.tx.txOut.filter(state3.isMine).head.amount - response2.tx.txOut.filter(state3.isMine).head.amount == response2.fee - response1.fee) // Fee is taken from change output
+    assert(response1.fee * 10 == response2.fee)
 
-    val state4 = state3.commitTransaction(tx2)
-    assert(state4.withOverridingTxids.balance.totalBalance == state3.balance.totalBalance - fee2 + fee1) // But former unconfirmed change utxo gets overridden and thrown out
-    assert(state4.withOverridingTxids.overriddenPendingTxids == Map(tx1.txid -> tx2.txid))
+    val state4 = state3.commitTransaction(response2.tx)
+    assert(state4.withOverridingTxids.balance.totalBalance == state3.balance.totalBalance - response2.fee + response1.fee) // But former unconfirmed change utxo gets overridden and thrown out
+    assert(state4.withOverridingTxids.overriddenPendingTxids == Map(response1.tx.txid -> response2.tx.txid))
   }
 
   test("RBF-bump adding new utxos") {
@@ -192,22 +192,22 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
 
     val pay2pkh = Script.pay2pkh(ByteVector.fill(20)(1))
     val spendTx1 = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1.9999), pay2pkh) :: Nil, lockTime = 0)
-    val TxAndFee(tx1, fee1) = state3.completeTransaction(spendTx1, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF, state2.utxos).get
-    val changeScriptHash = ewt.computeScriptHashFromPublicKey(state3.publicScriptChangeMap(tx1.txOut.filter(state3.isMine).head.publicKeyScript).publicKey) // Change utxo updated
-    val state4 = state3.commitTransaction(tx1).copy(status = state3.status.updated(changeScriptHash, "used-change-utxo"))
+    val Success(response1) = state3.completeTransaction(spendTx1, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF, state2.utxos)
+    val changeScriptHash = ewt.computeScriptHashFromPublicKey(state3.publicScriptChangeMap(response1.tx.txOut.filter(state3.isMine).head.publicKeyScript).publicKey) // Change utxo updated
+    val state4 = state3.commitTransaction(response1.tx).copy(status = state3.status.updated(changeScriptHash, "used-change-utxo"))
 
-    assert(state4.balance.totalBalance == state3.balance.totalBalance - spendTx1.txOut.map(_.amount).sum - fee1)
+    assert(state4.balance.totalBalance == state3.balance.totalBalance - spendTx1.txOut.map(_.amount).sum - response1.fee)
     assert(state4.utxos.length == 2) // Only change and unused outputs are left
 
-    val TxAndFee(tx2, fee2) = state4.rbfBump(RBFBump(tx1, feerate, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.right.get
-    assert(tx1.txIn.map(_.outPoint).toSet.subsetOf(tx2.txIn.map(_.outPoint).toSet)) // Bumped tx spends original outputs and adds another one
-    assert(tx1.txOut.filterNot(state4.isMine).toSet == tx2.txOut.filterNot(state4.isMine).toSet) // Recipient gets the same amount
-    assert(tx2.txOut.filter(state4.isMine).map(_.amount).sum == state3.balance.totalBalance - tx2.txOut.filterNot(state4.isMine).map(_.amount).sum - fee2) // Our change output is larger
-    assert(fee2 > fee1)
+    val response2 = state4.rbfBump(RBFBump(response1.tx, feerate, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.right.get
+    assert(response1.tx.txIn.map(_.outPoint).toSet.subsetOf(response2.tx.txIn.map(_.outPoint).toSet)) // Bumped tx spends original outputs and adds another one
+    assert(response1.tx.txOut.filterNot(state4.isMine).toSet == response2.tx.txOut.filterNot(state4.isMine).toSet) // Recipient gets the same amount
+    assert(response2.tx.txOut.filter(state4.isMine).map(_.amount).sum == state3.balance.totalBalance - response2.tx.txOut.filterNot(state4.isMine).map(_.amount).sum - response2.fee) // Our change output is larger
+    assert(response2.fee > response1.fee)
 
-    val state5 = state4.commitTransaction(tx2)
-    assert(state5.withOverridingTxids.balance.totalBalance == state4.balance.totalBalance - fee2 + fee1) //Former unconfirmed change utxo gets overridden and thrown out
-    assert(state5.withOverridingTxids.overriddenPendingTxids == Map(tx1.txid -> tx2.txid))
+    val state5 = state4.commitTransaction(response2.tx)
+    assert(state5.withOverridingTxids.balance.totalBalance == state4.balance.totalBalance - response2.fee + response1.fee) //Former unconfirmed change utxo gets overridden and thrown out
+    assert(state5.withOverridingTxids.overriddenPendingTxids == Map(response1.tx.txid -> response2.tx.txid))
   }
 
   test("RBF-bump draining a wallet") {
@@ -218,16 +218,16 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     assert(GetBalanceResponse(600000000L.sat) == state3.balance)
 
     val pay2wpkh = Script.pay2wpkh(ByteVector.fill(20)(1))
-    val TxAndFee(tx1, fee) = state3.spendAll(Script.write(pay2wpkh), state3.utxos, Nil, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF).get
-    val state4 = state3.commitTransaction(tx1) // No change utxo
+    val Success(response1) = state3.spendAll(Script.write(pay2wpkh), state3.utxos, Nil, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF)
+    val state4 = state3.commitTransaction(response1.tx) // No change utxo
 
-    val TxAndFee(tx2, fee2) = state4.rbfBump(RBFBump(tx1, feerate, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.right.get
-    assert(tx1.txOut.map(_.publicKeyScript) == tx2.txOut.map(_.publicKeyScript) && tx1.txOut.size == 1) // Both txs spend to the same address not belonging to us
-    assert(tx2.txOut.map(_.amount).sum == state3.balance.totalBalance - fee2) // Bumped draining transaction has an increased fee
-    assert(tx1.txIn.map(_.outPoint).toSet == tx2.txIn.map(_.outPoint).toSet) // Both txs spend same inputs
-    assert(fee * 10 == fee2)
+    val response2 = state4.rbfBump(RBFBump(response1.tx, feerate, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.right.get
+    assert(response1.tx.txOut.map(_.publicKeyScript) == response2.tx.txOut.map(_.publicKeyScript) && response1.tx.txOut.size == 1) // Both txs spend to the same address not belonging to us
+    assert(response2.tx.txOut.map(_.amount).sum == state3.balance.totalBalance - response2.fee) // Bumped draining transaction has an increased fee
+    assert(response1.tx.txIn.map(_.outPoint).toSet == response2.tx.txIn.map(_.outPoint).toSet) // Both txs spend same inputs
+    assert(response1.fee * 10 == response2.fee)
 
-    val state5 = state4.commitTransaction(tx2)
+    val state5 = state4.commitTransaction(response2.tx)
     assert(state5.withOverridingTxids.balance.totalBalance == state5.balance.totalBalance)
     assert(state5.withOverridingTxids.balance.totalBalance == 0L.sat)
   }
@@ -238,19 +238,19 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val state3 = addFunds(state2, state2.changeKeys(0), 3.btc)
 
     val pay2wpkh = Script.pay2wpkh(ByteVector.fill(20)(1))
-    val TxAndFee(tx1, fee) = state3.spendAll(Script.write(pay2wpkh), state3.utxos, Nil, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF).get
-    val state4 = state3.commitTransaction(tx1)
+    val Success(response1) = state3.spendAll(Script.write(pay2wpkh), state3.utxos, Nil, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF)
+    val state4 = state3.commitTransaction(response1.tx)
 
     val rerouteScript = state3.publicScriptChangeMap.head._1
-    val TxAndFee(tx2, fee2) = state4.rbfReroute(RBFReroute(tx1, feerate, rerouteScript, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.right.get
-    assert(tx2.txOut.head.publicKeyScript == rerouteScript && tx2.txOut.size == 1) // Cancelling tx sends funds to a different destination
-    assert(tx2.txOut.map(_.amount).sum == state3.balance.totalBalance - fee2) // Bumped draining transaction has an increased fee
-    assert(tx1.txIn.map(_.outPoint).toSet == tx2.txIn.map(_.outPoint).toSet) // Both txs spend same inputs
-    assert(fee * 10 == fee2)
+    val response2 = state4.rbfReroute(RBFReroute(response1.tx, feerate, rerouteScript, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.right.get
+    assert(response2.tx.txOut.head.publicKeyScript == rerouteScript && response2.tx.txOut.size == 1) // Cancelling tx sends funds to a different destination
+    assert(response2.tx.txOut.map(_.amount).sum == state3.balance.totalBalance - response2.fee) // Bumped draining transaction has an increased fee
+    assert(response1.tx.txIn.map(_.outPoint).toSet == response2.tx.txIn.map(_.outPoint).toSet) // Both txs spend same inputs
+    assert(response1.fee * 10 == response2.fee)
 
-    val state5 = state4.commitTransaction(tx2)
+    val state5 = state4.commitTransaction(response2.tx)
     assert(state5.withOverridingTxids.balance.totalBalance == state5.balance.totalBalance)
-    assert(state5.withOverridingTxids.balance.totalBalance == state3.balance.totalBalance - fee2)
+    assert(state5.withOverridingTxids.balance.totalBalance == state3.balance.totalBalance - response2.fee)
   }
 
   test("RBF-cancel of spend with change") {
@@ -262,26 +262,26 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
 
     val pay2pkh = Script.pay2pkh(ByteVector.fill(20)(1))
     val spendTx1 = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(3), pay2pkh) :: Nil, lockTime = 0)
-    val TxAndFee(tx1, fee1) = state2.completeTransaction(spendTx1, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF, state2.utxos).get
-    val changeScriptHash = ewt.computeScriptHashFromPublicKey(state2.publicScriptChangeMap(tx1.txOut.filter(state2.isMine).head.publicKeyScript).publicKey) // Change utxo updated
-    val state3 = state2.commitTransaction(tx1).copy(status = state2.status.updated(changeScriptHash, "used-change-utxo-1"))
+    val Success(response1) = state2.completeTransaction(spendTx1, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF, state2.utxos)
+    val changeScriptHash = ewt.computeScriptHashFromPublicKey(state2.publicScriptChangeMap(response1.tx.txOut.filter(state2.isMine).head.publicKeyScript).publicKey) // Change utxo updated
+    val state3 = state2.commitTransaction(response1.tx).copy(status = state2.status.updated(changeScriptHash, "used-change-utxo-1"))
 
-    assert(state3.balance.totalBalance == state2.balance.totalBalance - spendTx1.txOut.map(_.amount).sum - fee1)
+    assert(state3.balance.totalBalance == state2.balance.totalBalance - spendTx1.txOut.map(_.amount).sum - response1.fee)
     assert(state3.utxos.length == 1) // Only change output is left
 
     val rerouteKey = state3.firstUnusedChangeKey.get
     val rerouteScript = state3.publicScriptChangeMap.find(_._2 == rerouteKey).get._1
-    val TxAndFee(tx2, fee2) = state3.rbfReroute(RBFReroute(tx1, feerate, rerouteScript, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.right.get
-    assert(tx2.txOut.head.publicKeyScript == rerouteScript && tx2.txOut.size == 1) // Cancelling tx sends funds to our change address
-    assert(tx2.txOut.head.amount == state2.balance.totalBalance - fee2) // Bumped draining transaction has an increased fee
-    assert(tx1.txIn.map(_.outPoint).toSet == tx2.txIn.map(_.outPoint).toSet) // Both txs spend same inputs
+    val response2 = state3.rbfReroute(RBFReroute(response1.tx, feerate, rerouteScript, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.right.get
+    assert(response2.tx.txOut.head.publicKeyScript == rerouteScript && response2.tx.txOut.size == 1) // Cancelling tx sends funds to our change address
+    assert(response2.tx.txOut.head.amount == state2.balance.totalBalance - response2.fee) // Bumped draining transaction has an increased fee
+    assert(response1.tx.txIn.map(_.outPoint).toSet == response2.tx.txIn.map(_.outPoint).toSet) // Both txs spend same inputs
 
     val changeScriptHash1 = ewt.computeScriptHashFromPublicKey(rerouteKey.publicKey) // New change utxo updated
-    val state4 = state3.commitTransaction(tx2).copy(status = state3.status.updated(changeScriptHash1, "used-change-utxo-2"))
+    val state4 = state3.commitTransaction(response2.tx).copy(status = state3.status.updated(changeScriptHash1, "used-change-utxo-2"))
     assert(state4.utxos.length == 2) // Two competing change outputs
     assert(state4.withOverridingTxids.utxos.length == 1) // But one output is overridden
-    assert(state4.withOverridingTxids.overriddenPendingTxids == Map(tx1.txid -> tx2.txid))
-    assert(state4.withOverridingTxids.balance.totalBalance == state2.balance.totalBalance - fee2)
+    assert(state4.withOverridingTxids.overriddenPendingTxids == Map(response1.tx.txid -> response2.tx.txid))
+    assert(state4.withOverridingTxids.balance.totalBalance == state2.balance.totalBalance - response2.fee)
   }
 
   test("CPFP") {
@@ -306,12 +306,12 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val pay2wpkh = Script.pay2wpkh(ByteVector.fill(20)(1))
     val fromOutPoints = tx0.txOut.zipWithIndex.map { case (_, idx) => OutPoint(tx0.hash, idx) }
     val usableUtxos = state3.utxos.filter(fromOutPoints contains _.item.outPoint)
-    val TxAndFee(tx1, fee) = state3.spendAll(Script.write(pay2wpkh), usableUtxos, Nil, feerate, dustLimit, TxIn.SEQUENCE_FINAL).get
-    val Some(TransactionDelta(_, Some(fee1), received, _)) = state3.computeTransactionDelta(tx1)
+    val Success(response1) = state3.spendAll(Script.write(pay2wpkh), usableUtxos, Nil, feerate, dustLimit, TxIn.SEQUENCE_FINAL)
+    val Some(TransactionDelta(_, Some(fee1), received, _)) = state3.computeTransactionDelta(response1.tx)
     assert(received === 0.sat)
-    assert(tx1.txIn.size == usableUtxos.size)
-    assert(fee == fee1)
-    assert(tx1.txOut.map(_.amount).sum + fee == usableUtxos.map(_.item.value.sat).sum)
+    assert(response1.tx.txIn.size == usableUtxos.size)
+    assert(response1.fee == fee1)
+    assert(response1.tx.txOut.map(_.amount).sum + response1.fee == usableUtxos.map(_.item.value.sat).sum)
   }
 
   test("check that issue #1146 is fixed") {
@@ -321,13 +321,13 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val pub2 = state.accountKeys(1).publicKey
     val redeemScript = Scripts.multiSig2of2(pub1, pub2)
     val pubkeyScript = Script.pay2wsh(redeemScript)
-    val TxAndFee(tx, fee) = state3.spendAll(Script.write(pubkeyScript), state3.utxos, Nil, FeeratePerKw(750.sat), dustLimit, TxIn.SEQUENCE_FINAL).get
-    val Some(TransactionDelta(_, Some(fee1), received, _)) = state3.computeTransactionDelta(tx)
+    val Success(response1) = state3.spendAll(Script.write(pubkeyScript), state3.utxos, Nil, FeeratePerKw(750.sat), dustLimit, TxIn.SEQUENCE_FINAL)
+    val Some(TransactionDelta(_, Some(fee1), received, _)) = state3.computeTransactionDelta(response1.tx)
     assert(received === 0.sat)
-    assert(fee == fee1)
-    assert(tx.txOut.map(_.amount).sum + fee == state3.balance.totalBalance)
+    assert(response1.fee == fee1)
+    assert(response1.tx.txOut.map(_.amount).sum + response1.fee == state3.balance.totalBalance)
 
-    val tx1 = Transaction(version = 2, txIn = Nil, txOut = TxOut(tx.txOut.map(_.amount).sum, pubkeyScript) :: Nil, lockTime = 0)
+    val tx1 = Transaction(version = 2, txIn = Nil, txOut = TxOut(response1.tx.txOut.map(_.amount).sum, pubkeyScript) :: Nil, lockTime = 0)
     assert(Try(state3.completeTransaction(tx1, FeeratePerKw(750.sat), dustLimit, TxIn.SEQUENCE_FINAL, state3.utxos)).isSuccess)
   }
 
