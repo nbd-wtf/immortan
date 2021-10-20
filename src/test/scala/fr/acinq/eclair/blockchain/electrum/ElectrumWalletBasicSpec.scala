@@ -148,7 +148,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     assert(GetBalanceResponse(350000000.sat) == state3.balance)
 
     val pay2wpkh = Script.pay2wpkh(ByteVector.fill(20)(1))
-    val Success(response1) = state3.spendAll(Script.write(pay2wpkh), state3.utxos, Nil, feerate, dustLimit, TxIn.SEQUENCE_FINAL)
+    val Success(response1) = state3.spendAll(Script.write(pay2wpkh), Map.empty, state3.utxos, Nil, feerate, dustLimit, TxIn.SEQUENCE_FINAL)
     val Some(TransactionDelta(_, Some(fee1), received, _)) = state3.computeTransactionDelta(response1.tx)
     assert(received === 0.sat)
     assert(response1.fee == fee1)
@@ -218,7 +218,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     assert(GetBalanceResponse(600000000L.sat) == state3.balance)
 
     val pay2wpkh = Script.pay2wpkh(ByteVector.fill(20)(1))
-    val Success(response1) = state3.spendAll(Script.write(pay2wpkh), state3.utxos, Nil, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF)
+    val Success(response1) = state3.spendAll(Script.write(pay2wpkh), Map.empty, state3.utxos, Nil, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF)
     val state4 = state3.commitTransaction(response1.tx) // No change utxo
 
     val response2 = state4.rbfBump(RBFBump(response1.tx, feerate, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.right.get
@@ -238,7 +238,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val state3 = addFunds(state2, state2.changeKeys(0), 3.btc)
 
     val pay2wpkh = Script.pay2wpkh(ByteVector.fill(20)(1))
-    val Success(response1) = state3.spendAll(Script.write(pay2wpkh), state3.utxos, Nil, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF)
+    val Success(response1) = state3.spendAll(Script.write(pay2wpkh), Map.empty, state3.utxos, Nil, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF)
     val state4 = state3.commitTransaction(response1.tx)
 
     val rerouteScript = state3.publicScriptChangeMap.head._1
@@ -306,7 +306,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val pay2wpkh = Script.pay2wpkh(ByteVector.fill(20)(1))
     val fromOutPoints = tx0.txOut.zipWithIndex.map { case (_, idx) => OutPoint(tx0.hash, idx) }
     val usableUtxos = state3.utxos.filter(fromOutPoints contains _.item.outPoint)
-    val Success(response1) = state3.spendAll(Script.write(pay2wpkh), usableUtxos, Nil, feerate, dustLimit, TxIn.SEQUENCE_FINAL)
+    val Success(response1) = state3.spendAll(Script.write(pay2wpkh), Map.empty, usableUtxos, Nil, feerate, dustLimit, TxIn.SEQUENCE_FINAL)
     val Some(TransactionDelta(_, Some(fee1), received, _)) = state3.computeTransactionDelta(response1.tx)
     assert(received === 0.sat)
     assert(response1.tx.txIn.size == usableUtxos.size)
@@ -321,7 +321,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val pub2 = state.accountKeys(1).publicKey
     val redeemScript = Scripts.multiSig2of2(pub1, pub2)
     val pubkeyScript = Script.pay2wsh(redeemScript)
-    val Success(response1) = state3.spendAll(Script.write(pubkeyScript), state3.utxos, Nil, FeeratePerKw(750.sat), dustLimit, TxIn.SEQUENCE_FINAL)
+    val Success(response1) = state3.spendAll(Script.write(pubkeyScript), Map.empty, state3.utxos, Nil, FeeratePerKw(750.sat), dustLimit, TxIn.SEQUENCE_FINAL)
     val Some(TransactionDelta(_, Some(fee1), received, _)) = state3.computeTransactionDelta(response1.tx)
     assert(received === 0.sat)
     assert(response1.fee == fee1)
@@ -338,7 +338,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val pub2 = state.accountKeys(1).publicKey
     val redeemScript = Scripts.multiSig2of2(pub1, pub2)
     val pubkeyScript = Script.pay2wsh(redeemScript)
-    assert(state3.spendAll(Script.write(pubkeyScript), state3.utxos, Nil, FeeratePerKw(10000.sat), dustLimit, TxIn.SEQUENCE_FINAL).isFailure)
+    assert(state3.spendAll(Script.write(pubkeyScript), Map.empty, state3.utxos, Nil, FeeratePerKw(10000.sat), dustLimit, TxIn.SEQUENCE_FINAL).isFailure)
   }
 
   test("fuzzy test") {

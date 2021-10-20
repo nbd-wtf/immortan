@@ -221,7 +221,6 @@ sealed trait TxDescription extends TransactionDescription {
 
   def queryText(txid: ByteVector32): String
   def withNodeId: Option[PublicKey] = None
-  def toAddress: Option[String] = None
 
   val cpfpBy: Option[ByteVector32]
   val cpfpOf: Option[ByteVector32]
@@ -237,7 +236,6 @@ case class PlainTxDescription(addresses: List[String],
   override def withNewOrderCond(order: Option[SemanticOrder] = None): TxDescription = if (semanticOrder.isDefined) me else copy(semanticOrder = order)
   override def withNewLabel(label1: Option[String] = None): TxDescription = copy(label = label1)
   override def withNewCpfpBy(txid: ByteVector32): TxDescription = copy(cpfpBy = txid.asSome)
-  override def toAddress: Option[String] = addresses.headOption
 }
 
 case class OpReturnTxDescription(preimages: List[ByteVector32],

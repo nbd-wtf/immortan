@@ -22,15 +22,20 @@ case class ElectrumEclairWallet(walletRef: ActorRef, ewt: ElectrumWalletType, in
 
   type GenerateTxResponseTry = Try[GenerateTxResponse]
 
-  override def getReceiveAddresses: Future[GetCurrentReceiveAddressesResponse] = (walletRef ? GetCurrentReceiveAddresses).mapTo[GetCurrentReceiveAddressesResponse]
-
-  private def isInChain(error: fr.acinq.eclair.blockchain.bitcoind.rpc.Error): Boolean = error.message.toLowerCase.contains("already in block chain")
+  private def addressToPubKeyScript(address: String): ByteVector = {
+    val program = addressToPublicKeyScript(address, ewt.chainHash)
+    Script.write(program)
+  }
 
   private def emptyUtxo(pubKeyScript: ByteVector): TxOut = TxOut(Satoshi(0L), pubKeyScript)
 
+  private def isInChain(error: fr.acinq.eclair.blockchain.bitcoind.rpc.Error): Boolean = error.message.toLowerCase.contains("already in block chain")
+
+  override def getReceiveAddresses: Future[GetCurrentReceiveAddressesResponse] = (walletRef ? GetCurrentReceiveAddresses).mapTo[GetCurrentReceiveAddressesResponse]
+
   override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse] = {
-    val completeTx = CompleteTransaction(pubkeyScript, amount, feeRatePerKw, sequenceFlag = TxIn.SEQUENCE_FINAL)
-    val sendAll = SendAll(pubkeyScript, feeRatePerKw, sequenceFlag = TxIn.SEQUENCE_FINAL)
+    val completeTx = CompleteTransaction(pubKeyScriptToAmount = Map(pubkeyScript -> amount), feeRatePerKw, sequenceFlag = TxIn.SEQUENCE_FINAL)
+    val sendAll = SendAll(pubkeyScript, pubKeyScriptToAmount = Map.empty, feeRatePerKw, sequenceFlag = TxIn.SEQUENCE_FINAL, fromOutpoints = Set.empty)
 
     (walletRef ? GetBalance).mapTo[GetBalanceResponse] flatMap { chainBalance =>
       val command = if (chainBalance.totalBalance == amount) sendAll else completeTx
@@ -61,23 +66,23 @@ case class ElectrumEclairWallet(walletRef: ActorRef, ewt: ElectrumWalletType, in
 
   override def sendPreimageBroadcast(preimages: Set[ByteVector32], address: String, feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse] = {
     val preimageTxOuts = preimages.toList.map(_.bytes).map(OP_PUSHDATA.apply).grouped(2).map(OP_RETURN :: _).map(Script.write).map(emptyUtxo).toList
-    val sendAll = SendAll(Script write addressToPublicKeyScript(address, ewt.chainHash), feeRatePerKw, OPT_IN_FULL_RBF, fromOutpoints = Set.empty, preimageTxOuts)
+    val sendAll = SendAll(addressToPubKeyScript(address), pubKeyScriptToAmount = Map.empty, feeRatePerKw, OPT_IN_FULL_RBF, fromOutpoints = Set.empty, preimageTxOuts)
     (walletRef ? sendAll).mapTo[GenerateTxResponseTry].map(_.get)
   }
 
-  override def makeTx(amount: Satoshi, address: String, feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse] = {
-    val sendAll = SendAll(Script write addressToPublicKeyScript(address, ewt.chainHash), feeRatePerKw, OPT_IN_FULL_RBF)
-    val completeTx = CompleteTransaction(sendAll.publicKeyScript, amount, feeRatePerKw, OPT_IN_FULL_RBF)
+  override def makeTx(address: String, amount: Satoshi, prevAddressToAmount: Map[String, Satoshi], feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse] = {
+    val pubKeyScriptToAmount: Map[ByteVector, Satoshi] = prevAddressToAmount.keys.map(addressToPubKeyScript).zip(prevAddressToAmount.values).toMap
+    val completeTx = CompleteTransaction(pubKeyScriptToAmount.updated(addressToPubKeyScript(address), amount), feeRatePerKw, OPT_IN_FULL_RBF)
+    val sendAll = SendAll(addressToPubKeyScript(address), pubKeyScriptToAmount, feeRatePerKw, OPT_IN_FULL_RBF, fromOutpoints = Set.empty)
 
-    (walletRef ? GetBalance).mapTo[GetBalanceResponse] flatMap { chainBalance =>
-      val command = if (chainBalance.totalBalance == amount) sendAll else completeTx
+    (walletRef ? GetBalance).mapTo[GetBalanceResponse] flatMap { case GetBalanceResponse(totalBalance) =>
+      val command = if (totalBalance == completeTx.pubKeyScriptToAmount.values.sum) sendAll else completeTx
       (walletRef ? command).mapTo[GenerateTxResponseTry].map(_.get)
     }
   }
 
   override def makeCPFP(fromOutpoints: Set[OutPoint], address: String, feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse] = {
-    val publicKeyScript = Script write addressToPublicKeyScript(address, ewt.chainHash)
-    val cpfp = SendAll(publicKeyScript, feeRatePerKw, OPT_IN_FULL_RBF, fromOutpoints)
+    val cpfp = SendAll(addressToPubKeyScript(address), pubKeyScriptToAmount = Map.empty, feeRatePerKw, OPT_IN_FULL_RBF, fromOutpoints)
     (walletRef ? cpfp).mapTo[GenerateTxResponseTry].map(_.get)
   }
 
@@ -87,12 +92,11 @@ case class ElectrumEclairWallet(walletRef: ActorRef, ewt: ElectrumWalletType, in
   }
 
   override def makeRBFReroute(tx: Transaction, feeRatePerKw: FeeratePerKw, address: String): Future[RBFResponse] = {
-    val publicKeyScript = Script write addressToPublicKeyScript(address, ewt.chainHash)
-    val rbfReroute = RBFReroute(tx, feeRatePerKw, publicKeyScript, OPT_IN_FULL_RBF)
+    val rbfReroute = RBFReroute(tx, feeRatePerKw, addressToPubKeyScript(address), OPT_IN_FULL_RBF)
     (walletRef ? rbfReroute).mapTo[RBFResponse]
   }
 
   override def doubleSpent(tx: Transaction): Future[DepthAndDoubleSpent] = for {
-    response <- (walletRef ? IsDoubleSpent(tx)).mapTo[IsDoubleSpentResponse]
+    response <- (walletRef ? tx).mapTo[IsDoubleSpentResponse]
   } yield (response.depth, response.isDoubleSpent)
 }

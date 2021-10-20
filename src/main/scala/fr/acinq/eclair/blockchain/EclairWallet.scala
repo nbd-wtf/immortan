@@ -28,7 +28,7 @@ trait EclairWallet {
 
   def sendPreimageBroadcast(preimages: Set[ByteVector32], address: String, feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse]
 
-  def makeTx(amount: Satoshi, address: String, feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse]
+  def makeTx(address: String, amount: Satoshi, prevAddressToAmount: Map[String, Satoshi], feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse]
 
   def makeCPFP(fromOutpoints: Set[OutPoint], address: String, feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse]
 

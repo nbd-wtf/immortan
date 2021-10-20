@@ -50,7 +50,7 @@ abstract class NCFunderOpenHandler(info: RemoteNodeInfo, fakeFunding: GenerateTx
 
     override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = {
       val stickyChannelFeatures = ChannelFeatures.pickChannelFeatures(LNParams.ourInit.features, theirInit.features)
-      val localParams = LNParams.makeChannelParams(freshChannel.chainWallet, isFunder = true, fakeFunding.toTxOut.amount)
+      val localParams = LNParams.makeChannelParams(freshChannel.chainWallet, isFunder = true, fakeFunding.pubKeyScriptToAmount.values.head)
       val initialFeeratePerKw = LNParams.feeRates.info.onChainFeeConf.feeEstimator.getFeeratePerKw(LNParams.feeRates.info.onChainFeeConf.feeTargets.commitmentBlockTarget)
       val cmd = INPUT_INIT_FUNDER(info.safeAlias, tempChannelId, fakeFunding, 0L.msat, fundingFeeratePerKw, initialFeeratePerKw, localParams, theirInit, 0.toByte, stickyChannelFeatures)
       freshChannel process cmd
@@ -58,7 +58,7 @@ abstract class NCFunderOpenHandler(info: RemoteNodeInfo, fakeFunding: GenerateTx
 
     override def onBecome: PartialFunction[Transition, Unit] = {
       case (_, _: DATA_WAIT_FOR_ACCEPT_CHANNEL, data: DATA_WAIT_FOR_FUNDING_INTERNAL, WAIT_FOR_ACCEPT, WAIT_FOR_ACCEPT) =>
-        val future = NCFunderOpenHandler.makeFunding(cw, data.initFunder.fakeFunding.toTxOut.amount, data.initFunder.fundingFeeratePerKw, data.lastSent.fundingPubkey, data.remoteParams.fundingPubKey)
+        val future = NCFunderOpenHandler.makeFunding(cw, fakeFunding.pubKeyScriptToAmount.values.head, data.initFunder.fundingFeeratePerKw, data.lastSent.fundingPubkey, data.remoteParams.fundingPubKey)
         future onComplete { case Failure(failureReason) => onException(failureReason, freshChannel, data) case Success(realFundingTx) => freshChannel process realFundingTx }
 
       case (_, _: DATA_WAIT_FOR_FUNDING_INTERNAL, data: DATA_WAIT_FOR_FUNDING_SIGNED, WAIT_FOR_ACCEPT, WAIT_FOR_ACCEPT) =>
