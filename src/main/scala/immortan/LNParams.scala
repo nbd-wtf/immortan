@@ -140,6 +140,11 @@ object LNParams {
   def updateChainWallet(walletExt: WalletExt): Unit = synchronized(chainWallets = walletExt)
 
   def isMainnet: Boolean = chainHash == Block.LivenetGenesisBlock.hash
+
+  def addressToPubKeyScript(address: String): ByteVector = {
+    val program = addressToPublicKeyScript(address, chainHash)
+    Script.write(program)
+  }
 }
 
 case class WalletExt(wallets: List[ElectrumEclairWallet], catcher: ActorRef, sync: ActorRef, pool: ActorRef, watcher: ActorRef, params: WalletParameters) extends CanBeShutDown { me =>

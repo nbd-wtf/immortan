@@ -26,15 +26,15 @@ trait EclairWallet {
 
   def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse]
 
-  def sendPreimageBroadcast(preimages: Set[ByteVector32], address: String, feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse]
+  def sendPreimageBroadcast(preimages: Set[ByteVector32], pubKeyScript: ByteVector, feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse]
 
-  def makeTx(address: String, amount: Satoshi, prevAddressToAmount: Map[String, Satoshi], feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse]
+  def makeTx(pubKeyScript: ByteVector, amount: Satoshi, prevScriptToAmount: Map[ByteVector, Satoshi], feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse]
 
-  def makeCPFP(fromOutpoints: Set[OutPoint], address: String, feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse]
+  def makeCPFP(fromOutpoints: Set[OutPoint], pubKeyScript: ByteVector, feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse]
 
   def makeRBFBump(tx: Transaction, feeRatePerKw: FeeratePerKw): Future[RBFResponse]
 
-  def makeRBFReroute(tx: Transaction, feeRatePerKw: FeeratePerKw, address: String): Future[RBFResponse]
+  def makeRBFReroute(tx: Transaction, feeRatePerKw: FeeratePerKw, pubKeyScript: ByteVector): Future[RBFResponse]
 
   def commit(tx: Transaction, tag: String): Future[Boolean]
 

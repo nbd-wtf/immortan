@@ -1,7 +1,7 @@
 package immortan.utils
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.ScriptElt
+import fr.acinq.bitcoin.{BtcAmount, Satoshi, SatoshiLong}
 import fr.acinq.eclair._
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.wire.NodeAddress
@@ -12,6 +12,7 @@ import immortan.{LNParams, RemoteNodeInfo}
 import scodec.bits.ByteVector
 
 import scala.util.matching.UnanchoredRegex
+import scala.util.parsing.combinator.RegexParsers
 import scala.util.{Failure, Success, Try}
 
 
@@ -50,12 +51,14 @@ object InputParser {
     case lnPayReq(prefix, data) => PaymentRequestExt.fromRaw(s"$prefix$data")
 
     case _ =>
-      val isLightning = rawInput.toLowerCase.startsWith(lightning)
       val withoutPrefix = PaymentRequestExt.removePrefix(rawInput).trim
-      val isLightningAddress = identifier.findFirstMatchIn(withoutPrefix)
-      if (isLightningAddress.isDefined) LNUrl.fromIdentifier(withoutPrefix)
-      else if (isLightning) PaymentRequestExt.fromUri(withoutPrefix.toLowerCase)
-      else BitcoinUri.fromRaw(s"$bitcoin$withoutPrefix")
+      val isLightningInvoice = rawInput.toLowerCase.startsWith(lightning)
+      val isIdentifier = identifier.findFirstMatchIn(withoutPrefix).isDefined
+      val multiAddr = MultiAddressParser.parseAll(MultiAddressParser.list, rawInput)
+
+      if (isIdentifier) LNUrl.fromIdentifier(withoutPrefix)
+      else if (isLightningInvoice) PaymentRequestExt.fromUri(withoutPrefix.toLowerCase)
+      else multiAddr getOrElse BitcoinUri.fromRaw(s"$bitcoin$withoutPrefix")
   }
 }
 
@@ -107,11 +110,20 @@ object BitcoinUri {
 }
 
 case class BitcoinUri(uri: Try[Uri], address: String) {
-  def pubKeyScript: Seq[ScriptElt] = addressToPublicKeyScript(address, LNParams.chainHash)
-  val isValid: Boolean = Try(pubKeyScript).toOption.exists(_.nonEmpty)
-
   val amount: Option[MilliSatoshi] = uri.map(_ getQueryParameter "amount").map(BigDecimal.apply).map(Denomination.btcBigDecimal2MSat).toOption
   val prExt: Option[PaymentRequestExt] = uri.map(_ getQueryParameter "lightning").map(PaymentRequestExt.fromRaw).toOption
   val message: Option[String] = uri.map(_ getQueryParameter "message").map(trimmed).filter(_.nonEmpty).toOption
   val label: Option[String] = uri.map(_ getQueryParameter "label").map(trimmed).filter(_.nonEmpty).toOption
+}
+
+object MultiAddressParser extends RegexParsers {
+  val address: Parser[String] = "(bc1|[123mn]|tb1)[a-zA-HJ-NP-Z0-9]{25,39}".r
+
+  val decimalSat: Parser[Satoshi] = "[0-9]*\\.[0-9]+".r ^^ (raw => (BigDecimal(raw) * BtcAmount.Coin).toLong.sat)
+
+  val longSat: Parser[Satoshi] = "[0-9,]+".r ^^ (_.replace(",", "").toLong.sat)
+
+  type AddressToAmount = Map[String, Satoshi]
+
+  val list: Parser[AddressToAmount] = repsep(address ~ (decimalSat | longSat) ^^ { case address ~ sat => address -> sat }, ";").map(_.toMap)
 }

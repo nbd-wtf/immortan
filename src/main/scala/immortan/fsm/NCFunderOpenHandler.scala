@@ -1,7 +1,7 @@
 package immortan.fsm
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Satoshi, Script}
+import fr.acinq.bitcoin.{ByteVector32, Satoshi, Script, ScriptElt}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.GenerateTxResponse
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -21,8 +21,10 @@ object NCFunderOpenHandler {
   val dummyLocal: PublicKey = randomKey.publicKey
   val dummyRemote: PublicKey = randomKey.publicKey
 
-  def makeFunding(chainWallet: WalletExt, fundingAmount: Satoshi, feeratePerKw: FeeratePerKw, local: PublicKey = dummyLocal, remote: PublicKey = dummyRemote): Future[GenerateTxResponse] =
-    chainWallet.lnWallet.makeFundingTx(Script.write(Script pay2wsh Scripts.multiSig2of2(local, remote).toList), fundingAmount, feeratePerKw)
+  def makeFunding(chainWallet: WalletExt, fundingAmount: Satoshi, feeratePerKw: FeeratePerKw, local: PublicKey = dummyLocal, remote: PublicKey = dummyRemote): Future[GenerateTxResponse] = {
+    val program: Seq[ScriptElt] = Script.pay2wsh(Scripts.multiSig2of2(local, remote).toList)
+    chainWallet.lnWallet.makeFundingTx(Script.write(program), fundingAmount, feeratePerKw)
+  }
 }
 
 abstract class NCFunderOpenHandler(info: RemoteNodeInfo, fakeFunding: GenerateTxResponse, fundingFeeratePerKw: FeeratePerKw, cw: WalletExt, cm: ChannelMaster) {

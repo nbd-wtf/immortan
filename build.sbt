@@ -24,6 +24,8 @@ libraryDependencies += "org.bouncycastle" % "bcprov-jdk15to18" % "1.68"
 
 libraryDependencies += "com.google.guava" % "guava" % "29.0-android"
 
+libraryDependencies += "org.scala-lang.modules" %% "scala-parser-combinators" % "2.1.0"
+
 // Testing
 
 libraryDependencies += "org.scalatest" % "scalatest_2.11" % "3.1.1"

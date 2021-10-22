@@ -3,7 +3,6 @@ package fr.acinq.eclair.blockchain.electrum
 import akka.actor.ActorRef
 import akka.pattern.ask
 import fr.acinq.bitcoin.{ByteVector32, OP_PUSHDATA, OP_RETURN, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.addressToPublicKeyScript
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.EclairWallet._
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.BroadcastTransaction
@@ -21,11 +20,6 @@ case class ElectrumEclairWallet(walletRef: ActorRef, ewt: ElectrumWalletType, in
   import immortan.LNParams.{ec, logBag, timeout}
 
   type GenerateTxResponseTry = Try[GenerateTxResponse]
-
-  private def addressToPubKeyScript(address: String): ByteVector = {
-    val program = addressToPublicKeyScript(address, ewt.chainHash)
-    Script.write(program)
-  }
 
   private def emptyUtxo(pubKeyScript: ByteVector): TxOut = TxOut(Satoshi(0L), pubKeyScript)
 
@@ -64,16 +58,15 @@ case class ElectrumEclairWallet(walletRef: ActorRef, ewt: ElectrumWalletType, in
     }
   }
 
-  override def sendPreimageBroadcast(preimages: Set[ByteVector32], address: String, feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse] = {
+  override def sendPreimageBroadcast(preimages: Set[ByteVector32], pubKeyScript: ByteVector, feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse] = {
     val preimageTxOuts = preimages.toList.map(_.bytes).map(OP_PUSHDATA.apply).grouped(2).map(OP_RETURN :: _).map(Script.write).map(emptyUtxo).toList
-    val sendAll = SendAll(addressToPubKeyScript(address), pubKeyScriptToAmount = Map.empty, feeRatePerKw, OPT_IN_FULL_RBF, fromOutpoints = Set.empty, preimageTxOuts)
+    val sendAll = SendAll(pubKeyScript, pubKeyScriptToAmount = Map.empty, feeRatePerKw, OPT_IN_FULL_RBF, fromOutpoints = Set.empty, preimageTxOuts)
     (walletRef ? sendAll).mapTo[GenerateTxResponseTry].map(_.get)
   }
 
-  override def makeTx(address: String, amount: Satoshi, prevAddressToAmount: Map[String, Satoshi], feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse] = {
-    val pubKeyScriptToAmount: Map[ByteVector, Satoshi] = prevAddressToAmount.keys.map(addressToPubKeyScript).zip(prevAddressToAmount.values).toMap
-    val completeTx = CompleteTransaction(pubKeyScriptToAmount.updated(addressToPubKeyScript(address), amount), feeRatePerKw, OPT_IN_FULL_RBF)
-    val sendAll = SendAll(addressToPubKeyScript(address), pubKeyScriptToAmount, feeRatePerKw, OPT_IN_FULL_RBF, fromOutpoints = Set.empty)
+  override def makeTx(pubKeyScript: ByteVector, amount: Satoshi, prevScriptToAmount: Map[ByteVector, Satoshi], feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse] = {
+    val completeTx = CompleteTransaction(prevScriptToAmount.updated(pubKeyScript, amount), feeRatePerKw, OPT_IN_FULL_RBF)
+    val sendAll = SendAll(pubKeyScript, prevScriptToAmount, feeRatePerKw, OPT_IN_FULL_RBF, fromOutpoints = Set.empty)
 
     (walletRef ? GetBalance).mapTo[GetBalanceResponse] flatMap { case GetBalanceResponse(totalBalance) =>
       val command = if (totalBalance == completeTx.pubKeyScriptToAmount.values.sum) sendAll else completeTx
@@ -81,8 +74,8 @@ case class ElectrumEclairWallet(walletRef: ActorRef, ewt: ElectrumWalletType, in
     }
   }
 
-  override def makeCPFP(fromOutpoints: Set[OutPoint], address: String, feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse] = {
-    val cpfp = SendAll(addressToPubKeyScript(address), pubKeyScriptToAmount = Map.empty, feeRatePerKw, OPT_IN_FULL_RBF, fromOutpoints)
+  override def makeCPFP(fromOutpoints: Set[OutPoint], pubKeyScript: ByteVector, feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse] = {
+    val cpfp = SendAll(pubKeyScript, pubKeyScriptToAmount = Map.empty, feeRatePerKw, OPT_IN_FULL_RBF, fromOutpoints)
     (walletRef ? cpfp).mapTo[GenerateTxResponseTry].map(_.get)
   }
 
@@ -91,8 +84,8 @@ case class ElectrumEclairWallet(walletRef: ActorRef, ewt: ElectrumWalletType, in
     (walletRef ? rbfBump).mapTo[RBFResponse]
   }
 
-  override def makeRBFReroute(tx: Transaction, feeRatePerKw: FeeratePerKw, address: String): Future[RBFResponse] = {
-    val rbfReroute = RBFReroute(tx, feeRatePerKw, addressToPubKeyScript(address), OPT_IN_FULL_RBF)
+  override def makeRBFReroute(tx: Transaction, feeRatePerKw: FeeratePerKw, pubKeyScript: ByteVector): Future[RBFResponse] = {
+    val rbfReroute = RBFReroute(tx, feeRatePerKw, pubKeyScript, OPT_IN_FULL_RBF)
     (walletRef ? rbfReroute).mapTo[RBFResponse]
   }
 
