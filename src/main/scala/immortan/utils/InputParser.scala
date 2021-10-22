@@ -54,11 +54,11 @@ object InputParser {
       val withoutPrefix = PaymentRequestExt.removePrefix(rawInput).trim
       val isLightningInvoice = rawInput.toLowerCase.startsWith(lightning)
       val isIdentifier = identifier.findFirstMatchIn(withoutPrefix).isDefined
-      val multiAddr = MultiAddressParser.parseAll(MultiAddressParser.list, rawInput)
+      val addressToAmount = MultiAddressParser.parseAll(MultiAddressParser.parse, rawInput)
 
       if (isIdentifier) LNUrl.fromIdentifier(withoutPrefix)
       else if (isLightningInvoice) PaymentRequestExt.fromUri(withoutPrefix.toLowerCase)
-      else multiAddr getOrElse BitcoinUri.fromRaw(s"$bitcoin$withoutPrefix")
+      else addressToAmount getOrElse BitcoinUri.fromRaw(s"$bitcoin$withoutPrefix")
   }
 }
 
@@ -117,13 +117,13 @@ case class BitcoinUri(uri: Try[Uri], address: String) {
 }
 
 object MultiAddressParser extends RegexParsers {
+  case class AddressToAmount(values: Map[String, Satoshi] = Map.empty)
+
   val address: Parser[String] = "(bc1|[123mn]|tb1)[a-zA-HJ-NP-Z0-9]{25,39}".r
 
   val decimalSat: Parser[Satoshi] = "[0-9]*\\.[0-9]+".r ^^ (raw => (BigDecimal(raw) * BtcAmount.Coin).toLong.sat)
 
   val longSat: Parser[Satoshi] = "[0-9,]+".r ^^ (_.replace(",", "").toLong.sat)
 
-  type AddressToAmount = Map[String, Satoshi]
-
-  val list: Parser[AddressToAmount] = repsep(address ~ (decimalSat | longSat) ^^ { case address ~ sat => address -> sat }, ";").map(_.toMap)
+  val parse: Parser[AddressToAmount] = repsep(address ~ (decimalSat | longSat) ^^ { case address ~ sat => address -> sat }, ";").map(_.toMap).map(AddressToAmount)
 }
