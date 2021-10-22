@@ -64,13 +64,17 @@ case class ElectrumEclairWallet(walletRef: ActorRef, ewt: ElectrumWalletType, in
     (walletRef ? sendAll).mapTo[GenerateTxResponseTry].map(_.get)
   }
 
+  override def makeBatchTx(scriptToAmount: Map[ByteVector, Satoshi], feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse] = {
+    val completeTx = CompleteTransaction(scriptToAmount, feeRatePerKw, OPT_IN_FULL_RBF)
+    (walletRef ? completeTx).mapTo[GenerateTxResponseTry].map(_.get)
+  }
+
   override def makeTx(pubKeyScript: ByteVector, amount: Satoshi, prevScriptToAmount: Map[ByteVector, Satoshi], feeRatePerKw: FeeratePerKw): Future[GenerateTxResponse] = {
-    val completeTx = CompleteTransaction(prevScriptToAmount.updated(pubKeyScript, amount), feeRatePerKw, OPT_IN_FULL_RBF)
     val sendAll = SendAll(pubKeyScript, prevScriptToAmount, feeRatePerKw, OPT_IN_FULL_RBF, fromOutpoints = Set.empty)
 
-    (walletRef ? GetBalance).mapTo[GetBalanceResponse] flatMap { case GetBalanceResponse(totalBalance) =>
-      val command = if (totalBalance == completeTx.pubKeyScriptToAmount.values.sum) sendAll else completeTx
-      (walletRef ? command).mapTo[GenerateTxResponseTry].map(_.get)
+    (walletRef ? GetBalance).mapTo[GetBalanceResponse].map(_.totalBalance == prevScriptToAmount.values.sum + amount) flatMap {
+      case false => makeBatchTx(scriptToAmount = prevScriptToAmount.updated(pubKeyScript, amount), feeRatePerKw)
+      case true => (walletRef ? sendAll).mapTo[GenerateTxResponseTry].map(_.get)
     }
   }
 

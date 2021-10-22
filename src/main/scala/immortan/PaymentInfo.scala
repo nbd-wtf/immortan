@@ -221,6 +221,7 @@ sealed trait TxDescription extends TransactionDescription {
 
   def queryText(txid: ByteVector32): String
   def withNodeId: Option[PublicKey] = None
+  def toAddress: Option[String] = None
 
   val cpfpBy: Option[ByteVector32]
   val cpfpOf: Option[ByteVector32]
@@ -232,6 +233,7 @@ case class PlainTxDescription(addresses: List[String],
                               cpfpBy: Option[ByteVector32] = None, cpfpOf: Option[ByteVector32] = None,
                               rbf: Option[RBFParams] = None) extends TxDescription { me =>
 
+  override lazy val toAddress: Option[String] = if (addresses.size > 1) None else addresses.headOption
   override def queryText(txid: ByteVector32): String = txid.toHex + SEPARATOR + addresses.mkString(SEPARATOR) + SEPARATOR + label.getOrElse(new String)
   override def withNewOrderCond(order: Option[SemanticOrder] = None): TxDescription = if (semanticOrder.isDefined) me else copy(semanticOrder = order)
   override def withNewLabel(label1: Option[String] = None): TxDescription = copy(label = label1)
