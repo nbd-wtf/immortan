@@ -84,15 +84,15 @@ class InputParserSpec extends AnyFunSuite {
   }
 
   test("Multi-address parser") {
-    val expected = Map("bc1qssm5quvrc6v7a9zy97yqxzm5v7s32an2ma9fh2" -> 150000000.sat, "181KcAjdvesSkfFQfPmoKm9W4UHFXAcxkj" -> 400000.sat, "3LShakamn25Bk6Mgjh8G4CKCBsXCynE2Yx" -> 19000000.sat)
+    val expected = Seq("bc1qssm5quvrc6v7a9zy97yqxzm5v7s32an2ma9fh2" -> 150000000.sat, "181KcAjdvesSkfFQfPmoKm9W4UHFXAcxkj" -> 400000.sat, "3LShakamn25Bk6Mgjh8G4CKCBsXCynE2Yx" -> 19000000.sat)
 
     val valid1 = "bc1qssm5quvrc6v7a9zy97yqxzm5v7s32an2ma9fh2 150,000,000; 181KcAjdvesSkfFQfPmoKm9W4UHFXAcxkj  400000; 3LShakamn25Bk6Mgjh8G4CKCBsXCynE2Yx  .19"
 
     val valid2 =
       """
-        bc1qssm5quvrc6v7a9zy97yqxzm5v7s32an2ma9fh2     150,000000 ;
+         bc1qssm5quvrc6v7a9zy97yqxzm5v7s32an2ma9fh2     150,000000
 
-        181KcAjdvesSkfFQfPmoKm9W4UHFXAcxkj 400,,,000       ;
+        181KcAjdvesSkfFQfPmoKm9W4UHFXAcxkj 400,,,000      ;
 
         3LShakamn25Bk6Mgjh8G4CKCBsXCynE2Yx  0.19
 
@@ -101,7 +101,7 @@ class InputParserSpec extends AnyFunSuite {
     assert(MultiAddressParser.parseAll(MultiAddressParser.parse, valid1).get.values == expected)
     assert(MultiAddressParser.parseAll(MultiAddressParser.parse, valid2).get.values == expected)
 
-    val invalid1 = "bc1qssm5quvrc6v7a9zy97yqxzm5v7s32an2ma9fh2 150,000,000; hello  400000 3LShakamn25Bk6Mgjh8G4CKCBsXCynE2Yx  0.19"
+    val invalid1 = "bc1qssm5quvrc6v7a9zy97yqxzm5v7s32an2ma9fh2 150,000.000 hello  400000 3LShakamn25Bk6Mgjh8G4CKCBsXCynE2Yx  0.19"
 
     val invalid2 = "bc1qssm5quvrc6v7a9zy97yqxzm5v7s32an2ma9fh2 150,000,000; 181KcAjdvesSkfFQfPmoKm9W4UHFXAcxkj  400000; 3LShakamn25Bk6Mgjh8G4CKCBsXCynE2Yx  0.19 ??!?"
 
