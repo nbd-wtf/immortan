@@ -35,7 +35,7 @@ object Tools {
   type Bytes = Array[Byte]
   type Fiat2Btc = Map[String, Double]
   final val SEPARATOR = " "
-``
+
   def trimmed(inputText: String): String = inputText.trim.take(144)
 
   def none: PartialFunction[Any, Unit] = { case _ => }
