@@ -26,6 +26,8 @@ libraryDependencies += "com.google.guava" % "guava" % "29.0-android"
 
 libraryDependencies += "org.scala-lang.modules" %% "scala-parser-combinators" % "2.1.0"
 
+libraryDependencies += "com.sparrowwallet" % "hummingbird" % "1.6.2"
+
 // Testing
 
 libraryDependencies += "org.scalatest" % "scalatest_2.11" % "3.1.1"

@@ -1,13 +1,13 @@
 package immortan.utils
 
-import fr.acinq.eclair._
-import immortan.crypto.Tools._
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
-import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt, Sync}
-import fr.acinq.eclair.router.Router.{ChannelDesc, RouteParams, RouteRequest, RouterConf}
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, FullPaymentTag, PaymentTagTlv}
-import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
+import fr.acinq.eclair._
+import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
+import fr.acinq.eclair.router.Router.{ChannelDesc, RouteParams, RouteRequest, RouterConf}
+import fr.acinq.eclair.router.{Announcements, ChannelUpdateExt, Sync}
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, FullPaymentTag, PaymentTagTlv}
+import immortan.crypto.Tools._
 import immortan.sqlite.SQLiteNetwork
 import scodec.bits.ByteVector
 

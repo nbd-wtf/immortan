@@ -1,11 +1,11 @@
 package immortan
 
-import fr.acinq.eclair._
-import immortan.utils.GraphUtils._
 import com.softwaremill.quicklens._
-import fr.acinq.eclair.router.Router._
+import fr.acinq.eclair._
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
 import fr.acinq.eclair.router.RouteCalculation
+import fr.acinq.eclair.router.Router._
+import immortan.utils.GraphUtils._
 import org.scalatest.funsuite.AnyFunSuite
 
 

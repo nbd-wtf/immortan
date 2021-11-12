@@ -1,11 +1,11 @@
 package immortan
 
 import fr.acinq.eclair._
-import immortan.sqlite._
-import fr.acinq.eclair.wire.{OnionRoutingPacket, UpdateAddHtlc}
 import fr.acinq.eclair.transactions.IncomingHtlc
-import org.scalatest.funsuite.AnyFunSuite
+import fr.acinq.eclair.wire.{OnionRoutingPacket, UpdateAddHtlc}
+import immortan.sqlite._
 import immortan.utils.SQLiteUtils
+import org.scalatest.funsuite.AnyFunSuite
 
 
 class DbSpec extends AnyFunSuite {

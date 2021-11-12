@@ -1,15 +1,15 @@
 package immortan.utils
 
-import fr.acinq.eclair._
-import immortan.sqlite._
-import fr.acinq.eclair.transactions.{CommitmentSpec, RemoteFulfill}
-import immortan.fsm.{OutgoingPaymentListener, OutgoingPaymentSenderData}
-import fr.acinq.eclair.wire.{InitHostedChannel, LastCrossSignedState, NodeAddress}
-import immortan.{ChannelMaster, HostedCommits, PathFinder, RemoteNodeInfo}
-import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, SatoshiLong}
+import fr.acinq.eclair._
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.transactions.{CommitmentSpec, RemoteFulfill}
+import fr.acinq.eclair.wire.{InitHostedChannel, LastCrossSignedState, NodeAddress}
 import immortan.crypto.Tools
+import immortan.fsm.{OutgoingPaymentListener, OutgoingPaymentSenderData}
+import immortan.sqlite._
+import immortan.{ChannelMaster, HostedCommits, PathFinder, RemoteNodeInfo}
 
 
 object ChannelUtils {
@@ -40,8 +40,7 @@ object ChannelUtils {
       CommitmentSpec(feeratePerKw = FeeratePerKw(0.sat), toLocal = toLocal, toRemote = 100000000L.msat),
       lastCrossSignedState = lcss, nextLocalUpdates = Nil, nextRemoteUpdates = Nil, updateOpt = None,
       postErrorOutgoingResolvedIds = Set.empty, localError = None, remoteError = None,
-      extParams = List.fill(secureRandom.nextInt(10))(randomBytes(secureRandom.nextInt(1000))),
-      startedAt = System.currentTimeMillis)
+      extParams = Nil, startedAt = System.currentTimeMillis)
   }
 
   def makeChannelMaster(secrets: Iterable[ByteVector32] = Nil): (SQLiteNetwork, SQLiteNetwork, ChannelMaster) = {

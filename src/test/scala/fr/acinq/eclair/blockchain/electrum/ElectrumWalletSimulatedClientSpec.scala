@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.blockchain.electrum
 
-import java.net.InetSocketAddress
-
 import akka.actor.{ActorRef, Terminated}
 import akka.testkit
 import akka.testkit.{TestActor, TestFSMRef, TestProbe}
@@ -30,11 +28,12 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWalletSimulatedClientSpec._
-import immortan.sqlite.{ChainWalletTable, DataTable, ElectrumHeadersTable, SQLiteChainWallet, SQLiteData}
+import immortan.sqlite.{ChainWalletTable, ElectrumHeadersTable, SQLiteChainWallet, SQLiteData}
 import immortan.utils.SQLiteUtils
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
+import java.net.InetSocketAddress
 import scala.annotation.tailrec
 import scala.concurrent.duration._
 
@@ -70,7 +69,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
 
   private val socketAddress = InetSocketAddress.createUnresolved("0.0.0.0", 9735)
   private val connection = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, ChainWalletTable, ElectrumHeadersTable)
-  private val walletParameters = WalletParameters(new SQLiteData(connection), new SQLiteChainWallet(connection), dustLimit = 546L.sat)
+  private val walletParameters = WalletParameters(new SQLiteData(connection), new SQLiteChainWallet(connection), txDb = null, dustLimit = 546L.sat)
   private val chainSync = TestFSMRef(new ElectrumChainSync(client.ref, walletParameters.headerDb, ewt.chainHash))
   private val wallet = TestFSMRef(new ElectrumWallet(client.ref, chainSync, walletParameters, ewt))
   sender.send(wallet, walletParameters.emptyPersistentDataBytes)
@@ -170,7 +169,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
       client.receiveOne(100.milliseconds)
     }
     val key = wallet.stateData.accountKeys(0)
-    val scriptHash = ewt.computeScriptHashFromPublicKey(key.publicKey)
+    val scriptHash = ElectrumWalletType.computeScriptHash(Script.write(ewt.computePublicKeyScript(key.publicKey)))
     wallet ! ScriptHashSubscriptionResponse(scriptHash, ByteVector32(ByteVector.fill(32)(1)).toHex)
     client.expectMsg(GetScriptHashHistory(scriptHash))
 
@@ -221,7 +220,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
       client.receiveOne(100.milliseconds)
     }
     // tell wallet that there is something for our first account key
-    val scriptHash = ewt.computeScriptHashFromPublicKey(wallet.stateData.accountKeys(0).publicKey)
+    val scriptHash = ElectrumWalletType.computeScriptHash(Script.write(ewt.computePublicKeyScript(wallet.stateData.accountKeys(0).publicKey)))
     wallet ! ScriptHashSubscriptionResponse(scriptHash, "010101")
     client.expectMsg(GetScriptHashHistory(scriptHash))
     assert(wallet.stateData.status(scriptHash) == "010101")
@@ -240,7 +239,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
       client.receiveOne(100.milliseconds)
     }
     val key = wallet.stateData.accountKeys(1)
-    val scriptHash = ewt.computeScriptHashFromPublicKey(key.publicKey)
+    val scriptHash = ElectrumWalletType.computeScriptHash(Script.write(ewt.computePublicKeyScript(key.publicKey)))
     wallet ! ScriptHashSubscriptionResponse(scriptHash, ByteVector32(ByteVector.fill(32)(2)).toHex)
     client.expectMsg(GetScriptHashHistory(scriptHash))
 
@@ -410,7 +409,7 @@ object ElectrumWalletSimulatedClientSpec {
         }
         val data1 = data.copy(history = history1, transactions = data.transactions + (tx.txid -> tx))
         val history2 = tx.txIn.filter(i => data1.isMine(i)).foldLeft(data1.history) { case (a, b) =>
-          addToHistory(a, ewt.computeScriptHashFromPublicKey(ewt.extractPubKeySpentFrom(b).get), TransactionHistoryItem(100000, tx.txid))
+          addToHistory(a, ElectrumWalletType.computeScriptHash(Script.write(ewt.computePublicKeyScript(ewt.extractPubKeySpentFrom(b).get))), TransactionHistoryItem(100000, tx.txid))
         }
         val data2 = data1.copy(history = history2)
         updateStatus(data2)

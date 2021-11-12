@@ -1,8 +1,8 @@
 package immortan
 
 import fr.acinq.bitcoin._
-import immortan.utils.FeeRates._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratePerKw, FeeratesPerKB}
+import immortan.utils.FeeRates._
 import immortan.utils.{BitgoFeeProvider, EarnDotComFeeProvider, EsploraFeeProvider}
 import org.scalatest.funsuite.AnyFunSuite
 

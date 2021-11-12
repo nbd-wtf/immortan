@@ -1,14 +1,14 @@
 package immortan
 
 import fr.acinq.eclair._
-import immortan.utils.TestUtils._
+import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.router.Router.{ChannelDesc, NoRouteAvailable, RouteFound}
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
+import immortan.crypto.{CanBeRepliedTo, Tools}
+import immortan.utils.ChannelUtils._
 import immortan.utils.GraphUtils._
 import immortan.utils.SQLiteUtils._
-import immortan.utils.ChannelUtils._
-import immortan.crypto.{CanBeRepliedTo, Tools}
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
-import fr.acinq.eclair.router.Router.{ChannelDesc, NoRouteAvailable, RouteFound}
-import fr.acinq.eclair.router.Announcements
+import immortan.utils.TestUtils._
 import org.scalatest.funsuite.AnyFunSuite
 
 

@@ -11,6 +11,8 @@ import scala.util.Try
 
 
 object ElectrumWalletType {
+  def computeScriptHash(serialized: ByteVector): ByteVector32 = Crypto.sha256(serialized).reverse
+
   def makeSigningType(tag: String, master: ExtendedPrivateKey, chainHash: ByteVector32): ElectrumWalletType = tag match {
     case EclairWallet.BIP32 => makeSigningType(tag, xPriv32(master, chainHash), chainHash)
     case EclairWallet.BIP44 => makeSigningType(tag, xPriv44(master, chainHash), chainHash)
@@ -24,14 +26,6 @@ object ElectrumWalletType {
     case EclairWallet.BIP44 => new ElectrumWallet44(secrets.asSome, publicKey(secrets.xPriv), chainHash)
     case EclairWallet.BIP49 => new ElectrumWallet49(secrets.asSome, publicKey(secrets.xPriv), chainHash)
     case EclairWallet.BIP84 => new ElectrumWallet84(secrets.asSome, publicKey(secrets.xPriv), chainHash)
-    case _ => throw new RuntimeException
-  }
-
-  def makeWatchingType(tag: String, xPub: ExtendedPublicKey, chainHash: ByteVector32): ElectrumWalletType = tag match {
-    case EclairWallet.BIP32 => new ElectrumWallet32(secrets = None, xPub, chainHash)
-    case EclairWallet.BIP44 => new ElectrumWallet44(secrets = None, xPub, chainHash)
-    case EclairWallet.BIP49 => new ElectrumWallet49(secrets = None, xPub, chainHash)
-    case EclairWallet.BIP84 => new ElectrumWallet84(secrets = None, xPub, chainHash)
     case _ => throw new RuntimeException
   }
 
@@ -75,31 +69,18 @@ abstract class ElectrumWalletType {
 
   val accountMaster: ExtendedPublicKey = derivePublicKey(xPub, 0L :: Nil)
 
-  def xPubPrefix: Int
-
   def textAddress(key: ExtendedPublicKey): String
 
   def computePublicKeyScript(key: PublicKey): Seq[ScriptElt]
 
   def extractPubKeySpentFrom(txIn: TxIn): Option[PublicKey]
 
-  def setUtxosWithDummySig(usableUtxos: Seq[Utxo], tx: Transaction, sequenceFlag: Long): Transaction
-
   def signTransaction(usableUtxos: Seq[Utxo], tx: Transaction): Transaction
 
-  def computeScriptHashFromPublicKey(key: PublicKey): ByteVector32 = {
-    val serializedPubKeyScript: Seq[ScriptElt] = computePublicKeyScript(key)
-    Crypto.sha256(Script write serializedPubKeyScript).reverse
-  }
+  def setUtxosWithDummySig(usableUtxos: Seq[Utxo], tx: Transaction, sequenceFlag: Long): Transaction
 }
 
 class ElectrumWallet44(val secrets: Option[AccountAndXPrivKey], val xPub: ExtendedPublicKey, val chainHash: ByteVector32) extends ElectrumWalletType {
-
-  override def xPubPrefix: Int = chainHash match {
-    case Block.LivenetGenesisBlock.hash => xpub
-    case Block.TestnetGenesisBlock.hash => tpub
-    case _ => throw new RuntimeException
-  }
 
   override def textAddress(key: ExtendedPublicKey): String = computeP2PkhAddress(key.publicKey, chainHash)
 
@@ -124,7 +105,7 @@ class ElectrumWallet44(val secrets: Option[AccountAndXPrivKey], val xPub: Extend
       (txIn, idx) <- tx.txIn.zipWithIndex
       utxo <- usableUtxos.find(_.item.outPoint == txIn.outPoint)
       previousOutputScript = Script.pay2pkh(pubKey = utxo.key.publicKey)
-      privateKey = derivePrivateKey(secrets.get.master, utxo.key.path).privateKey
+      privateKey = derivePrivateKey(secrets.map(_.master).getOrElse(fr.acinq.eclair.dummyExtPrivKey), utxo.key.path).privateKey
       sig = Transaction.signInput(tx, idx, previousOutputScript, SIGHASH_ALL, utxo.item.value.sat, SigVersion.SIGVERSION_BASE, privateKey)
       sigScript = Script.write(OP_PUSHDATA(sig) :: OP_PUSHDATA(utxo.key.publicKey) :: Nil)
     } yield txIn.copy(signatureScript = sigScript)
@@ -140,12 +121,6 @@ class ElectrumWallet32(override val secrets: Option[AccountAndXPrivKey], overrid
 }
 
 class ElectrumWallet49(val secrets: Option[AccountAndXPrivKey], val xPub: ExtendedPublicKey, val chainHash: ByteVector32) extends ElectrumWalletType {
-
-  override def xPubPrefix: Int = chainHash match {
-    case Block.LivenetGenesisBlock.hash => ypub
-    case Block.TestnetGenesisBlock.hash => upub
-    case _ => throw new RuntimeException
-  }
 
   override def textAddress(key: ExtendedPublicKey): String = computeBIP49Address(key.publicKey, chainHash)
 
@@ -175,7 +150,7 @@ class ElectrumWallet49(val secrets: Option[AccountAndXPrivKey], val xPub: Extend
       (txIn, idx) <- tx.txIn.zipWithIndex
       utxo <- usableUtxos.find(_.item.outPoint == txIn.outPoint)
       pubKeyScript = Script.write(Script pay2wpkh utxo.key.publicKey)
-      privateKey = derivePrivateKey(secrets.get.master, utxo.key.path).privateKey
+      privateKey = derivePrivateKey(secrets.map(_.master).getOrElse(fr.acinq.eclair.dummyExtPrivKey), utxo.key.path).privateKey
       sig = Transaction.signInput(tx, idx, Script.pay2pkh(utxo.key.publicKey), SIGHASH_ALL, utxo.item.value.sat, SigVersion.SIGVERSION_WITNESS_V0, privateKey)
     } yield txIn.copy(signatureScript = Script.write(OP_PUSHDATA(pubKeyScript) :: Nil), witness = ScriptWitness(sig :: utxo.key.publicKey.value :: Nil))
     tx.copy(txIn = txIn1)
@@ -183,12 +158,6 @@ class ElectrumWallet49(val secrets: Option[AccountAndXPrivKey], val xPub: Extend
 }
 
 class ElectrumWallet84(val secrets: Option[AccountAndXPrivKey], val xPub: ExtendedPublicKey, val chainHash: ByteVector32) extends ElectrumWalletType {
-
-  override def xPubPrefix: Int = chainHash match {
-    case Block.LivenetGenesisBlock.hash => zpub
-    case Block.TestnetGenesisBlock.hash => vpub
-    case _ => throw new RuntimeException
-  }
 
   override def textAddress(key: ExtendedPublicKey): String = computeBIP84Address(key.publicKey, chainHash)
 
@@ -208,7 +177,7 @@ class ElectrumWallet84(val secrets: Option[AccountAndXPrivKey], val xPub: Extend
     val txIn1 = for {
       (txIn, idx) <- tx.txIn.zipWithIndex
       utxo <- usableUtxos.find(_.item.outPoint == txIn.outPoint)
-      privateKey = derivePrivateKey(secrets.get.master, utxo.key.path).privateKey
+      privateKey = derivePrivateKey(secrets.map(_.master).getOrElse(fr.acinq.eclair.dummyExtPrivKey), utxo.key.path).privateKey
       sig = Transaction.signInput(tx, idx, Script.pay2pkh(utxo.key.publicKey), SIGHASH_ALL, utxo.item.value.sat, SigVersion.SIGVERSION_WITNESS_V0, privateKey)
     } yield txIn.copy(witness = ScriptWitness(sig :: utxo.key.publicKey.value :: Nil), signatureScript = ByteVector.empty)
     tx.copy(txIn = txIn1)

@@ -65,41 +65,44 @@ case class InFlightPayments(out: Map[FullPaymentTag, OutgoingAdds], in: Map[Full
 }
 
 class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag: DataBag, val pf: PathFinder) extends ChannelListener with ConnectionListener with CanBeShutDown { me =>
-  val getPaymentInfoMemo: LoadingCache[ByteVector32, PaymentInfoTry] = memoize(payBag.getPaymentInfo)
   val initResolveMemo: LoadingCache[UpdateAddHtlcExt, IncomingResolution] = memoize(initResolve)
   val getPreimageMemo: LoadingCache[ByteVector32, PreimageTry] = memoize(payBag.getPreimage)
   val opm: OutgoingPaymentMaster = new OutgoingPaymentMaster(me)
 
-  // This is defined as mutable set so wallet implementation can append listeners of its own at runtime here
-  val localPaymentListeners: mutable.Set[OutgoingPaymentListener] = mutable.Set apply new OutgoingPaymentListener {
-    override def wholePaymentSucceeded(data: OutgoingPaymentSenderData): Unit = opm process RemoveSenderFSM(data.cmd.fullTag)
+  val localPaymentListeners: mutable.Set[OutgoingPaymentListener] = {
+    val defListener: OutgoingPaymentListener = new OutgoingPaymentListener {
+      override def wholePaymentSucceeded(data: OutgoingPaymentSenderData): Unit =
+        opm process RemoveSenderFSM(data.cmd.fullTag)
 
-    override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = chanBag.db txWrap {
-      // This method gets called after NO payment parts are left in system, irregardless of restarts
-      dataBag.putReport(data.cmd.fullTag.paymentHash, data.failuresAsString)
-      payBag.updAbortedOutgoing(data.cmd.fullTag.paymentHash)
-      opm process RemoveSenderFSM(data.cmd.fullTag)
-    }
-
-    override def gotFirstPreimage(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = chanBag.db txWrap {
-      // Note that this method MAY get called multiple times for multipart payments if fulfills happen between restarts
-      getPaymentInfoMemo.get(fulfill.ourAdd.paymentHash).filter(_.status != PaymentStatus.SUCCEEDED).foreach { paymentInfo =>
-        // Persist payment metadata if this is ACTUALLY the first preimage (otherwise payment would be marked as successful)
-        payBag.addSearchablePayment(paymentInfo.description.queryText, fulfill.ourAdd.paymentHash)
-        payBag.updOkOutgoing(fulfill, data.usedFee)
-
-        if (data.inFlightParts.nonEmpty) {
-          // Sender FSM won't have in-flight parts after restart
-          dataBag.putReport(fulfill.ourAdd.paymentHash, data.usedRoutesAsString)
-          // We only increment scores for normal channels, never for HCs
-          data.successfulUpdates.foreach(pf.normalBag.incrementScore)
-        }
+      override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit = chanBag.db txWrap {
+        // This method gets called after NO payment parts are left in system, irregardless of restarts
+        dataBag.putReport(data.cmd.fullTag.paymentHash, data.failuresAsString)
+        payBag.updAbortedOutgoing(data.cmd.fullTag.paymentHash)
+        opm process RemoveSenderFSM(data.cmd.fullTag)
       }
 
-      payBag.setPreimage(fulfill.ourAdd.paymentHash, fulfill.theirPreimage)
-      getPaymentInfoMemo.invalidate(fulfill.ourAdd.paymentHash)
-      getPreimageMemo.invalidate(fulfill.ourAdd.paymentHash)
+      override def gotFirstPreimage(data: OutgoingPaymentSenderData, fulfill: RemoteFulfill): Unit = chanBag.db txWrap {
+        // Note that this method MAY get called multiple times for multipart payments if fulfills happen between restarts
+        payBag.getPaymentInfo(fulfill.ourAdd.paymentHash).filter(_.status != PaymentStatus.SUCCEEDED).foreach { paymentInfo =>
+          // Persist payment metadata if this is ACTUALLY the first preimage (otherwise payment would be marked as successful)
+          payBag.addSearchablePayment(paymentInfo.description.queryText, fulfill.ourAdd.paymentHash)
+          payBag.updOkOutgoing(fulfill, data.usedFee)
+
+          if (data.inFlightParts.nonEmpty) {
+            // Sender FSM won't have in-flight parts after restart
+            dataBag.putReport(fulfill.ourAdd.paymentHash, data.usedRoutesAsString)
+            // We only increment scores for normal channels, never for HCs
+            data.successfulUpdates.foreach(pf.normalBag.incrementScore)
+          }
+        }
+
+        payBag.setPreimage(fulfill.ourAdd.paymentHash, fulfill.theirPreimage)
+        getPreimageMemo.invalidate(fulfill.ourAdd.paymentHash)
+      }
     }
+
+    // Mutable set so can be extended
+    mutable.Set(defListener)
   }
 
   var all = Map.empty[ByteVector32, Channel]
@@ -121,18 +124,16 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
       // Attempt to decrypt an onion with our peer-specific nodeId, this would be a routed payment
       // If fails with BadOnion: get all waiting incoming secrets and try to find a matching one
 
-      case Left(_: BadOnion) =>
-        // Add random secret to find at least one BadOnion result and fail this HTLC properly
-        val ephemeralKeys = (payBag.listPendingSecrets + randomBytes32).map(LNParams.secret.keys.fakeInvoiceKey)
+      case Left(routed: BadOnion) =>
+        val ephemeralKeys = payBag.listPendingSecrets.map(LNParams.secret.keys.fakeInvoiceKey).toList
         val decryptionResults = for (ephemeralKey <- ephemeralKeys) yield IncomingPacket.decrypt(ext.theirAdd, ephemeralKey)
-        val resultsAndKeys = decryptionResults.zip(ephemeralKeys)
+        val goodResultFirst = decryptionResults.zip(ephemeralKeys) sortBy { case res ~ _ if res.isRight => 0 case _ => 1 }
 
-        resultsAndKeys.find(_._1.isRight).getOrElse(resultsAndKeys.head) match {
-          case Left(fail: BadOnion) ~ _ => CMD_FAIL_MALFORMED_HTLC(fail.onionHash, fail.code, ext.theirAdd)
-          case Left(onionFail) ~ secret => CMD_FAIL_HTLC(Right(onionFail), secret, ext.theirAdd)
-          case Right(packet) ~ secret => defineResolution(secret, packet)
-          case _ => throw new RuntimeException
-        }
+        goodResultFirst.headOption.map {
+          case (Right(packet), secret) => defineResolution(secret, packet)
+          case (Left(fail: BadOnion), _) => CMD_FAIL_MALFORMED_HTLC(fail.onionHash, fail.code, ext.theirAdd)
+          case (Left(onionFail), secret) => CMD_FAIL_HTLC(Right(onionFail), secret, ext.theirAdd)
+        } getOrElse CMD_FAIL_MALFORMED_HTLC(routed.onionHash, routed.code, ext.theirAdd)
 
       case Left(onionFail) => CMD_FAIL_HTLC(Right(onionFail), ext.remoteInfo.nodeSpecificPrivKey, ext.theirAdd)
       case Right(packet) => defineResolution(ext.remoteInfo.nodeSpecificPrivKey, packet)
@@ -143,12 +144,6 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
     // payment itself may be fulfilled with preimage revealed or failed
     inProcessors -= data.fullTag
     inFinalized.onNext(data)
-  }
-
-  def updateDescriptionAndCache(description: PaymentDescription, paymentHash: ByteVector32): Unit = {
-    // This makes sure payment info cache is always updated every time a description is changed
-    payBag.updDescription(description, paymentHash)
-    getPaymentInfoMemo.invalidate(paymentHash)
   }
 
   // CONNECTION LISTENER
@@ -270,15 +265,14 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
     PaymentRequestExt.from(pr)
   }
 
-  def localSend(cmd: SendMultiPart): Unit = {
-    opm process CreateSenderFSM(localPaymentListeners, cmd.fullTag)
-    opm process ClearFailures
-    opm process cmd
-  }
-
   def checkIfSendable(paymentHash: ByteVector32): Option[Int] = {
     val isActive = opm.data.payments.values.exists(fsm => fsm.fullTag.tag == PaymentTagTlv.LOCALLY_SENT && fsm.fullTag.paymentHash == paymentHash)
     if (isActive) Some(PaymentInfo.NOT_SENDABLE_IN_FLIGHT) else if (getPreimageMemo.get(paymentHash).isSuccess) Some(PaymentInfo.NOT_SENDABLE_SUCCESS) else None
+  }
+
+  def localSend(cmd: SendMultiPart): Unit = {
+    val create = CreateSenderFSM(localPaymentListeners, cmd.fullTag)
+    List(create, ClearFailures, cmd).foreach(opm.process)
   }
 
   // These are executed in Channel context

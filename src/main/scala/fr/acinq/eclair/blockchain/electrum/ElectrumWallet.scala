@@ -13,6 +13,7 @@ import fr.acinq.eclair.blockchain.electrum.db.{HeaderDb, WalletDb}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.Transactions
 import immortan.crypto.Tools._
+import immortan.sqlite.SQLiteTx
 import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
@@ -176,14 +177,6 @@ class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParame
     case Event(bc: ElectrumClient.BroadcastTransaction, _) =>
       client forward bc
       stay
-
-    case Event(commit: CommitTransaction, data) =>
-      val data1 = data.commitTransaction(commit.tx)
-      // We use the initial state to compute the effect of the tx
-      val TransactionDelta(_, feeOpt, received, sent) = data.computeTransactionDelta(commit.tx).get
-      // We notify here because the tx won't be downloaded again (it has been added to the state at commit)
-      context.system.eventStream publish data1.transactionReceived(commit.tx, feeOpt, received, sent, ewt.xPub)
-      stay using persistAndNotify(data1.withOverridingTxids) replying true
   }
 
   whenUnhandled {
@@ -199,20 +192,20 @@ class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParame
 
     case Event(GetCurrentReceiveAddresses, data) =>
       val changeKey = data.firstUnusedChangeKey.getOrElse(data.changeKeys.head)
-      val res = GetCurrentReceiveAddressesResponse(data.currentReceiveAddresses, ewt.textAddress(changeKey), changeKey)
-      stay replying res
+      val sortredAccountKeys = data.firstUnusedAccountKeys.toList.sortBy(_.path.lastChildNumber)
+      stay replying GetCurrentReceiveAddressesResponse(sortredAccountKeys, changeKey, ewt)
 
     case Event(ElectrumClient.ElectrumDisconnected, data) => goto(DISCONNECTED) using data.reset
 
     case Event(GetBalance, data) => stay replying data.balance
 
     case Event(CompleteTransaction(pubKeyScriptToAmount, feeRatePerKw, sequenceFlag), data) =>
-      val txOuts = for (Tuple2(pubKeyScript, amount) <- pubKeyScriptToAmount) yield TxOut(amount, pubKeyScript)
+      val txOuts = for (Tuple2(script, amount) <- pubKeyScriptToAmount) yield TxOut(amount, script)
       val tx = Transaction(version = 2, txIn = Nil, txOut = txOuts.toList, lockTime = 0)
 
       val resultTry = data.completeTransaction(tx, feeRatePerKw, params.dustLimit, sequenceFlag, data.utxos)
-      val resultTryComplete = for (res <- resultTry) yield res.copy(pubKeyScriptToAmount = pubKeyScriptToAmount)
-      stay replying resultTryComplete
+      val resultTry1 = for (res <- resultTry) yield res.copy(pubKeyScriptToAmount = pubKeyScriptToAmount)
+      stay replying resultTry1
 
     case Event(SendAll(publicKeyScript, pubKeyScriptToAmount, feeRatePerKw, sequenceFlag, fromOutpoints, extraOutUtxos), data) =>
       val inUtxos = if (fromOutpoints.nonEmpty) data.utxos.filter(utxo => fromOutpoints contains utxo.item.outPoint) else data.utxos
@@ -230,7 +223,7 @@ class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParame
 
     case Event(KEY_REFILL, data) if data.firstUnusedChangeKey.isEmpty =>
       val newKey = derivePublicKey(ewt.changeMaster, data.changeKeys.last.path.lastChildNumber + 1)
-      val newKeyScriptHash = ewt.computeScriptHashFromPublicKey(newKey.publicKey)
+      val newKeyScriptHash = computeScriptHash(Script.write(ewt computePublicKeyScript newKey.publicKey))
       client ! ElectrumClient.ScriptHashSubscription(newKeyScriptHash, self)
 
       val changeKeys1 = data.changeKeys :+ newKey
@@ -240,7 +233,7 @@ class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParame
 
     case Event(KEY_REFILL, data) if data.firstUnusedAccountKeys.size < MAX_RECEIVE_ADDRESSES =>
       val newKey = derivePublicKey(ewt.accountMaster, data.accountKeys.last.path.lastChildNumber + 1)
-      val newKeyScriptHash = ewt.computeScriptHashFromPublicKey(newKey.publicKey)
+      val newKeyScriptHash = computeScriptHash(Script.write(ewt computePublicKeyScript newKey.publicKey))
       client ! ElectrumClient.ScriptHashSubscription(newKeyScriptHash, self)
 
       val accountKeys1 = data.accountKeys :+ newKey
@@ -253,7 +246,8 @@ class ElectrumWallet(client: ActorRef, chainSync: ActorRef, params: WalletParame
 }
 
 object ElectrumWallet {
-  type TransactionHistoryItemList = List[ElectrumClient.TransactionHistoryItem]
+  type TxOutOption = Option[TxOut]
+  type TxHistoryItemList = List[TransactionHistoryItem]
 
   final val KEY_REFILL = "key-refill"
 
@@ -273,7 +267,9 @@ object ElectrumWallet {
   sealed trait Response
 
   sealed trait GenerateTxResponse extends Response {
+    def withReplacedTx(tx: Transaction): GenerateTxResponse
     val pubKeyScriptToAmount: Map[ByteVector, Satoshi]
+    val data: ElectrumData
     val tx: Transaction
     val fee: Satoshi
   }
@@ -282,21 +278,26 @@ object ElectrumWallet {
   case class GetBalanceResponse(totalBalance: Satoshi) extends Response
 
   case object GetCurrentReceiveAddresses extends Request
-  case class GetCurrentReceiveAddressesResponse(accountToKey: Map[String, ExtendedPublicKey], changeAddress: String, changeKey: ExtendedPublicKey) extends Response
+  case class GetCurrentReceiveAddressesResponse(keys: List[ExtendedPublicKey], changeKey: ExtendedPublicKey, ewt: ElectrumWalletType) extends Response {
+    def firstAccountAddress: String = ewt.textAddress(keys.head)
+    def changeAddress: String = ewt.textAddress(changeKey)
+  }
 
   case class CompleteTransaction(pubKeyScriptToAmount: Map[ByteVector, Satoshi], feeRatePerKw: FeeratePerKw, sequenceFlag: Long) extends Request
-  case class CompleteTransactionResponse(pubKeyScriptToAmount: Map[ByteVector, Satoshi], tx: Transaction, fee: Satoshi) extends GenerateTxResponse
+  case class CompleteTransactionResponse(pubKeyScriptToAmount: Map[ByteVector, Satoshi], data: ElectrumData, tx: Transaction, fee: Satoshi) extends GenerateTxResponse {
+    override def withReplacedTx(tx1: Transaction): CompleteTransactionResponse = copy(tx = tx1)
+  }
 
   case class SendAll(publicKeyScript: ByteVector, pubKeyScriptToAmount: Map[ByteVector, Satoshi], feeRatePerKw: FeeratePerKw, sequenceFlag: Long, fromOutpoints: Set[OutPoint], extraUtxos: List[TxOut] = Nil) extends Request
-  case class SendAllResponse(pubKeyScriptToAmount: Map[ByteVector, Satoshi], tx: Transaction, fee: Satoshi) extends GenerateTxResponse
+  case class SendAllResponse(pubKeyScriptToAmount: Map[ByteVector, Satoshi], data: ElectrumData, tx: Transaction, fee: Satoshi) extends GenerateTxResponse {
+    override def withReplacedTx(tx1: Transaction): SendAllResponse = copy(tx = tx1)
+  }
 
   case class RBFBump(tx: Transaction, feeRatePerKw: FeeratePerKw, sequenceFlag: Long) extends Request
   case class RBFReroute(tx: Transaction, feeRatePerKw: FeeratePerKw, publicKeyScript: ByteVector, sequenceFlag: Long) extends Request
   case class RBFResponse(result: Either[Int, GenerateTxResponse] = GENERATION_FAIL.asLeft) extends Response
 
   case class ChainFor(target: ActorRef) extends Request
-
-  case class CommitTransaction(tx: Transaction) extends Request
 
   case class IsDoubleSpentResponse(tx: Transaction, depth: Long, isDoubleSpent: Boolean) extends Response
 
@@ -311,32 +312,35 @@ case class AccountAndXPrivKey(xPriv: ExtendedPrivateKey, master: ExtendedPrivate
 
 case class TransactionDelta(spentUtxos: Seq[Utxo], feeOpt: Option[Satoshi], received: Satoshi, sent: Satoshi)
 
-case class WalletParameters(headerDb: HeaderDb, walletDb: WalletDb, dustLimit: Satoshi) {
+case class WalletParameters(headerDb: HeaderDb, walletDb: WalletDb, txDb: SQLiteTx, dustLimit: Satoshi) {
   lazy val emptyPersistentData: PersistentData = PersistentData(accountKeysCount = MAX_RECEIVE_ADDRESSES, changeKeysCount = MAX_RECEIVE_ADDRESSES)
   lazy val emptyPersistentDataBytes: ByteVector = persistentDataCodec.encode(emptyPersistentData).require.toByteVector
 }
 
 case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, accountKeys: Vector[ExtendedPublicKey], changeKeys: Vector[ExtendedPublicKey],
                         status: Map[ByteVector32, String] = Map.empty, transactions: Map[ByteVector32, Transaction] = Map.empty, overriddenPendingTxids: Map[ByteVector32, ByteVector32] = Map.empty,
-                        history: Map[ByteVector32, TransactionHistoryItemList] = Map.empty, proofs: Map[ByteVector32, GetMerkleResponse] = Map.empty, pendingHistoryRequests: Set[ByteVector32] = Set.empty,
+                        history: Map[ByteVector32, TxHistoryItemList] = Map.empty, proofs: Map[ByteVector32, GetMerkleResponse] = Map.empty, pendingHistoryRequests: Set[ByteVector32] = Set.empty,
                         pendingTransactionRequests: Set[ByteVector32] = Set.empty, pendingHeadersRequests: Set[GetHeaders] = Set.empty, pendingTransactions: List[Transaction] = Nil,
-                        pendingMerkleResponses: Set[GetMerkleResponse] = Set.empty, lastReadyMessage: Option[WalletReady] = None) {
-
-  lazy val accountKeyMap: Map[ByteVector32, ExtendedPublicKey] = accountKeys.map(key => ewt.computeScriptHashFromPublicKey(key.publicKey) -> key).toMap
-  lazy val changeKeyMap: Map[ByteVector32, ExtendedPublicKey] = changeKeys.map(key => ewt.computeScriptHashFromPublicKey(key.publicKey) -> key).toMap
-
-  lazy val currentReadyMessage: WalletReady = WalletReady(balance.totalBalance, blockchain.tip.height, proofs.hashCode + transactions.hashCode, ewt.xPub)
-
-  lazy val firstUnusedAccountKeys: immutable.Iterable[ExtendedPublicKey] = accountKeyMap.collect { case (scriptHash, privKey) if status.get(scriptHash).contains(new String) => privKey }
-
-  lazy val firstUnusedChangeKey: Option[ExtendedPublicKey] = {
-    val usedChangeNumbers = transactions.values.flatMap(_.txOut).map(_.publicKeyScript).flatMap(publicScriptChangeMap.get).map(_.path.lastChildNumber).toSet
-    changeKeys.collectFirst { case changeKey if !usedChangeNumbers.contains(changeKey.path.lastChildNumber) => changeKey }
-  }
+                        pendingMerkleResponses: Set[GetMerkleResponse] = Set.empty, lastReadyMessage: Option[WalletReady] = None) { me =>
 
   lazy val publicScriptAccountMap: Map[ByteVector, ExtendedPublicKey] = accountKeys.map(key => Script.write(ewt computePublicKeyScript key.publicKey) -> key).toMap
   lazy val publicScriptChangeMap: Map[ByteVector, ExtendedPublicKey] = changeKeys.map(key => Script.write(ewt computePublicKeyScript key.publicKey) -> key).toMap
   lazy val publicScriptMap: Map[ByteVector, ExtendedPublicKey] = publicScriptAccountMap ++ publicScriptChangeMap
+
+  lazy val accountKeyMap: Map[ByteVector32, ExtendedPublicKey] = for (Tuple2(serialized, key) <- publicScriptAccountMap) yield (computeScriptHash(serialized), key)
+  lazy val changeKeyMap: Map[ByteVector32, ExtendedPublicKey] = for (Tuple2(serialized, key) <- publicScriptChangeMap) yield (computeScriptHash(serialized), key)
+
+  lazy val currentReadyMessage: WalletReady = WalletReady(balance.totalBalance, blockchain.tip.height, proofs.hashCode + transactions.hashCode, ewt.xPub)
+
+  lazy val firstUnusedAccountKeys: immutable.Iterable[ExtendedPublicKey] = accountKeyMap.collect {
+    case (nonExistentScriptHash, privKey) if !status.contains(nonExistentScriptHash) => privKey
+    case (emptyScriptHash, privKey) if status(emptyScriptHash) == new String => privKey
+  }
+
+  lazy val firstUnusedChangeKey: Option[ExtendedPublicKey] = {
+    val usedChangeNumbers = transactions.values.flatMap(_.txOut).map(_.publicKeyScript).flatMap(publicScriptChangeMap.get).map(_.path.lastChildNumber).toSet
+    changeKeys.collectFirst { case unusedChangeKey if !usedChangeNumbers.contains(unusedChangeKey.path.lastChildNumber) => unusedChangeKey }
+  }
 
   lazy val utxos: Seq[Utxo] = {
     history.toSeq.flatMap { case (scriptHash, historyItems) =>
@@ -347,7 +351,7 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
           item <- historyItems
           tx <- transactions.get(item.txHash).toList
           if !overriddenPendingTxids.contains(tx.txid)
-          (txOut, index) <- tx.txOut.zipWithIndex if isReceive(txOut, scriptHash)
+          (txOut, index) <- tx.txOut.zipWithIndex if computeScriptHash(txOut.publicKeyScript) == scriptHash
           unspent = ElectrumClient.UnspentItem(item.txHash, index, txOut.amount.toLong, item.height)
         } yield Utxo(key, unspent)
 
@@ -359,19 +363,12 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
     }
   }
 
-  def currentReceiveAddresses: Map[String, ExtendedPublicKey] = firstUnusedAccountKeys match {
-    case keys if keys.isEmpty => accountKeys.map(ewt.textAddress).zip(accountKeys).toMap
-    case keys => keys.map(ewt.textAddress).zip(keys).toMap
-  }
-
   // Remove status for each script hash for which we have pending requests, this will make us query script hash history for these script hashes again when we reconnect
   def reset: ElectrumData = copy(status = status -- pendingHistoryRequests, pendingHistoryRequests = Set.empty, pendingTransactionRequests = Set.empty, pendingHeadersRequests = Set.empty, lastReadyMessage = None)
 
   def isTxKnown(txid: ByteVector32): Boolean = transactions.contains(txid) || pendingTransactionRequests.contains(txid) || pendingTransactions.exists(_.txid == txid)
 
   def isMine(txIn: TxIn): Boolean = ewt.extractPubKeySpentFrom(txIn).map(ewt.computePublicKeyScript).map(Script.write).exists(publicScriptMap.contains)
-
-  def isReceive(txOut: TxOut, scriptHash: ByteVector32): Boolean = publicScriptMap.get(txOut.publicKeyScript).exists(key => ewt.computeScriptHashFromPublicKey(key.publicKey) == scriptHash)
 
   def toPersistent: PersistentData = PersistentData(accountKeys.length, changeKeys.length, status, transactions, overriddenPendingTxids, history, proofs, pendingTransactions)
 
@@ -423,7 +420,6 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
 
       case delta if delta.feeOpt.isDefined =>
         val leftUtxos = utxos.filterNot(_.item.txHash == bump.tx.txid)
-        // Result here will explicitly have empty CompleteTransactionResponse.pubKeyScriptToAmount
         completeTransaction(tx1, bump.feeRatePerKw, dustLimit, bump.sequenceFlag, leftUtxos, delta.spentUtxos) match {
           case Success(response) => RBFResponse(response.asRight)
           case _ => RBFResponse(GENERATION_FAIL.asLeft)
@@ -443,8 +439,6 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
       case _ => RBFResponse(GENERATION_FAIL.asLeft)
     }
   }
-
-  type TxOutOption = Option[TxOut]
 
   def completeTransaction(tx: Transaction, feeRatePerKw: FeeratePerKw,
                           dustLimit: Satoshi, sequenceFlag: Long, usableInUtxos: Seq[Utxo],
@@ -481,8 +475,8 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
     val txWithChange = changeOpt.map(txWithInputs.addOutput).getOrElse(txWithInputs)
 
     val tx3 = ewt.signTransaction(usableInUtxos ++ mustUseUtxos, txWithChange)
-    val fee = selected.map(_.item.value).sum.sat - tx3.txOut.map(_.amount).sum
-    CompleteTransactionResponse(pubKeyScriptToAmount = Map.empty, tx3, fee)
+    val computedFee = selected.map(_.item.value).sum.sat - tx3.txOut.map(_.amount).sum
+    CompleteTransactionResponse(pubKeyScriptToAmount = Map.empty, me, tx3, computedFee)
   }
 
   def spendAll(restPubKeyScript: ByteVector, strictPubKeyScriptsToAmount: Map[ByteVector, Satoshi],
@@ -499,31 +493,7 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
     val restTxOut1 = TxOut(restTxOut.amount - fee, restPubKeyScript)
     val tx2 = tx1.copy(txOut = restTxOut1 :: strictTxOuts.toList ::: extraOutUtxos)
     val allPubKeyScriptsToAmount = strictPubKeyScriptsToAmount.updated(restPubKeyScript, restTxOut1.amount)
-    SendAllResponse(allPubKeyScriptsToAmount, ewt.signTransaction(usableInUtxos, tx2), fee)
-  }
-
-  def commitTransaction(tx: Transaction): ElectrumData = {
-    // Remove all our utxos spent by this tx, call this method if the tx was broadcast successfully.
-    // Since we base our utxos computation on the history from server, we need to update the history right away if we want to be able to build chained unconfirmed transactions.
-    // A few seconds later electrum will notify us and the entry will be overwritten. Note that we need to take into account both inputs and outputs, because there may be change.
-    val incomingScripts = tx.txIn.filter(isMine).flatMap(ewt.extractPubKeySpentFrom).map(ewt.computeScriptHashFromPublicKey)
-    val outgoingScripts = tx.txOut.filter(isMine).map(_.publicKeyScript).map(computeScriptHash)
-    val scripts = incomingScripts ++ outgoingScripts
-
-    val history2 =
-      scripts.foldLeft(history) {
-        case (history1, scriptHash) =>
-          val entry = history1.get(scriptHash) match {
-            case Some(items) if items.map(_.txHash).contains(tx.txid) => items
-            case Some(items) => TransactionHistoryItem(0, tx.txid) :: items
-            case None => TransactionHistoryItem(0, tx.txid) :: Nil
-          }
-
-          history1.updated(scriptHash, entry)
-      }
-
-    val transactions1 = transactions.updated(tx.txid, tx)
-    copy(transactions = transactions1, history = history2)
+    SendAllResponse(allPubKeyScriptsToAmount, me, ewt.signTransaction(usableInUtxos, tx2), fee)
   }
 
   def withOverridingTxids: ElectrumData = {
@@ -535,5 +505,5 @@ case class ElectrumData(ewt: ElectrumWalletType, blockchain: Blockchain, account
 }
 
 case class PersistentData(accountKeysCount: Int, changeKeysCount: Int, status: Map[ByteVector32, String] = Map.empty, transactions: Map[ByteVector32, Transaction] = Map.empty,
-                          overriddenPendingTxids: Map[ByteVector32, ByteVector32] = Map.empty, history: Map[ByteVector32, TransactionHistoryItemList] = Map.empty,
+                          overriddenPendingTxids: Map[ByteVector32, ByteVector32] = Map.empty, history: Map[ByteVector32, TxHistoryItemList] = Map.empty,
                           proofs: Map[ByteVector32, GetMerkleResponse] = Map.empty, pendingTransactions: List[Transaction] = Nil)

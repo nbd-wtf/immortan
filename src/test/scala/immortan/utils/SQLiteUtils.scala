@@ -1,6 +1,7 @@
 package immortan.utils
 
 import immortan.sqlite._
+
 import java.sql.{Connection, DriverManager}
 
 

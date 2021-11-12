@@ -1,10 +1,10 @@
 package immortan
 
-import immortan.crypto.Tools
 import fr.acinq.bitcoin.Block
-import org.scalatest.funsuite.AnyFunSuite
 import fr.acinq.eclair.wire.{Init, LightningMessage, Pong}
+import immortan.crypto.Tools
 import immortan.utils.TestUtils._
+import org.scalatest.funsuite.AnyFunSuite
 
 
 class CommsTowerSpec extends AnyFunSuite {

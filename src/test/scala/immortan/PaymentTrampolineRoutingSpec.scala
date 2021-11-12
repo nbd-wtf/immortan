@@ -1,19 +1,18 @@
 package immortan
 
+import fr.acinq.bitcoin.{Block, Crypto}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
-import immortan.utils.TestUtils._
-import immortan.utils.GraphUtils._
-import immortan.utils.PaymentUtils._
-import immortan.utils.ChannelUtils._
-import fr.acinq.bitcoin.{Block, Crypto}
+import fr.acinq.eclair.payment.IncomingPacket.FinalPacket
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentRequest}
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteUpdateFail, RemoteUpdateMalform}
-import immortan.fsm.{IncomingPaymentProcessor, OutgoingPaymentMaster, TrampolinePaymentRelayer, TrampolineRevealed, TrampolineStopping}
-import fr.acinq.eclair.wire.{FullPaymentTag, PaymentTagTlv, PaymentTimeout, TemporaryNodeFailure, TrampolineFeeInsufficient, TrampolineOn, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc}
-import fr.acinq.eclair.payment.IncomingPacket.FinalPacket
+import fr.acinq.eclair.wire._
+import immortan.fsm._
+import immortan.utils.ChannelUtils._
+import immortan.utils.GraphUtils._
+import immortan.utils.PaymentUtils._
+import immortan.utils.TestUtils._
 import org.scalatest.funsuite.AnyFunSuite
-import immortan.sqlite.Table
 
 
 class PaymentTrampolineRoutingSpec extends AnyFunSuite {

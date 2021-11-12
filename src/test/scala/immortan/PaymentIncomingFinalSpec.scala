@@ -1,14 +1,13 @@
 package immortan
 
 import fr.acinq.eclair._
-import immortan.utils.TestUtils._
-import immortan.utils.GraphUtils._
-import immortan.utils.PaymentUtils._
-import fr.acinq.eclair.wire.{GenericTlv, OnionCodecs, PaymentTimeout}
+import fr.acinq.eclair.wire.PaymentTimeout
 import immortan.fsm.{IncomingAborted, IncomingPaymentProcessor, IncomingPaymentReceiver, IncomingRevealed}
 import immortan.utils.ChannelUtils.{makeChannelMasterWithBasicGraph, makeHostedCommits}
+import immortan.utils.GraphUtils._
+import immortan.utils.PaymentUtils._
+import immortan.utils.TestUtils._
 import org.scalatest.funsuite.AnyFunSuite
-import fr.acinq.bitcoin.Crypto
 
 
 class PaymentIncomingFinalSpec extends AnyFunSuite {
@@ -22,7 +21,7 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
     val add1 = makeRemoteAddToFakeNodeId(partAmount = 100000L.msat, totalAmount = 100000L.msat, invoice.paymentHash, invoice.paymentSecret.get, remoteNodeInfo, cm)
 
     assert(cm.getPreimageMemo(invoice.paymentHash).isFailure)
-    assert(cm.getPaymentInfoMemo(invoice.paymentHash).get.status == PaymentStatus.PENDING)
+    assert(cm.payBag.getPaymentInfo(invoice.paymentHash).get.status == PaymentStatus.PENDING)
 
     val fsm = new IncomingPaymentReceiver(add1.fullTag, cm)
     fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: Nil)
@@ -30,7 +29,7 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
     WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
     WAIT_UNTIL_TRUE(fsm.data.asInstanceOf[IncomingRevealed].preimage == preimage)
     WAIT_UNTIL_TRUE(cm.getPreimageMemo(invoice.paymentHash).get == preimage)
-    WAIT_UNTIL_TRUE(cm.getPaymentInfoMemo(invoice.paymentHash).get.status == PaymentStatus.SUCCEEDED)
+    WAIT_UNTIL_TRUE(cm.payBag.getPaymentInfo(invoice.paymentHash).get.status == PaymentStatus.SUCCEEDED)
   }
 
   test("Fulfill multipart incoming payment") {
@@ -63,7 +62,7 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
     WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
     WAIT_UNTIL_TRUE(fsm.data.asInstanceOf[IncomingRevealed].preimage == preimage)
     WAIT_UNTIL_TRUE(cm.getPreimageMemo(invoice.paymentHash).get == preimage)
-    WAIT_UNTIL_TRUE(cm.getPaymentInfoMemo(invoice.paymentHash).get.status == PaymentStatus.SUCCEEDED)
+    WAIT_UNTIL_TRUE(cm.payBag.getPaymentInfo(invoice.paymentHash).get.status == PaymentStatus.SUCCEEDED)
 
     // Suppose user has restarted an app with only one part resolved in channels
 
@@ -76,7 +75,7 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
     WAIT_UNTIL_TRUE(fsm2.state == IncomingPaymentProcessor.FINALIZING)
     WAIT_UNTIL_TRUE(fsm2.data.asInstanceOf[IncomingRevealed].preimage == preimage)
     WAIT_UNTIL_TRUE(cm.getPreimageMemo(invoice.paymentHash).get == preimage)
-    WAIT_UNTIL_TRUE(cm.getPaymentInfoMemo(invoice.paymentHash).get.received == 100000L.msat) // Original amount is retained
+    WAIT_UNTIL_TRUE(cm.payBag.getPaymentInfo(invoice.paymentHash).get.received == 100000L.msat) // Original amount is retained
   }
 
   test("Fail multipart incoming payment when we run out of slots") {
@@ -140,7 +139,7 @@ class PaymentIncomingFinalSpec extends AnyFunSuite {
     WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
     WAIT_UNTIL_TRUE(fsm.data.asInstanceOf[IncomingRevealed].preimage == preimage)
     WAIT_UNTIL_TRUE(cm.getPreimageMemo(invoice.paymentHash).get == preimage)
-    WAIT_UNTIL_TRUE(cm.getPaymentInfoMemo(invoice.paymentHash).get.received == 110000.msat) // Sender has sent a bit more
+    WAIT_UNTIL_TRUE(cm.payBag.getPaymentInfo(invoice.paymentHash).get.received == 110000.msat) // Sender has sent a bit more
 
     fsm doProcess makeInFlightPayments(out = Nil, in = add3 :: Nil)
     WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.SHUTDOWN)

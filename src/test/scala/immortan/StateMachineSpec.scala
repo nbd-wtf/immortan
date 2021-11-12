@@ -1,9 +1,9 @@
 package immortan
 
-import immortan.utils.TestUtils._
 import immortan.crypto.StateMachine
-import org.scalatest.funsuite.AnyFunSuite
 import immortan.utils.Rx
+import immortan.utils.TestUtils._
+import org.scalatest.funsuite.AnyFunSuite
 
 
 class StateMachineSpec extends AnyFunSuite {

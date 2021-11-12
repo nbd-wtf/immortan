@@ -11,8 +11,8 @@ import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, NodeHop}
 import fr.acinq.eclair.wire.{GenericTlv, Onion, OnionTlv, UpdateAddHtlc}
 import immortan.ChannelMaster.{OutgoingAdds, ReasonableResolutions}
-import immortan.utils.GraphUtils._
 import immortan._
+import immortan.utils.GraphUtils._
 
 import scala.util.Failure
 

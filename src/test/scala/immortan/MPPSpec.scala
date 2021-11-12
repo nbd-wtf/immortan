@@ -1,17 +1,17 @@
 package immortan
 
-import immortan.fsm._
-import fr.acinq.eclair._
-import fr.acinq.eclair.wire._
-import immortan.utils.TestUtils._
-import immortan.utils.GraphUtils._
 import com.softwaremill.quicklens._
-import immortan.utils.ChannelUtils._
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
+import fr.acinq.eclair._
 import fr.acinq.eclair.channel.CMD_SOCKET_OFFLINE
 import fr.acinq.eclair.router.Graph.GraphStructure.DescAndCapacity
-import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteUpdateFail}
 import fr.acinq.eclair.router.Router.ChannelDesc
+import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteUpdateFail}
+import fr.acinq.eclair.wire._
+import immortan.fsm._
+import immortan.utils.ChannelUtils._
+import immortan.utils.GraphUtils._
+import immortan.utils.TestUtils._
 import org.scalatest.funsuite.AnyFunSuite
 
 

@@ -1,14 +1,14 @@
 package immortan
 
-import fr.acinq.eclair._
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair._
+import fr.acinq.eclair.channel.CMD_ADD_HTLC
+import fr.acinq.eclair.crypto.Sphinx.PaymentPacket
 import fr.acinq.eclair.crypto.SphinxSpec._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
-import fr.acinq.eclair.crypto.Sphinx.PaymentPacket
-import fr.acinq.eclair.channel.CMD_ADD_HTLC
-import org.scalatest.funsuite.AnyFunSuite
+import fr.acinq.eclair.wire._
 import immortan.crypto.Tools
+import org.scalatest.funsuite.AnyFunSuite
 
 
 class WireSpec extends AnyFunSuite {
