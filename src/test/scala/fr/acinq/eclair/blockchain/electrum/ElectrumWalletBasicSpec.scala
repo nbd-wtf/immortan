@@ -43,13 +43,13 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
   private val firstAccountKeys = (0 until 10).map(i => derivePublicKey(ewt.accountMaster, i)).toVector
   private val firstChangeKeys = (0 until 10).map(i => derivePublicKey(ewt.changeMaster, i)).toVector
 
-  private val state = ElectrumData(ewt,
-    Blockchain.fromCheckpoints(Block.RegtestGenesisBlock.hash, CheckPoint.loadFromChainHash(Block.RegtestGenesisBlock.hash)), firstAccountKeys, firstChangeKeys)
-    .copy(status = (firstAccountKeys ++ firstChangeKeys).map(key => ElectrumWalletType.computeScriptHash(Script.write(ewt.computePublicKeyScript(key.publicKey))) -> "").toMap)
+  private val chain = Blockchain.fromCheckpoints(Block.RegtestGenesisBlock.hash, CheckPoint.loadFromChainHash(Block.RegtestGenesisBlock.hash))
+  private val state = ElectrumData(ewt, chain, firstAccountKeys, firstChangeKeys, List.empty, Map.empty, Map.empty, Map.empty, Map.empty, Map.empty)
+    .copy(status = (firstAccountKeys ++ firstChangeKeys).map(key => computeScriptHash(Script.write(ewt.computePublicKeyScript(key.publicKey))) -> "").toMap)
 
   def addFunds(data: ElectrumData, key: ExtendedPublicKey, amount: Satoshi): ElectrumData = {
     val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(amount, ewt.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
-    val scriptHash = ElectrumWalletType.computeScriptHash(Script.write(ewt.computePublicKeyScript(key.publicKey)))
+    val scriptHash = computeScriptHash(Script.write(ewt.computePublicKeyScript(key.publicKey)))
     val scriptHashHistory = data.history.getOrElse(scriptHash, List.empty[ElectrumClient.TransactionHistoryItem])
     data.copy(
       history = data.history.updated(scriptHash, ElectrumClient.TransactionHistoryItem(100, tx.txid) :: scriptHashHistory),
@@ -59,7 +59,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
 
   def addFunds(data: ElectrumData, keyamount: (ExtendedPublicKey, Satoshi)): ElectrumData = {
     val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(keyamount._2, ewt.computePublicKeyScript(keyamount._1.publicKey)) :: Nil, lockTime = 0)
-    val scriptHash = ElectrumWalletType.computeScriptHash(Script.write(ewt.computePublicKeyScript(keyamount._1.publicKey)))
+    val scriptHash = computeScriptHash(Script.write(ewt.computePublicKeyScript(keyamount._1.publicKey)))
     val scriptHashHistory = data.history.getOrElse(scriptHash, List.empty[ElectrumClient.TransactionHistoryItem])
     data.copy(
       history = data.history.updated(scriptHash, ElectrumClient.TransactionHistoryItem(100, tx.txid) :: scriptHashHistory),
@@ -97,6 +97,14 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
   }
 
   def addFunds(data: ElectrumData, keyamounts: Seq[(ExtendedPublicKey, Satoshi)]): ElectrumData = keyamounts.foldLeft(data)(addFunds)
+
+  test("coin control") {
+    val state1 = addFunds(state, state.accountKeys.head, 1.btc)
+    val state2 = addFunds(state1, state1.accountKeys(1), 2.btc)
+    val state3 = addFunds(state2, state2.changeKeys(0), 0.5.btc)
+    val state4 = state3.copy(excludedOutPoints = state1.utxos.head.item.outPoint :: Nil)
+    assert(state4.balance.totalBalance == state3.balance.totalBalance - state1.balance.totalBalance)
+  }
 
   test("complete transactions (enough funds)") {
     val state1 = addFunds(state, state.accountKeys.head, 1.btc)
@@ -232,7 +240,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val spendTx1 = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(3), pay2pkh) :: Nil, lockTime = 0)
     val Success(response1) = state2.completeTransaction(spendTx1, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF, state2.utxos)
     val pk1 = state2.publicScriptChangeMap(response1.tx.txOut.filter(state2.isMine).head.publicKeyScript).publicKey
-    val changeScriptHash = ElectrumWalletType.computeScriptHash(Script.write(ewt.computePublicKeyScript(pk1))) // Change utxo updated
+    val changeScriptHash = computeScriptHash(Script.write(ewt.computePublicKeyScript(pk1))) // Change utxo updated
     val state3 = commitTransaction(response1.tx, state2).copy(status = state2.status.updated(changeScriptHash, "used-change-utxo"))
 
     assert(state3.balance.totalBalance == state2.balance.totalBalance - spendTx1.txOut.map(_.amount).sum - response1.fee)
@@ -261,7 +269,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val spendTx1 = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1.9999), pay2pkh) :: Nil, lockTime = 0)
     val Success(response1) = state3.completeTransaction(spendTx1, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF, state2.utxos)
     val pk1 = state3.publicScriptChangeMap(response1.tx.txOut.filter(state3.isMine).head.publicKeyScript).publicKey
-    val changeScriptHash = ElectrumWalletType.computeScriptHash(Script.write(ewt.computePublicKeyScript(pk1))) // Change utxo updated
+    val changeScriptHash = computeScriptHash(Script.write(ewt.computePublicKeyScript(pk1))) // Change utxo updated
     val state4 = commitTransaction(response1.tx, state3).copy(status = state3.status.updated(changeScriptHash, "used-change-utxo"))
 
     assert(state4.balance.totalBalance == state3.balance.totalBalance - spendTx1.txOut.map(_.amount).sum - response1.fee)
@@ -314,7 +322,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val spendTx1 = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(0.5), pay2pkh1) :: TxOut(Btc(1), pay2pkh2) :: TxOut(Btc(1.5), ourScript) :: Nil, lockTime = 0)
     val Success(response1) = state2.completeTransaction(spendTx1, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF, state2.utxos)
     val pk1 = state2.publicScriptChangeMap(response1.tx.txOut.filter(state2.isMine).head.publicKeyScript).publicKey
-    val changeScriptHash = ElectrumWalletType.computeScriptHash(Script.write(ewt.computePublicKeyScript(pk1))) // Change utxo updated
+    val changeScriptHash = computeScriptHash(Script.write(ewt.computePublicKeyScript(pk1))) // Change utxo updated
     val state3 = commitTransaction(response1.tx, state2).copy(status = state2.status.updated(changeScriptHash, "used-change-utxo"))
 
     assert(state3.balance.totalBalance == state2.balance.totalBalance - spendTx1.txOut.filterNot(state3.isMine).map(_.amount).sum - response1.fee)
@@ -363,7 +371,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val spendTx1 = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(3), pay2pkh) :: Nil, lockTime = 0)
     val Success(response1) = state2.completeTransaction(spendTx1, feerate / 10, dustLimit, EclairWallet.OPT_IN_FULL_RBF, state2.utxos)
     val pk1 = state2.publicScriptChangeMap(response1.tx.txOut.filter(state2.isMine).head.publicKeyScript).publicKey
-    val changeScriptHash = ElectrumWalletType.computeScriptHash(Script.write(ewt.computePublicKeyScript(pk1))) // Change utxo updated
+    val changeScriptHash = computeScriptHash(Script.write(ewt.computePublicKeyScript(pk1))) // Change utxo updated
     val state3 = commitTransaction(response1.tx, state2).copy(status = state2.status.updated(changeScriptHash, "used-change-utxo-1"))
 
     assert(state3.balance.totalBalance == state2.balance.totalBalance - spendTx1.txOut.map(_.amount).sum - response1.fee)
@@ -376,7 +384,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     assert(response2.tx.txOut.head.amount == state2.balance.totalBalance - response2.fee) // Bumped draining transaction has an increased fee
     assert(response1.tx.txIn.map(_.outPoint).toSet == response2.tx.txIn.map(_.outPoint).toSet) // Both txs spend same inputs
 
-    val changeScriptHash1 = ElectrumWalletType.computeScriptHash(Script.write(ewt.computePublicKeyScript(rerouteKey.publicKey))) // New change utxo updated
+    val changeScriptHash1 = computeScriptHash(Script.write(ewt.computePublicKeyScript(rerouteKey.publicKey))) // New change utxo updated
     val state4 = commitTransaction(response2.tx, state3).copy(status = state3.status.updated(changeScriptHash1, "used-change-utxo-2"))
     assert(state4.utxos.length == 2) // Two competing change outputs
     assert(state4.withOverridingTxids.utxos.length == 1) // But one output is overridden
@@ -393,7 +401,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     val txOut2 = TxOut(0.25.btc, ewt.computePublicKeyScript(key.publicKey))
 
     val tx0 = Transaction(version = 1, txIn = Nil, txOut = txOut1 :: txOut2 :: Nil, lockTime = 0)
-    val scriptHash = ElectrumWalletType.computeScriptHash(Script.write(ewt.computePublicKeyScript(key.publicKey)))
+    val scriptHash = computeScriptHash(Script.write(ewt.computePublicKeyScript(key.publicKey)))
     val scriptHashHistory = state2.history.getOrElse(scriptHash, List.empty[ElectrumClient.TransactionHistoryItem])
     val state3 = state2.copy(
       history = state2.history.updated(scriptHash, ElectrumClient.TransactionHistoryItem(100, tx0.txid) :: scriptHashHistory),

@@ -169,7 +169,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
       client.receiveOne(100.milliseconds)
     }
     val key = wallet.stateData.accountKeys(0)
-    val scriptHash = ElectrumWalletType.computeScriptHash(Script.write(ewt.computePublicKeyScript(key.publicKey)))
+    val scriptHash = computeScriptHash(Script.write(ewt.computePublicKeyScript(key.publicKey)))
     wallet ! ScriptHashSubscriptionResponse(scriptHash, ByteVector32(ByteVector.fill(32)(1)).toHex)
     client.expectMsg(GetScriptHashHistory(scriptHash))
 
@@ -220,7 +220,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
       client.receiveOne(100.milliseconds)
     }
     // tell wallet that there is something for our first account key
-    val scriptHash = ElectrumWalletType.computeScriptHash(Script.write(ewt.computePublicKeyScript(wallet.stateData.accountKeys(0).publicKey)))
+    val scriptHash = computeScriptHash(Script.write(ewt.computePublicKeyScript(wallet.stateData.accountKeys(0).publicKey)))
     wallet ! ScriptHashSubscriptionResponse(scriptHash, "010101")
     client.expectMsg(GetScriptHashHistory(scriptHash))
     assert(wallet.stateData.status(scriptHash) == "010101")
@@ -239,7 +239,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
       client.receiveOne(100.milliseconds)
     }
     val key = wallet.stateData.accountKeys(1)
-    val scriptHash = ElectrumWalletType.computeScriptHash(Script.write(ewt.computePublicKeyScript(key.publicKey)))
+    val scriptHash = computeScriptHash(Script.write(ewt.computePublicKeyScript(key.publicKey)))
     wallet ! ScriptHashSubscriptionResponse(scriptHash, ByteVector32(ByteVector.fill(32)(2)).toHex)
     client.expectMsg(GetScriptHashHistory(scriptHash))
 
@@ -258,7 +258,8 @@ class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuit
     val data = {
       val firstAccountKeys = (0 until EclairWallet.MAX_RECEIVE_ADDRESSES).map(i => derivePublicKey(ewt.accountMaster, i)).toVector
       val firstChangeKeys = (0 until EclairWallet.MAX_RECEIVE_ADDRESSES).map(i => derivePublicKey(ewt.changeMaster, i)).toVector
-      val data1 = ElectrumData(ewt, Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header), firstAccountKeys, firstChangeKeys)
+      val data1 = ElectrumData(ewt, Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header),
+        firstAccountKeys, firstChangeKeys, List.empty, Map.empty, Map.empty, Map.empty, Map.empty, Map.empty)
 
       val amount1 = 1000000.sat
       val amount2 = 1500000.sat
@@ -409,7 +410,7 @@ object ElectrumWalletSimulatedClientSpec {
         }
         val data1 = data.copy(history = history1, transactions = data.transactions + (tx.txid -> tx))
         val history2 = tx.txIn.filter(i => data1.isMine(i)).foldLeft(data1.history) { case (a, b) =>
-          addToHistory(a, ElectrumWalletType.computeScriptHash(Script.write(ewt.computePublicKeyScript(ewt.extractPubKeySpentFrom(b).get))), TransactionHistoryItem(100000, tx.txid))
+          addToHistory(a, computeScriptHash(Script.write(ewt.computePublicKeyScript(ewt.extractPubKeySpentFrom(b).get))), TransactionHistoryItem(100000, tx.txid))
         }
         val data2 = data1.copy(history = history2)
         updateStatus(data2)
