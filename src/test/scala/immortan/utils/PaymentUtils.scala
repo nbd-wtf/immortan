@@ -19,7 +19,7 @@ import scala.util.Failure
 
 object PaymentUtils {
   def createFinalAdd(partAmount: MilliSatoshi, totalAmount: MilliSatoshi, paymentHash: ByteVector32, paymentSecret: ByteVector32, from: PublicKey, to: PublicKey, cltvDelta: Int, tlvs: Seq[GenericTlv] = Nil): UpdateAddHtlc = {
-    val update = makeUpdate(ShortChannelId("100x100x100"), from, to, 1.msat, 10, cltvDelta = CltvExpiryDelta(cltvDelta), minHtlc = 10L.msat, maxHtlc = 50000000.msat)
+    val update = makeUpdate(ShortChannelId.produce("100x100x100"), from, to, 1.msat, 10, cltvDelta = CltvExpiryDelta(cltvDelta), minHtlc = 10L.msat, maxHtlc = 50000000.msat)
     val finalHop = ChannelHop(GraphEdge(ChannelDesc(update.shortChannelId, from, to), updExt = ChannelUpdateExt fromUpdate update))
 
     val finalPayload = Onion.createMultiPartPayload(partAmount, totalAmount, update.cltvExpiryDelta.toCltvExpiry(0L), paymentSecret, userCustomTlvs = tlvs)
@@ -77,7 +77,7 @@ object PaymentUtils {
   def createTrampolineAdd(pr: PaymentRequest, outerPartAmount: MilliSatoshi, from: PublicKey, toTrampoline: PublicKey, trampolineAmountTotal: MilliSatoshi,
                           trampolineExpiry: CltvExpiry, trampolineOnion: Sphinx.PacketAndSecrets, outerPaymentSecret: ByteVector32): UpdateAddHtlc = {
 
-    val update = makeUpdate(ShortChannelId("100x100x100"), from, toTrampoline, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 50000000.msat)
+    val update = makeUpdate(ShortChannelId.produce("100x100x100"), from, toTrampoline, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 50000000.msat)
     val finalHop = ChannelHop(GraphEdge(ChannelDesc(update.shortChannelId, from, toTrampoline), updExt = ChannelUpdateExt.fromUpdate(update)))
 
     val finalOuterPayload = Onion.createMultiPartPayload(outerPartAmount, trampolineAmountTotal, trampolineExpiry, outerPaymentSecret, OnionTlv.TrampolineOnion(trampolineOnion.packet) :: Nil)

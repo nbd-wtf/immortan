@@ -161,11 +161,11 @@ final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: NormalCommits, fun
   override def withNewCommits(cs: NormalCommits): HasNormalCommitments = copy(commitments = cs)
 }
 
-final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: NormalCommits, shortChannelId: ShortChannelId, lastSent: FundingLocked) extends ChannelData with HasNormalCommitments {
+final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: NormalCommits, shortChannelId: Long, lastSent: FundingLocked) extends ChannelData with HasNormalCommitments {
   override def withNewCommits(cs: NormalCommits): HasNormalCommitments = copy(commitments = cs)
 }
 
-final case class DATA_NORMAL(commitments: NormalCommits, shortChannelId: ShortChannelId, feeUpdateRequired: Boolean = false, extParams: List[ByteVector] = Nil,
+final case class DATA_NORMAL(commitments: NormalCommits, shortChannelId: Long, feeUpdateRequired: Boolean = false, extParams: List[ByteVector] = Nil,
                              localShutdown: Option[Shutdown] = None, remoteShutdown: Option[Shutdown] = None) extends ChannelData with HasNormalCommitments {
 
   override def withNewCommits(cs: NormalCommits): HasNormalCommitments = copy(commitments = cs)

@@ -20,10 +20,10 @@ class PathfinderSpec extends AnyFunSuite {
     val channel1AS: ChannelAnnouncement = makeAnnouncement(5L, a, s) // To be excluded because it's a ghost channel
     val channel2ASOneSideUpdate: ChannelAnnouncement = makeAnnouncement(6L, a, s) // To be excluded because it misses one update
 
-    val update1ASFromA: ChannelUpdate = makeUpdate(ShortChannelId(5L), a, s, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
-    val update1ASFromS: ChannelUpdate = makeUpdate(ShortChannelId(5L), s, a, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val update1ASFromA: ChannelUpdate = makeUpdate(5L, a, s, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val update1ASFromS: ChannelUpdate = makeUpdate(5L, s, a, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
 
-    val update2ASFromSOneSide: ChannelUpdate = makeUpdate(ShortChannelId(6L), s, a, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val update2ASFromSOneSide: ChannelUpdate = makeUpdate(6L, s, a, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
 
     val addChannelAnnouncementNewSqlPQ = normalStore.db.makePreparedQuery(normalStore.announceTable.newSql)
     val addChannelUpdateByPositionNewSqlPQ = normalStore.db.makePreparedQuery(normalStore.updateTable.newSql)
@@ -103,7 +103,7 @@ class PathfinderSpec extends AnyFunSuite {
 
     val fromKey = randomKey.publicKey
     val fakeLocalEdge = Tools.mkFakeLocalEdge(from = fromKey, toPeer = a)
-    val edgeDSFromD = makeEdge(ShortChannelId(6L), d, s, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val edgeDSFromD = makeEdge(6L, d, s, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
     val routeRequest = makeRouteRequest(100000.msat, getParams(routerConf, 100000.msat, offChainFeeRatio), fromKey, fakeLocalEdge).copy(target = s)
 
     // Assisted channel is now reachable
@@ -113,21 +113,21 @@ class PathfinderSpec extends AnyFunSuite {
     WAIT_UNTIL_TRUE(response.asInstanceOf[RouteFound].route.hops.map(_.nextNodeId) == a :: c :: d :: s :: Nil)
 
     // Assisted channel has been updated
-    val updateDSFromD = makeEdge(ShortChannelId(6L), d, s, 4.msat, 100, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val updateDSFromD = makeEdge(6L, d, s, 4.msat, 100, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
     pf process updateDSFromD
     pf process PathFinder.FindRoute(sender, routeRequest)
     WAIT_UNTIL_TRUE(response.asInstanceOf[RouteFound].route.hops.map(_.nextNodeId) == a :: c :: d :: s :: Nil)
     WAIT_UNTIL_TRUE(response.asInstanceOf[RouteFound].route.routedPerChannelHop.last._2.edge.updExt.update.feeBaseMsat == 4.msat)
 
     // Public channel has been updated, CLTV got worse so another channel has been selected
-    val updateACFromA1: ChannelUpdate = makeUpdate(ShortChannelId(2L), a, c, 1.msat, 10, cltvDelta = CltvExpiryDelta(154), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val updateACFromA1: ChannelUpdate = makeUpdate(2L, a, c, 1.msat, 10, cltvDelta = CltvExpiryDelta(154), minHtlc = 10L.msat, maxHtlc = 500000.msat)
     pf process updateACFromA1
     pf process PathFinder.FindRoute(sender, routeRequest)
     WAIT_UNTIL_TRUE(response.asInstanceOf[RouteFound].route.hops.map(_.nextNodeId) == a :: b :: d :: s :: Nil)
 
     // Another public channel has been updated, a better one got disabled so the one with worse fee is selected again
     val disabled = Announcements.makeChannelFlags(isNode1 = Announcements.isNode1(a, b), enable = false)
-    val updateABFromA1 = makeUpdate(ShortChannelId(1L), a, b, 1.msat, 10, cltvDelta = CltvExpiryDelta(14), minHtlc = 10L.msat, maxHtlc = 500000.msat).copy(channelFlags = disabled)
+    val updateABFromA1 = makeUpdate(1L, a, b, 1.msat, 10, cltvDelta = CltvExpiryDelta(14), minHtlc = 10L.msat, maxHtlc = 500000.msat).copy(channelFlags = disabled)
     pf process updateABFromA1
     // Disabled channel is updated and still present in graph, but outgoing FSM instructs pathfinder to omit it
     pf process PathFinder.FindRoute(sender, routeRequest.copy(ignoreChannels = Set(ChannelDesc(updateABFromA1.shortChannelId, a, b))))
@@ -135,7 +135,7 @@ class PathfinderSpec extends AnyFunSuite {
 
     // The only assisted channel got disabled, payee is now unreachable
     val disabled1 = Announcements.makeChannelFlags(isNode1 = Announcements.isNode1(d, s), enable = false)
-    val updateDSFromD1 = makeUpdate(ShortChannelId(6L), d, s, 2.msat, 100, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat).copy(channelFlags = disabled1)
+    val updateDSFromD1 = makeUpdate(6L, d, s, 2.msat, 100, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat).copy(channelFlags = disabled1)
     pf process updateDSFromD1
     // Disabled channel is updated and still present in graph, but outgoing FSM instructs pathfinder to omit it
     pf process PathFinder.FindRoute(sender, routeRequest.copy(ignoreChannels = Set(ChannelDesc(updateDSFromD1.shortChannelId, d, s))))

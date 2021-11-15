@@ -24,7 +24,7 @@ object GraphUtils {
 
   val offChainFeeRatio = 0.01 // %
 
-  def makeUpdate(shortChannelId: ShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey,
+  def makeUpdate(shortChannelId: Long, nodeId1: PublicKey, nodeId2: PublicKey,
                  feeBase: MilliSatoshi, feeProportionalMillionth: Int, cltvDelta: CltvExpiryDelta,
                  minHtlc: MilliSatoshi, maxHtlc: MilliSatoshi): ChannelUpdate = {
 
@@ -35,7 +35,7 @@ object GraphUtils {
       htlcMaximumMsat = maxHtlc.asSome)
   }
 
-  def makeEdge(shortChannelId: ShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionth: Int,
+  def makeEdge(shortChannelId: Long, nodeId1: PublicKey, nodeId2: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionth: Int,
                minHtlc: MilliSatoshi, maxHtlc: MilliSatoshi, cltvDelta: CltvExpiryDelta = CltvExpiryDelta(0), score: Int = 1): GraphEdge = {
 
     val update = makeUpdate(shortChannelId, nodeId1, nodeId2, feeBase, feeProportionalMillionth, cltvDelta, minHtlc, maxHtlc)
@@ -49,7 +49,7 @@ object GraphUtils {
     val (nodeId1, nodeId2) = if (isNode1) (nodeIdA, nodeIdB) else (nodeIdB, nodeIdA)
 
     ChannelAnnouncement(PlaceHolderSig, PlaceHolderSig, PlaceHolderSig, PlaceHolderSig, Features.empty,
-      Block.RegtestGenesisBlock.hash, ShortChannelId(shortChannelId), nodeId1, nodeId2,
+      Block.RegtestGenesisBlock.hash, shortChannelId, nodeId1, nodeId2,
       randomKey.publicKey, randomKey.publicKey)
   }
 
@@ -72,17 +72,17 @@ object GraphUtils {
     //    a     d
     //     \ c /
 
-    val updateABFromA: ChannelUpdate = makeUpdate(ShortChannelId(1L), a, b, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
-    val updateABFromB: ChannelUpdate = makeUpdate(ShortChannelId(1L), b, a, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val updateABFromA: ChannelUpdate = makeUpdate(1L, a, b, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val updateABFromB: ChannelUpdate = makeUpdate(1L, b, a, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
 
-    val updateACFromA: ChannelUpdate = makeUpdate(ShortChannelId(2L), a, c, 1.msat, 10, cltvDelta = CltvExpiryDelta(134), minHtlc = 10L.msat, maxHtlc = 500000.msat)
-    val updateACFromC: ChannelUpdate = makeUpdate(ShortChannelId(2L), c, a, 1.msat, 10, cltvDelta = CltvExpiryDelta(134), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val updateACFromA: ChannelUpdate = makeUpdate(2L, a, c, 1.msat, 10, cltvDelta = CltvExpiryDelta(134), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val updateACFromC: ChannelUpdate = makeUpdate(2L, c, a, 1.msat, 10, cltvDelta = CltvExpiryDelta(134), minHtlc = 10L.msat, maxHtlc = 500000.msat)
 
-    val updateBDFromB: ChannelUpdate = makeUpdate(ShortChannelId(3L), b, d, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
-    val updateBDFromD: ChannelUpdate = makeUpdate(ShortChannelId(3L), d, b, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val updateBDFromB: ChannelUpdate = makeUpdate(3L, b, d, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val updateBDFromD: ChannelUpdate = makeUpdate(3L, d, b, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
 
-    val updateCDFromC: ChannelUpdate = makeUpdate(ShortChannelId(4L), c, d, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
-    val updateCDFromD: ChannelUpdate = makeUpdate(ShortChannelId(4L), d, c, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val updateCDFromC: ChannelUpdate = makeUpdate(4L, c, d, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val updateCDFromD: ChannelUpdate = makeUpdate(4L, d, c, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
 
     val addChannelAnnouncementNewSqlPQ = store.db.makePreparedQuery(store.announceTable.newSql)
 
@@ -114,11 +114,11 @@ object GraphUtils {
 
     //    a  =  d
 
-    val updateAD1FromA: ChannelUpdate = makeUpdate(ShortChannelId(1L), a, d, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
-    val updateAD1FromD: ChannelUpdate = makeUpdate(ShortChannelId(1L), d, a, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val updateAD1FromA: ChannelUpdate = makeUpdate(1L, a, d, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val updateAD1FromD: ChannelUpdate = makeUpdate(1L, d, a, 1.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = 500000.msat)
 
-    val updateAD2FromA: ChannelUpdate = makeUpdate(ShortChannelId(2L), a, d, 1.msat, 10, cltvDelta = CltvExpiryDelta(134), minHtlc = 10L.msat, maxHtlc = 500000.msat)
-    val updateAD2FromD: ChannelUpdate = makeUpdate(ShortChannelId(2L), d, a, 1.msat, 10, cltvDelta = CltvExpiryDelta(134), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val updateAD2FromA: ChannelUpdate = makeUpdate(2L, a, d, 1.msat, 10, cltvDelta = CltvExpiryDelta(134), minHtlc = 10L.msat, maxHtlc = 500000.msat)
+    val updateAD2FromD: ChannelUpdate = makeUpdate(2L, d, a, 1.msat, 10, cltvDelta = CltvExpiryDelta(134), minHtlc = 10L.msat, maxHtlc = 500000.msat)
 
     val addChannelAnnouncementNewSqlPQ = store.db.makePreparedQuery(store.announceTable.newSql)
 

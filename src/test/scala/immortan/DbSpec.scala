@@ -31,10 +31,10 @@ class DbSpec extends AnyFunSuite {
     val interface = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, HtlcInfoTable)
     val sqLiteChannel = new SQLiteChannel(interface, null)
 
-    sqLiteChannel.putHtlcInfos(inserts, ShortChannelId(100L), commitNumber = 100)
+    sqLiteChannel.putHtlcInfos(inserts, sid = 100L, commitNumber = 100)
     assert(sqLiteChannel.htlcInfos(commitNumer = 100).map(_.cltvExpiry) == inserts.map(_.add.cltvExpiry))
 
-    sqLiteChannel.rmHtlcInfos(ShortChannelId(100L))
+    sqLiteChannel.rmHtlcInfos(sid = 100L)
     assert(sqLiteChannel.htlcInfos(commitNumer = 100).isEmpty)
   }
 }

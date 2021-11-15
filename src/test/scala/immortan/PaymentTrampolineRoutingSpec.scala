@@ -143,7 +143,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.SENDING)
 
     val outPacket = WAIT_UNTIL_RESULT(cm.opm.data.payments(reasonableTrampoline1.fullTag).data.inFlightParts.head.cmd.packetAndSecrets.packet)
-    val ourAdd = UpdateAddHtlc(null, 1, null, paymentHash, null, outPacket, null)
+    val ourAdd = UpdateAddHtlc(null, 1, MilliSatoshi(0L), paymentHash, CltvExpiry(100L), outPacket, null)
 
     val ourMinimalFee = fsm.relayFee(reasonableTrampoline3.packet.innerPayload, LNParams.trampoline)
     WAIT_UNTIL_TRUE(cm.opm.data.payments(reasonableTrampoline1.fullTag).data.cmd.split.myPart == pr.amount.get) // With trampoline-to-legacy we find out a final amount
@@ -464,7 +464,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     assert(!fsm.data.asInstanceOf[TrampolineStopping].retry)
 
     val senderDataSnapshot = cm.opm.data.payments(reasonableTrampoline1.fullTag).data
-    val ourAdd = UpdateAddHtlc(null, 1, null, paymentHash, null, senderDataSnapshot.inFlightParts.head.cmd.packetAndSecrets.packet, null)
+    val ourAdd = UpdateAddHtlc(null, 1, MilliSatoshi(0L), paymentHash, CltvExpiry(100L), senderDataSnapshot.inFlightParts.head.cmd.packetAndSecrets.packet, null)
     cm.opm process RemoteFulfill(ourAdd, preimage)
 
     fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = reasonableTrampoline2 :: Nil)

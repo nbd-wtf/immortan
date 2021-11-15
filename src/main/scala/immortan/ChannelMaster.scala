@@ -1,7 +1,5 @@
 package immortan
 
-import java.util.concurrent.atomic.AtomicLong
-
 import com.google.common.cache.LoadingCache
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -22,6 +20,7 @@ import immortan.fsm._
 import immortan.utils.{PaymentRequestExt, Rx}
 import rx.lang.scala.Subject
 
+import java.util.concurrent.atomic.AtomicLong
 import scala.collection.mutable
 import scala.concurrent.duration._
 import scala.util.Try
@@ -55,7 +54,7 @@ object ChannelMaster {
 
   def dangerousHCRevealed(allRevealed: Map[ByteVector32, RevealedLocalFulfills], tip: Long, hash: ByteVector32): Iterable[LocalFulfill] = {
     // Of all incoming payments inside of HCs for which we have revealed a preimage, find those which are dangerously close to expiration, but not expired yet, but not hopelessly close
-    allRevealed.getOrElse(hash, Iterable.empty).filter(tip >= _.theirAdd.cltvExpiry.toLong - LNParams.hcFulfillSafetyBlocks).filter(tip <= _.theirAdd.cltvExpiry.toLong - 3)
+    allRevealed.getOrElse(hash, Iterable.empty).filter(tip >= _.theirAdd.cltvExpiry.underlying - LNParams.hcFulfillSafetyBlocks).filter(tip <= _.theirAdd.cltvExpiry.underlying - 3)
   }
 }
 

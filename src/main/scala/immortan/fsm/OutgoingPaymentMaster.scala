@@ -49,8 +49,8 @@ case class UnreadableRemoteFailure(route: Route) extends PaymentFailure {
 }
 
 case class RemoteFailure(packet: Sphinx.DecryptedFailurePacket, route: Route) extends PaymentFailure {
-  def originChannelId: String = route.getEdgeForNode(packet.originNode).map(_.updExt.update.shortChannelId.toString).getOrElse("unknown channel")
-  override def asString: String = s"- ${packet.failureMessage.message} at $originChannelId: ${route.asString}"
+  private def originChannelId = route.getEdgeForNode(packet.originNode).map(_.updExt.update.shortChannelId).map(ShortChannelId.asString)
+  override def asString: String = s"- ${packet.failureMessage.message} at ${originChannelId getOrElse "n/a"}: ${route.asString}"
 }
 
 // Master commands and data
