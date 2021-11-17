@@ -13,8 +13,8 @@ import immortan.Channel.channelContext
 import immortan.crypto.Tools._
 import immortan.crypto.{CanBeRepliedTo, StateMachine}
 
-import scala.concurrent.{ExecutionContextExecutor, Future}
 import scala.concurrent.duration._
+import scala.concurrent.{ExecutionContextExecutor, Future}
 import scala.util.Failure
 
 
@@ -34,13 +34,6 @@ object Channel {
     case data: HostedCommits => data.channelId -> ChannelHosted.make(listeners, data, bag)
     case _ => throw new RuntimeException
   }.toMap
-
-  def totalBalance(chans: Iterable[Channel] = Nil): MilliSatoshi =
-    chans.collect { case chan if isOperationalOrWaiting(chan) => chan.data }.map {
-      case data: HasNormalCommitments => data.commitments.latestReducedRemoteSpec.toRemote
-      case data: HostedCommits => data.nextLocalSpec.toLocal
-      case _ => MilliSatoshi(0L)
-    }.sum
 
   def chanAndCommitsOpt(chan: Channel): Option[ChanAndCommits] = chan.data match {
     case data: HasNormalCommitments => ChanAndCommits(chan, data.commitments).asSome
@@ -65,6 +58,8 @@ object Channel {
   def isOperationalAndOpen(chan: Channel): Boolean = isOperational(chan) && OPEN == chan.state
 
   def isOperationalAndSleeping(chan: Channel): Boolean = isOperational(chan) && SLEEPING == chan.state
+
+  def totalBalance(chans: Iterable[Channel] = Nil): MilliSatoshi = chans.filter(isOperationalOrWaiting).map(_.data.ourBalance).sum
 }
 
 trait Channel extends StateMachine[ChannelData] with CanBeRepliedTo { me =>

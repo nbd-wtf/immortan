@@ -198,7 +198,7 @@ class TransactionsSpec extends AnyFunSuite {
   }
 
   test("generate valid commitment with some outputs that don't materialize (default commitment format)") {
-    val spec = CommitmentSpec(htlcs = Set.empty, feeratePerKw = feeratePerKw, toLocal = 400.millibtc.toMilliSatoshi, toRemote = 300.millibtc.toMilliSatoshi)
+    val spec = CommitmentSpec(htlcs = Set.empty, feeratePerKw = feeratePerKw, toLocal = 400.millibtc.toSatoshi.toMilliSatoshi, toRemote = 300.millibtc.toSatoshi.toMilliSatoshi)
     val commitFee = commitTxFee(localDustLimit, spec, DefaultCommitmentFormat)
     val belowDust = (localDustLimit * 0.9).toMilliSatoshi
     val belowDustWithFee = (localDustLimit + commitFee * 0.9).toMilliSatoshi
@@ -250,9 +250,9 @@ class TransactionsSpec extends AnyFunSuite {
 
     // htlc1 and htlc2 are regular IN/OUT htlcs
     val paymentPreimage1 = randomBytes32
-    val htlc1 = UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliBtc(100).toMilliSatoshi, sha256(paymentPreimage1), CltvExpiry(300), emptyOnionPacket)
+    val htlc1 = UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliBtc(100).toSatoshi.toMilliSatoshi, sha256(paymentPreimage1), CltvExpiry(300), emptyOnionPacket)
     val paymentPreimage2 = randomBytes32
-    val htlc2 = UpdateAddHtlc(ByteVector32.Zeroes, 1, MilliBtc(200).toMilliSatoshi, sha256(paymentPreimage2), CltvExpiry(310), emptyOnionPacket)
+    val htlc2 = UpdateAddHtlc(ByteVector32.Zeroes, 1, MilliBtc(200).toSatoshi.toMilliSatoshi, sha256(paymentPreimage2), CltvExpiry(310), emptyOnionPacket)
     // htlc3 and htlc4 are dust IN/OUT htlcs, with an amount large enough to be included in the commit tx, but too small to be claimed at 2nd stage
     val paymentPreimage3 = randomBytes32
     val htlc3 = UpdateAddHtlc(ByteVector32.Zeroes, 2, (localDustLimit + weight2fee(feeratePerKw, DefaultCommitmentFormat.htlcTimeoutWeight)).toMilliSatoshi,
@@ -273,8 +273,8 @@ class TransactionsSpec extends AnyFunSuite {
         IncomingHtlc(htlc6)
       ),
       feeratePerKw = feeratePerKw,
-      toLocal = 400.millibtc.toMilliSatoshi,
-      toRemote = 300.millibtc.toMilliSatoshi)
+      toLocal = 400.millibtc.toSatoshi.toMilliSatoshi,
+      toRemote = 300.millibtc.toSatoshi.toMilliSatoshi)
 
     val outputs = makeCommitTxOutputs(localIsFunder = true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localFundingPriv.publicKey, remoteFundingPriv.publicKey, spec, DefaultCommitmentFormat)
 

@@ -250,23 +250,17 @@ object Onion {
     val outgoingCltv = records.get[OutgoingCltv].get.cltv
     val outgoingNodeId = records.get[OutgoingNodeId].get.nodeId
     // The following fields are only included in the trampoline-to-legacy case.
-    val totalAmount = records.get[PaymentData].map(_.totalAmount match {
-      case MilliSatoshi(0) => amountToForward
-      case totalAmount => totalAmount
-    }).getOrElse(amountToForward)
+    val totalAmount = records.get[PaymentData].map(_.totalAmount).filter(_.toLong != 0L).getOrElse(amountToForward)
     val paymentSecret = records.get[PaymentData].map(_.secret)
     val invoiceFeatures = records.get[InvoiceFeatures].map(_.features)
     val invoiceRoutingInfo = records.get[InvoiceRoutingInfo].map(_.extraHops)
   }
 
   case class FinalTlvPayload(records: TlvStream[OnionTlv]) extends FinalPayload with TlvFormat {
-    override val amount = records.get[AmountToForward].get.amount
+    override val amount: MilliSatoshi = records.get[AmountToForward].get.amount
     override val expiry = records.get[OutgoingCltv].get.cltv
     override val paymentSecret = records.get[PaymentData].get.secret
-    override val totalAmount = records.get[PaymentData].map(_.totalAmount match {
-      case MilliSatoshi(0) => amount
-      case totalAmount => totalAmount
-    }).getOrElse(amount)
+    override val totalAmount = records.get[PaymentData].map(_.totalAmount).filter(_.toLong != 0L).getOrElse(amount)
     override val paymentPreimage = records.get[KeySend].map(_.paymentPreimage)
   }
 

@@ -17,6 +17,7 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Router._
@@ -168,9 +169,9 @@ object Graph {
 
     val AVG_BLOCK_INTERVAL_MSEC: Long = 10 * 60 * 1000L
 
-    val CAPACITY_CHANNEL_LOW: MilliSatoshi = fr.acinq.bitcoin.MilliBtc(10).toMilliSatoshi
+    val CAPACITY_CHANNEL_LOW: MilliSatoshi = Satoshi(100000).toMilliSatoshi
 
-    val CAPACITY_CHANNEL_HIGH: MilliSatoshi = fr.acinq.bitcoin.Btc(10).toMilliSatoshi
+    val CAPACITY_CHANNEL_HIGH: MilliSatoshi = Satoshi(1000000000).toMilliSatoshi
 
     val CLTV_LOW = 9
 

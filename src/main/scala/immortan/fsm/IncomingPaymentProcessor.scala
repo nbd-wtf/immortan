@@ -61,7 +61,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster) ex
       // Important: when creating new invoice we SPECIFICALLY DO NOT put a preimage into preimage storage
       // we only do that once we reveal a preimage, thus letting us know that we have already revealed it on restart
       // having PaymentStatus.SUCCEEDED in payment db is not enough because that table does not get included in backup
-      lastAmountIn = adds.foldLeft(0L.msat) { case (accum, incomingLocal) => accum + incomingLocal.add.amountMsat }
+      lastAmountIn = adds.foldLeft(0L.msat)(_ + _.add.amountMsat)
 
       paymentInfoOpt match {
         case None => cm.getPreimageMemo.get(fullTag.paymentHash).toOption match {
@@ -247,7 +247,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
       val outs = inFlight.out.getOrElse(fullTag, default = Nil)
       val ins = inFlight.in.getOrElse(fullTag, default = Nil).asInstanceOf[ReasonableTrampolines]
       // We have either just got another incoming notification or restored an app with some parts present
-      lastAmountIn = ins.foldLeft(0L.msat) { case (accum, incoming) => accum + incoming.add.amountMsat }
+      lastAmountIn = ins.foldLeft(0L.msat)(_ + _.add.amountMsat)
 
       cm.getPreimageMemo.get(fullTag.paymentHash) match {
         case Success(preimage) => becomeFinalRevealed(preimage, ins)
