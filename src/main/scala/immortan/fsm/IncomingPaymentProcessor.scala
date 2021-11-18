@@ -172,7 +172,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
 
   def relayFee(innerPayload: Onion.NodeRelayPayload, params: TrampolineOn): MilliSatoshi = {
     val linearProportional = proportionalFee(innerPayload.amountToForward, params.feeProportionalMillionths)
-    trampolineFee(linearProportional.toLong, params.feeBaseMsat, params.exponent, params.logExponent)
+    trampolineFee(linearProportional.toLong, params.exponent, params.logExponent)
   }
 
   def validateRelay(params: TrampolineOn, adds: ReasonableTrampolines, blockHeight: Long): Option[FailureMessage] = firstOpt(adds) collectFirst {

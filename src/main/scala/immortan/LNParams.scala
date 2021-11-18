@@ -78,9 +78,7 @@ object LNParams {
   var fiatRates: FiatRates = _
   var feeRates: FeeRates = _
 
-  var trampoline =
-    TrampolineOn(minPayment, maximumMsat = 1000000000L.msat, feeBaseMsat = 10000L.msat,
-      feeProportionalMillionths = 1000L, exponent = 0.0, logExponent = 0.0, minRoutingCltvExpiryDelta)
+  var trampoline: TrampolineOn = TrampolineOn(minPayment, maximumMsat = 1000000000L.msat, feeProportionalMillionths = 1000L, exponent = 0.0, logExponent = 0.0, minRoutingCltvExpiryDelta)
 
   // Last known chain tip (zero is unknown)
   val blockCount: AtomicLong = new AtomicLong(0L)
@@ -210,7 +208,7 @@ class SyncParams {
   val minNormalChansForPHC = 5 // How many normal chans a node must have to be eligible for PHCs
   val maxPHCPerNode = 3 // How many PHCs a node can have in total
 
-  val minCapacity: MilliSatoshi = MilliSatoshi(600000000L) // 600k sat
+  val minCapacity: MilliSatoshi = MilliSatoshi(900000000L) // 900k sat
   val maxNodesToSyncFrom = 2 // How many disjoint peers to use for majority sync
   val acceptThreshold = 1 // ShortIds and updates are accepted if confirmed by more than this peers
   val messagesToAsk = 400 // Ask for this many messages from peer before they say this chunk is done

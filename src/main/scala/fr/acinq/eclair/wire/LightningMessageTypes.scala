@@ -369,6 +369,6 @@ sealed trait TrampolineStatus extends LightningMessage
 
 case object TrampolineUndesired extends TrampolineStatus
 
-case class TrampolineOn(minimumMsat: MilliSatoshi, maximumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi,
+case class TrampolineOn(minimumMsat: MilliSatoshi, maximumMsat: MilliSatoshi,
                         feeProportionalMillionths: Long, exponent: Double, logExponent: Double,
                         cltvExpiryDelta: CltvExpiryDelta) extends TrampolineStatus

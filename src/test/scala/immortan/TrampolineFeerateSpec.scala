@@ -6,27 +6,82 @@ import org.scalatest.funsuite.AnyFunSuite
 
 class TrampolineFeerateSpec extends AnyFunSuite {
   test("Non-linear fees for trampoline routing") {
+    {
+      val payment = 20000000L.msat
+      val linear = proportionalFee(payment, proportionalFee = 1000)
+      val trampolineModerateDiscount = trampolineFee(linear.toLong, exponent = 0.82D, logExponent = 2.2D)
+      val trampolineLargeDiscount = trampolineFee(linear.toLong, exponent = 0.79D, logExponent = 2.1D)
+      val trampolineExtraLargeDiscount = trampolineFee(linear.toLong, exponent = 0.76D, logExponent = 2.0D)
 
-    val smallPayment = 1000000L.msat
-    val smallLinear = proportionalFee(smallPayment, proportionalFee = 1000)
-    val smallTrampolineLinear = trampolineFee(smallLinear.toLong, baseFee = 0L.msat, exponent = 1.0D, logExponent = 0.0D)
-    val smallTrampolineModerateDiscount = trampolineFee(smallLinear.toLong, baseFee = 0L.msat, exponent = 0.97D, logExponent = 3.9D)
-    val smallTrampolineLargeDiscount = trampolineFee(smallLinear.toLong, baseFee = 0L.msat, exponent = 0.9D, logExponent = 4.0D)
+      assert(linear == 20000L.msat)
+      assert(trampolineModerateDiscount == 3520.msat)
+      assert(trampolineLargeDiscount == 2623.msat)
+      assert(trampolineExtraLargeDiscount == 1955.msat)
+    }
 
-    assert(smallLinear == 1000L.msat)
-    assert(smallTrampolineLinear == 1001L.msat) // About the same as linear
-    assert(smallTrampolineModerateDiscount == 2690L.msat) // Overcharges for small amount
-    assert(smallTrampolineLargeDiscount == 2779L.msat) // Overcharges a lot for a small amount
+    {
+      val payment = 1000000L.msat
+      val linear = proportionalFee(payment, proportionalFee = 1000)
+      val trampolineModerateDiscount = trampolineFee(linear.toLong, exponent = 0.82D, logExponent = 2.2D)
+      val trampolineLargeDiscount = trampolineFee(linear.toLong, exponent = 0.79D, logExponent = 2.1D)
+      val trampolineExtraLargeDiscount = trampolineFee(linear.toLong, exponent = 0.76D, logExponent = 2.0D)
 
-    val largePayment = 1000000000L.msat
-    val largeLinear = proportionalFee(largePayment, proportionalFee = 1000)
-    val largeTrampolineLinear = trampolineFee(largeLinear.toLong, baseFee = 0L.msat, exponent = 1.0D, logExponent = 0.0D)
-    val largeTrampolineModerateDiscount = trampolineFee(largeLinear.toLong, baseFee = 0L.msat, exponent = 0.97D, logExponent = 3.9D)
-    val largeTrampolineLargeDiscount = trampolineFee(largeLinear.toLong, baseFee = 0L.msat, exponent = 0.9D, logExponent = 4.0D)
+      assert(linear == 1000L.msat)
+      assert(trampolineModerateDiscount == 359.msat)
+      assert(trampolineLargeDiscount == 293.msat)
+      assert(trampolineExtraLargeDiscount == 239.msat)
+    }
 
-    assert(largeLinear == 1000000L.msat)
-    assert(largeTrampolineLinear == 1000001L.msat) // About the same as linear
-    assert(largeTrampolineModerateDiscount == 688712L.msat) // Discounts on large amount
-    assert(largeTrampolineLargeDiscount == 287620L.msat) // Discounts a lot on large amount
+    {
+      val payment = 10000000L.msat
+      val linear = proportionalFee(payment, proportionalFee = 500)
+      val trampolineModerateDiscount = trampolineFee(linear.toLong, exponent = 0.82D, logExponent = 2.2D)
+      val trampolineLargeDiscount = trampolineFee(linear.toLong, exponent = 0.79D, logExponent = 2.1D)
+      val trampolineExtraLargeDiscount = trampolineFee(linear.toLong, exponent = 0.76D, logExponent = 2.0D)
+
+      assert(linear == 5000L.msat)
+      assert(trampolineModerateDiscount == 1191.msat)
+      assert(trampolineLargeDiscount == 926.msat)
+      assert(trampolineExtraLargeDiscount == 721.msat)
+    }
+
+    {
+      val payment = 100000000L.msat
+      val linear = proportionalFee(payment, proportionalFee = 500)
+      val trampolineModerateDiscount = trampolineFee(linear.toLong, exponent = 0.82D, logExponent = 2.2D)
+      val trampolineLargeDiscount = trampolineFee(linear.toLong, exponent = 0.79D, logExponent = 2.1D)
+      val trampolineExtraLargeDiscount = trampolineFee(linear.toLong, exponent = 0.76D, logExponent = 2.0D)
+
+      assert(linear == 50000L.msat)
+      assert(trampolineModerateDiscount == 7320.msat)
+      assert(trampolineLargeDiscount == 5304.msat)
+      assert(trampolineExtraLargeDiscount == 3843.msat)
+    }
+
+    {
+      val payment = 1000000000L.msat
+      val linear = proportionalFee(payment, proportionalFee = 500)
+      val trampolineModerateDiscount = trampolineFee(linear.toLong, exponent = 0.82D, logExponent = 2.2D)
+      val trampolineLargeDiscount = trampolineFee(linear.toLong, exponent = 0.79D, logExponent = 2.1D)
+      val trampolineExtraLargeDiscount = trampolineFee(linear.toLong, exponent = 0.76D, logExponent = 2.0D)
+
+      assert(linear == 500000L.msat)
+      assert(trampolineModerateDiscount == 47403.msat)
+      assert(trampolineLargeDiscount == 32006.msat)
+      assert(trampolineExtraLargeDiscount == 21612.msat)
+    }
+
+    {
+      val payment = 10000000000L.msat
+      val linear = proportionalFee(payment, proportionalFee = 500)
+      val trampolineModerateDiscount = trampolineFee(linear.toLong, exponent = 0.82D, logExponent = 2.2D)
+      val trampolineLargeDiscount = trampolineFee(linear.toLong, exponent = 0.79D, logExponent = 2.1D)
+      val trampolineExtraLargeDiscount = trampolineFee(linear.toLong, exponent = 0.76D, logExponent = 2.0D)
+
+      assert(linear == 5000000L.msat)
+      assert(trampolineModerateDiscount == 311695.msat)
+      assert(trampolineLargeDiscount == 196282.msat)
+      assert(trampolineExtraLargeDiscount == 123611.msat)
+    }
   }
 }
