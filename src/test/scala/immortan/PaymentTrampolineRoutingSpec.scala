@@ -145,7 +145,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     val outPacket = WAIT_UNTIL_RESULT(cm.opm.data.payments(reasonableTrampoline1.fullTag).data.inFlightParts.head.cmd.packetAndSecrets.packet)
     val ourAdd = UpdateAddHtlc(null, 1, MilliSatoshi(0L), paymentHash, CltvExpiry(100L), outPacket, null)
 
-    val ourMinimalFee = fsm.relayFee(reasonableTrampoline3.packet.innerPayload, LNParams.trampoline)
+    val ourMinimalFee = LNParams.trampoline.relayFee(reasonableTrampoline3.packet.innerPayload.amountToForward)
     WAIT_UNTIL_TRUE(cm.opm.data.payments(reasonableTrampoline1.fullTag).data.cmd.split.myPart == pr.amount.get) // With trampoline-to-legacy we find out a final amount
     assert(cm.opm.data.payments(reasonableTrampoline1.fullTag).data.cmd.totalFeeReserve == feeReserve - ourMinimalFee) // At the very least we collect base trampoline fee
 
