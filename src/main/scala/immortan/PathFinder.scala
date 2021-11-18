@@ -1,5 +1,7 @@
 package immortan
 
+import java.util.concurrent.Executors
+
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
@@ -14,7 +16,6 @@ import immortan.crypto.{CanBeRepliedTo, StateMachine}
 import immortan.utils.{Rx, Statistics}
 import rx.lang.scala.Subscription
 
-import java.util.concurrent.Executors
 import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 
@@ -30,12 +31,13 @@ object PathFinder {
   val OPERATIONAL = 1
 
   sealed trait PathFinderRequest { val sender: CanBeRepliedTo }
-  case class GetExpectedRouteToPayee(sender: CanBeRepliedTo, payee: PublicKey, interHops: Int) extends PathFinderRequest
   case class FindRoute(sender: CanBeRepliedTo, request: RouteRequest) extends PathFinderRequest
+  case class GetExpectedFeesToPayee(sender: CanBeRepliedTo, payee: PublicKey, interHops: Int) extends PathFinderRequest
 
-  case class ExpectedRouteToPayee(hops: List[HasRelayFee] = Nil) {
-    def totalWithFee(amount: MilliSatoshi): MilliSatoshi = hops.reverse.foldLeft(amount) { case (accum, hop) => hop.relayFee(accum) + accum }
-    def totalCltvDelta: CltvExpiryDelta = CltvExpiryDelta(hops.map(_.cltvExpiryDelta.underlying).sum)
+  case class ExpectedFeesToPayee(hops: List[HasRelayFee] = Nil) {
+    private def accumulate(accumulator: MilliSatoshi, hop: HasRelayFee) = accumulator + hop.relayFee(accumulator)
+    def totalWithFee(amount: MilliSatoshi): MilliSatoshi = hops.reverse.foldLeft(amount)(accumulate)
+    def totalCltvDelta: CltvExpiryDelta = hops.map(_.cltvExpiryDelta).reduce(_ + _)
   }
 }
 
@@ -75,7 +77,7 @@ abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag) 
       // Graph is loaded but empty: likely a first launch or synchronizing
       request.sender process NotifyNotReady
 
-    case (calc: GetExpectedRouteToPayee, OPERATIONAL) =>
+    case (calc: GetExpectedFeesToPayee, OPERATIONAL) =>
       // Calculate average single hop params for the entire visible routing graph
       val sample = data.channels.values.toVector.flatMap(pc => pc.update1Opt ++ pc.update2Opt)
       val noFeeOutliers = Statistics.removeExtremeOutliers(sample)(_.update.feeProportionalMillionths)
@@ -83,7 +85,7 @@ abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag) 
 
       // Calculate expected hop params for final payee based on what we can see in routing graph, it's expected that route hints for private payees have already been supplied
       val avgPayeeHop = data.graph.vertices.getOrElse(calc.payee, Nil).map(_.updExt) match { case hops if hops.nonEmpty => getSkewedFeeLastHopParams(hops) case _ => avgInterHop }
-      calc.sender process ExpectedRouteToPayee(hops = List.fill(calc.interHops)(avgInterHop) :+ avgPayeeHop)
+      calc.sender process ExpectedFeesToPayee(hops = List.fill(calc.interHops)(avgInterHop) :+ avgPayeeHop)
 
     case (fr: FindRoute, OPERATIONAL) =>
       // Search through single pre-selected local channel
