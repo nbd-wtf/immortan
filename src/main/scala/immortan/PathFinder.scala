@@ -32,9 +32,10 @@ object PathFinder {
 
   sealed trait PathFinderRequest { val sender: CanBeRepliedTo }
   case class FindRoute(sender: CanBeRepliedTo, request: RouteRequest) extends PathFinderRequest
-  case class GetExpectedFeesToPayee(sender: CanBeRepliedTo, payee: PublicKey, interHops: Int) extends PathFinderRequest
+  case class GetPayeeInferredHopFees(sender: CanBeRepliedTo, payee: PublicKey) extends PathFinderRequest
+  case class GetAverageExpectedHopFees(sender: CanBeRepliedTo) extends PathFinderRequest
 
-  case class ExpectedFeesToPayee(hops: List[HasRelayFee] = Nil) {
+  case class ExpectedRouteFees(hops: List[HasRelayFee] = Nil) {
     private def accumulate(accumulator: MilliSatoshi, hop: HasRelayFee) = accumulator + hop.relayFee(accumulator)
     def totalWithFee(amount: MilliSatoshi): MilliSatoshi = hops.reverse.foldLeft(amount)(accumulate)
     def totalCltvDelta: CltvExpiryDelta = hops.map(_.cltvExpiryDelta).reduce(_ + _)
@@ -77,15 +78,18 @@ abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag) 
       // Graph is loaded but empty: likely a first launch or synchronizing
       request.sender process NotifyNotReady
 
-    case (calc: GetExpectedFeesToPayee, OPERATIONAL) =>
+    case (calc: GetAverageExpectedHopFees, OPERATIONAL) =>
       // Calculate average single hop params for the entire visible routing graph
       val sample = data.channels.values.toVector.flatMap(pc => pc.update1Opt ++ pc.update2Opt)
       val noFeeOutliers = Statistics.removeExtremeOutliers(sample)(_.update.feeProportionalMillionths)
-      val avgInterHop = getAvgHopParams(noFeeOutliers)
+      calc.sender process getAvgHopParams(noFeeOutliers)
 
-      // Calculate expected hop params for final payee based on what we can see in routing graph, it's expected that route hints for private payees have already been supplied
-      val avgPayeeHop = data.graph.vertices.getOrElse(calc.payee, Nil).map(_.updExt) match { case hops if hops.nonEmpty => getSkewedFeeLastHopParams(hops) case _ => avgInterHop }
-      calc.sender process ExpectedFeesToPayee(hops = List.fill(calc.interHops)(avgInterHop) :+ avgPayeeHop)
+    case (calc: GetPayeeInferredHopFees, OPERATIONAL) =>
+      // Calculate expected params for final payee hop based on graph
+      data.graph.vertices.getOrElse(calc.payee, Nil).map(_.updExt) match {
+        case hops if hops.nonEmpty => calc.sender process getSkewedFeeLastHopParams(hops)
+        case _ => calc.sender process GetAverageExpectedHopFees(calc.sender)
+      }
 
     case (fr: FindRoute, OPERATIONAL) =>
       // Search through single pre-selected local channel

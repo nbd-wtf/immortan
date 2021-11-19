@@ -120,22 +120,8 @@ abstract class ChannelHosted extends Channel { me =>
       events addReceived theirAddExt
 
 
-    case (hc: HostedCommits, msg: UpdateFailHtlc, OPEN) if hc.error.isEmpty =>
-      hc.localSpec.findOutgoingHtlcById(msg.id) match {
-        case None if hc.nextLocalSpec.findOutgoingHtlcById(msg.id).isDefined => disconnectAndBecomeSleeping(hc)
-        case _ if hc.postErrorOutgoingResolvedIds.contains(msg.id) => throw ChannelTransitionFail(msg.channelId)
-        case None => throw ChannelTransitionFail(msg.channelId)
-        case _ => BECOME(hc.addRemoteProposal(msg), OPEN)
-      }
-
-
-    case (hc: HostedCommits, msg: UpdateFailMalformedHtlc, OPEN) if hc.error.isEmpty =>
-      hc.localSpec.findOutgoingHtlcById(msg.id) match {
-        case None if hc.nextLocalSpec.findOutgoingHtlcById(msg.id).isDefined => disconnectAndBecomeSleeping(hc)
-        case _ if hc.postErrorOutgoingResolvedIds.contains(msg.id) => throw ChannelTransitionFail(hc.channelId)
-        case None => throw ChannelTransitionFail(hc.channelId)
-        case _ => BECOME(hc.addRemoteProposal(msg), OPEN)
-      }
+    case (hc: HostedCommits, msg: UpdateFailHtlc, OPEN) if hc.error.isEmpty => receiveHtlcFail(hc, msg, msg.id)
+    case (hc: HostedCommits, msg: UpdateFailMalformedHtlc, OPEN) if hc.error.isEmpty => receiveHtlcFail(hc, msg, msg.id)
 
 
     case (hc: HostedCommits, msg: UpdateFulfillHtlc, OPEN | SLEEPING) if hc.error.isEmpty =>
@@ -360,6 +346,14 @@ abstract class ChannelHosted extends Channel { me =>
       events.notifyResolvers
     }
   }
+
+  def receiveHtlcFail(hc: HostedCommits, msg: UpdateMessage, id: Long): Unit =
+    hc.localSpec.findOutgoingHtlcById(id) match {
+      case None if hc.nextLocalSpec.findOutgoingHtlcById(id).isDefined => disconnectAndBecomeSleeping(hc)
+      case _ if hc.postErrorOutgoingResolvedIds.contains(id) => throw ChannelTransitionFail(hc.channelId, msg)
+      case None => throw ChannelTransitionFail(hc.channelId, msg)
+      case _ => BECOME(hc.addRemoteProposal(msg), OPEN)
+    }
 
   def disconnectAndBecomeSleeping(hc: HostedCommits): Unit = {
     // Could have implemented a more involved partially-signed LCSS resolution
