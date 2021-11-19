@@ -87,8 +87,8 @@ abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag) 
     case (calc: GetPayeeInferredHopFees, OPERATIONAL) =>
       // Calculate expected params for final payee hop based on graph
       data.graph.vertices.getOrElse(calc.payee, Nil).map(_.updExt) match {
-        case hops if hops.nonEmpty => calc.sender process getSkewedFeeLastHopParams(hops)
-        case _ => calc.sender process GetAverageExpectedHopFees(calc.sender)
+        case Nil => calc.sender process GetAverageExpectedHopFees(calc.sender)
+        case hops => calc.sender process getSkewedFeeLastHopParams(hops)
       }
 
     case (fr: FindRoute, OPERATIONAL) =>
