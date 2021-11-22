@@ -35,7 +35,7 @@ object LNParams {
   val cltvRejectThreshold: Int = hcFulfillSafetyBlocks + 36 // Reject incoming payment right away if CLTV expiry is closer than this to current chain tip when HTLC arrives
   val incomingFinalCltvExpiry: CltvExpiryDelta = CltvExpiryDelta(hcFulfillSafetyBlocks + 72) // Ask payer to set final CLTV expiry to current chain tip + this many blocks
 
-  val failedChanRecoveryMsec: Double = 300000D // Failed-at-amount channels are fully recovered and their original capacity can be tried again after this much time
+  val failedChanRecoveryMsec: Double = 600000D // Failed-at-amount channels are fully recovered and their original capacity can be tried again after this much time
 
   val maxCltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(2016) // A relative expiry of the whole route can not exceed this much blocks
   val maxToLocalDelay: CltvExpiryDelta = CltvExpiryDelta(2016) // We ask peer to delay their payment for this long in case of force-close
@@ -78,7 +78,7 @@ object LNParams {
   var fiatRates: FiatRates = _
   var feeRates: FeeRates = _
 
-  var trampoline: TrampolineOn = TrampolineOn(minPayment, maximumMsat = 1000000000L.msat, feeProportionalMillionths = 1000L, exponent = 0.0, logExponent = 0.0, minRoutingCltvExpiryDelta)
+  var trampoline: TrampolineOn = TrampolineOn(minPayment, Map.empty, feeProportionalMillionths = 1000L, exponent = 0.0, logExponent = 0.0, minRoutingCltvExpiryDelta)
 
   // Last known chain tip (zero is unknown)
   val blockCount: AtomicLong = new AtomicLong(0L)
@@ -102,7 +102,7 @@ object LNParams {
       (BasicMultiPartPayment, FeatureSupport.Optional),
       (OptionDataLossProtect, FeatureSupport.Optional),
       (VariableLengthOnion, FeatureSupport.Optional),
-      (TrampolineRouting, FeatureSupport.Optional),
+      (PrivateRouting, FeatureSupport.Optional),
       (ShutdownAnySegwit, FeatureSupport.Optional),
       (StaticRemoteKey, FeatureSupport.Optional),
       (HostedChannels, FeatureSupport.Optional),

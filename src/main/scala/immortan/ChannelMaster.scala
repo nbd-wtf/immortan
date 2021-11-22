@@ -223,8 +223,6 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
 
   def sortedReceivable(chans: Iterable[Channel] = Nil): Seq[ChanAndCommits] = operationalCncs(chans).filter(_.commits.updateOpt.isDefined).sortBy(_.commits.availableForReceive)
 
-  def sortedSendable(chans: Iterable[Channel] = Nil): Seq[ChanAndCommits] = operationalCncs(chans).sortBy(_.commits.availableForSend)
-
   def maxReceivable(sorted: Seq[ChanAndCommits] = Nil): Option[CommitsAndMax] = {
     // Example: we have (5, 50, 60, 100) chans -> (50, 60, 100), receivable = 50*3 = 150, #channels = 3
     // Example: we have (25, 50, 60, 100) chans -> (25, 50, 60, 100), receivable = 50*3 = 150 (because 50*3 > 25*4), but #channels = 4
@@ -236,7 +234,8 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
   def maxSendable(chans: Iterable[Channel] = Nil): MilliSatoshi = {
     val inPrincipleUsableChans = chans.filter(Channel.isOperational)
     val sendableNoFee = opm.getSendable(inPrincipleUsableChans, maxFee = 0L.msat).values.sum
-    sendableNoFee - LNParams.maxOffChainFeeAboveRatio.max(sendableNoFee * LNParams.maxOffChainFeeRatio)
+    val fee = LNParams.maxOffChainFeeAboveRatio.max(sendableNoFee * LNParams.maxOffChainFeeRatio)
+    0L.msat.max(sendableNoFee - fee)
   }
 
   def makeSendCmd(prExt: PaymentRequestExt, toSend: MilliSatoshi, allowedChans: Seq[Channel], typicalChainFee: MilliSatoshi, capLNFeeToChain: Boolean): SendMultiPart = {

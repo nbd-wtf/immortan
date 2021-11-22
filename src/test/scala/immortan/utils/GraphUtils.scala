@@ -20,7 +20,7 @@ object GraphUtils {
 
   var routerConf: RouterConf =
     RouterConf(routeMaxCltv = CltvExpiryDelta(2016), initRouteMaxLength = 6,
-      maxRemoteAttempts = 12, maxChannelFailures = 12, maxStrangeNodeFailures = 12)
+      maxRemoteAttempts = 12, maxNodeFailures = 12, maxStrangeNodeFailures = 12)
 
   val offChainFeeRatio = 0.01 // %
 

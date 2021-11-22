@@ -49,6 +49,30 @@ class GraphSpec extends AnyFunSuite {
     val NoRouteAvailable(_, _) = RouteCalculation.handleRouteRequest(graph, routeRequest.copy(amount = 50L.msat)) // Amount is too small
   }
 
+  test("Exclude failed node1 -> node2 directions") {
+    val graph = DirectedGraph (
+      makeEdge(1L, a, b, 1.msat, 10, cltvDelta = CltvExpiryDelta(1), minHtlc = 10000.msat, maxHtlc = 500000.msat) ::
+        makeEdge(2L, a, c, 1.msat, 10, cltvDelta = CltvExpiryDelta(1), minHtlc = 10000.msat, maxHtlc = 500000.msat) ::
+        makeEdge(3L, b, d, 40.msat, 10, cltvDelta = CltvExpiryDelta(1), minHtlc = 10000.msat, maxHtlc = 500000.msat) :: // Expensive
+        makeEdge(4L, c, d, 1.msat, 10, cltvDelta = CltvExpiryDelta(1), minHtlc = 10000.msat, maxHtlc = 600000.msat) ::
+        makeEdge(5L, c, d, 1.msat, 10, cltvDelta = CltvExpiryDelta(1), minHtlc = 10000.msat, maxHtlc = 600000.msat) ::
+        makeEdge(6L, c, d, 1.msat, 10, cltvDelta = CltvExpiryDelta(1), minHtlc = 10000.msat, maxHtlc = 600000.msat) ::
+        Nil
+    )
+
+    //     / b \
+    //    a     d
+    //     \ c ///, excluded
+
+    val routeRequest1: RouteRequest = makeRouteRequest(100000.msat, getParams(routerConf, 100000.msat, offChainFeeRatio), fromNode = a, fromLocalEdge = null)
+    val RouteFound(route1, _, _) = RouteCalculation.handleRouteRequest(graph, routeRequest1)
+    assert(route1.hops.map(_.nodeId) == a :: c :: Nil)
+
+    val routeRequest2 = routeRequest1.copy(ignoreDirections = Set(NodeDirectionDesc(from = c, to = d))) // c -> d direction is excluded
+    val RouteFound(route2, _, _) = RouteCalculation.handleRouteRequest(graph, routeRequest2)
+    assert(route2.hops.map(_.nodeId) == a :: b :: Nil)
+  }
+
   test("Always prefer a direct path") {
     val routeRequest: RouteRequest = makeRouteRequest(100000.msat, getParams(routerConf, 100000.msat, offChainFeeRatio), fromNode = a, fromLocalEdge = null).copy(target = b)
 

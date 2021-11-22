@@ -377,7 +377,7 @@ class ElectrumWalletBasicSpec extends AnyFunSuite {
     assert(state3.balance == state2.balance - spendTx1.txOut.map(_.amount).sum - response1.fee)
     assert(state3.utxos.length == 1) // Only change output is left
 
-    val rerouteKey = state3.firstUnusedChangeKey.get
+    val rerouteKey = state3.firstUnusedChangeKeys.head
     val rerouteScript = state3.publicScriptChangeMap.find(_._2 == rerouteKey).get._1
     val response2 = state3.rbfReroute(RBFReroute(response1.tx, feerate, rerouteScript, EclairWallet.OPT_IN_FULL_RBF), dustLimit).result.right.get
     assert(response2.tx.txOut.head.publicKeyScript == rerouteScript && response2.tx.txOut.size == 1) // Cancelling tx sends funds to our change address

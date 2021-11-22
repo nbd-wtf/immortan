@@ -206,7 +206,7 @@ case class ChannelUpdate(signature: ByteVector64, chainHash: ByteVector32, short
 
   def extraHop(nodeId: PublicKey): ExtraHop = ExtraHop(nodeId, shortChannelId, feeBaseMsat, feeProportionalMillionths, cltvExpiryDelta)
 
-  // Point useless fields to same object, db-restored should be the same, make sure it does not erase channelUpdateChecksumCodec fields
+  // Point useless fields to same object, db-restored should be same, make sure it does not erase channelUpdateChecksumCodec fields
   def lite: ChannelUpdate = copy(signature = ByteVector64.Zeroes, LNParams.chainHash, unknownFields = ByteVector.empty)
 }
 
@@ -373,7 +373,9 @@ sealed trait HasRelayFee {
   def cltvExpiryDelta: CltvExpiryDelta
 }
 
-case class TrampolineOn(minimumMsat: MilliSatoshi, maximumMsat: MilliSatoshi, feeProportionalMillionths: Long, exponent: Double, logExponent: Double, cltvExpiryDelta: CltvExpiryDelta) extends TrampolineStatus with HasRelayFee {
+case class TrampolineOn(minimumMsat: MilliSatoshi, routable: Map[Long, MilliSatoshi], feeProportionalMillionths: Long,
+                        exponent: Double, logExponent: Double, cltvExpiryDelta: CltvExpiryDelta) extends TrampolineStatus with HasRelayFee {
+
   def relayFee(amount: MilliSatoshi): MilliSatoshi = trampolineFee(proportionalFee(amount, feeProportionalMillionths).toLong, exponent, logExponent)
 }
 
