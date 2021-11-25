@@ -32,7 +32,7 @@ object CommsTower {
     listeners(pair) ++= listeners1
 
     workers.get(pair) match {
-      case Some(worker) => worker.theirInit.foreach(worker handleTheirRemoteInitMessage listeners1)
+      case Some(worker) => for (init <- worker.theirInit) worker.handleTheirRemoteInitMessage(listeners1, init)
       case None => workers(pair) = new Worker(pair, info, new Bytes(1024), new Socket)
     }
   }
@@ -72,7 +72,7 @@ object CommsTower {
           // UnknownMessage is typically a wrapper for non-standard message
           // BUT it may wrap standard messages, too, so call `onMessage` on those
           lightningMessageCodecWithFallback.decode(data.bits).require.value match {
-            case message: Init => handleTheirRemoteInitMessage(ourListeners)(remoteInit = message)
+            case message: Init => handleTheirRemoteInitMessage(ourListeners, remoteInit = message)
             case message: Ping => handler process Pong(ByteVector fromValidHex "00" * message.pongLength)
 
             case message: UnknownMessage =>
@@ -119,7 +119,7 @@ object CommsTower {
 
     def disconnect: Unit = try sock.close catch none
 
-    def handleTheirRemoteInitMessage(listeners1: Set[ConnectionListener] = Set.empty)(remoteInit: Init): Unit = {
+    def handleTheirRemoteInitMessage(listeners1: Set[ConnectionListener], remoteInit: Init): Unit = {
       // Use a separate variable for listeners here because a set of listeners provided to this method may be different
       // Account for a case where they disconnect while we are deciding on their features (do nothing in this case)
       // Important: always store their init once obtained, it may be used upstream (see sync listener)

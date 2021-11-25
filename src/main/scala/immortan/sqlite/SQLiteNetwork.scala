@@ -63,20 +63,11 @@ class SQLiteNetwork(val db: DBInterface, val updateTable: ChannelUpdateTable, va
 
   def listChannelUpdates: Iterable[ChannelUpdateExt] =
     db.select(updateTable.selectAllSql).iterable { rc =>
-      val cltvExpiryDelta = CltvExpiryDelta(rc int updateTable.cltvExpiryDelta)
-      val htlcMinimumMsat = MilliSatoshi(rc long updateTable.minMsat)
-      val htlcMaximumMsat = MilliSatoshi(rc long updateTable.maxMsat)
-      val feeBaseMsat = MilliSatoshi(rc long updateTable.base)
-      val channelFlags = rc int updateTable.chanFlags
-      val messageFlags = rc int updateTable.msgFlags
-      val shortChannelId = rc long updateTable.sid
-
-      val update = ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = LNParams.chainHash, shortChannelId,
-        timestamp = rc long updateTable.timestamp, messageFlags.toByte, channelFlags.toByte, cltvExpiryDelta,
-        htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths = rc long updateTable.proportional,
-        htlcMaximumMsat = Some(htlcMaximumMsat), unknownFields = ByteVector.empty)
-
-      ChannelUpdateExt(update, rc long updateTable.crc32, rc long updateTable.score, updateTable.useHeuristics)
+      val htlcMaximumMsat: MilliSatoshi = MilliSatoshi(rc long 10)
+      ChannelUpdateExt(ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = LNParams.chainHash, shortChannelId = rc long 2, timestamp = rc long 3,
+        messageFlags = (rc int 4).toByte, channelFlags = (rc int 5).toByte, cltvExpiryDelta = CltvExpiryDelta(rc int 6), htlcMinimumMsat = MilliSatoshi(rc long 7),
+        feeBaseMsat = MilliSatoshi(rc long 8), feeProportionalMillionths = rc long 9, htlcMaximumMsat = Some(htlcMaximumMsat), unknownFields = ByteVector.empty),
+        crc32 = rc long 13, score = rc long 12, updateTable.useHeuristics)
     }
 
   def getRoutingData: Map[Long, PublicChannel] = {
