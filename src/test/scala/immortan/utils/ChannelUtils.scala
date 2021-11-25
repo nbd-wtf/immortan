@@ -31,13 +31,14 @@ object ChannelUtils {
   def makeHostedCommits(nodeId: PublicKey, alias: String, toLocal: MilliSatoshi = 100000000L.msat): HostedCommits = {
     val features = List(Features.HostedChannels.mandatory, Features.ResizeableHostedChannels.mandatory)
     val initMessage = InitHostedChannel(UInt64(toLocal.underlying + 100000000L), 10.msat, 20, 200000000L.msat, 0.msat, features)
+    val remoteBalance = initMessage.channelCapacityMsat - toLocal
 
     val lcss: LastCrossSignedState = LastCrossSignedState(isHost = false, refundScriptPubKey = randomBytes(119), initMessage, blockDay = 100, localBalanceMsat = toLocal,
-      remoteBalanceMsat = 100000000L.msat, localUpdates = 201, remoteUpdates = 101, incomingHtlcs = Nil, outgoingHtlcs = Nil, remoteSigOfLocal = ByteVector64.Zeroes,
+      remoteBalanceMsat = remoteBalance, localUpdates = 201, remoteUpdates = 101, incomingHtlcs = Nil, outgoingHtlcs = Nil, remoteSigOfLocal = ByteVector64.Zeroes,
       localSigOfRemote = ByteVector64.Zeroes)
 
     HostedCommits(RemoteNodeInfo(nodeId, NodeAddress.unresolved(9735, host = 45, 20, 67, 1), alias),
-      CommitmentSpec(feeratePerKw = FeeratePerKw(0.sat), toLocal = toLocal, toRemote = 100000000L.msat),
+      CommitmentSpec(feeratePerKw = FeeratePerKw(0.sat), toLocal = toLocal, toRemote = remoteBalance),
       lastCrossSignedState = lcss, nextLocalUpdates = Nil, nextRemoteUpdates = Nil, updateOpt = None,
       postErrorOutgoingResolvedIds = Set.empty, localError = None, remoteError = None,
       extParams = Nil, startedAt = System.currentTimeMillis)

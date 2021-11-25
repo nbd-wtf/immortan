@@ -43,12 +43,11 @@ object CommsTower {
   def rmListenerNative(info: RemoteNodeInfo, listener: ConnectionListener): Unit = listeners(info.nodeSpecificPair) -= listener
   def disconnectNative(info: RemoteNodeInfo): Unit = workers.get(info.nodeSpecificPair).foreach(_.disconnect)
 
-  def forget(pair: KeyPairAndPubKey): Unit = {
-    // First remove all listeners, then disconnect
-    // this ensures listeners won't try to reconnect
-
-    listeners.remove(pair)
-    workers.get(pair).foreach(_.disconnect)
+  def forget(keyPairAndPubKey: KeyPairAndPubKey): Unit = {
+    // Important: first remove all listeners, then disconnect
+    val worker = workers.get(keyPairAndPubKey)
+    listeners.remove(keyPairAndPubKey)
+    worker.foreach(_.disconnect)
   }
 
   class Worker(val pair: KeyPairAndPubKey, val info: RemoteNodeInfo, buffer: Bytes, val sock: Socket) { me =>

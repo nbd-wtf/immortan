@@ -205,8 +205,7 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
 
   // Chain feerates
 
-  implicit val bitGoFeeRateStructureFmt: JsonFormat[BitGoFeeRateStructure] =
-    jsonFormat[Map[String, Long], Long, BitGoFeeRateStructure](BitGoFeeRateStructure.apply, "feeByBlockTarget", "feePerKb")
+  implicit val bitGoFeeRateStructureFmt: JsonFormat[BitGoFeeRateStructure] = jsonFormat[Map[String, Long], Long, BitGoFeeRateStructure](BitGoFeeRateStructure.apply, "feeByBlockTarget", "feePerKb")
 
   implicit val feeratePerKBFmt: JsonFormat[FeeratePerKB] = jsonFormat[Satoshi, FeeratePerKB](FeeratePerKB.apply, "feerate")
 

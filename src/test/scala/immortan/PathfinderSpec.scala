@@ -1,6 +1,7 @@
 package immortan
 
 import fr.acinq.eclair._
+import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.{ChannelDesc, NoRouteAvailable, RouteFound}
 import fr.acinq.eclair.wire._
@@ -23,15 +24,15 @@ class PathfinderSpec extends AnyFunSuite {
     val intermediaryExpectedHop = AvgHopParams(CltvExpiryDelta(200), 200, MilliSatoshi(1000L), sampleSize = 100)
     val payeeBeforeTrampoline = ExpectedRouteFees(hops = intermediaryExpectedHop :: intermediaryExpectedHop :: finalExpectedHop :: Nil).totalWithFee(amountToSend)
 
-    val trampolineFee = TrampolineOn(minimumMsat = 1000L.msat, routable = Map.empty, 1000, exponent = 0.79, logExponent = 2.1, CltvExpiryDelta(100))
-    val payeeWithTrampoline = ExpectedRouteFees(hops = trampolineFee :: intermediaryExpectedHop :: intermediaryExpectedHop :: finalExpectedHop :: Nil)
-    assert(trampolineFee.relayFee(payeeBeforeTrampoline) == payeeWithTrampoline.totalWithFee(amountToSend) - payeeBeforeTrampoline)
+    val trampolineFee1 = TrampolineOn(minMsat = 1000L.msat, maxMsat = Long.MaxValue.msat, 1000, exponent = 0.79, logExponent = 2.1, CltvExpiryDelta(100))
+    val payeeWithTrampoline = ExpectedRouteFees(hops = trampolineFee1 :: intermediaryExpectedHop :: intermediaryExpectedHop :: finalExpectedHop :: Nil)
+    assert(trampolineFee1.relayFee(payeeBeforeTrampoline) == payeeWithTrampoline.totalWithFee(amountToSend) - payeeBeforeTrampoline)
 
-    val peerEdgeFee = ExtraHop(randomKey.publicKey, shortChannelId = 1L, feeBase = MilliSatoshi(1000L), feeProportionalMillionths = 500L, CltvExpiryDelta(200))
-    val payeeWithPeerEdge = ExpectedRouteFees(hops = peerEdgeFee :: trampolineFee :: intermediaryExpectedHop :: intermediaryExpectedHop :: finalExpectedHop :: Nil)
-    val payeeWithoutTrampoline = ExpectedRouteFees(hops = peerEdgeFee :: intermediaryExpectedHop :: intermediaryExpectedHop :: intermediaryExpectedHop :: finalExpectedHop :: Nil)
+    val trampolineFee2 = TrampolineOn(minMsat = 1000L.msat, maxMsat = Long.MaxValue.msat, 1000, exponent = 0.89, logExponent = 3.1, CltvExpiryDelta(100))
+    val payeeWithPeerEdge = ExpectedRouteFees(hops = trampolineFee2 :: trampolineFee1 :: intermediaryExpectedHop :: intermediaryExpectedHop :: finalExpectedHop :: Nil)
+    val payeeWithoutTrampoline = ExpectedRouteFees(hops = intermediaryExpectedHop :: trampolineFee1 :: intermediaryExpectedHop :: intermediaryExpectedHop :: intermediaryExpectedHop :: finalExpectedHop :: Nil)
     assert(payeeWithPeerEdge.totalWithFee(amountToSend) < payeeWithoutTrampoline.totalWithFee(amountToSend))
-    assert(payeeWithPeerEdge.totalWithFee(amountToSend) - amountToSend == 113125L.msat)
+    assert(payeeWithPeerEdge.totalWithFee(amountToSend) - amountToSend == 92243L.msat)
   }
 
   test("Exclude one-sided and ghost channels") {
@@ -111,15 +112,13 @@ class PathfinderSpec extends AnyFunSuite {
     pf process edgeCSFromC // Disregarded
 
     pf process PathFinder.GetExpectedRouteFees(sender, payee = s, interHops = 2)
-    synchronized(wait(1000L))
-    println(responses)
     WAIT_UNTIL_TRUE(responses.head.asInstanceOf[ExpectedRouteFees].hops.head.asInstanceOf[AvgHopParams].cltvExpiryDelta.underlying == 144) // Private channel CLTV is disregarded
-    WAIT_UNTIL_TRUE(responses.head.asInstanceOf[ExpectedRouteFees].hops.head.asInstanceOf[AvgHopParams].sampleSize == 8) // Public channels are taken into account
-    WAIT_UNTIL_TRUE(responses.last == PathFinder.NotifyOperational)
+    assert(responses.head.asInstanceOf[ExpectedRouteFees].hops.head.asInstanceOf[AvgHopParams].sampleSize == 8) // Public channels are taken into account
+    assert(responses.last == PathFinder.NotifyOperational)
 
-    WAIT_UNTIL_TRUE(responses.head.asInstanceOf[ExpectedRouteFees].hops(2).asInstanceOf[AvgHopParams].cltvExpiryDelta.underlying == 300) // An mode of three channels has been provided
-    WAIT_UNTIL_TRUE(responses.head.asInstanceOf[ExpectedRouteFees].hops(2).asInstanceOf[AvgHopParams].feeProportionalMillionths == 244) // A mean + 1 SD has been provided
-    WAIT_UNTIL_TRUE(responses.head.asInstanceOf[ExpectedRouteFees].hops(2).asInstanceOf[AvgHopParams].sampleSize == 3) // Only private channels are taken into account
+    assert(responses.head.asInstanceOf[ExpectedRouteFees].hops(2).asInstanceOf[AvgHopParams].cltvExpiryDelta.underlying == 300) // Median value
+    assert(responses.head.asInstanceOf[ExpectedRouteFees].hops(2).asInstanceOf[AvgHopParams].feeProportionalMillionths == 300) // Median value
+    assert(responses.head.asInstanceOf[ExpectedRouteFees].hops(2).asInstanceOf[AvgHopParams].sampleSize == 3) // Only private channels are taken into account
   }
 
   test("Find a route on cold start") {

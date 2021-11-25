@@ -68,6 +68,7 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
   val initResolveMemo: LoadingCache[UpdateAddHtlcExt, IncomingResolution] = memoize(initResolve)
   val getPreimageMemo: LoadingCache[ByteVector32, PreimageTry] = memoize(payBag.getPreimage)
   val opm: OutgoingPaymentMaster = new OutgoingPaymentMaster(me)
+  val tb: TrampolineBroadcaster = new TrampolineBroadcaster(me)
 
   val localPaymentListeners: mutable.Set[OutgoingPaymentListener] = {
     val defListener: OutgoingPaymentListener = new OutgoingPaymentListener {
@@ -176,12 +177,13 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
     for (fsm <- inProcessors.values) fsm.becomeShutDown
     for (sub <- pf.subscription) sub.unsubscribe
     pf.listeners = Set.empty
+    tb.becomeShutDown
   }
 
   def initConnect: Unit =
     all.values.flatMap(Channel.chanAndCommitsOpt).foreach { cnc =>
       // Connect to all peers with channels, including CLOSED ones
-      CommsTower.listenNative(Set(me), cnc.commits.remoteInfo)
+      CommsTower.listenNative(Set(me, tb), cnc.commits.remoteInfo)
     }
 
   // Marks as failed those payments which did not make it into channels before an app has been restarted
@@ -266,10 +268,7 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
     if (isActive) Some(PaymentInfo.NOT_SENDABLE_IN_FLIGHT) else if (getPreimageMemo.get(paymentHash).isSuccess) Some(PaymentInfo.NOT_SENDABLE_SUCCESS) else None
   }
 
-  def localSend(cmd: SendMultiPart): Unit = {
-    val create = CreateSenderFSM(localPaymentListeners, cmd.fullTag)
-    List(create, ClearFailures, cmd).foreach(opm.process)
-  }
+  def localSend(cmd: SendMultiPart): Unit = List(CreateSenderFSM(localPaymentListeners, cmd.fullTag), ClearFailures, cmd).foreach(opm.process)
 
   // These are executed in Channel context
 
