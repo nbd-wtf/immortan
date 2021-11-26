@@ -20,13 +20,13 @@ import rx.lang.scala.Subscription
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
+import scala.util.Random.shuffle
 
 
 object PathFinder {
   val NotifyNotReady = "path-finder-notify-not-ready"
   val NotifyOperational = "path-finder-notify-operational"
   val CMDStartPeriodicResync = "cmd-start-periodic-resync"
-  val CMDRequestSyncProgress = "cmd-request-sync-progress"
   val CMDLoadGraph = "cmd-load-graph"
 
   val WAITING = 0
@@ -118,23 +118,20 @@ abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag) 
     case (CMDResync, OPERATIONAL) if System.currentTimeMillis - getLastNormalResyncStamp > RESYNC_PERIOD =>
       val setupData = SyncMasterShortIdData(LNParams.syncParams.syncNodes, getExtraNodes, Set.empty, Map.empty, LNParams.syncParams.maxNodesToSyncFrom)
 
-      val normalSync = new SyncMaster(normalBag.listExcludedChannels, routerData = data) { self =>
-        def onShortIdsSyncComplete(state: SyncMasterShortIdData): Unit = listeners.foreach(_ process state)
-        def onChunkSyncComplete(pure: PureRoutingData): Unit = me process pure
-        def onTotalSyncComplete: Unit = me process self
+      val requestNodeAnnounceForChan = for {
+        info <- getExtraNodes ++ getPHCExtraNodes
+        edges <- data.graph.vertices.get(info.nodeId)
+      } yield shuffle(edges).head.desc.shortChannelId
+
+      val normalSync = new SyncMaster(normalBag.listExcludedChannels, requestNodeAnnounceForChan, data) { self =>
+        override def onShortIdsSyncComplete(state: SyncMasterShortIdData): Unit = listeners.foreach(_ process state)
+        override def onNodeAnnouncement(na: NodeAnnouncement): Unit = listeners.foreach(_ process na)
+        override def onChunkSyncComplete(pure: PureRoutingData): Unit = me process pure
+        override def onTotalSyncComplete: Unit = me process self
       }
 
       syncMaster = normalSync.asSome
       normalSync process setupData
-
-    case (CMDRequestSyncProgress, OPERATIONAL) =>
-      // One of listeners is interested in current sync progress
-      // Send back whatever sync stage data we happen to have
-
-      for {
-        sync <- syncMaster
-        listener <- listeners
-      } listener process sync.data
 
     case (CMDResync, OPERATIONAL) if System.currentTimeMillis - getLastTotalResyncStamp > RESYNC_PERIOD =>
       // Normal resync has happened recently, but PHC resync is outdated (PHC failed last time due to running out of attempts)
@@ -258,7 +255,7 @@ abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag) 
 
   def attemptPHCSync: Unit = {
     if (LNParams.syncParams.phcSyncNodes.nonEmpty) {
-      val master = new PHCSyncMaster(data) { def onSyncComplete(pure: CompleteHostedRoutingData): Unit = me process pure }
+      val master = new PHCSyncMaster(data) { override def onSyncComplete(pure: CompleteHostedRoutingData): Unit = me process pure }
       master process SyncMasterPHCData(LNParams.syncParams.phcSyncNodes, getPHCExtraNodes, activeSyncs = Set.empty)
     } else updateLastTotalResyncStamp(System.currentTimeMillis)
   }

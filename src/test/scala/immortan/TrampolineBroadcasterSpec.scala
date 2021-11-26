@@ -14,6 +14,7 @@ import scala.collection.mutable
 class TrampolineBroadcasterSpec extends AnyFunSuite {
   test("Broadcast routable amounts to peers") {
     LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+    LNParams.trampoline = TrampolineOn(LNParams.minPayment, Long.MaxValue.msat, feeProportionalMillionths = 1000L, exponent = 0.0, logExponent = 0.0, LNParams.minRoutingCltvExpiryDelta)
     val (_, _, cm) = makeChannelMaster(Seq(randomBytes32))
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1", toLocal = 100000000L.msat)
     val hcs2 = makeHostedCommits(nodeId = c, alias = "peer2", toLocal = 50000000L.msat)
