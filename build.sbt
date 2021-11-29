@@ -28,6 +28,8 @@ libraryDependencies += "org.scala-lang.modules" %% "scala-parser-combinators" % 
 
 libraryDependencies += "com.sparrowwallet" % "hummingbird" % "1.6.2"
 
+libraryDependencies += "com.squareup.okhttp3" % "okhttp" % "3.12.11"
+
 // Testing
 
 libraryDependencies += "org.scalatest" % "scalatest_2.11" % "3.1.1"
