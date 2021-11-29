@@ -97,6 +97,18 @@ class WireSpec extends AnyFunSuite {
     assert(lastCrossSignedStateCodec.decode(lastCrossSignedStateCodec.encode(lcss).require).require.value == lcss)
   }
 
+  test("Trampoline status") {
+    val trampolineOn = TrampolineOn(LNParams.minPayment, Long.MaxValue.msat, feeProportionalMillionths = 1000L, exponent = 0.0, logExponent = 0.0, LNParams.minRoutingCltvExpiryDelta)
+    val params1 = NodeIdTrampolineParams(nodeId = randomKey.publicKey, trampolineOn)
+    val params2 = NodeIdTrampolineParams(nodeId = randomKey.publicKey, trampolineOn)
+
+    val status1 = TrampolineStatus(params = List(params1, params2), paths = List(1L :: Nil, 2L :: Nil, 3L :: 4L :: Nil), removed = 2L :: Nil)
+    val status2 = TrampolineStatus.empty
+
+    assert(trampolineStatusCodec.decode(trampolineStatusCodec.encode(status1).require).require.value == status1)
+    assert(trampolineStatusCodec.decode(trampolineStatusCodec.encode(status2).require).require.value == status2)
+  }
+
   test("HC short channel ids are random") {
     val hostNodeId = randomBytes32
     val iterations = 1000000
