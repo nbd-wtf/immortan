@@ -40,11 +40,6 @@ Immortan is an open source library free to use by anyone, development is made po
           <img width="146px" src="https://i.imgur.com/W4A92Ym.png">
         </a>
       </td>
-      <td align="center" valign="middle">
-        <a href="http://lightblock.me/" target="_blank">
-          lightblock.me
-        </a>
-      </td>
     </tr>
   </tbody>
 </table>
