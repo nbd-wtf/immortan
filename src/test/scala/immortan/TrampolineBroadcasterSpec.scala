@@ -142,5 +142,10 @@ class TrampolineBroadcasterSpec extends AnyFunSuite {
     val update5 = TrampolineStatus(NodeIdTrampolineParams(a, on2) :: Nil, paths = Nil, removed = Nil)
     val states5 = states4.merge(c, update5)
     assert(states5.states(c) == states4.states(c))
+
+    // Node C sends an overly long path (unreliable), so proposed route is not included
+    val update6 = TrampolineStatus(NodeIdTrampolineParams(a, on2) :: NodeIdTrampolineParams(d, on2) :: Nil, paths = List(aCrc :: dCrc :: eCrc :: Nil), removed = Nil)
+    val states6 = states5.merge(c, update6)
+    assert(states6.states(c) == states6.states(c))
   }
 }

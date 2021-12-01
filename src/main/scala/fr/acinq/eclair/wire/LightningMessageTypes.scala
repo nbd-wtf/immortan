@@ -398,7 +398,7 @@ case class TrampolineRoutingState(nodeToTrampoline: Map[PublicKey, TrampolineOn]
     val crc32Cache1 = crc32Cache -- that.removed ++ that.params.map(param => Sync.crc32c(param.nodeId.value) -> param.nodeId)
     val nodeToTrampoline1 = nodeToTrampoline -- that.removed.flatMap(crc32Cache.get) ++ that.params.map(param => param.nodeId -> param.trampolineOn)
     val routes1 = that.paths.filter(_.nonEmpty).filter(_ forall crc32Cache1.contains).map(_ map crc32Cache1).filterNot(_ contains peerId).map(furtherRoute => peerId :: furtherRoute)
-    val routes2 = (routes ++ routes1).filter(_ forall nodeToTrampoline1.contains)
+    val routes2 = (routes ++ routes1).filter(_.size < 4).filter(_ forall nodeToTrampoline1.contains)
 
     val routeKeys = routes2.flatten
     // Reverse-filter to make sure we don't have params without routes
