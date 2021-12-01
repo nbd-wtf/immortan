@@ -129,9 +129,6 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
       data.payments.values.foreach(_ doProcess CMDChanGotOnline)
       me process CMDAskForRoute
 
-    case (PathFinder.NotifyOperational, EXPECTING_PAYMENTS) =>
-      me process CMDAskForRoute
-
     case (CMDAskForRoute, EXPECTING_PAYMENTS) =>
       // This is a proxy to always send command in payment master thread
       // IMPLICIT GUARD: this message is ignored in all other states
@@ -149,11 +146,6 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
       // Note: we may get many route request messages from payment FSMs with parts waiting for routes so it is important to immediately switch to WAITING_FOR_ROUTE after seeing a first message
       cm.pf process PathFinder.FindRoute(me, req1)
       become(data, WAITING_FOR_ROUTE)
-
-    case (PathFinder.NotifyNotReady, WAITING_FOR_ROUTE) =>
-      // Pathfinder is not yet ready, switch local state back
-      // pathfinder is expected to notify us once it gets ready
-      become(data, EXPECTING_PAYMENTS)
 
     case (response: RouteResponse, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
       data.payments.get(response.fullTag).foreach(_ doProcess response)

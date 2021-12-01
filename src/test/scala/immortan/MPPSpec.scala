@@ -95,7 +95,6 @@ class MPPSpec extends AnyFunSuite {
     val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
     cm.chanBag.put(hcs1)
     cm.all = Channel.load(Set(cm), cm.chanBag)
-    cm.pf.debugMode = true
 
     val sendable1 = cm.opm.getSendable(cm.all.values, maxFee = 1000000L.msat).values.head
     assert(sendable1 == 99000000L.msat)
@@ -114,16 +113,7 @@ class MPPSpec extends AnyFunSuite {
 
     cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
 
-    // Channel got online so part now awaits for a route, but graph is not loaded (debug mode = true)
-    WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).data.parts.values.head.asInstanceOf[WaitForRouteOrInFlight].amount == send.split.myPart)
-    WAIT_UNTIL_TRUE(cm.pf.extraEdges.size == 1)
-
-    // Payment is not yet in channel, but it is waiting in sender so amount without fees is taken into account
-    val sendable2 = cm.opm.getSendable(cm.all.values, maxFee = 1000000L.msat).values.head
-    assert(sendable2 == sendable1 - send.split.myPart)
-
-    cm.pf process PathFinder.CMDLoadGraph
-
+    // Channel got online, sending is resumed
     WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).data.inFlightParts.size == 2)
     val List(part1, part2) = cm.opm.data.payments(tag).data.inFlightParts
     // First chosen route can not handle a second part so another route is chosen
@@ -164,56 +154,6 @@ class MPPSpec extends AnyFunSuite {
     WAIT_UNTIL_TRUE(senderDataWhenFailed.size == 1) // We have got exactly one failure event
     assert(senderDataWhenFailed.head.failures.head.asInstanceOf[LocalFailure].status == PaymentFailure.RUN_OUT_OF_CAPABLE_CHANNELS)
     assert(senderDataWhenFailed.head.inFlightParts.isEmpty)
-  }
-
-  test("Switch channel on first one becoming SLEEPING") {
-    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
-    val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
-
-    val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
-    cm.chanBag.put(hcs1)
-    cm.all = Channel.load(Set(cm), cm.chanBag)
-    cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
-    cm.pf.debugMode = true
-
-    val tag = FullPaymentTag(paymentHash = ByteVector32.One, paymentSecret = ByteVector32.One, tag = PaymentTagTlv.LOCALLY_SENT)
-    val edgeDSFromD = makeEdge(6L, d, s, 1L.msat, 10, cltvDelta = CltvExpiryDelta(144), minHtlc = 10L.msat, maxHtlc = Long.MaxValue.msat)
-    val send = SendMultiPart(tag, Left(CltvExpiry(9)), SplitInfo(400000L.msat, 400000L.msat), routerConf, targetNodeId = s,
-      totalFeeReserve = 6000L.msat, allowedChans = cm.all.values.toSeq, assistedEdges = Set(edgeDSFromD))
-
-    cm.opm process CreateSenderFSM(Set(noopListener), tag)
-    cm.opm process send
-
-    // The only channel has been chosen because it is OPEN, but graph is not ready yet
-    val wait1 = WAIT_UNTIL_RESULT(cm.opm.data.payments(tag).data.parts.values.head.asInstanceOf[WaitForRouteOrInFlight])
-    val originalChosenCnc = cm.all.values.flatMap(Channel.chanAndCommitsOpt).find(_.commits.channelId == wait1.cnc.commits.channelId).get
-    assert(cm.opm.data.payments(tag).data.parts.size == 1)
-    assert(wait1.flight.isEmpty)
-
-    // In the meantime two new channels are added to the system
-    val hcs2 = makeHostedCommits(nodeId = b, alias = "peer2", toLocal = 300000L.msat)
-    val hcs3 = makeHostedCommits(nodeId = c, alias = "peer3", toLocal = 300000L.msat)
-    cm.chanBag.put(hcs2)
-    cm.chanBag.put(hcs3)
-
-    cm.all ++= Channel.load(Set(cm), cm.chanBag) - originalChosenCnc.commits.channelId // Add two new channels
-    val senderData1 = cm.opm.data.payments(tag).data.modify(_.cmd.allowedChans).setTo(cm.all.values.toSeq) // also update FSM
-    cm.opm.data.payments(tag).data = senderData1
-
-    // Graph becomes ready, but chosen chan has gone offline in a meantime
-    cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
-    originalChosenCnc.chan process CMD_SOCKET_OFFLINE
-    cm.pf process PathFinder.CMDLoadGraph
-
-    WAIT_UNTIL_TRUE {
-      // Payment gets split in two because no remote hop in route can handle a whole and both parts end up with second channel
-      val List(part1, part2) = cm.opm.data.payments(tag).data.parts.values.collect { case inFlight: WaitForRouteOrInFlight => inFlight }
-      assert(part1.cnc.commits.channelId != originalChosenCnc.commits.channelId)
-      assert(part2.cnc.commits.channelId != originalChosenCnc.commits.channelId)
-      assert(cm.opm.data.payments(tag).data.inFlightParts.size == 2)
-      assert(cm.opm.data.payments(tag).data.parts.size == 2)
-      part1.amount + part2.amount == send.split.myPart
-    }
   }
 
   test("Correctly process failed-at-amount") {

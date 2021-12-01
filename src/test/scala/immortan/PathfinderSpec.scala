@@ -88,7 +88,6 @@ class PathfinderSpec extends AnyFunSuite {
     val routeRequest = makeRouteRequest(100000.msat, getParams(routerConf, 100000.msat, offChainFeeRatio), fromKey, fakeLocalEdge)
     pf process PathFinder.FindRoute(sender, routeRequest) // Will get rejected reply as message parameter
     WAIT_UNTIL_TRUE(responses.head.isInstanceOf[RouteFound])
-    WAIT_UNTIL_TRUE(responses.last == PathFinder.NotifyOperational)
   }
 
   test("Get expected route to payee") {
@@ -114,32 +113,10 @@ class PathfinderSpec extends AnyFunSuite {
     pf process PathFinder.GetExpectedRouteFees(sender, payee = s, interHops = 2)
     WAIT_UNTIL_TRUE(responses.head.asInstanceOf[ExpectedRouteFees].hops.head.asInstanceOf[AvgHopParams].cltvExpiryDelta.underlying == 144) // Private channel CLTV is disregarded
     assert(responses.head.asInstanceOf[ExpectedRouteFees].hops.head.asInstanceOf[AvgHopParams].sampleSize == 8) // Public channels are taken into account
-    assert(responses.last == PathFinder.NotifyOperational)
 
     assert(responses.head.asInstanceOf[ExpectedRouteFees].hops(2).asInstanceOf[AvgHopParams].cltvExpiryDelta.underlying == 300) // Median value
     assert(responses.head.asInstanceOf[ExpectedRouteFees].hops(2).asInstanceOf[AvgHopParams].feeProportionalMillionths == 300) // Median value
     assert(responses.head.asInstanceOf[ExpectedRouteFees].hops(2).asInstanceOf[AvgHopParams].sampleSize == 3) // Only private channels are taken into account
-  }
-
-  test("Find a route on cold start") {
-    var obtainedRoute: RouteFound = null
-
-    val pf = makePathFinder(normalStore, hostedStore)
-
-    val fromKey = randomKey.publicKey
-    val fakeLocalEdge = Tools.mkFakeLocalEdge(from = fromKey, toPeer = a)
-    val routeRequest = makeRouteRequest(100000.msat, getParams(routerConf, 100000.msat, offChainFeeRatio), fromKey, fakeLocalEdge)
-
-    val sender: CanBeRepliedTo = new CanBeRepliedTo {
-      override def process(reply: Any): Unit = reply match {
-        case PathFinder.NotifyOperational => pf process PathFinder.FindRoute(this, routeRequest) // Send route request once notified (as listener)
-        case found: RouteFound => obtainedRoute = found // Store obtained route (as message parameter)
-      }
-    }
-
-    pf.listeners += sender
-    pf process PathFinder.CMDLoadGraph
-    WAIT_UNTIL_TRUE(obtainedRoute.route.hops.map(_.nodeId) == fromKey :: a :: c :: Nil)
   }
 
   test("Find a route using assited channels") {
