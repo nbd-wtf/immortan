@@ -22,7 +22,7 @@ class MPPSpec extends AnyFunSuite {
     val failedAt = 200000L.msat
     val stamp = System.currentTimeMillis
     val fail = Map(DescAndCapacity(desc,capacity) -> StampedChannelFailed(failedAt, stamp))
-    val data1 = OutgoingPaymentMasterData(payments = Map.empty, chanFailedAtAmount = fail)
+    val data1 = OutgoingPaymentMasterData(TrampolineRoutingStates(Map.empty), payments = Map.empty, chanFailedAtAmount = fail)
     assert(data1.withFailuresReduced(stamp + LNParams.failedChanRecoveryMsec.toLong / 2).chanFailedAtAmount.head._2.amount == failedAt + (capacity - failedAt) / 2)
     assert(data1.withFailuresReduced(stamp + LNParams.failedChanRecoveryMsec.toLong).chanFailedAtAmount.isEmpty)
   }

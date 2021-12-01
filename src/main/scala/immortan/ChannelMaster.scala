@@ -154,6 +154,7 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
     allFromNode(worker.info.nodeId).foreach(_.chan process CMD_SOCKET_ONLINE)
 
   override def onMessage(worker: CommsTower.Worker, message: LightningMessage): Unit = message match {
+    case msg: TrampolineStatus => opm process TrampolineStatusUpdate(worker.info.nodeId, msg)
     case msg: ChannelUpdate => allFromNode(worker.info.nodeId).foreach(_.chan process msg)
     case msg: HasChannelId => sendTo(msg, msg.channelId)
     case _ => // Do nothing
@@ -166,6 +167,7 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
 
   override def onDisconnect(worker: CommsTower.Worker): Unit = {
     allFromNode(worker.info.nodeId).foreach(_.chan process CMD_SOCKET_OFFLINE)
+    opm process TrampolinePeerDisconnected(worker.info.nodeId)
     Rx.ioQueue.delay(5.seconds).foreach(_ => initConnect)
   }
 

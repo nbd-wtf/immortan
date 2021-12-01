@@ -59,6 +59,8 @@ case object ClearFailures
 case class CutIntoHalves(amount: MilliSatoshi)
 case class RemoveSenderFSM(fullTag: FullPaymentTag)
 case class CreateSenderFSM(listeners: Iterable[OutgoingPaymentListener], fullTag: FullPaymentTag)
+case class TrampolineStatusUpdate(from: PublicKey, status: TrampolineStatus)
+case class TrampolinePeerDisconnected(from: PublicKey)
 
 case class ChannelNotRoutable(failedDesc: ChannelDesc)
 case class ChannelFailed(failedDescAndCap: DescAndCapacity)
@@ -75,7 +77,8 @@ case class SendMultiPart(fullTag: FullPaymentTag, chainExpiry: Either[CltvExpiry
                          totalFeeReserve: MilliSatoshi = MilliSatoshi(0L), allowedChans: Seq[Channel] = Nil, outerPaymentSecret: ByteVector32 = ByteVector32.Zeroes,
                          assistedEdges: Set[GraphEdge] = Set.empty, onionTlvs: Seq[OnionTlv] = Nil, userCustomTlvs: Seq[GenericTlv] = Nil)
 
-case class OutgoingPaymentMasterData(payments: Map[FullPaymentTag, OutgoingPaymentSender],
+case class OutgoingPaymentMasterData(trampolineStates: TrampolineRoutingStates,
+                                     payments: Map[FullPaymentTag, OutgoingPaymentSender],
                                      chanFailedAtAmount: Map[DescAndCapacity, StampedChannelFailed] = Map.empty,
                                      nodeFailedWithUnknownUpdateTimes: Map[PublicKey, Int] = Map.empty,
                                      directionFailedTimes: Map[NodeDirectionDesc, Int] = Map.empty,
@@ -113,9 +116,16 @@ object OutgoingPaymentMaster {
 
 class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[OutgoingPaymentMasterData] with CanBeRepliedTo { me =>
   def process(change: Any): Unit = scala.concurrent.Future(me doProcess change)(Channel.channelContext)
-  become(OutgoingPaymentMasterData(Map.empty), EXPECTING_PAYMENTS)
+  become(OutgoingPaymentMasterData(TrampolineRoutingStates(Map.empty), Map.empty), EXPECTING_PAYMENTS)
 
   def doProcess(change: Any): Unit = (change, state) match {
+    case (TrampolineStatusUpdate(from, status), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
+      val trampolineStates1 = data.trampolineStates.merge(from, status)
+      become(data.copy(trampolineStates = trampolineStates1), state)
+
+    case (TrampolinePeerDisconnected(from), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
+      become(data.copy(trampolineStates = data.trampolineStates withoutPeer from), state)
+
     case (ClearFailures, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
       become(data.withFailuresReduced(System.currentTimeMillis), state)
 

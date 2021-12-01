@@ -409,6 +409,7 @@ case class TrampolineRoutingState(nodeToTrampoline: Map[PublicKey, TrampolineOn]
 }
 
 case class TrampolineRoutingStates(states: Map[PublicKey, TrampolineRoutingState] = Map.empty) {
+  def withoutPeer(peerId: PublicKey): TrampolineRoutingStates = TrampolineRoutingStates(states - peerId)
 
   def merge(peerId: PublicKey, that: TrampolineStatus): TrampolineRoutingStates = {
     val state1 = states.getOrElse(peerId, TrampolineStatus.emptyState).merge(peerId, that)
