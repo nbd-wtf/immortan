@@ -243,12 +243,13 @@ class ChannelMaster(val payBag: PaymentBag, val chanBag: ChannelBag, val dataBag
     0L.msat.max(sendableNoFee - fee)
   }
 
-  def feeReserve(amount: MilliSatoshi, typicalChainFee: MilliSatoshi,
-                 capLNFeeToChain: Boolean, minFee: MilliSatoshi): MilliSatoshi = {
+  // If computed fee gets too small we use a standard minimal fee to make small payment still succeed
+  def feeReserve(amount: MilliSatoshi, typicalChainFee: MilliSatoshi, capLNFeeToChain: Boolean): MilliSatoshi = {
 
     val maxFee = amount * LNParams.maxOffChainFeeRatio
-    val capToChain = capLNFeeToChain && maxFee > typicalChainFee
-    if (maxFee < minFee) minFee else if (capToChain) typicalChainFee else maxFee
+    if (maxFee < LNParams.maxOffChainFeeAboveRatio) LNParams.maxOffChainFeeAboveRatio
+    else if (capLNFeeToChain && maxFee > typicalChainFee) typicalChainFee
+    else maxFee
   }
 
   // Supply relative cltv expiry in case if we initiate a payment when chain tip is not yet known
