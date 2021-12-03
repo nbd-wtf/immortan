@@ -148,7 +148,7 @@ object Tools {
       psbt.updateWitnessInputTx(parentTransaction, txIn.outPoint.index.toInt, derivationPaths = derivationPath).get
     }
 
-    // Provide info about out change output
+    // Provide info about our change output
     response.tx.txOut.zipWithIndex.foldLeft(psbt2) { case (psbt, txOut ~ index) =>
       response.data.publicScriptChangeMap.get(txOut.publicKeyScript) map { changeKey =>
         val changeKeyPathWithMaster = KeyPathWithMaster(masterFingerprint, changeKey.path)
@@ -160,7 +160,7 @@ object Tools {
 
   def extractBip84Tx(psbt: Psbt): scala.util.Try[Transaction] = {
     // We ONLY support BIP84 watching wallets so all inputs have witnesses
-    psbt.inputs.zipWithIndex.foldLeft(psbt) { case (psbt1, input ~ index) =>
+    psbt.extract orElse psbt.inputs.zipWithIndex.foldLeft(psbt) { case (psbt1, input ~ index) =>
       val witness = (Script.witnessPay2wpkh _).tupled(input.partialSigs.head)
       psbt1.finalizeWitnessInput(index, witness).get
     }.extract

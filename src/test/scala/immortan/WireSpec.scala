@@ -102,11 +102,11 @@ class WireSpec extends AnyFunSuite {
     val params1 = NodeIdTrampolineParams(nodeId = randomKey.publicKey, trampolineOn)
     val params2 = NodeIdTrampolineParams(nodeId = randomKey.publicKey, trampolineOn)
 
-    val status1 = TrampolineStatus(params = List(params1, params2), paths = List(1L :: Nil, 2L :: Nil, 3L :: 4L :: Nil), removed = 2L :: Nil)
-    val status2 = TrampolineStatus.empty
+    val update1 = TrampolineStatusInit(List(List(params1), List(params1, params2)), trampolineOn)
+    val update2 = TrampolineStatusUpdate(List(List(params1), List(params1, params2)), Map(randomKey.publicKey -> trampolineOn), Some(trampolineOn), Set(randomKey.publicKey, randomKey.publicKey))
 
-    assert(trampolineStatusCodec.decode(trampolineStatusCodec.encode(status1).require).require.value == status1)
-    assert(trampolineStatusCodec.decode(trampolineStatusCodec.encode(status2).require).require.value == status2)
+    assert(trampolineStatusInitCodec.decode(trampolineStatusInitCodec.encode(update1).require).require.value == update1)
+    assert(trampolineStatusUpdateCodec.decode(trampolineStatusUpdateCodec.encode(update2).require).require.value == update2)
   }
 
   test("HC short channel ids are random") {
