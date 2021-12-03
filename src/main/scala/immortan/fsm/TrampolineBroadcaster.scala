@@ -46,7 +46,7 @@ object TrampolineBroadcaster {
 // Staggered broadcast of routing params to each connected peer when they change (other peers connect/disconnect, balances change, user actions)
 class TrampolineBroadcaster(cm: ChannelMaster) extends StateMachine[BroadcastStatus] with ConnectionListener with CanBeShutDown { me =>
   implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
-  private val subscription = Observable.interval(5.seconds).subscribe(_ => me process CMDBroadcast)
+  private val subscription = Observable.interval(10.seconds).subscribe(_ => me process CMDBroadcast)
   var broadcasters: Map[PublicKey, LastBroadcast] = Map.empty
 
   def doBroadcast(msg: Option[TrampolineStatus], info: RemoteNodeInfo): Unit = CommsTower.sendMany(msg, info.nodeSpecificPair)
