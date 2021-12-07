@@ -16,35 +16,42 @@
 
 package fr.acinq.eclair.blockchain.electrum
 
-import java.net.InetSocketAddress
-import java.util.concurrent.atomic.AtomicLong
-
 import akka.actor.{ActorRef, Props}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Transaction}
 import fr.acinq.eclair.TestKitBaseClass
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
+import immortan.{ClearnetConnectionProvider, LNParams}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits._
 
+import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.duration._
 import scala.util.Random
 
 
 class ElectrumClientPoolSpec extends TestKitBaseClass with AnyFunSuiteLike {
+  LNParams.connectionProvider = new ClearnetConnectionProvider
+
   var pool: ActorRef = _
-  val probe = TestProbe()
+  private val probe = TestProbe.apply
+
   // this is tx #2690 of block #500000
-  val referenceTx = Transaction.read("0200000001983c5b32ced1de5ae97d3ce9b7436f8bb0487d15bf81e5cae97b1e238dc395c6000000006a47304402205957c75766e391350eba2c7b752f0056cb34b353648ecd0992a8a81fc9bcfe980220629c286592842d152cdde71177cd83086619744a533f262473298cacf60193500121021b8b51f74dbf0ac1e766d162c8707b5e8d89fc59da0796f3b4505e7c0fb4cf31feffffff0276bd0101000000001976a914219de672ba773aa0bc2e15cdd9d2e69b734138fa88ac3e692001000000001976a914301706dede031e9fb4b60836e073a4761855f6b188ac09a10700")
-  val scriptHash = Crypto.sha256(referenceTx.txOut(0).publicKeyScript).reverse
-  val serverAddresses = {
+  private val referenceTx = Transaction.read("0200000001983c5b32ced1de5ae97d3ce9b7436f8bb0487d15bf81e5cae97b1e238dc395c6000000006a47304402205957c75766e391350e" +
+    "ba2c7b752f0056cb34b353648ecd0992a8a81fc9bcfe980220629c286592842d152cdde71177cd83086619744a533f262473298cacf60193500121021b8b51f74dbf0ac1e766d162c" +
+    "8707b5e8d89fc59da0796f3b4505e7c0fb4cf31feffffff0276bd0101000000001976a914219de672ba773aa0bc2e15cdd9d2e69b734138fa88ac3e692001000000001976a9143017" +
+    "06dede031e9fb4b60836e073a4761855f6b188ac09a10700")
+
+  private val scriptHash = Crypto.sha256(referenceTx.txOut.head.publicKeyScript).reverse
+
+  private val serverAddresses = {
     val stream = classOf[ElectrumClientSpec].getResourceAsStream("/electrum/servers_mainnet.json")
     val addresses = ElectrumClientPool.readServerAddresses(stream, sslEnabled = false)
     stream.close()
     addresses
   }
 
-  implicit val timeout = 20 seconds
+  implicit val timeout: FiniteDuration = 20.seconds
 
   import concurrent.ExecutionContext.Implicits.global
 
@@ -58,6 +65,7 @@ class ElectrumClientPoolSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   test("init an electrumx connection pool") {
     pool = system.actorOf(Props(new ElectrumClientPool(new AtomicLong(), Block.LivenetGenesisBlock.hash)), "electrum-client")
+    pool ! ElectrumClientPool.InitConnect
   }
 
   test("connect to an electrumx mainnet server") {
@@ -65,9 +73,9 @@ class ElectrumClientPoolSpec extends TestKitBaseClass with AnyFunSuiteLike {
     // make sure our master is stable, if the first master that we select is behind the other servers we will switch
     // during the first few seconds
     awaitCond({
-      probe.expectMsgType[ElectrumReady](30 seconds)
-      probe.receiveOne(5 seconds) == null
-    }, max = 60 seconds, interval = 1000 millis)
+      probe.expectMsgType[ElectrumReady](30.seconds)
+      probe.receiveOne(5.seconds) == null
+    }, max = 60.seconds, interval = 1000.millis)
   }
 
   test("get transaction") {
@@ -88,7 +96,7 @@ class ElectrumClientPoolSpec extends TestKitBaseClass with AnyFunSuiteLike {
   test("header subscription") {
     val probe1 = TestProbe()
     probe1.send(pool, HeaderSubscription(probe1.ref))
-    val HeaderSubscriptionResponse(_, header) = probe1.expectMsgType[HeaderSubscriptionResponse](timeout)
+    probe1.expectMsgType[HeaderSubscriptionResponse](timeout)
   }
 
   test("scripthash subscription") {
@@ -101,7 +109,7 @@ class ElectrumClientPoolSpec extends TestKitBaseClass with AnyFunSuiteLike {
   test("get scripthash history") {
     probe.send(pool, GetScriptHashHistory(scriptHash))
     val GetScriptHashHistoryResponse(_, history) = probe.expectMsgType[GetScriptHashHistoryResponse](timeout)
-    assert(history.contains((TransactionHistoryItem(500000, referenceTx.txid))))
+    assert(history.contains(TransactionHistoryItem(500000, referenceTx.txid)))
   }
 
   test("list script unspents") {

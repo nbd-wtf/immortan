@@ -40,7 +40,6 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     // s -> us -> a
 
     val preimage = randomBytes32
-    val paymentHash = Crypto.sha256(preimage)
     val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
     val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(700000L.msat), randomBytes32, randomBytes32, aP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is A which we do not have direct channels with
     val remoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an initial sender (who is our peer with a private channel)
@@ -226,8 +225,12 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.SENDING)
     // Channels are not open so outgoing payments are waiting for timeout
-    cm.opm.data.payments(reasonableTrampoline1.fullTag) doProcess OutgoingPaymentMaster.CMDAbort
-    WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
+
+    WAIT_UNTIL_TRUE {
+      cm.opm.data.payments(reasonableTrampoline1.fullTag) doProcess OutgoingPaymentMaster.CMDAbort
+      fsm.state == IncomingPaymentProcessor.FINALIZING
+    }
+
     // FSM asks channel master to provide current HTLC data right away
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
     WAIT_UNTIL_TRUE(replies.head.asInstanceOf[CMD_FAIL_HTLC].reason == Right(TemporaryNodeFailure))

@@ -10,6 +10,7 @@ import org.scalatest.funsuite.AnyFunSuite
 class CommsTowerSpec extends AnyFunSuite {
   test("Successfully connect, send Ping, get Pong") {
     var responses = List.empty[LightningMessage]
+    LNParams.connectionProvider = new ClearnetConnectionProvider
     LNParams.chainHash = Block.LivenetGenesisBlock.hash
     LNParams.ourInit = LNParams.createInit
 

@@ -8,6 +8,8 @@ import org.scalatest.funsuite.AnyFunSuite
 
 
 class FeeRatesSpec extends AnyFunSuite {
+  LNParams.connectionProvider = new ClearnetConnectionProvider
+
   test("Provider APIs are correctly parsed") {
     assert(new EsploraFeeProvider("https://blockstream.info/api/fee-estimates").provide.block_1.toLong > 0)
     assert(new EsploraFeeProvider("https://mempool.space/api/fee-estimates").provide.block_1.toLong > 0)
