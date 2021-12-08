@@ -1,5 +1,9 @@
 package fr.acinq.eclair.blockchain.electrum
 
+import java.io.InputStream
+import java.net.InetSocketAddress
+import java.util.concurrent.atomic.AtomicLong
+
 import akka.actor.{Actor, ActorRef, FSM, OneForOneStrategy, Props, SupervisorStrategy, Terminated}
 import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32}
 import fr.acinq.eclair.blockchain.CurrentBlockCount
@@ -9,9 +13,6 @@ import immortan.LNParams
 import org.json4s.JsonAST.{JObject, JString}
 import org.json4s.native.JsonMethods
 
-import java.io.InputStream
-import java.net.InetSocketAddress
-import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.util.Random

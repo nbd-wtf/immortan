@@ -1,5 +1,8 @@
 package fr.acinq.eclair.blockchain.electrum
 
+import java.net.{InetSocketAddress, SocketAddress}
+import java.util
+
 import akka.actor.{Actor, ActorRef, Cancellable, Stash, Terminated}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{Error, JsonRPCRequest, JsonRPCResponse}
@@ -23,8 +26,6 @@ import org.json4s.native.JsonMethods
 import org.json4s.{DefaultFormats, Formats, JInt, JLong, JString}
 import scodec.bits.ByteVector
 
-import java.net.{InetSocketAddress, SocketAddress}
-import java.util
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
