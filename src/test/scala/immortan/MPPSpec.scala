@@ -182,7 +182,7 @@ class MPPSpec extends AnyFunSuite {
     // Suppose this time we attempt a send when all channels are connected already
     cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.OPEN))
 
-    cm.opm.clearFailres = false
+    cm.opm.clearFailures = false
     cm.opm process send
 
     WAIT_UNTIL_TRUE {

@@ -122,7 +122,7 @@ object OutgoingPaymentMaster {
 class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[OutgoingPaymentMasterData] with CanBeRepliedTo { me =>
   def process(change: Any): Unit = scala.concurrent.Future(me doProcess change)(Channel.channelContext)
   become(OutgoingPaymentMasterData(TrampolineRoutingStates(Map.empty), Map.empty), EXPECTING_PAYMENTS)
-  var clearFailres: Boolean = true
+  var clearFailures: Boolean = true
 
   def doProcess(change: Any): Unit = (change, state) match {
     case (TrampolinePeerDisconnected(nodeId), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
@@ -138,7 +138,7 @@ class OutgoingPaymentMaster(val cm: ChannelMaster) extends StateMachine[Outgoing
       become(data withNewTrampolineStates data.trampolineStates.merge(nodeId, update), state)
 
     case (send: SendMultiPart, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
-      if (clearFailres) become(data.withFailuresReduced(System.currentTimeMillis), state)
+      if (clearFailures) become(data.withFailuresReduced(System.currentTimeMillis), state)
       for (graphEdge <- send.assistedEdges) cm.pf process graphEdge
       data.payments(send.fullTag) doProcess send
       me process CMDAskForRoute
