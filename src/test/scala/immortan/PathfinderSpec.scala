@@ -1,7 +1,6 @@
 package immortan
 
 import fr.acinq.eclair._
-import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.{ChannelDesc, NoRouteAvailable, RouteFound}
 import fr.acinq.eclair.wire._
@@ -22,17 +21,17 @@ class PathfinderSpec extends AnyFunSuite {
     val amountToSend = 100000000L.msat
     val finalExpectedHop = AvgHopParams(CltvExpiryDelta(100), 100, MilliSatoshi(1000L), sampleSize = 1)
     val intermediaryExpectedHop = AvgHopParams(CltvExpiryDelta(200), 200, MilliSatoshi(1000L), sampleSize = 100)
-    val payeeBeforeTrampoline = ExpectedRouteFees(hops = intermediaryExpectedHop :: intermediaryExpectedHop :: finalExpectedHop :: Nil).totalWithFee(amountToSend)
+    val payeeBeforeTrampoline = ExpectedRouteFees(hops = intermediaryExpectedHop :: intermediaryExpectedHop :: finalExpectedHop :: Nil).totalWithFeeReserve(amountToSend)
 
     val trampolineFee1 = TrampolineOn(minMsat = 1000L.msat, maxMsat = Long.MaxValue.msat, 1000, exponent = 0.79, logExponent = 2.1, CltvExpiryDelta(100))
     val payeeWithTrampoline = ExpectedRouteFees(hops = trampolineFee1 :: intermediaryExpectedHop :: intermediaryExpectedHop :: finalExpectedHop :: Nil)
-    assert(trampolineFee1.relayFee(payeeBeforeTrampoline) == payeeWithTrampoline.totalWithFee(amountToSend) - payeeBeforeTrampoline)
+    assert(trampolineFee1.relayFee(payeeBeforeTrampoline) == payeeWithTrampoline.totalWithFeeReserve(amountToSend) - payeeBeforeTrampoline)
 
     val trampolineFee2 = TrampolineOn(minMsat = 1000L.msat, maxMsat = Long.MaxValue.msat, 1000, exponent = 0.89, logExponent = 3.1, CltvExpiryDelta(100))
     val payeeWithPeerEdge = ExpectedRouteFees(hops = trampolineFee2 :: trampolineFee1 :: intermediaryExpectedHop :: intermediaryExpectedHop :: finalExpectedHop :: Nil)
     val payeeWithoutTrampoline = ExpectedRouteFees(hops = intermediaryExpectedHop :: trampolineFee1 :: intermediaryExpectedHop :: intermediaryExpectedHop :: intermediaryExpectedHop :: finalExpectedHop :: Nil)
-    assert(payeeWithPeerEdge.totalWithFee(amountToSend) < payeeWithoutTrampoline.totalWithFee(amountToSend))
-    assert(payeeWithPeerEdge.totalWithFee(amountToSend) - amountToSend == 92243L.msat)
+    assert(payeeWithPeerEdge.totalWithFeeReserve(amountToSend) < payeeWithoutTrampoline.totalWithFeeReserve(amountToSend))
+    assert(payeeWithPeerEdge.totalWithFeeReserve(amountToSend) - amountToSend == 92243L.msat)
   }
 
   test("Exclude one-sided and ghost channels") {
