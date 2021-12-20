@@ -3,8 +3,8 @@ package immortan
 import fr.acinq.bitcoin.{Block, Crypto}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.payment.IncomingPacket.FinalPacket
-import fr.acinq.eclair.payment.{IncomingPacket, PaymentRequest}
+import fr.acinq.eclair.payment.IncomingPaymentPacket.FinalPacket
+import fr.acinq.eclair.payment.{IncomingPaymentPacket, PaymentRequest}
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteUpdateFail, RemoteUpdateMalform}
 import fr.acinq.eclair.wire._
 import immortan.fsm._
@@ -61,7 +61,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     WAIT_UNTIL_TRUE {
       val Seq(add1) = cm.all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing)
-      IncomingPacket.decrypt(add1, aP).right.get.isInstanceOf[FinalPacket]
+      IncomingPaymentPacket.decrypt(add1, aP).right.get.isInstanceOf[FinalPacket]
     }
   }
 
@@ -97,7 +97,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
 
     WAIT_UNTIL_TRUE {
       val Seq(add1) = cm.all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing)
-      val finalPacket = IncomingPacket.decrypt(add1, aP).right.get.asInstanceOf[FinalPacket]
+      val finalPacket = IncomingPaymentPacket.decrypt(add1, aP).right.get.asInstanceOf[FinalPacket]
       assert(finalPacket.payload.paymentSecret == pr.paymentSecret.get) // Payment secret is internal, payee will be able to group trampolines from various sources together
       assert(finalPacket.payload.totalAmount == 700000L.msat) // Total amount was not seen by relaying trampoline node, but equal to requested by payee
       finalPacket.payload.amount == add1.amountMsat
