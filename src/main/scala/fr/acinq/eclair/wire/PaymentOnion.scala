@@ -146,7 +146,7 @@ object OnionPaymentPayloadTlv {
    * Invoice routing hints. Only included for intermediate trampoline nodes when they should convert to a legacy payment
    * because the final recipient doesn't support trampoline.
    */
-  case class InvoiceRoutingInfo(extraHops: List[List[PaymentRequest.ExtraHop]]) extends OnionPaymentPayloadTlv
+  case class InvoiceRoutingInfo(extraHops: List[PaymentRequest.ExtraHops]) extends OnionPaymentPayloadTlv
 
   /** An encrypted trampoline onion packet. */
   case class TrampolineOnion(packet: OnionRoutingPacket) extends OnionPaymentPayloadTlv
@@ -243,10 +243,7 @@ object PaymentOnion {
     val outgoingCltv = records.get[OutgoingCltv].get.cltv
     val outgoingNodeId = records.get[OutgoingNodeId].get.nodeId
     // The following fields are only included in the trampoline-to-legacy case.
-    val totalAmount = records.get[PaymentData].map(_.totalAmount match {
-      case MilliSatoshi(0) => amountToForward
-      case totalAmount => totalAmount
-    }).getOrElse(amountToForward)
+    val totalAmount = records.get[PaymentData].map(_.totalAmount).filter(_.toLong != 0L).getOrElse(amountToForward)
     val paymentSecret = records.get[PaymentData].map(_.secret)
     val invoiceFeatures = records.get[InvoiceFeatures].map(_.features)
     val invoiceRoutingInfo = records.get[InvoiceRoutingInfo].map(_.extraHops)
@@ -256,10 +253,7 @@ object PaymentOnion {
     override val amount = records.get[AmountToForward].get.amount
     override val expiry = records.get[OutgoingCltv].get.cltv
     override val paymentSecret = records.get[PaymentData].get.secret
-    override val totalAmount = records.get[PaymentData].map(_.totalAmount match {
-      case MilliSatoshi(0) => amount
-      case totalAmount => totalAmount
-    }).getOrElse(amount)
+    override val totalAmount = records.get[PaymentData].map(_.totalAmount).filter(_.toLong != 0L).getOrElse(amount)
     override val paymentPreimage = records.get[KeySend].map(_.paymentPreimage)
   }
 
