@@ -1,17 +1,14 @@
 package fr.acinq.eclair.payment
 
-import akka.actor.ActorRef
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC}
+import fr.acinq.eclair.channel.CMD_FAIL_HTLC
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, UInt64, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, UInt64}
 import scodec.bits.ByteVector
 import scodec.{Attempt, Codec, DecodeResult}
-
-import java.util.UUID
 
 
 sealed trait IncomingPaymentPacket
