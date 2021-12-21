@@ -292,9 +292,9 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
         val inner = firstOpt(adds).get.innerPayload
         val extraEdges = RouteCalculation.makeExtraEdges(inner.invoiceRoutingInfo.getOrElse(Nil), inner.outgoingNodeId)
         val totalFeeReserve = lastAmountIn - inner.amountToForward - LNParams.trampoline.relayFee(inner.amountToForward)
-        val routerConf = LNParams.routerConf.copy(routeMaxCltv = expiryIn(adds) - inner.outgoingCltv - LNParams.ourRoutingCltvExpiryDelta)
 
         val splitInfo = SplitInfo(inner.amountToForward, inner.amountToForward)
+        val routerConf = LNParams.routerConf.copy(routeMaxCltv = expiryIn(adds) - inner.outgoingCltv - LNParams.ourRoutingCltvExpiryDelta, maxRemoteAttempts = 6)
         // It makes no sense to try to route out a payment through channels used by peer to route it in, this also includes possible unused multiple channels from same peer
         val allowedChans = cm.all -- adds.map(_.add.channelId).flatMap(cm.all.get).flatMap(Channel.chanAndCommitsOpt).map(_.commits.remoteInfo.nodeId).flatMap(cm.allFromNode).map(_.commits.channelId)
         val send = SendMultiPart(fullTag, chainExpiry = Left(inner.outgoingCltv), splitInfo, routerConf, inner.outgoingNodeId, expectedRouteFees = None, prExt = None, totalFeeReserve, allowedChans.values.toSeq)
