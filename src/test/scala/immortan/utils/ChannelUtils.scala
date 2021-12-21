@@ -48,7 +48,7 @@ object ChannelUtils {
     val (normalStore, hostedStore) = SQLiteUtils.getSQLiteNetworkStores
     val essentialInterface = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, ChannelTable, PreimageTable)
     val notEssentialInterface = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, PaymentTable, RelayTable, DataTable, ElectrumHeadersTable)
-    val payBag = new SQLitePayment(notEssentialInterface, essentialInterface) {
+    val payBag: SQLitePayment = new SQLitePayment(notEssentialInterface, essentialInterface) {
       override def listPendingSecrets: Set[ByteVector32] = secrets.toSet
     }
     val chanBag = new SQLiteChannel(essentialInterface, null)

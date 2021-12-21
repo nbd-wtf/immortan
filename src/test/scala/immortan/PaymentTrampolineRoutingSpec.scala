@@ -3,8 +3,9 @@ package immortan
 import fr.acinq.bitcoin.{Block, Crypto}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.payment.IncomingPaymentPacket.FinalPacket
-import fr.acinq.eclair.payment.{IncomingPaymentPacket, PaymentRequest}
+import fr.acinq.eclair.payment.IncomingPaymentPacket.{FinalPacket, NodeRelayPacket, decrypt}
+import fr.acinq.eclair.payment.{IncomingPaymentPacket, OutgoingPaymentPacket, PaymentRequest}
+import fr.acinq.eclair.router.Router.NodeHop
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteUpdateFail, RemoteUpdateMalform}
 import fr.acinq.eclair.wire._
 import immortan.fsm._
@@ -102,6 +103,62 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
       assert(finalPacket.payload.totalAmount == 700000L.msat) // Total amount was not seen by relaying trampoline node, but equal to requested by payee
       finalPacket.payload.amount == add1.amountMsat
     }
+  }
+
+  test("Successfully parse a double trampoline payment") {
+    LNParams.secret = WalletSecret(LightningNodeKeys.makeFromSeed(randomBytes(32).toArray), mnemonic = Nil, seed = randomBytes32)
+
+    // e -(trampoline)-> s -(trampoline)-> us -(legacy)-> d
+
+    val paymentHash = Crypto.sha256(randomBytes32)
+    val pr = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(500000L.msat), paymentHash, randomBytes32, dP, "Invoice", CltvExpiryDelta(18), Nil) // Final payee is D which we have direct channel with
+    val upstreamRemoteNodeInfo = RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1") // How we see an intermediary trampoline router (who is our peer with a private channel)
+    val feeReserve = 5000L.msat
+
+    val trampolineRoute = Seq(
+      NodeHop(e, s, CltvExpiryDelta(0), 0.msat), // a hop from sender to their peer, only needed because of sender NodeId
+      NodeHop(s, upstreamRemoteNodeInfo.nodeSpecificPubKey, LNParams.ourRoutingCltvExpiryDelta, feeReserve), // Intermediary router
+      NodeHop(upstreamRemoteNodeInfo.nodeSpecificPubKey, d, LNParams.ourRoutingCltvExpiryDelta, feeReserve) // Final payee
+    )
+
+    // We send to a receiver who does not support trampoline, so relay node will send a basic MPP with inner payment secret provided and revealed
+    val finalInnerPayload = PaymentOnion.createSinglePartPayload(pr.amount.get, CltvExpiry(18), pr.paymentSecret.get) // Final CLTV is supposed to be taken from invoice (+ assuming tip = 0 when testing)
+    val (trampolineAmountTotal, trampolineExpiry, finalOnion) = OutgoingPaymentPacket.buildTrampolineToLegacyPacket(randomKey, pr, trampolineRoute, finalInnerPayload)
+
+    val intermediaryPayload = PaymentOnion.createTrampolinePayload(trampolineAmountTotal, trampolineAmountTotal, trampolineExpiry, randomBytes32, finalOnion.packet)
+    val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPaymentPacket(randomKey, paymentHash, Seq(NodeHop(e, s, CltvExpiryDelta(0), 0.msat)), intermediaryPayload)
+
+    val add_e_s = UpdateAddHtlc(randomBytes32, secureRandom.nextInt(1000), firstAmount, pr.paymentHash, firstExpiry, onion.packet)
+    val Right(NodeRelayPacket(_, outer_s, inner_s, packet_s)) = decrypt(add_e_s, sP)
+
+    assert(outer_s.amount === pr.amount.get + feeReserve * 2)
+    assert(outer_s.totalAmount === pr.amount.get + feeReserve * 2)
+    assert(CltvExpiryDelta(outer_s.expiry.underlying.toInt) === LNParams.ourRoutingCltvExpiryDelta + LNParams.ourRoutingCltvExpiryDelta + pr.minFinalCltvExpiryDelta.get)
+    assert(outer_s.paymentSecret !== pr.paymentSecret)
+    assert(inner_s.amountToForward === pr.amount.get + feeReserve)
+    assert(CltvExpiryDelta(inner_s.outgoingCltv.underlying.toInt) === LNParams.ourRoutingCltvExpiryDelta + pr.minFinalCltvExpiryDelta.get)
+    assert(inner_s.outgoingNodeId === upstreamRemoteNodeInfo.nodeSpecificPubKey)
+    assert(inner_s.invoiceRoutingInfo === None)
+    assert(inner_s.invoiceFeatures === None)
+    assert(inner_s.paymentSecret === None)
+
+    val finalNodeHop = NodeHop(s, upstreamRemoteNodeInfo.nodeSpecificPubKey, LNParams.ourRoutingCltvExpiryDelta, feeReserve)
+    val finalPayload = PaymentOnion.createTrampolinePayload(outer_s.totalAmount - feeReserve, outer_s.totalAmount - feeReserve, outer_s.expiry - LNParams.ourRoutingCltvExpiryDelta, randomBytes32, packet_s)
+    val (amount_s_us, expiry_s_us, onion_s_us) = OutgoingPaymentPacket.buildPaymentPacket(randomKey, paymentHash, finalNodeHop :: Nil, finalPayload)
+
+    val add_s_us = UpdateAddHtlc(randomBytes32, secureRandom.nextInt(1000), amount_s_us, pr.paymentHash, expiry_s_us, onion_s_us.packet)
+    val Right(NodeRelayPacket(_, outer_s_us, inner_s_us, _)) = decrypt(add_s_us, upstreamRemoteNodeInfo.nodeSpecificPrivKey)
+
+    assert(outer_s_us.amount === pr.amount.get + feeReserve)
+    assert(outer_s_us.totalAmount === pr.amount.get + feeReserve)
+    assert(CltvExpiryDelta(outer_s_us.expiry.underlying.toInt) === LNParams.ourRoutingCltvExpiryDelta + pr.minFinalCltvExpiryDelta.get)
+    assert(outer_s_us.paymentSecret !== pr.paymentSecret)
+    assert(inner_s_us.amountToForward === pr.amount.get)
+    assert(inner_s_us.outgoingCltv.underlying === 18)
+    assert(inner_s_us.outgoingNodeId === d)
+    assert(inner_s_us.totalAmount === pr.amount.get)
+    assert(inner_s_us.paymentSecret === pr.paymentSecret)
+    assert(inner_s_us.invoiceRoutingInfo === Some(pr.routingInfo))
   }
 
   test("Successfully route a multipart trampoline payment") {
