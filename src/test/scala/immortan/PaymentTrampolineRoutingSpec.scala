@@ -367,7 +367,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.FINALIZING)
     // FSM asks channel master to provide current HTLC data right away
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline1 :: Nil)
-    WAIT_UNTIL_TRUE(replies.head.asInstanceOf[CMD_FAIL_HTLC].reason == Right(TrampolineFeeInsufficient))
+    WAIT_UNTIL_TRUE(replies.head.asInstanceOf[CMD_FAIL_HTLC].reason == Right(TemporaryNodeFailure))
     fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
     assert(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
     // Sender FSM has been removed
@@ -415,7 +415,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     cm.all = Map.empty
 
     cm.opm process RemoteUpdateMalform(UpdateFailMalformedHtlc(out1.channelId, out1.id, randomBytes32, failureCode = 1), out1)
-    cm.opm process RemoteUpdateFail(UpdateFailHtlc(out2.channelId, out2.id, randomBytes32.bytes), out2)// Finishes it
+    cm.opm process RemoteUpdateFail(UpdateFailHtlc(out2.channelId, out2.id, randomBytes32.bytes), out2) // Finishes it
     WAIT_UNTIL_TRUE(fsm.data == null && fsm.state == IncomingPaymentProcessor.RECEIVING)
 
     // All outgoing parts have been cleared, but we still have incoming parts and maybe can try again (unless CLTV delta has expired)
@@ -461,13 +461,15 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     fsm.become(null, IncomingPaymentProcessor.RECEIVING)
     WAIT_UNTIL_TRUE(cm.all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).size == 2)
     val Seq(out1, out2) = cm.all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).filter(_.fullTag == reasonableTrampoline1.fullTag)
-    fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = reasonableTrampoline2 :: Nil)
-    // Pathologic state: we do not have enough incoming payments, yet have outgoing payments
-    assert(!fsm.data.asInstanceOf[TrampolineStopping].retry)
     // User has removed an outgoing HC meanwhile
     cm.all = Map.empty
 
-    cm.opm process RemoteUpdateMalform(UpdateFailMalformedHtlc(out1.channelId, out1.id, randomBytes32, failureCode = 1), out1)
+    fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = reasonableTrampoline2 :: Nil)
+    // Pathologic state: we do not have enough incoming payments, yet have outgoing payments
+    assert(!fsm.data.asInstanceOf[TrampolineStopping].retry)
+
+
+    cm.opm process RemoteUpdateFail(UpdateFailHtlc(out1.channelId, out1.id, randomBytes32.bytes), out1)
     cm.opm process RemoteUpdateFail(UpdateFailHtlc(out1.channelId, out1.id, randomBytes32.bytes), out1) // Noisy event
     cm.opm process RemoteUpdateFail(UpdateFailHtlc(out2.channelId, out2.id, randomBytes32.bytes), out2) // Finishes it
 
@@ -479,6 +481,7 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     fsm doProcess makeInFlightPayments(out = Nil, in = reasonableTrampoline2 :: Nil) // Got after `wholePaymentFailed` has fired
     fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
     WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.SHUTDOWN)
+    println(replies.head.asInstanceOf[CMD_FAIL_HTLC].reason)
     WAIT_UNTIL_TRUE(replies.head.asInstanceOf[CMD_FAIL_HTLC].reason == Right(TemporaryNodeFailure))
   }
 

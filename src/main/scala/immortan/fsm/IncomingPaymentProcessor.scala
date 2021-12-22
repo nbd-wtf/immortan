@@ -184,8 +184,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
   def abortedWithError(failures: Failures, finalNodeId: PublicKey): TrampolineAborted = {
     val finalNodeFailure = failures.collectFirst { case remote: RemoteFailure if remote.packet.originNode == finalNodeId => remote.packet.failureMessage }
     val routingNodeFailure = failures.collectFirst { case remote: RemoteFailure if remote.packet.originNode != finalNodeId => remote.packet.failureMessage }
-    val localNoRoutesFoundError = failures.collectFirst { case local: LocalFailure if local.status == PaymentFailure.NO_ROUTES_FOUND => TrampolineFeeInsufficient }
-    TrampolineAborted(finalNodeFailure orElse routingNodeFailure orElse localNoRoutesFoundError getOrElse TemporaryNodeFailure, fullTag)
+    TrampolineAborted(finalNodeFailure orElse routingNodeFailure getOrElse TemporaryNodeFailure, fullTag)
   }
 
   require(fullTag.tag == PaymentTagTlv.TRAMPLOINE_ROUTED)
@@ -292,9 +291,9 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster) e
         val inner = firstOpt(adds).get.innerPayload
         val extraEdges = RouteCalculation.makeExtraEdges(inner.invoiceRoutingInfo.getOrElse(Nil), inner.outgoingNodeId)
         val totalFeeReserve = lastAmountIn - inner.amountToForward - LNParams.trampoline.relayFee(inner.amountToForward)
-        val routerConf = LNParams.routerConf.copy(routeMaxCltv = expiryIn(adds) - inner.outgoingCltv - LNParams.ourRoutingCltvExpiryDelta)
 
         val splitInfo = SplitInfo(inner.amountToForward, inner.amountToForward)
+        val routerConf = LNParams.routerConf.copy(routeMaxCltv = expiryIn(adds) - inner.outgoingCltv - LNParams.ourRoutingCltvExpiryDelta, maxRemoteAttempts = 6)
         // It makes no sense to try to route out a payment through channels used by peer to route it in, this also includes possible unused multiple channels from same peer
         val allowedChans = cm.all -- adds.map(_.add.channelId).flatMap(cm.all.get).flatMap(Channel.chanAndCommitsOpt).map(_.commits.remoteInfo.nodeId).flatMap(cm.allFromNode).map(_.commits.channelId)
         val send = SendMultiPart(fullTag, chainExpiry = Left(inner.outgoingCltv), splitInfo, routerConf, inner.outgoingNodeId, expectedRouteFees = None, prExt = None, totalFeeReserve, allowedChans.values.toSeq)
