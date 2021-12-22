@@ -461,13 +461,11 @@ class PaymentTrampolineRoutingSpec extends AnyFunSuite {
     fsm.become(null, IncomingPaymentProcessor.RECEIVING)
     WAIT_UNTIL_TRUE(cm.all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).size == 2)
     val Seq(out1, out2) = cm.all.values.flatMap(Channel.chanAndCommitsOpt).flatMap(_.commits.allOutgoing).filter(_.fullTag == reasonableTrampoline1.fullTag)
-    // User has removed an outgoing HC meanwhile
-    cm.all = Map.empty
-
     fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = reasonableTrampoline2 :: Nil)
     // Pathologic state: we do not have enough incoming payments, yet have outgoing payments
     assert(!fsm.data.asInstanceOf[TrampolineStopping].retry)
-
+    // User has removed an outgoing HC meanwhile
+    cm.all = Map.empty
 
     cm.opm process RemoteUpdateFail(UpdateFailHtlc(out1.channelId, out1.id, randomBytes32.bytes), out1)
     cm.opm process RemoteUpdateFail(UpdateFailHtlc(out1.channelId, out1.id, randomBytes32.bytes), out1) // Noisy event
