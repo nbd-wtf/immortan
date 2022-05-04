@@ -1,5 +1,13 @@
+target
 .bsp/
 .idea/
-project/project/
-project/target/
-target/
+out/
+IMMORTAN
+data/db.sqlite
+data/wallet.conf
+debug.log
+.metals/
+.bloop/
+project/metals.sbt
+project/project
+data/

@@ -1,46 +1,31 @@
-name := "immortan"
-
-version := "0.1"
-
-scalaVersion := "2.11.12"
-
-libraryDependencies += "org.scodec" % "scodec-core_2.11" % "1.11.3"
-
-libraryDependencies += "commons-codec" % "commons-codec" % "1.10"
-
-libraryDependencies += "io.reactivex" % "rxscala_2.11" % "0.27.0"
-
-libraryDependencies += "org.json4s" % "json4s-native_2.11" % "3.6.7" // Electrum
-
-libraryDependencies += "io.spray" % "spray-json_2.11" % "1.3.5" // Immortan
-
-libraryDependencies += "com.typesafe.akka" % "akka-actor_2.11" % "2.3.14"
-
-libraryDependencies += "io.netty" % "netty-all" % "4.1.42.Final"
-
-libraryDependencies += "com.softwaremill.quicklens" % "quicklens_2.11" % "1.6.1"
-
-libraryDependencies += "org.bouncycastle" % "bcprov-jdk15to18" % "1.68"
-
-libraryDependencies += "com.google.guava" % "guava" % "29.0-android"
-
-libraryDependencies += "org.scala-lang.modules" %% "scala-parser-combinators" % "2.1.0"
-
-libraryDependencies += "com.sparrowwallet" % "hummingbird" % "1.6.2"
-
-libraryDependencies += "com.squareup.okhttp3" % "okhttp" % "3.12.11"
-
-// Testing
-
-libraryDependencies += "org.scalatest" % "scalatest_2.11" % "3.1.1"
-
-libraryDependencies += "com.typesafe.akka" % "akka-testkit_2.11" % "2.5.32"
-
-libraryDependencies += "org.xerial" % "sqlite-jdbc" % "3.27.2.1"
-
-parallelExecution in Test := false
-
-assemblyMergeStrategy in assembly := {
-  case n if n.startsWith("META-INF") => MergeStrategy.discard
-  case _ => MergeStrategy.first
-}
+name                   := "immortan"
+organization           := "com.fiatjaf"
+scalaVersion           := "2.13.8"
+version                := "0.1.0"
+scalacOptions          += "-language:postfixOps"
+sonatypeProfileName    := "com.fiatjaf"
+homepage               := Some(url("https://github.com/fiatjaf/immortan"))
+scmInfo                := Some(ScmInfo(url("https://github.com/fiatjaf/immortan"), "git@github.com:fiatjaf/immortan.git"))
+licenses               += ("Apache-2.0", url("http://www.apache.org/licenses/LICENSE-2.0"))
+developers             := List(
+  Developer(id="fiatjaf", name="fiatjaf", email="fiatjaf@gmail.com", url=url("https://fiatjaf.com/")),
+  Developer(id="akumaigorodski", name="akumaigorodski", email="akumaigorodski@gmail.com", url=url("https://sbw.app/"))
+)
+publishMavenStyle      := true
+publishTo              := sonatypePublishToBundle.value
+sonatypeCredentialHost := "s01.oss.sonatype.org"
+libraryDependencies   ++= Seq(
+  "com.google.guava" % "guava" % "31.1-jre", // eclair
+  "org.scala-lang.modules" % "scala-parser-combinators_2.13" % "2.1.0", // immortan
+  "fr.acinq.secp256k1" % "secp256k1-kmp-jni-jvm" % "0.6.3", // eclair
+  "org.scodec" % "scodec-core_2.13" % "1.11.9", // immortan + eclair
+  "commons-codec" % "commons-codec" % "1.10", // immortan + eclair
+  "io.reactivex" % "rxscala_2.13" % "0.27.0", // immortan
+  "org.json4s" % "json4s-native_2.13" % "3.6.7", // electrum,
+  "io.spray" % "spray-json_2.13" % "1.3.5", // immortan,
+  "com.typesafe.akka" % "akka-actor_2.13" % "2.6.9", // immortan + eclair
+  "io.netty" % "netty-all" % "4.1.42.Final", // electrum
+  "com.softwaremill.quicklens" % "quicklens_2.13" % "1.8.4", // immortan
+  "org.bouncycastle" % "bcprov-jdk15to18" % "1.68", // eclair
+  "com.sparrowwallet" % "hummingbird" % "1.6.2" // immortan
+)

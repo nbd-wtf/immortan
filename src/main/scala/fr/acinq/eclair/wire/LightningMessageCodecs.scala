@@ -7,28 +7,44 @@ import scodec.Codec
 import scodec.bits.ByteVector
 import scodec.codecs._
 
-
 object LightningMessageCodecs {
 
-  val featuresCodec: Codec[Features] = varsizebinarydata.xmap[Features](Features.apply, _.toByteVector)
+  val featuresCodec: Codec[Features[FeatureScope]] =
+    varsizebinarydata.xmap[Features[FeatureScope]](
+      { bytes => Features(bytes) },
+      { features => features.toByteVector }
+    )
 
-  /** For historical reasons, features are divided into two feature bitmasks. We only send from the second one, but we allow receiving in both. */
-  val combinedFeaturesCodec: Codec[Features] = (
-    ("globalFeatures" | varsizebinarydata) ::
-      ("localFeatures" | varsizebinarydata)).as[(ByteVector, ByteVector)].xmap[Features](
-    { case (gf, lf) =>
-      val length = gf.length.max(lf.length)
-      Features(gf.padLeft(length) | lf.padLeft(length))
-    },
-    { features => (ByteVector.empty, features.toByteVector) })
+  val initFeaturesCodec: Codec[Features[InitFeature]] =
+    featuresCodec.xmap[Features[InitFeature]](_.initFeatures, _.unscoped)
 
-  val initCodec = (("features" | combinedFeaturesCodec) :: ("tlvStream" | InitTlvCodecs.initTlvCodec)).as[Init]
+  /** For historical reasons, features are divided into two feature bitmasks. We
+    * only send from the second one, but we allow receiving in both.
+    */
+  val combinedFeaturesCodec: Codec[Features[InitFeature]] =
+    (("globalFeatures" | varsizebinarydata) ::
+      ("localFeatures" | varsizebinarydata))
+      .as[(ByteVector, ByteVector)]
+      .xmap[Features[InitFeature]](
+        { case (gf, lf) =>
+          val length = gf.length.max(lf.length)
+          Features(gf.padLeft(length) | lf.padLeft(length)).initFeatures()
+        },
+        { features => (ByteVector.empty, features.toByteVector) }
+      )
 
-  val failCodec = (("channelId" | bytes32) :: ("data" | varsizebinarydata)).as[Fail]
+  val initCodec =
+    (("features" | combinedFeaturesCodec) :: ("tlvStream" | InitTlvCodecs.initTlvCodec))
+      .as[Init]
 
-  val warningCodec = (("channelId" | bytes32) :: ("data" | varsizebinarydata)).as[Warning]
+  val failCodec =
+    (("channelId" | bytes32) :: ("data" | varsizebinarydata)).as[Fail]
 
-  val pingCodec = (("pongLength" | uint16) :: ("data" | varsizebinarydata)).as[Ping]
+  val warningCodec =
+    (("channelId" | bytes32) :: ("data" | varsizebinarydata)).as[Warning]
+
+  val pingCodec =
+    (("pongLength" | uint16) :: ("data" | varsizebinarydata)).as[Ping]
 
   val pongCodec = ("data" | varsizebinarydata).as[Pong]
 
@@ -149,7 +165,8 @@ object LightningMessageCodecs {
       ("nextPerCommitmentPoint" | publicKey)
   }.as[RevokeAndAck]
 
-  val updateFeeCodec = (("channelId" | bytes32) :: ("feeratePerKw" | feeratePerKw)).as[UpdateFee]
+  val updateFeeCodec =
+    (("channelId" | bytes32) :: ("feeratePerKw" | feeratePerKw)).as[UpdateFee]
 
   val announcementSignaturesCodec = {
     ("channelId" | bytes32) ::
@@ -185,7 +202,9 @@ object LightningMessageCodecs {
       ("addresses" | listofnodeaddresses) ::
       ("unknownFields" | bytes)
 
-  val nodeAnnouncementCodec = (("signature" | bytes64) :: nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
+  val nodeAnnouncementCodec =
+    (("signature" | bytes64) :: nodeAnnouncementWitnessCodec)
+      .as[NodeAnnouncement]
 
   val channelUpdateChecksumCodec =
     ("chainHash" | bytes32) ::
@@ -196,7 +215,10 @@ object LightningMessageCodecs {
           ("htlcMinimumMsat" | millisatoshi) ::
           ("feeBaseMsat" | millisatoshi32) ::
           ("feeProportionalMillionths" | uint32) ::
-          ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, millisatoshi))
+          ("htlcMaximumMsat" | conditional(
+            (messageFlags & 1) != 0,
+            millisatoshi
+          ))
       })
 
   val channelUpdateWitnessCodec =
@@ -209,26 +231,41 @@ object LightningMessageCodecs {
           ("htlcMinimumMsat" | millisatoshi) ::
           ("feeBaseMsat" | millisatoshi32) ::
           ("feeProportionalMillionths" | uint32) ::
-          ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, millisatoshi)) ::
+          ("htlcMaximumMsat" | conditional(
+            (messageFlags & 1) != 0,
+            millisatoshi
+          )) ::
           ("unknownFields" | bytes)
       })
 
-  val channelUpdateCodec = (("signature" | bytes64) :: channelUpdateWitnessCodec).as[ChannelUpdate]
+  val channelUpdateCodec =
+    (("signature" | bytes64) :: channelUpdateWitnessCodec).as[ChannelUpdate]
 
   val encodedShortChannelIdsCodec: Codec[EncodedShortChannelIds] =
-    discriminated[EncodedShortChannelIds].by(byte)
+    discriminated[EncodedShortChannelIds]
+      .by(byte)
       .\(0) {
-        case a@EncodedShortChannelIds(_, Nil) => a // empty list is always encoded with encoding type 'uncompressed' for compatibility with other implementations
-        case a@EncodedShortChannelIds(EncodingType.UNCOMPRESSED, _) => a
-      }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(int64)).as[EncodedShortChannelIds])
+        case a @ EncodedShortChannelIds(_, Nil) =>
+          a // empty list is always encoded with encoding type 'uncompressed' for compatibility with other implementations
+        case a @ EncodedShortChannelIds(EncodingType.UNCOMPRESSED, _) => a
+      }(
+        (provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(int64))
+          .as[EncodedShortChannelIds]
+      )
       .\(1) {
-        case a@EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, _) => a
-      }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(int64))).as[EncodedShortChannelIds])
-
+        case a @ EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, _) => a
+      }(
+        (provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(
+          list(int64)
+        )).as[EncodedShortChannelIds]
+      )
 
   val queryShortChannelIdsCodec = {
     ("chainHash" | bytes32) ::
-      ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
+      ("shortChannelIds" | variableSizeBytes(
+        uint16,
+        encodedShortChannelIdsCodec
+      )) ::
       ("tlvStream" | QueryShortChannelIdsTlv.codec)
   }.as[QueryShortChannelIds]
 
@@ -249,7 +286,10 @@ object LightningMessageCodecs {
       ("firstBlockNum" | uint32) ::
       ("numberOfBlocks" | uint32) ::
       ("syncComplete" | byte) ::
-      ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
+      ("shortChannelIds" | variableSizeBytes(
+        uint16,
+        encodedShortChannelIdsCodec
+      )) ::
       ("tlvStream" | ReplyChannelRangeTlv.codec)
   }.as[ReplyChannelRange]
 
@@ -290,14 +330,22 @@ object LightningMessageCodecs {
   lazy val lastCrossSignedStateCodec = {
     (bool8 withContext "isHost") ::
       (varsizebinarydata withContext "refundScriptPubKey") ::
-      (lengthDelimited(initHostedChannelCodec) withContext "initHostedChannel") ::
+      (lengthDelimited(
+        initHostedChannelCodec
+      ) withContext "initHostedChannel") ::
       (uint32 withContext "blockDay") ::
       (millisatoshi withContext "localBalanceMsat") ::
       (millisatoshi withContext "remoteBalanceMsat") ::
       (uint32 withContext "localUpdates") ::
       (uint32 withContext "remoteUpdates") ::
-      (listOfN(uint16, lengthDelimited(LightningMessageCodecs.updateAddHtlcCodec)) withContext "incomingHtlcs") ::
-      (listOfN(uint16, lengthDelimited(LightningMessageCodecs.updateAddHtlcCodec)) withContext "outgoingHtlcs") ::
+      (listOfN(
+        uint16,
+        lengthDelimited(LightningMessageCodecs.updateAddHtlcCodec)
+      ) withContext "incomingHtlcs") ::
+      (listOfN(
+        uint16,
+        lengthDelimited(LightningMessageCodecs.updateAddHtlcCodec)
+      ) withContext "outgoingHtlcs") ::
       (bytes64 withContext "remoteSigOfLocal") ::
       (bytes64 withContext "localSigOfRemote")
   }.as[LastCrossSignedState]
@@ -327,15 +375,20 @@ object LightningMessageCodecs {
       (bytes64 withContext "clientSig")
   }.as[ResizeChannel]
 
-  val askBrandingInfoCodec = (bytes32 withContext "chainHash").as[AskBrandingInfo]
+  val askBrandingInfoCodec =
+    (bytes32 withContext "chainHash").as[AskBrandingInfo]
 
-  val queryPublicHostedChannelsCodec = (bytes32 withContext "chainHash").as[QueryPublicHostedChannels]
+  val queryPublicHostedChannelsCodec =
+    (bytes32 withContext "chainHash").as[QueryPublicHostedChannels]
 
-  val replyPublicHostedChannelsEndCodec = (bytes32 withContext "chainHash").as[ReplyPublicHostedChannelsEnd]
+  val replyPublicHostedChannelsEndCodec =
+    (bytes32 withContext "chainHash").as[ReplyPublicHostedChannelsEnd]
 
-  lazy val queryPreimagesCodec = (listOfN(uint16, bytes32) withContext "hashes").as[QueryPreimages]
+  lazy val queryPreimagesCodec =
+    (listOfN(uint16, bytes32) withContext "hashes").as[QueryPreimages]
 
-  lazy val replyPreimagesCodec = (listOfN(uint16, bytes32) withContext "preimages").as[ReplyPreimages]
+  lazy val replyPreimagesCodec =
+    (listOfN(uint16, bytes32) withContext "preimages").as[ReplyPreimages]
 
   final val HC_INVOKE_HOSTED_CHANNEL_TAG = 65535
 
@@ -363,7 +416,6 @@ object LightningMessageCodecs {
 
   final val HC_ASK_BRANDING_INFO = 65511
 
-
   final val PHC_ANNOUNCE_GOSSIP_TAG = 64513
 
   final val PHC_ANNOUNCE_SYNC_TAG = 64511
@@ -371,7 +423,6 @@ object LightningMessageCodecs {
   final val PHC_UPDATE_GOSSIP_TAG = 64509
 
   final val PHC_UPDATE_SYNC_TAG = 64507
-
 
   final val HC_UPDATE_ADD_HTLC_TAG = 63505
 
@@ -486,36 +537,11 @@ object LightningMessageCodecs {
       (cltvExpiryDelta withContext "cltvExpiryDelta")
   }.as[TrampolineOn]
 
-  val nodeIdTrampolineParamsCodec = {
-    (publicKey withContext "nodeId") ::
-      (trampolineOnCodec withContext "trampolineOn")
-  }.as[NodeIdTrampolineParams]
-
-  private val trampolineRouteCodec = {
-    val innerList = listOfN(uint16, nodeIdTrampolineParamsCodec)
-    listOfN(valueCodec = innerList, countCodec = uint16)
-  }
-
-  val trampolineStatusInitCodec = {
-    (trampolineRouteCodec withContext "routes") ::
-      (trampolineOnCodec withContext "peerParams")
-  }.as[TrampolineStatusInit]
-
-  val trampolineStatusUpdateCodec = {
-    (trampolineRouteCodec withContext "newRoutes") ::
-      (mapCodec(publicKey, trampolineOnCodec) withContext "updatedParams") ::
-      (optional(bool, trampolineOnCodec) withContext "updatedPeerParams") ::
-      (setCodec(publicKey) withContext "removed")
-  }.as[TrampolineStatusUpdate]
-
-  final val TRAMPOLINE_STATUS_INIT_TAG = 44789
-  final val TRAMPOLINE_STATUS_UPDATE_TAG = 44791
-  final val TRAMPOLINE_STATUS_UNDESIRED_TAG = 44793
-
   //
 
   val lightningMessageCodec: DiscriminatorCodec[LightningMessage, Int] =
-    discriminated[LightningMessage].by(uint16)
+    discriminated[LightningMessage]
+      .by(uint16)
       .typecase(1, warningCodec)
       .typecase(16, initCodec)
       .typecase(17, failCodec)
@@ -557,45 +583,45 @@ object LightningMessageCodecs {
     val codec = msg.tag match {
       case HC_HOSTED_CHANNEL_BRANDING_TAG => hostedChannelBrandingCodec
       case HC_LAST_CROSS_SIGNED_STATE_TAG => lastCrossSignedStateCodec
-      case HC_INVOKE_HOSTED_CHANNEL_TAG => invokeHostedChannelCodec
-      case HC_INIT_HOSTED_CHANNEL_TAG => initHostedChannelCodec
-      case HC_STATE_OVERRIDE_TAG => stateOverrideCodec
-      case HC_RESIZE_CHANNEL_TAG => resizeChannelCodec
-      case HC_STATE_UPDATE_TAG => stateUpdateCodec
+      case HC_INVOKE_HOSTED_CHANNEL_TAG   => invokeHostedChannelCodec
+      case HC_INIT_HOSTED_CHANNEL_TAG     => initHostedChannelCodec
+      case HC_STATE_OVERRIDE_TAG          => stateOverrideCodec
+      case HC_RESIZE_CHANNEL_TAG          => resizeChannelCodec
+      case HC_STATE_UPDATE_TAG            => stateUpdateCodec
 
       case HC_QUERY_PUBLIC_HOSTED_CHANNELS_TAG => queryPublicHostedChannelsCodec
-      case HC_REPLY_PUBLIC_HOSTED_CHANNELS_END_TAG => replyPublicHostedChannelsEndCodec
+      case HC_REPLY_PUBLIC_HOSTED_CHANNELS_END_TAG =>
+        replyPublicHostedChannelsEndCodec
       case HC_QUERY_PREIMAGES_TAG => queryPreimagesCodec
       case HC_REPLY_PREIMAGES_TAG => replyPreimagesCodec
-      case HC_ASK_BRANDING_INFO => askBrandingInfoCodec
+      case HC_ASK_BRANDING_INFO   => askBrandingInfoCodec
 
       case PHC_ANNOUNCE_GOSSIP_TAG => channelAnnouncementCodec
-      case PHC_ANNOUNCE_SYNC_TAG => channelAnnouncementCodec
-      case PHC_UPDATE_GOSSIP_TAG => channelUpdateCodec
-      case PHC_UPDATE_SYNC_TAG => channelUpdateCodec
+      case PHC_ANNOUNCE_SYNC_TAG   => channelAnnouncementCodec
+      case PHC_UPDATE_GOSSIP_TAG   => channelUpdateCodec
+      case PHC_UPDATE_SYNC_TAG     => channelUpdateCodec
 
       case HC_UPDATE_FAIL_MALFORMED_HTLC_TAG => updateFailMalformedHtlcCodec
-      case HC_UPDATE_FULFILL_HTLC_TAG => updateFulfillHtlcCodec
-      case HC_UPDATE_FAIL_HTLC_TAG => updateFailHtlcCodec
-      case HC_UPDATE_ADD_HTLC_TAG => updateAddHtlcCodec
-      case HC_ERROR_TAG => failCodec
+      case HC_UPDATE_FULFILL_HTLC_TAG        => updateFulfillHtlcCodec
+      case HC_UPDATE_FAIL_HTLC_TAG           => updateFailHtlcCodec
+      case HC_UPDATE_ADD_HTLC_TAG            => updateAddHtlcCodec
+      case HC_ERROR_TAG                      => failCodec
 
-      case SWAP_IN_REQUEST_MESSAGE_TAG => provide(SwapInRequest)
+      case SWAP_IN_REQUEST_MESSAGE_TAG         => provide(SwapInRequest)
       case SWAP_IN_PAYMENT_REQUEST_MESSAGE_TAG => swapInPaymentRequestCodec
-      case SWAP_IN_PAYMENT_DENIED_MESSAGE_TAG => swapInPaymentDeniedCodec
-      case SWAP_IN_RESPONSE_MESSAGE_TAG => swapInResponseCodec
-      case SWAP_IN_STATE_MESSAGE_TAG => swapInStateCodec
+      case SWAP_IN_PAYMENT_DENIED_MESSAGE_TAG  => swapInPaymentDeniedCodec
+      case SWAP_IN_RESPONSE_MESSAGE_TAG        => swapInResponseCodec
+      case SWAP_IN_STATE_MESSAGE_TAG           => swapInStateCodec
 
       case SWAP_OUT_REQUEST_MESSAGE_TAG => provide(SwapOutRequest)
-      case SWAP_OUT_TRANSACTION_REQUEST_MESSAGE_TAG => swapOutTransactionRequestCodec
-      case SWAP_OUT_TRANSACTION_RESPONSE_MESSAGE_TAG => swapOutTransactionResponseCodec
-      case SWAP_OUT_TRANSACTION_DENIED_MESSAGE_TAG => swapOutTransactionDeniedCodec
+      case SWAP_OUT_TRANSACTION_REQUEST_MESSAGE_TAG =>
+        swapOutTransactionRequestCodec
+      case SWAP_OUT_TRANSACTION_RESPONSE_MESSAGE_TAG =>
+        swapOutTransactionResponseCodec
+      case SWAP_OUT_TRANSACTION_DENIED_MESSAGE_TAG =>
+        swapOutTransactionDeniedCodec
       case SWAP_OUT_FEERATES_MESSAGE_TAG => swapOutFeeratesCodec
-
-      case TRAMPOLINE_STATUS_INIT_TAG => trampolineStatusInitCodec
-      case TRAMPOLINE_STATUS_UPDATE_TAG => trampolineStatusUpdateCodec
-      case TRAMPOLINE_STATUS_UNDESIRED_TAG => provide(TrampolineUndesired)
-      case _ => throw new RuntimeException
+      case _                             => throw new RuntimeException
     }
 
     codec.decode(msg.data.toBitVector).require.value
@@ -604,47 +630,170 @@ object LightningMessageCodecs {
   // Extended messages need to be wrapped in UnknownMessage
 
   def prepare(msg: LightningMessage): LightningMessage = msg match {
-    case msg: HostedChannelBranding => UnknownMessage(HC_HOSTED_CHANNEL_BRANDING_TAG, hostedChannelBrandingCodec.encode(msg).require.toByteVector)
-    case msg: LastCrossSignedState => UnknownMessage(HC_LAST_CROSS_SIGNED_STATE_TAG, lastCrossSignedStateCodec.encode(msg).require.toByteVector)
-    case msg: InvokeHostedChannel => UnknownMessage(HC_INVOKE_HOSTED_CHANNEL_TAG, invokeHostedChannelCodec.encode(msg).require.toByteVector)
-    case msg: InitHostedChannel => UnknownMessage(HC_INIT_HOSTED_CHANNEL_TAG, initHostedChannelCodec.encode(msg).require.toByteVector)
-    case msg: StateOverride => UnknownMessage(HC_STATE_OVERRIDE_TAG, stateOverrideCodec.encode(msg).require.toByteVector)
-    case msg: ResizeChannel => UnknownMessage(HC_RESIZE_CHANNEL_TAG, resizeChannelCodec.encode(msg).require.toByteVector)
-    case msg: StateUpdate => UnknownMessage(HC_STATE_UPDATE_TAG, stateUpdateCodec.encode(msg).require.toByteVector)
+    case msg: HostedChannelBranding =>
+      UnknownMessage(
+        HC_HOSTED_CHANNEL_BRANDING_TAG,
+        hostedChannelBrandingCodec.encode(msg).require.toByteVector
+      )
+    case msg: LastCrossSignedState =>
+      UnknownMessage(
+        HC_LAST_CROSS_SIGNED_STATE_TAG,
+        lastCrossSignedStateCodec.encode(msg).require.toByteVector
+      )
+    case msg: InvokeHostedChannel =>
+      UnknownMessage(
+        HC_INVOKE_HOSTED_CHANNEL_TAG,
+        invokeHostedChannelCodec.encode(msg).require.toByteVector
+      )
+    case msg: InitHostedChannel =>
+      UnknownMessage(
+        HC_INIT_HOSTED_CHANNEL_TAG,
+        initHostedChannelCodec.encode(msg).require.toByteVector
+      )
+    case msg: StateOverride =>
+      UnknownMessage(
+        HC_STATE_OVERRIDE_TAG,
+        stateOverrideCodec.encode(msg).require.toByteVector
+      )
+    case msg: ResizeChannel =>
+      UnknownMessage(
+        HC_RESIZE_CHANNEL_TAG,
+        resizeChannelCodec.encode(msg).require.toByteVector
+      )
+    case msg: StateUpdate =>
+      UnknownMessage(
+        HC_STATE_UPDATE_TAG,
+        stateUpdateCodec.encode(msg).require.toByteVector
+      )
 
-    case msg: QueryPublicHostedChannels => UnknownMessage(HC_QUERY_PUBLIC_HOSTED_CHANNELS_TAG, queryPublicHostedChannelsCodec.encode(msg).require.toByteVector)
-    case msg: ReplyPublicHostedChannelsEnd => UnknownMessage(HC_REPLY_PUBLIC_HOSTED_CHANNELS_END_TAG, replyPublicHostedChannelsEndCodec.encode(msg).require.toByteVector)
-    case msg: QueryPreimages => UnknownMessage(HC_QUERY_PREIMAGES_TAG, queryPreimagesCodec.encode(msg).require.toByteVector)
-    case msg: ReplyPreimages => UnknownMessage(HC_REPLY_PREIMAGES_TAG, replyPreimagesCodec.encode(msg).require.toByteVector)
-    case msg: AskBrandingInfo => UnknownMessage(HC_ASK_BRANDING_INFO, askBrandingInfoCodec.encode(msg).require.toByteVector)
+    case msg: QueryPublicHostedChannels =>
+      UnknownMessage(
+        HC_QUERY_PUBLIC_HOSTED_CHANNELS_TAG,
+        queryPublicHostedChannelsCodec.encode(msg).require.toByteVector
+      )
+    case msg: ReplyPublicHostedChannelsEnd =>
+      UnknownMessage(
+        HC_REPLY_PUBLIC_HOSTED_CHANNELS_END_TAG,
+        replyPublicHostedChannelsEndCodec.encode(msg).require.toByteVector
+      )
+    case msg: QueryPreimages =>
+      UnknownMessage(
+        HC_QUERY_PREIMAGES_TAG,
+        queryPreimagesCodec.encode(msg).require.toByteVector
+      )
+    case msg: ReplyPreimages =>
+      UnknownMessage(
+        HC_REPLY_PREIMAGES_TAG,
+        replyPreimagesCodec.encode(msg).require.toByteVector
+      )
+    case msg: AskBrandingInfo =>
+      UnknownMessage(
+        HC_ASK_BRANDING_INFO,
+        askBrandingInfoCodec.encode(msg).require.toByteVector
+      )
 
-    case SwapInRequest => UnknownMessage(SWAP_IN_REQUEST_MESSAGE_TAG, provide(SwapInRequest).encode(SwapInRequest).require.toByteVector)
-    case msg: SwapInPaymentRequest => UnknownMessage(SWAP_IN_PAYMENT_REQUEST_MESSAGE_TAG, swapInPaymentRequestCodec.encode(msg).require.toByteVector)
-    case msg: SwapInPaymentDenied => UnknownMessage(SWAP_IN_PAYMENT_DENIED_MESSAGE_TAG, swapInPaymentDeniedCodec.encode(msg).require.toByteVector)
-    case msg: SwapInResponse => UnknownMessage(SWAP_IN_RESPONSE_MESSAGE_TAG, swapInResponseCodec.encode(msg).require.toByteVector)
-    case msg: SwapInState => UnknownMessage(SWAP_IN_STATE_MESSAGE_TAG, swapInStateCodec.encode(msg).require.toByteVector)
+    case SwapInRequest =>
+      UnknownMessage(
+        SWAP_IN_REQUEST_MESSAGE_TAG,
+        provide(SwapInRequest).encode(SwapInRequest).require.toByteVector
+      )
+    case msg: SwapInPaymentRequest =>
+      UnknownMessage(
+        SWAP_IN_PAYMENT_REQUEST_MESSAGE_TAG,
+        swapInPaymentRequestCodec.encode(msg).require.toByteVector
+      )
+    case msg: SwapInPaymentDenied =>
+      UnknownMessage(
+        SWAP_IN_PAYMENT_DENIED_MESSAGE_TAG,
+        swapInPaymentDeniedCodec.encode(msg).require.toByteVector
+      )
+    case msg: SwapInResponse =>
+      UnknownMessage(
+        SWAP_IN_RESPONSE_MESSAGE_TAG,
+        swapInResponseCodec.encode(msg).require.toByteVector
+      )
+    case msg: SwapInState =>
+      UnknownMessage(
+        SWAP_IN_STATE_MESSAGE_TAG,
+        swapInStateCodec.encode(msg).require.toByteVector
+      )
 
-    case SwapOutRequest => UnknownMessage(SWAP_OUT_REQUEST_MESSAGE_TAG, provide(SwapOutRequest).encode(SwapOutRequest).require.toByteVector)
-    case msg: SwapOutTransactionRequest => UnknownMessage(SWAP_OUT_TRANSACTION_REQUEST_MESSAGE_TAG, swapOutTransactionRequestCodec.encode(msg).require.toByteVector)
-    case msg: SwapOutTransactionResponse => UnknownMessage(SWAP_OUT_TRANSACTION_RESPONSE_MESSAGE_TAG, swapOutTransactionResponseCodec.encode(msg).require.toByteVector)
-    case msg: SwapOutTransactionDenied => UnknownMessage(SWAP_OUT_TRANSACTION_DENIED_MESSAGE_TAG, swapOutTransactionDeniedCodec.encode(msg).require.toByteVector)
-    case msg: SwapOutFeerates => UnknownMessage(SWAP_OUT_FEERATES_MESSAGE_TAG, swapOutFeeratesCodec.encode(msg).require.toByteVector)
-
-    case msg: TrampolineStatusInit => UnknownMessage(TRAMPOLINE_STATUS_INIT_TAG, trampolineStatusInitCodec.encode(msg).require.toByteVector)
-    case msg: TrampolineStatusUpdate => UnknownMessage(TRAMPOLINE_STATUS_UPDATE_TAG, trampolineStatusUpdateCodec.encode(msg).require.toByteVector)
-    case TrampolineUndesired => UnknownMessage(TRAMPOLINE_STATUS_UNDESIRED_TAG, provide(TrampolineUndesired).encode(TrampolineUndesired).require.toByteVector)
+    case SwapOutRequest =>
+      UnknownMessage(
+        SWAP_OUT_REQUEST_MESSAGE_TAG,
+        provide(SwapOutRequest).encode(SwapOutRequest).require.toByteVector
+      )
+    case msg: SwapOutTransactionRequest =>
+      UnknownMessage(
+        SWAP_OUT_TRANSACTION_REQUEST_MESSAGE_TAG,
+        swapOutTransactionRequestCodec.encode(msg).require.toByteVector
+      )
+    case msg: SwapOutTransactionResponse =>
+      UnknownMessage(
+        SWAP_OUT_TRANSACTION_RESPONSE_MESSAGE_TAG,
+        swapOutTransactionResponseCodec.encode(msg).require.toByteVector
+      )
+    case msg: SwapOutTransactionDenied =>
+      UnknownMessage(
+        SWAP_OUT_TRANSACTION_DENIED_MESSAGE_TAG,
+        swapOutTransactionDeniedCodec.encode(msg).require.toByteVector
+      )
+    case msg: SwapOutFeerates =>
+      UnknownMessage(
+        SWAP_OUT_FEERATES_MESSAGE_TAG,
+        swapOutFeeratesCodec.encode(msg).require.toByteVector
+      )
     case _ => msg
   }
 
   // HC uses the following protocol-defined messages, but they still need to be wrapped in UnknownMessage
 
   def prepareNormal(msg: LightningMessage): LightningMessage = msg match {
-    case msg: Fail => UnknownMessage(HC_ERROR_TAG, LightningMessageCodecs.failCodec.encode(msg).require.toByteVector)
-    case msg: ChannelUpdate => UnknownMessage(PHC_UPDATE_SYNC_TAG, LightningMessageCodecs.channelUpdateCodec.encode(msg).require.toByteVector)
-    case msg: UpdateAddHtlc => UnknownMessage(HC_UPDATE_ADD_HTLC_TAG, LightningMessageCodecs.updateAddHtlcCodec.encode(msg).require.toByteVector)
-    case msg: UpdateFailHtlc => UnknownMessage(HC_UPDATE_FAIL_HTLC_TAG, LightningMessageCodecs.updateFailHtlcCodec.encode(msg).require.toByteVector)
-    case msg: UpdateFulfillHtlc => UnknownMessage(HC_UPDATE_FULFILL_HTLC_TAG, LightningMessageCodecs.updateFulfillHtlcCodec.encode(msg).require.toByteVector)
-    case msg: UpdateFailMalformedHtlc => UnknownMessage(HC_UPDATE_FAIL_MALFORMED_HTLC_TAG, LightningMessageCodecs.updateFailMalformedHtlcCodec.encode(msg).require.toByteVector)
+    case msg: Fail =>
+      UnknownMessage(
+        HC_ERROR_TAG,
+        LightningMessageCodecs.failCodec.encode(msg).require.toByteVector
+      )
+    case msg: ChannelUpdate =>
+      UnknownMessage(
+        PHC_UPDATE_SYNC_TAG,
+        LightningMessageCodecs.channelUpdateCodec
+          .encode(msg)
+          .require
+          .toByteVector
+      )
+    case msg: UpdateAddHtlc =>
+      UnknownMessage(
+        HC_UPDATE_ADD_HTLC_TAG,
+        LightningMessageCodecs.updateAddHtlcCodec
+          .encode(msg)
+          .require
+          .toByteVector
+      )
+    case msg: UpdateFailHtlc =>
+      UnknownMessage(
+        HC_UPDATE_FAIL_HTLC_TAG,
+        LightningMessageCodecs.updateFailHtlcCodec
+          .encode(msg)
+          .require
+          .toByteVector
+      )
+    case msg: UpdateFulfillHtlc =>
+      UnknownMessage(
+        HC_UPDATE_FULFILL_HTLC_TAG,
+        LightningMessageCodecs.updateFulfillHtlcCodec
+          .encode(msg)
+          .require
+          .toByteVector
+      )
+    case msg: UpdateFailMalformedHtlc =>
+      UnknownMessage(
+        HC_UPDATE_FAIL_MALFORMED_HTLC_TAG,
+        LightningMessageCodecs.updateFailMalformedHtlcCodec
+          .encode(msg)
+          .require
+          .toByteVector
+      )
     case _ => msg
   }
 }
