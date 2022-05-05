@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.RandomAccess;
 import java.util.Set;
+import java.lang.UnsupportedOperationException;
 
 /**
  * Immutable URI reference. A URI reference includes a URI and a fragment, the
@@ -328,7 +329,6 @@ public abstract class Uri implements Comparable<Uri> {
 
     /**
      * Hashes the encoded string represention of this Uri consistently with
-     * {@link #equals(Object)}.
      */
     public int hashCode() {
         return toString().hashCode();
@@ -351,7 +351,6 @@ public abstract class Uri implements Comparable<Uri> {
     /**
      * Return a string representation of the URI that is safe to print
      * to logs and other places where PII should be avoided.
-     * @hide
      */
     public String toSafeString() {
         String scheme = getScheme();
