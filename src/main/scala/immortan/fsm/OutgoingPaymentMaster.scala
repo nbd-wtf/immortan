@@ -7,7 +7,6 @@ import fr.acinq.eclair.channel.{
   CMD_ADD_HTLC,
   ChannelOffline,
   InPrincipleNotSendable,
-  ChannelNotAbleToSend,
   LocalReject
 }
 import fr.acinq.eclair.crypto.Sphinx
@@ -654,13 +653,11 @@ class OutgoingPaymentSender(
           }
 
           otherOpt match {
-            case None if reject.isInstanceOf[InPrincipleNotSendable] =>
+            case _ if reject.isInstanceOf[InPrincipleNotSendable] =>
               me abortMaybeNotify data
                 .withoutPartId(wait.partId)
                 .withLocalFailure(PAYMENT_NOT_SENDABLE, wait.amount)
-            case None
-                if reject.isInstanceOf[ChannelOffline] || reject
-                  .isInstanceOf[ChannelNotAbleToSend] =>
+            case None if reject.isInstanceOf[ChannelOffline] =>
               assignToChans(
                 opm.rightNowSendable(data.cmd.allowedChans, feeLeftover),
                 data.withoutPartId(wait.partId),
