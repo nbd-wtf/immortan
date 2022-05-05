@@ -1,7 +1,7 @@
 name                   := "immortan"
 organization           := "com.fiatjaf"
 scalaVersion           := "2.13.8"
-version                := "0.1.0"
+version                := "0.1.1"
 scalacOptions          += "-language:postfixOps"
 sonatypeProfileName    := "com.fiatjaf"
 homepage               := Some(url("https://github.com/fiatjaf/immortan"))
