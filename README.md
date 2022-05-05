@@ -24,11 +24,15 @@ Whatever possible is taken from Acinq's [Eclair](https://github.com/ACINQ/eclair
 
 ## Usage
 
+### Installation
+
 Install it by adding to your `build.sbt`:
 
 ```sbt
 libraryDependencies += "com.fiatjaf" %% "immortan" % "0.1.0"
 ```
+
+### Very dense and confusing guide
 
 Then you must
   1. Import the `LNParams` object which will be the main interface between your code and Immortan.
@@ -49,6 +53,10 @@ After that you should be able to easily
   7. Send Lightning payments.
 
 Again, [Cliché's Commands.scala](https://github.com/fiatjaf/cliche/blob/b00cb3fdf62cd65854a14b005825dcab45df1002/src/main/scala/Commands.scala) has some implementations you might be able to understand and copy (the listeners are in [Main.scala](https://github.com/fiatjaf/cliche/blob/b00cb3fdf62cd65854a14b005825dcab45df1002/src/main/scala/Main.scala)).
+
+### [API Documentation (Scaladoc)](https://fiatjaf.github.io/IMMORTAN/immortan/index.html)
+
+Or maybe start here at [LNParams](https://fiatjaf.github.io/IMMORTAN/immortan/LNParams$.html).
 
 ## Library users
 
