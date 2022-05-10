@@ -37,18 +37,18 @@ object ChannelMaster {
   type ReasonableLocals = Iterable[ReasonableLocal]
 
   final val updateCounter = new AtomicLong(0)
-  final val stateUpdateStream: Subject[Long] = Subject[Long]
-  final val statusUpdateStream: Subject[Long] = Subject[Long]
+  final val stateUpdateStream: Subject[Long] = Subject[Long]()
+  final val statusUpdateStream: Subject[Long] = Subject[Long]()
 
-  final val payMarketDbStream: Subject[Long] = Subject[Long]
-  final val paymentDbStream: Subject[Long] = Subject[Long]
-  final val relayDbStream: Subject[Long] = Subject[Long]
-  final val txDbStream: Subject[Long] = Subject[Long]
+  final val payMarketDbStream: Subject[Long] = Subject[Long]()
+  final val paymentDbStream: Subject[Long] = Subject[Long]()
+  final val relayDbStream: Subject[Long] = Subject[Long]()
+  final val txDbStream: Subject[Long] = Subject[Long]()
 
   def next(stream: Subject[Long] = null): Unit =
     stream.onNext(updateCounter.incrementAndGet)
   final val inFinalized: Subject[IncomingProcessorData] =
-    Subject[IncomingProcessorData]
+    Subject[IncomingProcessorData]()
 
   final val NO_PREIMAGE = ByteVector32.One
   final val NO_SECRET = ByteVector32.Zeroes
@@ -274,7 +274,7 @@ class ChannelMaster(
     // Outgoing FSMs won't receive anything without channel listeners
     for (channel <- all.values) channel.listeners = Set.empty
     for (fsm <- inProcessors.values) fsm.becomeShutDown
-    for (sub <- pf.subscription) sub.unsubscribe
+    for (sub <- pf.subscription) sub.unsubscribe()
     pf.listeners = Set.empty
   }
 

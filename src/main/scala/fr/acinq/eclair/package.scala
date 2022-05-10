@@ -98,8 +98,8 @@ package object eclair { me =>
       exponent: Double,
       logExponent: Double
   ): MilliSatoshi = {
-    val nonLinearFeeMsat = math.pow(proportional, exponent) + math.pow(
-      math.log(proportional),
+    val nonLinearFeeMsat = math.pow(proportional.toDouble, exponent) + math.pow(
+      math.log(proportional.toDouble),
       logExponent
     )
     MilliSatoshi(nonLinearFeeMsat.ceil.toLong)
@@ -194,8 +194,8 @@ package object eclair { me =>
     override def fromInt(x: Int): MilliSatoshi = MilliSatoshi(x)
     override def toInt(x: MilliSatoshi): Int = x.toLong.toInt
     override def toLong(x: MilliSatoshi): Long = x.toLong
-    override def toFloat(x: MilliSatoshi): Float = x.toLong
-    override def toDouble(x: MilliSatoshi): Double = x.toLong
+    override def toFloat(x: MilliSatoshi): Float = x.toFloat
+    override def toDouble(x: MilliSatoshi): Double = x.toDouble
     override def compare(x: MilliSatoshi, y: MilliSatoshi): Int = x.compare(y)
   }
 

@@ -218,12 +218,12 @@ object Tools {
 
   def extractBip84Tx(psbt: Psbt): scala.util.Try[Transaction] = {
     // We ONLY support BIP84 watching wallets so all inputs have witnesses
-    psbt.extract orElse psbt.inputs.zipWithIndex
+    psbt.extract() orElse psbt.inputs.zipWithIndex
       .foldLeft(psbt) { case (psbt1, input ~ index) =>
         val witness = (Script.witnessPay2wpkh _).tupled(input.partialSigs.head)
         psbt1.finalizeWitnessInput(index, witness).get
       }
-      .extract
+      .extract()
   }
 
   def obtainPsbt(ur: UR): scala.util.Try[Psbt] = scala.util.Try {

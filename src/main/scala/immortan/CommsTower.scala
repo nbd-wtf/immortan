@@ -159,7 +159,7 @@ object CommsTower {
 
     thread onComplete { _ =>
       // Will also run after forget
-      try pinging.unsubscribe
+      try pinging.unsubscribe()
       catch none
       listeners(pair).foreach(_ onDisconnect me)
       // Once disconnected, worker gets removed

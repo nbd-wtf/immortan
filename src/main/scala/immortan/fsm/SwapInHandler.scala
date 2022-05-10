@@ -23,7 +23,7 @@ abstract class SwapInHandler(
     // This FSM has a hardcoded timeout which will eventually remove its connection listener
     // OTOH this FSM should survive reconnects so there is no local disconnect logic here
     CommsTower.rmListenerNative(cnc.commits.remoteInfo, swapInListener)
-    shutdownTimer.unsubscribe
+    shutdownTimer.unsubscribe()
   }
 
   lazy private val swapInListener = new ConnectionListener {

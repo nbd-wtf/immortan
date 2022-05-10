@@ -449,7 +449,7 @@ case class NormalCommits(
       localChanges.copy(proposed = Nil, signed = localChanges.proposed)
     val remoteChanges1 =
       remoteChanges.copy(acked = Nil, signed = remoteChanges.acked)
-    val remoteNextPoint = remoteNextCommitInfo.right.get
+    val remoteNextPoint = remoteNextCommitInfo.toOption.get
 
     val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) =
       NormalCommits.makeRemoteTxs(

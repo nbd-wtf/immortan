@@ -238,7 +238,7 @@ object Bolt11Invoice {
         Some(Expiry(OUR_EXPIRY_SECONDS)),
         Some(MinFinalCltvExpiry(minFinalCltvExpiryDelta.underlying)),
         // We want to keep invoices as small as possible, so we explicitly remove unknown features.
-        Some(InvoiceFeatures(features.copy(unknown = Set.empty).unscoped))
+        Some(InvoiceFeatures(features.copy(unknown = Set.empty).unscoped()))
       ).flatten
       defaultTags ++ extraHops.map(RoutingInfo)
     }

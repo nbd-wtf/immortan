@@ -10,7 +10,7 @@ object Rx {
   def fromFutureOnIo[T](future: Future[T] = null)(implicit
       ec: ExecutionContext
   ): Observable[T] =
-    Observable.from(future).observeOn(IOScheduler.apply)
+    Observable.from(future).observeOn(IOScheduler.apply())
 
   def uniqueFirstAndLastWithinWindow[T](
       obs: Observable[T],
@@ -20,7 +20,7 @@ object Rx {
       .throttleFirst(window)
       .merge(obs debounce window)
       .distinctUntilChanged
-      .observeOn(IOScheduler.apply)
+      .observeOn(IOScheduler.apply())
 
   def initDelay[T](
       next: Observable[T],
@@ -56,7 +56,7 @@ object Rx {
     )
 
   def ioQueue: Observable[Null] =
-    Observable.just(null).subscribeOn(IOScheduler.apply)
+    Observable.just(null).subscribeOn(IOScheduler.apply())
 
   def incMinute(errorOrUnit: Any, next: Int): Duration = next.minutes
 

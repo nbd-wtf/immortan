@@ -695,10 +695,10 @@ case class Psbt(
     */
   def computeFees(): Try[Satoshi] = {
     val amountOut = global.tx.txOut match {
-      case Nil   => 0 sat
+      case Nil   => Satoshi(0L)
       case txOut => txOut.map(_.amount).sum
     }
-    val amountIn = inputs.foldLeft(Success(0 sat): Try[Satoshi]) {
+    val amountIn = inputs.foldLeft(Success(Satoshi(0L)): Try[Satoshi]) {
       case (Failure(ex), _) => Failure(ex)
       case (Success(amount), input: WitnessInput) =>
         Success(amount + input.amount)

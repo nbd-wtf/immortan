@@ -494,8 +494,8 @@ abstract class SyncMaster(
         become(null, SHUT_DOWN)
         // This one will have zero queries left by default
         me onChunkSyncComplete getPureNormalNetworkData
-        confirmedChanAnnounces.clear
-        confirmedChanUpdates.clear
+        confirmedChanAnnounces.clear()
+        confirmedChanUpdates.clear()
         onTotalSyncComplete
       }
 

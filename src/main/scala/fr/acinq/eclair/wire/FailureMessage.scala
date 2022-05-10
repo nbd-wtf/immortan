@@ -129,7 +129,7 @@ object FailureMessageCodecs {
         PERM | 15,
         (("amountMsat" | withDefaultValue(
           optional(bitsRemaining, millisatoshi),
-          0 msat
+          MilliSatoshi(0L)
         )) :: ("height" | withDefaultValue(
           optional(bitsRemaining, uint32),
           0L

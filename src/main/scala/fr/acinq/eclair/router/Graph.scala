@@ -111,7 +111,7 @@ object Graph {
     while (!targetFound && toExplore.nonEmpty) {
       // Node with the smallest distance from the target
 
-      val current = toExplore.dequeue
+      val current = toExplore.dequeue()
       targetFound = current.key == sourceNode
 
       if (!targetFound) {
@@ -222,19 +222,19 @@ object Graph {
     ): RichWeight = {
       // Every edge is weighted by its routing success score, higher score adds less weight
       val successFactor =
-        1 - normalize(edge.updExt.score, SCORE_LOW, SCORE_HIGH)
+        1 - normalize(edge.updExt.score.toDouble, SCORE_LOW, SCORE_HIGH)
 
       val factor = if (edge.updExt.useHeuristics) {
         val blockNum = ShortChannelId.blockHeight(edge.desc.shortChannelId)
         val ageFactor = normalize(
-          BLOCK_300K_STAMP_MSEC + (blockNum - BLOCK_300K) * AVG_BLOCK_INTERVAL_MSEC,
-          BLOCK_300K_STAMP_MSEC,
-          latestBlockExpectedStampMsecs
+          BLOCK_300K_STAMP_MSEC.toDouble + (blockNum - BLOCK_300K) * AVG_BLOCK_INTERVAL_MSEC,
+          BLOCK_300K_STAMP_MSEC.toDouble,
+          latestBlockExpectedStampMsecs.toDouble
         )
         val capFactor = 1 - normalize(
-          edge.updExt.capacity.toLong,
-          CAPACITY_CHANNEL_LOW.toLong,
-          CAPACITY_CHANNEL_HIGH.toLong
+          edge.updExt.capacity.toLong.toDouble,
+          CAPACITY_CHANNEL_LOW.toLong.toDouble,
+          CAPACITY_CHANNEL_HIGH.toLong.toDouble
         )
         val cltvFactor = normalize(
           edge.updExt.update.cltvExpiryDelta.underlying,
