@@ -2,6 +2,8 @@
 
 Immortan is a minimal, privacy-focused, opinionated LN protocol implementation aimed to specifically power lite LN nodes which are mostly to be found on mobile phones or desktop computers and only run private channels.
 
+Immortan is not based on Éclair and is not an Éclair fork. It's a standalone implementation, much smaller, written from scratch with standalone and independent logic. However it does use codecs and type definitions carefully copied and pasted from the Éclair codebase.
+
 ## Raison d'etre
 
 Existing implementations are of general purpose, that is, they neither address specific complications of running LN nodes on constrained devices nor explore various advantages unique to these setups. Here are _some_ highlights:
