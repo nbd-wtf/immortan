@@ -29,7 +29,7 @@ class ElectrumWallet(
 ) extends FSM[State, ElectrumData] {
 
   def persistAndNotify(data: ElectrumData): ElectrumData = {
-    setTimer(KEY_REFILL, KEY_REFILL, 100.millis, repeat = false)
+    startSingleTimer(KEY_REFILL, KEY_REFILL, 100.millis)
     if (data.lastReadyMessage contains data.currentReadyMessage) return data
     val data1 = data.copy(lastReadyMessage = data.currentReadyMessage.asSome)
     params.walletDb.persist(
@@ -71,7 +71,7 @@ class ElectrumWallet(
           ) until persisted.changeKeysCount
         ) yield derivePublicKey(ewt.changeMaster, idx)
 
-      stay using ElectrumData(
+      stay() using ElectrumData(
         ewt,
         Blockchain(
           ewt.chainHash,
@@ -106,7 +106,7 @@ class ElectrumWallet(
     case Event(blockchain1: Blockchain, data) =>
       val data1 = data.copy(blockchain = blockchain1)
       data1.pendingMerkleResponses.foreach(self.!)
-      stay using persistAndNotify(data1)
+      stay() using persistAndNotify(data1)
 
     case Event(
           ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status),
@@ -127,8 +127,8 @@ class ElectrumWallet(
         val data1 = data.copy(pendingHistoryRequests =
           data.pendingTransactionRequests ++ missing.keySet
         )
-        stay using persistAndNotify(data1)
-      } else stay
+        stay() using persistAndNotify(data1)
+      } else stay()
 
     case Event(
           ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, _),
@@ -136,7 +136,7 @@ class ElectrumWallet(
         )
         if !data.accountKeyMap.contains(scriptHash) && !data.changeKeyMap
           .contains(scriptHash) =>
-      stay
+      stay()
 
     case Event(
           ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status),
@@ -144,7 +144,7 @@ class ElectrumWallet(
         ) if status.isEmpty =>
       val status1 = data.status.updated(scriptHash, status)
       val data1 = data.copy(status = status1)
-      stay using persistAndNotify(data1)
+      stay() using persistAndNotify(data1)
 
     case Event(
           ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status),
@@ -155,7 +155,7 @@ class ElectrumWallet(
         pendingHistoryRequests = data.pendingHistoryRequests + scriptHash
       )
       client ! ElectrumClient.GetScriptHashHistory(scriptHash)
-      stay using persistAndNotify(data1)
+      stay() using persistAndNotify(data1)
 
     case Event(
           ElectrumClient.GetScriptHashHistoryResponse(scriptHash, items),
@@ -216,7 +216,7 @@ class ElectrumWallet(
         pendingTransactionRequests = pendingTransactionRequests1,
         pendingHeadersRequests = pendingHeadersRequests1.toSet
       )
-      stay using persistAndNotify(data1)
+      stay() using persistAndNotify(data1)
 
     case Event(GetTransactionResponse(tx, contextOpt), data) =>
       val clearedExcludedOutPoints: List[OutPoint] =
@@ -243,12 +243,12 @@ class ElectrumWallet(
             transactions = data.transactions.updated(tx.txid, tx),
             pendingTransactions = Nil
           )
-          stay using persistAndNotify(data2.withOverridingTxids)
+          stay() using persistAndNotify(data2.withOverridingTxids)
       } getOrElse {
         // We are currently missing parents for this transaction, keep waiting
         val data2 =
           data1.copy(pendingTransactions = data.pendingTransactions :+ tx)
-        stay using persistAndNotify(data2)
+        stay() using persistAndNotify(data2)
       }
 
     case Event(response @ GetMerkleResponse(txid, _, height, _, _), data) =>
@@ -268,14 +268,14 @@ class ElectrumWallet(
             proofs = data.proofs.updated(txid, response),
             pendingMerkleResponses = data.pendingMerkleResponses - response
           )
-          stay using persistAndNotify(data1.withOverridingTxids)
+          stay() using persistAndNotify(data1.withOverridingTxids)
 
         case Some(existingHeader)
             if existingHeader.hashMerkleRoot == response.root =>
-          stay
+          stay()
 
         case None if data.pendingHeadersRequests.contains(request) =>
-          stay using data.copy(pendingMerkleResponses =
+          stay() using data.copy(pendingMerkleResponses =
             data.pendingMerkleResponses + response
           )
 
@@ -284,20 +284,20 @@ class ElectrumWallet(
           val data1 = data.copy(pendingHeadersRequests =
             data.pendingHeadersRequests + request
           )
-          stay using data1.copy(pendingMerkleResponses =
+          stay() using data1.copy(pendingMerkleResponses =
             data1.pendingMerkleResponses + response
           )
 
         case _ =>
           // Something is wrong with this client, better disconnect from it
-          stay using data.copy(transactions =
+          stay() using data.copy(transactions =
             data.transactions - txid
           ) replying PoisonPill
       }
 
     case Event(bc: ElectrumClient.BroadcastTransaction, _) =>
       client forward bc
-      stay
+      stay()
   }
 
   whenUnhandled {
@@ -310,14 +310,14 @@ class ElectrumWallet(
       val depth = data.depth(tx.txid)
       val stamp = data.timestamp(tx.txid, params.headerDb)
       val isDoubleSpent = doubleSpendTrials.contains(true)
-      stay replying IsDoubleSpentResponse(tx, depth, stamp, isDoubleSpent)
+      stay() replying IsDoubleSpentResponse(tx, depth, stamp, isDoubleSpent)
 
     case Event(GetCurrentReceiveAddresses, data) =>
       val changeKey =
         data.firstUnusedChangeKeys.headOption.getOrElse(data.changeKeys.head)
       val sortredAccountKeys =
         data.firstUnusedAccountKeys.toList.sortBy(_.path.lastChildNumber)
-      stay replying GetCurrentReceiveAddressesResponse(
+      stay() replying GetCurrentReceiveAddressesResponse(
         sortredAccountKeys,
         changeKey,
         ewt
@@ -328,9 +328,9 @@ class ElectrumWallet(
 
     case Event(ProvideExcludedOutPoints(excluded), data) =>
       val data1 = data.copy(excludedOutPoints = excluded)
-      stay using persistAndNotify(data1)
+      stay() using persistAndNotify(data1)
 
-    case Event(GetData, data) => stay replying GetDataResponse(data)
+    case Event(GetData, data) => stay() replying GetDataResponse(data)
 
     case Event(
           CompleteTransaction(pubKeyScriptToAmount, feeRatePerKw, sequenceFlag),
@@ -356,7 +356,7 @@ class ElectrumWallet(
       val resultTry1 =
         for (res <- resultTry)
           yield res.copy(pubKeyScriptToAmount = pubKeyScriptToAmount)
-      stay replying resultTry1
+      stay() replying resultTry1
 
     case Event(
           SendAll(
@@ -373,7 +373,7 @@ class ElectrumWallet(
         if (fromOutpoints.nonEmpty)
           data.utxos.filter(utxo => fromOutpoints contains utxo.item.outPoint)
         else data.utxos
-      stay replying data.spendAll(
+      stay() replying data.spendAll(
         publicKeyScript,
         pubKeyScriptToAmount,
         inUtxos,
@@ -385,18 +385,19 @@ class ElectrumWallet(
 
     case Event(bump: RBFBump, data)
         if bump.tx.txIn.forall(_.sequence <= OPT_IN_FULL_RBF) =>
-      stay replying data.rbfBump(bump, params.dustLimit)
+      stay() replying data.rbfBump(bump, params.dustLimit)
     case Event(reroute: RBFReroute, data)
         if reroute.tx.txIn.forall(_.sequence <= OPT_IN_FULL_RBF) =>
-      stay replying data.rbfReroute(reroute, params.dustLimit)
+      stay() replying data.rbfReroute(reroute, params.dustLimit)
 
-    case Event(_: RBFBump, _) => stay replying RBFResponse(RBF_DISABLED.asLeft)
+    case Event(_: RBFBump, _) =>
+      stay() replying RBFResponse(RBF_DISABLED.asLeft)
     case Event(_: RBFReroute, _) =>
-      stay replying RBFResponse(RBF_DISABLED.asLeft)
+      stay() replying RBFResponse(RBF_DISABLED.asLeft)
 
     case Event(ElectrumClient.BroadcastTransaction(tx), _) =>
       val notConnected = Error(code = -1, "wallet is not connected").asSome
-      stay replying ElectrumClient.BroadcastTransactionResponse(
+      stay() replying ElectrumClient.BroadcastTransactionResponse(
         tx,
         notConnected
       )
@@ -414,7 +415,7 @@ class ElectrumWallet(
       val data1 =
         data.copy(status = status1, changeKeys = data.changeKeys :+ newKey)
       client ! ElectrumClient.ScriptHashSubscription(newKeyScriptHash, self)
-      stay using persistAndNotify(data1)
+      stay() using persistAndNotify(data1)
 
     case Event(KEY_REFILL, data)
         if data.firstUnusedAccountKeys.size < MAX_RECEIVE_ADDRESSES =>
@@ -429,13 +430,13 @@ class ElectrumWallet(
       val data1 =
         data.copy(status = status1, accountKeys = data.accountKeys :+ newKey)
       client ! ElectrumClient.ScriptHashSubscription(newKeyScriptHash, self)
-      stay using persistAndNotify(data1)
+      stay() using persistAndNotify(data1)
 
     // prevent logging because this was unhandled
-    case Event(KEY_REFILL, _) => stay
+    case Event(KEY_REFILL, _) => stay()
   }
 
-  initialize
+  initialize()
 }
 
 object ElectrumWallet {
@@ -1022,12 +1023,12 @@ case class ElectrumData(
         .headOption
         .getOrElse(Long.MinValue)
     def computeOverride(txs: Iterable[Transaction] = Nil) =
-      Stream.continually(txs maxBy changeKeyDepth) zip txs collect {
+      LazyList.continually(txs maxBy changeKeyDepth) zip txs collect {
         case (latterTx, formerTx) if latterTx != formerTx =>
           formerTx.txid -> latterTx.txid
       }
     val overrides = transactions.values
-      .map(Stream continually _)
+      .map(LazyList continually _)
       .flatMap(txStream => txStream.head.txIn zip txStream)
       .groupBy(_._1.outPoint)
       .values

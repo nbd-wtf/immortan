@@ -24,7 +24,6 @@ class ElectrumChainSync(
     headerDb: HeaderDb,
     chainHash: ByteVector32
 ) extends FSM[ElectrumWallet.State, Blockchain] {
-
   def loadChain: Blockchain = if (chainHash != Block.RegtestGenesisBlock.hash) {
     // In case if anything at all goes wrong we just use an initial blockchain and resync it from checkpoint
     val blockchain = Blockchain.fromCheckpoints(
@@ -132,7 +131,7 @@ class ElectrumChainSync(
 
     case Event(ElectrumClient.HeaderSubscriptionResponse(height, header), _) =>
       log.debug(s"Ignoring header $header at $height while syncing")
-      stay
+      stay()
   }
 
   when(RUNNING) {
@@ -152,11 +151,11 @@ class ElectrumChainSync(
           headerDb.addHeaders(chunks.map(_.header), chunks.head.height)
           log.info(s"Got new chain tip ${header.blockId} at $height")
           context.system.eventStream publish blockchain2
-          stay using blockchain2
+          stay() using blockchain2
 
         case _ =>
           log.error("Electrum peer sent bad headers")
-          stay replying PoisonPill
+          stay() replying PoisonPill
       }
 
     case Event(
@@ -170,26 +169,26 @@ class ElectrumChainSync(
         case Success(blockchain1) =>
           headerDb.addHeaders(headers, start)
           context.system.eventStream publish blockchain1
-          stay using blockchain1
+          stay() using blockchain1
 
         case _ =>
           log.error("Electrum peer sent bad headers")
-          stay replying PoisonPill
+          stay() replying PoisonPill
       }
 
     case Event(ElectrumWallet.ChainFor(target), blockchain) =>
       target ! blockchain
-      stay
+      stay()
   }
 
   whenUnhandled {
     case Event(getHeaders: ElectrumClient.GetHeaders, _) =>
       client ! getHeaders
-      stay
+      stay()
 
     case Event(ElectrumClient.ElectrumDisconnected, _) =>
       goto(DISCONNECTED)
   }
 
-  initialize
+  initialize()
 }

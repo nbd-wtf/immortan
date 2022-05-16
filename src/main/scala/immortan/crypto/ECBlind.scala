@@ -2,6 +2,7 @@ package immortan.crypto
 
 import java.math.BigInteger
 
+import scala.collection.LazyZip3._
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.Crypto.curve.{getCurve, getG, getN}
 import fr.acinq.eclair._
@@ -29,7 +30,7 @@ case class BlindMemo(
       for (clearToken <- clearTokens) yield clearToken.toString
     val blindPoints =
       for (param <- params) yield ByteVector.view(param.point).toHex
-    (blindPoints, clearTokenStrings, clearSigStrings).zipped.toList
+    blindPoints.lazyZip(clearTokenStrings).lazyZip(clearSigStrings).toList
   }
 }
 

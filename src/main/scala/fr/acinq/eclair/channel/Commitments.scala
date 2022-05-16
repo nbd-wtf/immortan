@@ -15,6 +15,8 @@ import immortan.crypto.Tools.{Any2Some, newFeerate, none}
 import immortan.utils.Rx
 import immortan.{LNParams, RemoteNodeInfo, UpdateAddHtlcExt}
 
+import scala.collection.LazyZip3._
+
 case class LocalChanges(
     proposed: List[UpdateMessage],
     signed: List[UpdateMessage],
@@ -550,7 +552,7 @@ case class NormalCommits(
       localPerCommitmentPoint
     )
     val combined =
-      (sortedHtlcTxs, htlcSigs, commit.htlcSignatures).zipped.toList
+      sortedHtlcTxs.lazyZip(htlcSigs).lazyZip(commit.htlcSignatures).toList
 
     if (Transactions.checkSpendable(signedCommitTx).isFailure)
       throw ChannelTransitionFail(channelId, commit)

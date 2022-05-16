@@ -130,7 +130,7 @@ class EsploraFeeProvider(val url: String) extends FeeRatesProvider {
       structure: EsploraFeeStructure,
       maxBlockDelay: Int
   ): FeeratePerKB = {
-    val belowLimit = structure.filterKeys(_.toInt <= maxBlockDelay).values
+    val belowLimit = structure.view.filterKeys(_.toInt <= maxBlockDelay).values
     FeeratePerKB(belowLimit.min.sat * 1000L)
   }
 }
@@ -169,7 +169,9 @@ object BitgoFeeProvider extends FeeRatesProvider {
       maxBlockDelay: Int
   ): FeeratePerKB = {
     val belowLimit =
-      structure.feeByBlockTarget.filterKeys(_.toInt <= maxBlockDelay).values
+      structure.feeByBlockTarget.view
+        .filterKeys(_.toInt <= maxBlockDelay)
+        .values
     FeeratePerKB(belowLimit.min.sat)
   }
 }

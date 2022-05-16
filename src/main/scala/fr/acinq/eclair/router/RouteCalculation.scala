@@ -10,6 +10,7 @@ import fr.acinq.eclair.wire.ChannelUpdate
 import immortan.LNParams
 import immortan.crypto.Tools.Any2Some
 
+import scala.collection.LazyZip3._
 import scala.concurrent.duration._
 
 object RouteCalculation {
@@ -46,12 +47,13 @@ object RouteCalculation {
       targetNodeId: PublicKey
   ): Graph.GraphStructure.GraphEdges = {
     // BOLT 11: "For each entry, the pubkey is the node ID of the start of the channel", and the last node is the destination
-    val protoDescs = (
-      extraHops.map(_.shortChannelId),
-      extraHops.map(_.nodeId),
-      extraHops.map(_.nodeId).drop(1) :+ targetNodeId
-    )
-    protoDescs.zipped.toList
+    val protoDescs =
+      extraHops
+        .map(_.shortChannelId)
+        .lazyZip(extraHops.map(_.nodeId))
+        .lazyZip(extraHops.map(_.nodeId).drop(1) :+ targetNodeId)
+
+    protoDescs.toList
       .map(ChannelDesc.tupled)
       .zip(extraHops map toFakeUpdate)
       .map(GraphEdge.tupled)

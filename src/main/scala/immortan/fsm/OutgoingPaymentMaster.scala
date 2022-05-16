@@ -299,7 +299,7 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
 
     case (fulfill: RemoteFulfill, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
       // We may have local and multiple routed outgoing payment sets at once, all of them must be notified
-      data.payments
+      data.payments.view
         .filterKeys(_.paymentHash == fulfill.ourAdd.paymentHash)
         .values
         .foreach(_ doProcess fulfill)

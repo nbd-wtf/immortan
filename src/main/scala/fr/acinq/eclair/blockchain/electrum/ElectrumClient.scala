@@ -201,7 +201,12 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit
 
   // We need to regularly send a ping in order not to get disconnected
   val pingTrigger: Cancellable =
-    context.system.scheduler.schedule(30.seconds, 30.seconds, self, Ping)
+    context.system.scheduler.scheduleWithFixedDelay(
+      30.seconds,
+      30.seconds,
+      self,
+      Ping
+    )
 
   override def unhandled(message: Any): Unit = {
     message match {

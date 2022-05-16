@@ -13,7 +13,7 @@ import immortan.crypto.Tools.{Bytes, none}
 import rx.lang.scala.{Observable, Subscription}
 import scodec.bits.ByteVector
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 import scala.collection.mutable
 import scala.concurrent._
 import scala.concurrent.duration._
@@ -54,7 +54,7 @@ object CommsTower {
   }
 
   def sendMany(
-      messages: Traversable[LightningMessage],
+      messages: Iterable[LightningMessage],
       pair: KeyPairAndPubKey
   ): Unit = CommsTower.workers
     .get(pair)

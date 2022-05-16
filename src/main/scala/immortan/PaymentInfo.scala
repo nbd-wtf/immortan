@@ -62,6 +62,7 @@ object SemanticOrder {
   def makeSemanticOrder(items: SemanticGroup): SemanticGroup =
     items.distinct
       .groupBy(orderIdOrBaseId)
+      .view
       .mapValues(_ sortBy orderOrMaxValue)
       .mapValues(collapseChildren)
       .values

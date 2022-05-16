@@ -43,42 +43,42 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
 
   when(Disconnected) {
     case Event(ElectrumClient.ElectrumReady(height, tip, _), _)
-        if addresses.contains(sender) =>
-      sender ! ElectrumClient.HeaderSubscription(self)
-      handleHeader(sender, height, tip, None)
+        if addresses.contains(sender()) =>
+      sender() ! ElectrumClient.HeaderSubscription(self)
+      handleHeader(sender(), height, tip, None)
 
     case Event(ElectrumClient.AddStatusListener(listener), _) =>
       statusListeners += listener
-      stay
+      stay()
 
     case Event(Terminated(actor), _) =>
       context.system.scheduler.scheduleOnce(5.seconds, self, Connect)
       addresses -= actor
-      stay
+      stay()
   }
 
   when(Connected) {
     case Event(ElectrumClient.ElectrumReady(height, tip, _), d: ConnectedData)
-        if addresses.contains(sender) =>
-      sender ! ElectrumClient.HeaderSubscription(self)
-      handleHeader(sender, height, tip, Some(d))
+        if addresses.contains(sender()) =>
+      sender() ! ElectrumClient.HeaderSubscription(self)
+      handleHeader(sender(), height, tip, Some(d))
 
     case Event(
           ElectrumClient.HeaderSubscriptionResponse(height, tip),
           d: ConnectedData
-        ) if addresses.contains(sender) =>
-      handleHeader(sender, height, tip, Some(d))
+        ) if addresses.contains(sender()) =>
+      handleHeader(sender(), height, tip, Some(d))
 
     case Event(request: ElectrumClient.Request, d: ConnectedData) =>
       d.master forward request
-      stay
+      stay()
 
     case Event(ElectrumClient.AddStatusListener(listener), d: ConnectedData)
         if addresses.contains(d.master) =>
       statusListeners += listener
       val (height, tip) = d.tips(d.master)
       listener ! ElectrumClient.ElectrumReady(height, tip, addresses(d.master))
-      stay
+      stay()
 
     case Event(Terminated(actor), d: ConnectedData) =>
       val address = addresses(actor)
@@ -95,7 +95,9 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
           "lost connection to {}, we still have our master server",
           address
         )
-        stay using d.copy(tips = tips1) // we don't care, this wasn't our master
+        stay() using d.copy(tips =
+          tips1
+        ) // we don't care, this wasn't our master
       } else {
         log.info("lost connection to our master server {}", address)
         // we choose next best candidate as master
@@ -115,7 +117,7 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
       val connections =
         Math.min(LNParams.maxChainConnectionsCount, serverAddresses.size)
       (0 until connections).foreach(_ => self ! Connect)
-      stay
+      stay()
 
     case Event(Connect, _) =>
       pickAddress(serverAddresses, addresses.values.toSet) foreach { esa =>
@@ -128,11 +130,11 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
         context watch client
       }
 
-      stay
+      stay()
 
     case Event(ElectrumClient.ElectrumDisconnected, _) =>
       // Ignored, we rely on Terminated messages to detect disconnections
-      stay
+      stay()
   }
 
   onTransition { case Connected -> Disconnected =>
@@ -140,7 +142,7 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
     context.system.eventStream.publish(ElectrumClient.ElectrumDisconnected)
   }
 
-  initialize
+  initialize()
 
   private def handleHeader(
       connection: ActorRef,
@@ -188,7 +190,7 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
         )
       case Some(d) =>
         log.debug("received tip {} from {} at {}", tip, remoteAddress, height)
-        stay using d.copy(tips = d.tips + (connection -> (height, tip)))
+        stay() using d.copy(tips = d.tips + (connection -> (height, tip)))
     }
   }
 

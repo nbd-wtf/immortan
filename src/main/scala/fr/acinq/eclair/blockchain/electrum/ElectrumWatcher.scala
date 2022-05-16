@@ -79,7 +79,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef)
         watches,
         publishQueue,
         block2tx,
-        getTxQueue :+ (getTx, sender)
+        getTxQueue :+ (getTx, sender())
       )
   }
 
@@ -100,7 +100,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef)
         val scriptHash = computeScriptHash(watch.publicKeyScript)
         client ! ElectrumClient.GetScriptHashHistory(scriptHash)
       }
-      val toPublish = block2tx.filterKeys(_ <= newheight)
+      val toPublish = block2tx.view.filterKeys(_ <= newheight)
       toPublish.values.flatten.foreach(publish)
       context become running(
         newheight,
@@ -273,7 +273,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef)
       )
 
     case GetTxWithMeta(txid) =>
-      client ! ElectrumClient.GetTransaction(txid, Some(sender))
+      client ! ElectrumClient.GetTransaction(txid, Some(sender()))
 
     case ElectrumClient.GetTransactionResponse(tx, Some(origin: ActorRef)) =>
       origin ! GetTxWithMetaResponse(tx.txid, Some(tx), tip.time)

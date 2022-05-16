@@ -326,7 +326,7 @@ object Helpers {
           ).asSome
         case _ if c.nextRemoteCommitPublished.exists(_.isCommitConfirmed) =>
           NextRemoteClose(
-            c.commitments.remoteNextCommitInfo.left.get.nextRemoteCommit,
+            c.commitments.remoteNextCommitInfo.swap.toOption.get.nextRemoteCommit,
             c.nextRemoteCommitPublished.get
           ).asSome
         case _ if c.futureRemoteCommitPublished.exists(_.isCommitConfirmed) =>
@@ -583,7 +583,7 @@ object Helpers {
           cs.localParams.defaultFinalScriptPubKey,
           feeratePerKwDelayed
         )
-        for (claimDelayed <- tx1.right)
+        for (claimDelayed <- tx1)
           yield Transactions.addSigs(
             localSig = delayedToSig(claimDelayed),
             claimDelayedOutputTx = claimDelayed
@@ -639,7 +639,7 @@ object Helpers {
             cs.localParams.defaultFinalScriptPubKey,
             feeratePerKwDelayed
           )
-          for (claimDelayed <- tx1.right)
+          for (claimDelayed <- tx1)
             yield Transactions.addSigs(
               localSig = delayedToSig(claimDelayed),
               claimDelayedOutputTx = claimDelayed
@@ -754,7 +754,7 @@ object Helpers {
               feeratePerKwHtlc,
               format
             )
-            for (info <- tx1.right)
+            for (info <- tx1)
               yield Transactions.addSigs(
                 localSig = claimToSig(info),
                 paymentPreimage = preimages(add.paymentHash),
@@ -784,7 +784,7 @@ object Helpers {
               feeratePerKwHtlc,
               format
             )
-            for (info <- tx1.right)
+            for (info <- tx1)
               yield Transactions.addSigs(
                 localSig = claimToSig(info),
                 claimHtlcTimeoutTx = info
@@ -867,7 +867,7 @@ object Helpers {
               remoteDelayedPaymentPubkey,
               feeratePerKwPenalty
             )
-            for (info <- tx1.right)
+            for (info <- tx1)
               yield Transactions.addSigs(
                 revocationSig = claimToSig(info),
                 mainPenaltyTx = info
@@ -921,7 +921,7 @@ object Helpers {
                   cs.localParams.defaultFinalScriptPubKey,
                   feeratePerKwPenalty
                 )
-                for (info <- tx1.right)
+                for (info <- tx1)
                   yield Transactions.addSigs(
                     info,
                     claimToSig(info),
@@ -1007,7 +1007,7 @@ object Helpers {
                 feeratePerKwPenalty
               )
 
-              tx1.right.map { htlcDelayedPenalty =>
+              tx1.map { htlcDelayedPenalty =>
                 val signedTx = Transactions.addSigs(
                   revocationSig = claimToSig(htlcDelayedPenalty),
                   claimHtlcDelayedPenalty = htlcDelayedPenalty

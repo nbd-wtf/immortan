@@ -13,6 +13,7 @@ import immortan.crypto.Tools._
 import immortan.crypto.{CanBeRepliedTo, StateMachine, Tools}
 import immortan.utils.Rx
 
+import scala.collection.LazyZip3._
 import java.util.concurrent.Executors
 import scala.collection.mutable
 import scala.concurrent.duration._
@@ -528,14 +529,12 @@ abstract class SyncMaster(
   }
 
   def reply2Query(reply: ReplyChannelRange): Iterator[QueryShortChannelIds] = {
-    val stack = (
-      reply.shortChannelIds.array,
-      reply.timestamps.timestamps,
-      reply.checksums.checksums
-    )
+    val stack = reply.shortChannelIds.array
+      .lazyZip(reply.timestamps.timestamps)
+      .lazyZip(reply.checksums.checksums)
 
     val shortIdFlagSeq = for {
-      (shortId, theirTimestamps, theirChecksums) <- stack.zipped
+      (shortId, theirTimestamps, theirChecksums) <- stack
       if provenAndNotExcluded(shortId)
       nodeAnnounceFlags =
         if (requestNodeAnnounce contains shortId)

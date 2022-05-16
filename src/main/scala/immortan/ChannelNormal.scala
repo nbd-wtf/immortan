@@ -1491,7 +1491,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
       data1: HasNormalCommitments
   ): Unit = {
     val nextRemoteCommit: RemoteCommit =
-      data1.commitments.remoteNextCommitInfo.left.get.nextRemoteCommit
+      data1.commitments.remoteNextCommitInfo.swap.toOption.get.nextRemoteCommit
     val rcp = Closing.claimRemoteCommitTxOutputs(
       data1.commitments,
       nextRemoteCommit,

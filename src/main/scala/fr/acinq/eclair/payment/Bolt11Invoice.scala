@@ -668,7 +668,7 @@ object Bolt11Invoice {
   }
 
   // char -> 5 bits value
-  val charToint5: Map[Char, BitVector] = Bech32.alphabet.zipWithIndex.toMap
+  val charToint5: Map[Char, BitVector] = Bech32.alphabet.zipWithIndex.toMap.view
     .mapValues(
       BitVector.fromInt(_, size = 5, ordering = ByteOrdering.BigEndian)
     )

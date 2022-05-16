@@ -18,7 +18,7 @@ import immortan.fsm.SendMultiPart
 import immortan.utils.Rx
 import rx.lang.scala.Subscription
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import scala.util.Random.shuffle
