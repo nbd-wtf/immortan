@@ -318,7 +318,7 @@ case class WalletExt(
     me.modify(_.wallets.eachWhere(sameXPub).info.label).setTo(label)
   }
 
-  override def becomeShutDown: Unit = {
+  override def becomeShutDown(): Unit = {
     val actors = List(catcher, sync, pool, watcher)
     val allActors = wallets.map(_.walletRef) ++ actors
     allActors.foreach(_ ! PoisonPill)

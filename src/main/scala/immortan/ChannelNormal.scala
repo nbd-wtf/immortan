@@ -996,7 +996,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
               )
             }
 
-            def resendRevocation: Unit =
+            def resendRevocation(): Unit =
               if (
                 norm.commitments.localCommit.index == rs.nextRemoteRevocationNumber + 1
               ) {

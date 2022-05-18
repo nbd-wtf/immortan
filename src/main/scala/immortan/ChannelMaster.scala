@@ -270,7 +270,7 @@ class ChannelMaster(
 
   // CHANNEL MANAGEMENT
 
-  override def becomeShutDown: Unit = {
+  override def becomeShutDown(): Unit = {
     // Outgoing FSMs won't receive anything without channel listeners
     for (channel <- all.values) channel.listeners = Set.empty
     for (fsm <- inProcessors.values) fsm.becomeShutDown
@@ -278,7 +278,7 @@ class ChannelMaster(
     pf.listeners = Set.empty
   }
 
-  def initConnect: Unit =
+  def initConnect(): Unit =
     all.values.flatMap(Channel.chanAndCommitsOpt).foreach { cnc =>
       // Connect to all peers with channels, including CLOSED ones
       CommsTower.listenNative(Set(me), cnc.commits.remoteInfo)
@@ -547,7 +547,7 @@ class ChannelMaster(
   override def addRejectedRemotely(reason: RemoteReject): Unit =
     opm process reason
 
-  override def notifyResolvers: Unit = {
+  override def notifyResolvers(): Unit = {
     // Used to notify FSMs that we have cross-signed incoming HTLCs which FSMs may somehow act upon
     val allIns = all.values
       .flatMap(Channel.chanAndCommitsOpt)

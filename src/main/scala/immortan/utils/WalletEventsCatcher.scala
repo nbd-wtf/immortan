@@ -62,7 +62,7 @@ class WalletEventsListener {
 
   def onChainTipKnown(event: CurrentBlockCount): Unit = none
   def onChainMasterSelected(event: InetSocketAddress): Unit = none
-  def onChainDisconnected: Unit = none
+  def onChainDisconnected(): Unit = none
 
   def onChainSyncStarted(localTip: Long, remoteTip: Long): Unit = none
   def onChainSyncEnded(localTip: Long): Unit = none

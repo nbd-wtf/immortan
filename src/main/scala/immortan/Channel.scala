@@ -129,7 +129,7 @@ trait Channel extends StateMachine[ChannelData] with CanBeRepliedTo { me =>
     override def addReceived(add: UpdateAddHtlcExt): Unit = for (
       lst <- listeners
     ) lst.addReceived(add)
-    override def notifyResolvers: Unit = for (lst <- listeners)
+    override def notifyResolvers(): Unit = for (lst <- listeners)
       lst.notifyResolvers
   }
 
@@ -183,7 +183,7 @@ trait ChannelListener {
   def addRejectedLocally(reason: LocalReject): Unit = none
   def fulfillReceived(fulfill: RemoteFulfill): Unit = none
   def addReceived(add: UpdateAddHtlcExt): Unit = none
-  def notifyResolvers: Unit = none
+  def notifyResolvers(): Unit = none
 }
 
 case class ChanAndCommits(chan: Channel, commits: Commitments)

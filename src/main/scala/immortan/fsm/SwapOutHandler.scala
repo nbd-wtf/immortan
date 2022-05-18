@@ -20,7 +20,7 @@ abstract class SwapOutHandler(
     Rx.ioQueue.delay(30.seconds).doOnCompleted(finish).subscribe(_ => onTimeout)
   CommsTower.listenNative(Set(swapOutListener), cnc.commits.remoteInfo)
 
-  def finish: Unit = {
+  def finish(): Unit = {
     // It is assumed that this FSM is established with a peer which has an HC with us
     // This FSM has a hardcoded timeout which will eventually remove its connection listener
     // OTOH this FSM should survive reconnects so there is no local disconnect logic here
@@ -63,7 +63,7 @@ abstract class SwapOutHandler(
   }
 
   def onResponse(message: SwapOutTransactionResponse): Unit
-  def onPeerCanNotHandle: Unit
-  def onInvalidRequest: Unit
-  def onTimeout: Unit
+  def onPeerCanNotHandle(): Unit
+  def onInvalidRequest(): Unit
+  def onTimeout(): Unit
 }

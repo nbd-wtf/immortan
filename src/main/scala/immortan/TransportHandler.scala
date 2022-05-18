@@ -21,9 +21,9 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
 
   def handleDecryptedIncomingData(data: ByteVector): Unit
   def handleEncryptedOutgoingData(data: ByteVector): Unit
-  def handleEnterOperationalState: Unit
+  def handleEnterOperationalState(): Unit
 
-  def init: Unit = {
+  def init(): Unit = {
     val writer = makeWriter(keyPair, remotePubKey)
     val (reader, _, msg) = writer.write(ByteVector.empty)
     become(HandshakeData(reader, ByteVector.empty), HANDSHAKE)

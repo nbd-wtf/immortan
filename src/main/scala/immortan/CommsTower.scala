@@ -134,7 +134,7 @@ object CommsTower {
           }
         }
 
-        def handleEnterOperationalState: Unit = {
+        def handleEnterOperationalState(): Unit = {
           pinging = Observable.interval(10.seconds) subscribe { _ =>
             if (lastMessage < System.currentTimeMillis - 45 * 1000L) disconnect
             else if (lastMessage < System.currentTimeMillis - 20 * 1000L)
@@ -166,7 +166,7 @@ object CommsTower {
       workers -= pair
     }
 
-    def disconnect: Unit = try sock.close
+    def disconnect(): Unit = try sock.close
     catch none
 
     def handleTheirRemoteInitMessage(
@@ -187,7 +187,7 @@ object CommsTower {
       }
     }
 
-    def sendPing: Unit = {
+    def sendPing(): Unit = {
       val payloadLength = secureRandom.nextInt(5) + 1
       val data = randomBytes(length = payloadLength)
       handler process Ping(payloadLength, data)

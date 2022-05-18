@@ -234,7 +234,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit
   }
 
   @nowarn
-  override def postStop: Unit = {
+  override def postStop(): Unit = {
     pingTrigger.cancel
     super.postStop
   }

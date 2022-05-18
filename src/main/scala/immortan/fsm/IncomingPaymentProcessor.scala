@@ -56,7 +56,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
     extends IncomingPaymentProcessor {
   private val paymentInfoOpt =
     cm.payBag.getPaymentInfo(fullTag.paymentHash).toOption
-  override def becomeShutDown: Unit = become(null, SHUTDOWN)
+  override def becomeShutDown(): Unit = become(null, SHUTDOWN)
 
   require(fullTag.tag == PaymentTagTlv.FINAL_INCOMING)
   delayedCMDWorker.replaceWork(CMDTimeout)
@@ -570,7 +570,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
     fulfill(preimage, adds)
   }
 
-  override def becomeShutDown: Unit = {
+  override def becomeShutDown(): Unit = {
     cm.opm process RemoveSenderFSM(fullTag)
     become(null, SHUTDOWN)
   }

@@ -60,8 +60,8 @@ abstract class SwapInAddressHandler extends StateMachine[AddressData] { me =>
   }
 
   def onFound(offers: List[SwapInResponseExt] = Nil): Unit
-  def onNoProviderSwapInSupport: Unit
-  def onTimeoutAndNoResponse: Unit
+  def onNoProviderSwapInSupport(): Unit
+  def onTimeoutAndNoResponse(): Unit
 
   def doProcess(change: Any): Unit = (change, state) match {
     case (

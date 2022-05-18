@@ -275,7 +275,7 @@ class SQLiteNetwork(
       db.change(announceTable.killNotPresentInChans)
     }
 
-  def clearDataTables: Unit = {
+  def clearDataTables(): Unit = {
     db.change(announceTable.killAllSql)
     db.change(updateTable.killAllSql)
   }

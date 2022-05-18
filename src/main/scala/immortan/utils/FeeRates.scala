@@ -46,7 +46,7 @@ object FeeRates {
 }
 
 class FeeRates(bag: DataBag) extends CanBeShutDown {
-  override def becomeShutDown: Unit = listeners = Set.empty
+  override def becomeShutDown(): Unit = listeners = Set.empty
 
   def reloadData: FeeratesPerKB = fr.acinq.eclair.secureRandom nextInt 3 match {
     case 0 =>

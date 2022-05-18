@@ -10,9 +10,9 @@ trait PreparedQuery {
 
   def executeQuery: RichCursor
 
-  def executeUpdate: Unit
+  def executeUpdate(): Unit
 
-  def close: Unit
+  def close(): Unit
 }
 
 case class PreparedQuerySQLiteGeneral(stmt: PreparedStatement)
@@ -44,7 +44,7 @@ case class PreparedQuerySQLiteGeneral(stmt: PreparedStatement)
 
   def executeQuery: RichCursor = RichCursorSQLiteGeneral(stmt.executeQuery)
 
-  def executeUpdate: Unit = stmt.executeUpdate
+  def executeUpdate(): Unit = stmt.executeUpdate
 
-  def close: Unit = stmt.close
+  def close(): Unit = stmt.close
 }

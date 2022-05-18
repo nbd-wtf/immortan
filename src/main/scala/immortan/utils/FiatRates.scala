@@ -11,7 +11,7 @@ object FiatRates {
 }
 
 class FiatRates(bag: DataBag) extends CanBeShutDown {
-  override def becomeShutDown: Unit = listeners = Set.empty
+  override def becomeShutDown(): Unit = listeners = Set.empty
 
   val customFiatSymbols: Map[String, String] = Map(
     "rub" -> "\u20BD",

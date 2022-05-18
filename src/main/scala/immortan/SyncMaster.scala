@@ -353,7 +353,7 @@ abstract class SyncMaster(
 
   def onChunkSyncComplete(pure: PureRoutingData): Unit
   def onNodeAnnouncement(na: NodeAnnouncement): Unit
-  def onTotalSyncComplete: Unit
+  def onTotalSyncComplete(): Unit
 
   def hasCapacityIssues(update: ChannelUpdate): Boolean =
     update.htlcMaximumMsat.forall(cap =>

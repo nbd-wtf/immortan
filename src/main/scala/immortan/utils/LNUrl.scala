@@ -110,7 +110,7 @@ sealed trait CallbackLNUrlData extends LNUrlData {
 
 sealed trait HasRemoteInfo {
   val remoteInfo: RemoteNodeInfo
-  def cancel: Unit = Tools.none
+  def cancel(): Unit = Tools.none
 }
 
 case class HasRemoteInfoWrap(remoteInfo: RemoteNodeInfo) extends HasRemoteInfo
@@ -126,7 +126,7 @@ case class NormalChannelRequest(uri: String, callback: String, k1: String)
       .appendQueryParameter("remoteid", remoteInfo.nodeSpecificPubKey.toString)
   }
 
-  override def cancel: Unit = LNUrl
+  override def cancel(): Unit = LNUrl
     .level2DataResponse {
       callbackUri.buildUpon
         .appendQueryParameter("k1", k1)

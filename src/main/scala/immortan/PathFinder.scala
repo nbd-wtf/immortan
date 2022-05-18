@@ -167,7 +167,7 @@ abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag)
         override def onChunkSyncComplete(
             pureRoutingData: PureRoutingData
         ): Unit = me process pureRoutingData
-        override def onTotalSyncComplete: Unit = me process self
+        override def onTotalSyncComplete(): Unit = me process self
       }
 
       syncMaster = normalSync.asSome
@@ -321,7 +321,7 @@ abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag)
         .map(_.ann getNodeIdSameSideAs cu) orElse
       extraEdges.get(cu.shortChannelId).map(_.desc.from)
 
-  def attemptPHCSync: Unit = {
+  def attemptPHCSync(): Unit = {
     if (LNParams.syncParams.phcSyncNodes.nonEmpty) {
       val master = new PHCSyncMaster(data) {
         override def onSyncComplete(pure: CompleteHostedRoutingData): Unit =

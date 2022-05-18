@@ -52,7 +52,7 @@ abstract class ThrottledWork[T, V] {
       replaceWork(data)
     }
 
-  def unsubscribeCurrentWork: Unit = {
+  def unsubscribeCurrentWork(): Unit = {
     subscription.foreach(_.unsubscribe())
     subscription = None
   }

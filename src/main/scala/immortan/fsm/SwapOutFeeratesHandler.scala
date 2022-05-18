@@ -68,8 +68,8 @@ abstract class SwapOutFeeratesHandler extends StateMachine[FeeratesData] { me =>
   }
 
   def onFound(offers: List[SwapOutResponseExt] = Nil): Unit
-  def onNoProviderSwapOutSupport: Unit
-  def onTimeoutAndNoResponse: Unit
+  def onNoProviderSwapOutSupport(): Unit
+  def onTimeoutAndNoResponse(): Unit
 
   def doProcess(change: Any): Unit = (change, state) match {
     case (

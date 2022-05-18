@@ -238,7 +238,7 @@ object Tools {
 }
 
 trait CanBeShutDown {
-  def becomeShutDown: Unit
+  def becomeShutDown(): Unit
 }
 
 trait CanBeRepliedTo {
