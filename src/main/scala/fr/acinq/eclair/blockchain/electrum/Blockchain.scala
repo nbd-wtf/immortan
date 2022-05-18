@@ -183,17 +183,6 @@ object Blockchain {
     Blockchain.fromCheckpoints(chainHash, checkpoints1)
   }
 
-  /** Validate a chunk of 2016 headers
-    *
-    * Used during initial sync to batch validate
-    *
-    * @param height
-    *   height of the first header; must be a multiple of 2016
-    * @param headers
-    *   headers.
-    * @throws Exception
-    *   if this chunk is not valid and consistent with our checkpoints
-    */
   def validateHeadersChunk(
       blockchain: Blockchain,
       height: Int,

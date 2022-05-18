@@ -48,7 +48,7 @@ abstract class ThrottledWork[T, V] {
     } else {
       // Current work has not finished yet
       // disconnect subscription and replace
-      unsubscribeCurrentWork
+      unsubscribeCurrentWork()
       replaceWork(data)
     }
 

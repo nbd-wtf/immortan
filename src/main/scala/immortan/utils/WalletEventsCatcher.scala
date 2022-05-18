@@ -46,7 +46,8 @@ class WalletEventsCatcher extends Actor {
       for (lst <- listeners) lst.onChainTipKnown(event)
     case event: ElectrumReady =>
       for (lst <- listeners) lst.onChainMasterSelected(event.serverAddress)
-    case ElectrumDisconnected => for (lst <- listeners) lst.onChainDisconnected
+    case ElectrumDisconnected =>
+      for (lst <- listeners) lst.onChainDisconnected()
 
     case event: ElectrumChainSync.ChainSyncStarted =>
       for (lst <- listeners)

@@ -1438,12 +1438,6 @@ public abstract class Uri implements Comparable<Uri> {
             return query((Part) null);
         }
 
-        /**
-         * Constructs a Uri with the current attributes.
-         *
-         * @throws UnsupportedOperationException if the URI is opaque and the
-         *  scheme is null
-         */
         public Uri build() {
             if (opaquePart != null) {
                 if (this.scheme == null) {
@@ -1482,14 +1476,6 @@ public abstract class Uri implements Comparable<Uri> {
         }
     }
 
-    /**
-     * Returns a set of the unique names of all query parameters. Iterating
-     * over the set will return the names in order of their first occurrence.
-     *
-     * @throws UnsupportedOperationException if this isn't a hierarchical URI
-     *
-     * @return a set of decoded names
-     */
     public Set<String> getQueryParameterNames() {
         if (isOpaque()) {
             throw new UnsupportedOperationException(NOT_HIERARCHICAL);
@@ -1521,15 +1507,6 @@ public abstract class Uri implements Comparable<Uri> {
         return Collections.unmodifiableSet(names);
     }
 
-    /**
-     * Searches the query string for parameter values with the given key.
-     *
-     * @param key which will be encoded
-     *
-     * @throws UnsupportedOperationException if this isn't a hierarchical URI
-     * @throws NullPointerException if key is null
-     * @return a list of decoded values
-     */
     public List<String> getQueryParameters(String key) {
         if (isOpaque()) {
             throw new UnsupportedOperationException(NOT_HIERARCHICAL);
@@ -1582,17 +1559,6 @@ public abstract class Uri implements Comparable<Uri> {
         return Collections.unmodifiableList(values);
     }
 
-    /**
-     * Searches the query string for the first value with the given key.
-     *
-     * <p><strong>Warning:</strong> Prior to Ice Cream Sandwich, this decoded
-     * the '+' character as '+' rather than ' '.
-     *
-     * @param key which will be encoded
-     * @throws UnsupportedOperationException if this isn't a hierarchical URI
-     * @throws NullPointerException if key is null
-     * @return the decoded value or null if no parameter is found
-     */
     public String getQueryParameter(String key) {
         if (isOpaque()) {
             throw new UnsupportedOperationException(NOT_HIERARCHICAL);

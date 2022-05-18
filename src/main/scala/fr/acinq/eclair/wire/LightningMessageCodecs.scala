@@ -578,7 +578,6 @@ object LightningMessageCodecs {
     discriminatorWithDefault(lightningMessageCodec, unknownMessageCodec.upcast)
 
   // EXTENDED MESSAGE UTILS
-
   def decode(msg: UnknownMessage): LightningMessage = {
     val codec = msg.tag match {
       case HC_HOSTED_CHANNEL_BRANDING_TAG => hostedChannelBrandingCodec
@@ -628,7 +627,6 @@ object LightningMessageCodecs {
   }
 
   // Extended messages need to be wrapped in UnknownMessage
-
   def prepare(msg: LightningMessage): LightningMessage = msg match {
     case msg: HostedChannelBranding =>
       UnknownMessage(
@@ -747,7 +745,6 @@ object LightningMessageCodecs {
   }
 
   // HC uses the following protocol-defined messages, but they still need to be wrapped in UnknownMessage
-
   def prepareNormal(msg: LightningMessage): LightningMessage = msg match {
     case msg: Fail =>
       UnknownMessage(

@@ -17,7 +17,10 @@ abstract class SwapOutHandler(
     feerateKey: ByteVector32
 ) { me =>
   val shutdownTimer: Subscription =
-    Rx.ioQueue.delay(30.seconds).doOnCompleted(finish).subscribe(_ => onTimeout)
+    Rx.ioQueue
+      .delay(30.seconds)
+      .doOnCompleted(finish())
+      .subscribe(_ => onTimeout())
   CommsTower.listenNative(Set(swapOutListener), cnc.commits.remoteInfo)
 
   def finish(): Unit = {
@@ -46,18 +49,18 @@ abstract class SwapOutHandler(
             btcAddr,
             SwapOutTransactionDenied.UNKNOWN_CHAIN_FEERATES
           ) if btcAddr == btcAddress =>
-        runAnd(finish)(onPeerCanNotHandle)
+        runAnd(finish())(onPeerCanNotHandle())
       case SwapOutTransactionDenied(
             btcAddr,
             SwapOutTransactionDenied.CAN_NOT_HANDLE_AMOUNT
           ) if btcAddr == btcAddress =>
-        runAnd(finish)(onPeerCanNotHandle)
+        runAnd(finish())(onPeerCanNotHandle())
       case message: SwapOutTransactionResponse
           if message.btcAddress == btcAddress =>
-        runAnd(finish)(me onResponse message)
+        runAnd(finish())(me onResponse message)
       case message: SwapOutTransactionDenied
           if message.btcAddress == btcAddress =>
-        runAnd(finish)(onInvalidRequest)
+        runAnd(finish())(onInvalidRequest())
       case _ => // Do nothing, it's unrelated
     }
   }

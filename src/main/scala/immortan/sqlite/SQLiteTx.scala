@@ -34,7 +34,7 @@ class SQLiteTx(val db: DBInterface) {
   def addSearchableTransaction(search: String, txid: ByteVector32): Unit = {
     val newVirtualSqlPQ = db.makePreparedQuery(TxTable.newVirtualSql)
     db.change(newVirtualSqlPQ, search.toLowerCase, txid.toHex)
-    newVirtualSqlPQ.close
+    newVirtualSqlPQ.close()
   }
 
   def searchTransactions(rawSearchQuery: String): RichCursor =
@@ -51,7 +51,7 @@ class SQLiteTx(val db: DBInterface) {
       )
       for (label <- description.label) addSearchableTransaction(label, txid)
       ChannelMaster.next(ChannelMaster.txDbStream)
-      updateDescriptionSqlPQ.close
+      updateDescriptionSqlPQ.close()
     }
 
   def updStatus(
@@ -118,7 +118,7 @@ class SQLiteTx(val db: DBInterface) {
       0L: JLong /* NOT DOUBLE SPENT YET */
     )
     ChannelMaster.next(ChannelMaster.txDbStream)
-    newSqlPQ.close
+    newSqlPQ.close()
   }
 
   def toTxInfo(rc: RichCursor): TxInfo =

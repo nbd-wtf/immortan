@@ -238,7 +238,6 @@ class ChannelMaster(
   }
 
   // CONNECTION LISTENER
-
   // Note that this may be sent multiple times after chain wallet reconnects
   override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit =
     allFromNode(worker.info.nodeId).foreach(_.chan process CMD_SOCKET_ONLINE)
@@ -265,15 +264,14 @@ class ChannelMaster(
   override def onDisconnect(worker: CommsTower.Worker): Unit = {
     allFromNode(worker.info.nodeId).foreach(_.chan process CMD_SOCKET_OFFLINE)
     opm process TrampolinePeerDisconnected(worker.info.nodeId)
-    Rx.ioQueue.delay(5.seconds).foreach(_ => initConnect)
+    Rx.ioQueue.delay(5.seconds).foreach(_ => initConnect())
   }
 
   // CHANNEL MANAGEMENT
-
   override def becomeShutDown(): Unit = {
     // Outgoing FSMs won't receive anything without channel listeners
     for (channel <- all.values) channel.listeners = Set.empty
-    for (fsm <- inProcessors.values) fsm.becomeShutDown
+    for (fsm <- inProcessors.values) fsm.becomeShutDown()
     for (sub <- pf.subscription) sub.unsubscribe()
     pf.listeners = Set.empty
   }

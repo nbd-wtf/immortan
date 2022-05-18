@@ -137,7 +137,7 @@ class SQLiteData(val db: DBInterface) extends HeaderDb with DataBag {
       }
     }
 
-    addHeaderSqlPQ.close
+    addHeaderSqlPQ.close()
   }
 
   override def getHeader(height: Int): Option[BlockHeader] =

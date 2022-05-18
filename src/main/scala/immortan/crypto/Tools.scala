@@ -268,7 +268,8 @@ abstract class StateMachine[T] { me =>
 
       def process(cmd: String, tickUpdateInterval: Long): Unit = {
         secondsLeft = TOTAL_INTERVAL_SECONDS - (tickUpdateInterval + 1)
-        if (secondsLeft <= 0L) runAnd(unsubscribeCurrentWork)(me doProcess cmd)
+        if (secondsLeft <= 0L)
+          runAnd(unsubscribeCurrentWork())(me doProcess cmd)
       }
     }
 }

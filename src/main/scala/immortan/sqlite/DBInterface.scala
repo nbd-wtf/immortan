@@ -23,7 +23,7 @@ case class DBInterfaceSQLiteGeneral(connection: java.sql.Connection)
     change(makePreparedQuery(sql), params: _*)
 
   def change(stmt: PreparedQuery, params: Object*): Unit =
-    stmt.bound(params: _*).executeUpdate
+    stmt.bound(params: _*).executeUpdate()
 
   def select(sql: String, params: String*): RichCursor =
     select(makePreparedQuery(sql), params: _*)

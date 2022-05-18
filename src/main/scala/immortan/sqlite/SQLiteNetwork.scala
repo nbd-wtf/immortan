@@ -101,7 +101,7 @@ class SQLiteNetwork(
   def removeChannelUpdate(shortId: Long): Unit = {
     val removeChannelUpdateNewSqlPQ = db.makePreparedQuery(updateTable.killSql)
     removeChannelUpdate(shortId, removeChannelUpdateNewSqlPQ)
-    removeChannelUpdateNewSqlPQ.close
+    removeChannelUpdateNewSqlPQ.close()
   }
 
   def addChannelUpdateByPosition(cu: ChannelUpdate): Unit = {
@@ -114,8 +114,8 @@ class SQLiteNetwork(
       addChannelUpdateByPositionNewSqlPQ,
       addChannelUpdateByPositionUpdSqlPQ
     )
-    addChannelUpdateByPositionNewSqlPQ.close
-    addChannelUpdateByPositionUpdSqlPQ.close
+    addChannelUpdateByPositionNewSqlPQ.close()
+    addChannelUpdateByPositionUpdSqlPQ.close()
   }
 
   def listChannelAnnouncements: Iterable[ChannelAnnouncement] =
@@ -199,8 +199,8 @@ class SQLiteNetwork(
         removeChannelUpdateNewSqlPQ
       ) // Make sure we only have known channels with both updates
 
-    addExcludedChannelNewSqlPQ.close
-    removeChannelUpdateNewSqlPQ.close
+    addExcludedChannelNewSqlPQ.close()
+    removeChannelUpdateNewSqlPQ.close()
 
     db.change(
       excludedTable.killPresentInChans
@@ -238,17 +238,17 @@ class SQLiteNetwork(
         addExcludedChannelNewSqlPQ
       )
 
-    addChannelAnnouncementNewSqlPQ.close
-    addChannelUpdateByPositionNewSqlPQ.close
-    addChannelUpdateByPositionUpdSqlPQ.close
-    addExcludedChannelNewSqlPQ.close
+    addChannelAnnouncementNewSqlPQ.close()
+    addChannelUpdateByPositionNewSqlPQ.close()
+    addChannelUpdateByPositionUpdSqlPQ.close()
+    addExcludedChannelNewSqlPQ.close()
   }
 
   def processCompleteHostedData(pure: CompleteHostedRoutingData): Unit =
     db txWrap {
       // Unlike normal channels here we allow one-sided-update channels to be used for now
       // First, clear out everything in hosted channel databases
-      clearDataTables
+      clearDataTables()
 
       val addChannelAnnouncementNewSqlPQ =
         db.makePreparedQuery(announceTable.newSql)
@@ -267,9 +267,9 @@ class SQLiteNetwork(
           addChannelUpdateByPositionUpdSqlPQ
         )
 
-      addChannelAnnouncementNewSqlPQ.close
-      addChannelUpdateByPositionNewSqlPQ.close
-      addChannelUpdateByPositionUpdSqlPQ.close
+      addChannelAnnouncementNewSqlPQ.close()
+      addChannelUpdateByPositionNewSqlPQ.close()
+      addChannelUpdateByPositionUpdSqlPQ.close()
 
       // And finally remove announces without any updates
       db.change(announceTable.killNotPresentInChans)

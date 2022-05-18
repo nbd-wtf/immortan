@@ -67,7 +67,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
         if !inFlight.in.contains(fullTag) =>
       // We have previously failed or fulfilled an incoming payment and all parts have been cleared
       cm.finalizeIncoming(data)
-      becomeShutDown
+      becomeShutDown()
 
     case (inFlight: InFlightPayments, null, RECEIVING) =>
       val adds = inFlight.in(fullTag).asInstanceOf[ReasonableLocals]
@@ -163,7 +163,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
       // Or too much time has elapsed since we seen another incoming part
       becomeAborted(IncomingAborted(PaymentTimeout.asSome, fullTag), adds = Nil)
       // Actually request adds
-      cm.notifyResolvers
+      cm.notifyResolvers()
 
     case (CMDReleaseHold, null, RECEIVING) =>
       paymentInfoOpt.filter(_ => isHolding) match {
@@ -177,7 +177,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
       }
 
       // Actually request adds
-      cm.notifyResolvers
+      cm.notifyResolvers()
 
     case (inFlight: InFlightPayments, revealed: IncomingRevealed, FINALIZING) =>
       val adds = inFlight.in(fullTag).asInstanceOf[ReasonableLocals]
@@ -356,7 +356,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
         if !inFlight.allTags.contains(fullTag) =>
       // This happens AFTER we have resolved all outgoing payments and started resolving related incoming payments
       cm.finalizeIncoming(data)
-      becomeShutDown
+      becomeShutDown()
 
     case (
           inFlight: InFlightPayments,
@@ -400,7 +400,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
       // We were waiting for all outgoing parts to fail on app restart, try again
       // Note that senderFSM has removed itself on first failure, so we create it again
       become(null, RECEIVING)
-      cm.notifyResolvers
+      cm.notifyResolvers()
 
     case (
           data: OutgoingPaymentSenderData,
@@ -409,7 +409,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
         ) =>
       // We were waiting for all outgoing parts to fail on app restart, fail incoming
       become(abortedWithError(data.failures, invalidPubKey), FINALIZING)
-      cm.notifyResolvers
+      cm.notifyResolvers()
 
     case (
           data: OutgoingPaymentSenderData,
@@ -421,7 +421,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
         abortedWithError(data.failures, processing.finalNodeId),
         FINALIZING
       )
-      cm.notifyResolvers
+      cm.notifyResolvers()
 
     case (inFlight: InFlightPayments, null, RECEIVING) =>
       val outs = inFlight.out.getOrElse(fullTag, default = Nil)
@@ -457,7 +457,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
     case (CMDTimeout, null, RECEIVING) =>
       // Sender must not have outgoing payments in this state
       become(TrampolineAborted(PaymentTimeout, fullTag), FINALIZING)
-      cm.notifyResolvers
+      cm.notifyResolvers()
 
     case (
           inFlight: InFlightPayments,
@@ -558,7 +558,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
     cm.getPreimageMemo.invalidate(fullTag.paymentHash)
     // Await for subsequent incoming leftovers
     become(revealed, SENDING)
-    cm.notifyResolvers
+    cm.notifyResolvers()
   }
 
   def becomeFinalRevealed(

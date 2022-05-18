@@ -17,7 +17,7 @@ class SQLiteLNUrlPay(db: DBInterface) {
     db.change(updateDescriptionSqlPQ, description.toJson.compactPrint, pay)
     for (label <- description.label) addSearchableLink(label, domain)
     ChannelMaster.next(ChannelMaster.payMarketDbStream)
-    updateDescriptionSqlPQ.close
+    updateDescriptionSqlPQ.close()
   }
 
   def remove(pay: String): Unit = {
@@ -51,14 +51,14 @@ class SQLiteLNUrlPay(db: DBInterface) {
     )
     addSearchableLink(info.payMetaData.get.queryText(info.domain), info.domain)
     ChannelMaster.next(ChannelMaster.payMarketDbStream)
-    updInfoSqlPQ.close
-    newSqlPQ.close
+    updInfoSqlPQ.close()
+    newSqlPQ.close()
   }
 
   def addSearchableLink(search: String, domain: String): Unit = {
     val newVirtualSqlPQ = db.makePreparedQuery(LNUrlPayTable.newVirtualSql)
     db.change(newVirtualSqlPQ, search.toLowerCase, domain)
-    newVirtualSqlPQ.close
+    newVirtualSqlPQ.close()
   }
 
   def searchLinks(rawSearchQuery: String): RichCursor =

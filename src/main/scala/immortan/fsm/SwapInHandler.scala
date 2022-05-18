@@ -15,7 +15,10 @@ abstract class SwapInHandler(
     id: Long
 ) { me =>
   val shutdownTimer: Subscription =
-    Rx.ioQueue.delay(30.seconds).doOnCompleted(finish).subscribe(_ => onTimeout)
+    Rx.ioQueue
+      .delay(30.seconds)
+      .doOnCompleted(finish())
+      .subscribe(_ => onTimeout())
   CommsTower.listenNative(Set(swapInListener), cnc.commits.remoteInfo)
 
   def finish(): Unit = {
@@ -38,9 +41,9 @@ abstract class SwapInHandler(
     override def onSwapInMessage(worker: CommsTower.Worker, msg: SwapIn): Unit =
       msg match {
         case message: SwapInState if message.processing.exists(_.id == id) =>
-          runAnd(finish)(onProcessing)
+          runAnd(finish())(onProcessing())
         case message: SwapInPaymentDenied if message.id == id =>
-          runAnd(finish)(me onDenied message)
+          runAnd(finish())(me onDenied message)
         case _ => // Do nothing, it's unrelated
       }
   }

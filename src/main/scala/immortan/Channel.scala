@@ -130,7 +130,7 @@ trait Channel extends StateMachine[ChannelData] with CanBeRepliedTo { me =>
       lst <- listeners
     ) lst.addReceived(add)
     override def notifyResolvers(): Unit = for (lst <- listeners)
-      lst.notifyResolvers
+      lst.notifyResolvers()
   }
 
   val receiver: ActorRef =

@@ -52,7 +52,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
           val decoder1 = ExtendedCipherState(decoder, ck)
           val d1 = CyphertextData(encoder1, decoder1, None, remainder)
           become(d1, WAITING_CYPHERTEXT)
-          handleEnterOperationalState
+          handleEnterOperationalState()
           doProcess(Ping)
 
         case (writer, _, _) =>
@@ -63,7 +63,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
               val d1 = CyphertextData(encoder1, decoder1, None, remainder)
               handleEncryptedOutgoingData(prefix +: message)
               become(d1, WAITING_CYPHERTEXT)
-              handleEnterOperationalState
+              handleEnterOperationalState()
               doProcess(Ping)
 
             case (reader2, _, message) =>

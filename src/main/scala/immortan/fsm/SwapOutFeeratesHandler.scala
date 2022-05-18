@@ -149,7 +149,7 @@ abstract class SwapOutFeeratesHandler extends StateMachine[FeeratesData] { me =>
       me process CMDCancel
     } else if (data.results.isEmpty) {
       // No provider supports this right now
-      onNoProviderSwapOutSupport
+      onNoProviderSwapOutSupport()
       me process CMDCancel
     } else if (responses.nonEmpty && force) {
       // We have partial responses, but timed out
@@ -157,7 +157,7 @@ abstract class SwapOutFeeratesHandler extends StateMachine[FeeratesData] { me =>
       me process CMDCancel
     } else if (force) {
       // Timed out with no responses
-      onTimeoutAndNoResponse
+      onTimeoutAndNoResponse()
       me process CMDCancel
     }
   }

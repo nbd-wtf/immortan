@@ -69,13 +69,13 @@ object CommsTower {
       listener: ConnectionListener
   ): Unit = listeners(info.nodeSpecificPair) -= listener
   def disconnectNative(info: RemoteNodeInfo): Unit =
-    workers.get(info.nodeSpecificPair).foreach(_.disconnect)
+    workers.get(info.nodeSpecificPair).foreach(_.disconnect())
 
   def forget(keyPairAndPubKey: KeyPairAndPubKey): Unit = {
     // Important: first remove all listeners, then disconnect
     val worker = workers.get(keyPairAndPubKey)
     listeners.remove(keyPairAndPubKey)
-    worker.foreach(_.disconnect)
+    worker.foreach(_.disconnect())
   }
 
   class Worker(
@@ -96,7 +96,7 @@ object CommsTower {
         def handleEncryptedOutgoingData(data: ByteVector): Unit =
           try sock.getOutputStream.write(data.toArray)
           catch {
-            case _: Throwable => disconnect
+            case _: Throwable => disconnect()
           }
 
         def handleDecryptedIncomingData(data: ByteVector): Unit = {
@@ -136,9 +136,10 @@ object CommsTower {
 
         def handleEnterOperationalState(): Unit = {
           pinging = Observable.interval(10.seconds) subscribe { _ =>
-            if (lastMessage < System.currentTimeMillis - 45 * 1000L) disconnect
+            if (lastMessage < System.currentTimeMillis - 45 * 1000L)
+              disconnect()
             else if (lastMessage < System.currentTimeMillis - 20 * 1000L)
-              sendPing
+              sendPing()
           }
 
           // Send our node parameters
@@ -148,7 +149,7 @@ object CommsTower {
 
     private[this] val thread = Future {
       sock.connect(info.address.socketAddress, 7500)
-      handler.init
+      handler.init()
 
       while (true) {
         val length = sock.getInputStream.read(buffer, 0, buffer.length)
@@ -183,7 +184,7 @@ object CommsTower {
           Features.areCompatible(LNParams.ourInit.features, remoteInit.features)
         if (areFeaturesOK)
           for (lst <- listeners1) lst.onOperational(me, remoteInit)
-        else disconnect
+        else disconnect()
       }
     }
 

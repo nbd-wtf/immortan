@@ -43,7 +43,7 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
   def addSearchablePayment(search: String, paymentHash: ByteVector32): Unit = {
     val newVirtualSqlPQ = db.makePreparedQuery(PaymentTable.newVirtualSql)
     db.change(newVirtualSqlPQ, search.toLowerCase, paymentHash.toHex)
-    newVirtualSqlPQ.close
+    newVirtualSqlPQ.close()
   }
 
   def searchPayments(rawSearchQuery: String): RichCursor =
@@ -83,7 +83,7 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
     )
     for (label <- description.label) addSearchablePayment(label, payHash)
     ChannelMaster.next(ChannelMaster.paymentDbStream)
-    updateDescriptionSqlPQ.close
+    updateDescriptionSqlPQ.close()
   }
 
   def updOkOutgoing(fulfill: RemoteFulfill, fee: MilliSatoshi): Unit = {
@@ -154,7 +154,7 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
         0: JInt /* INCOMING TYPE = 0 */
       )
       ChannelMaster.next(ChannelMaster.paymentDbStream)
-      newSqlPQ.close
+      newSqlPQ.close()
     }
 
   def replaceIncomingPayment(
@@ -189,7 +189,7 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
         1: JInt /* INCOMING TYPE = 1 */
       )
       ChannelMaster.next(ChannelMaster.paymentDbStream)
-      newSqlPQ.close
+      newSqlPQ.close()
     }
 
   def paymentSummary: Try[PaymentSummary] =

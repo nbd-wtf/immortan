@@ -178,7 +178,7 @@ abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag)
         if System.currentTimeMillis - getLastTotalResyncStamp > RESYNC_PERIOD =>
       // Normal resync has happened recently, but PHC resync is outdated (PHC failed last time due to running out of attempts)
       // in this case we skip normal sync and start directly with PHC sync to save time and increase PHC sync success chances
-      attemptPHCSync
+      attemptPHCSync()
 
     case (phcPure: CompleteHostedRoutingData, OPERATIONAL) =>
       // First, completely replace PHC data with obtained one
@@ -229,7 +229,7 @@ abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag)
 
       // Notify that normal graph sync is complete
       listeners.foreach(_ process sync)
-      attemptPHCSync
+      attemptPHCSync()
 
     // We always accept and store disabled channels:
     // - to reduce subsequent sync traffic if channel remains disabled

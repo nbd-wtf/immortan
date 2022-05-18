@@ -149,7 +149,7 @@ case class SyncWorker(
 
   val listener: ConnectionListener = new ConnectionListener {
     override def onOperational(worker: CommsTower.Worker, init: Init): Unit =
-      if (me supportsExtQueries init) process(worker) else worker.disconnect
+      if (me supportsExtQueries init) process(worker) else worker.disconnect()
     override def onHostedMessage(
         worker: CommsTower.Worker,
         remoteMessage: HostedChannelMessage
@@ -497,7 +497,7 @@ abstract class SyncMaster(
         me onChunkSyncComplete getPureNormalNetworkData
         confirmedChanAnnounces.clear()
         confirmedChanUpdates.clear()
-        onTotalSyncComplete
+        onTotalSyncComplete()
       }
 
     case _ =>

@@ -160,7 +160,7 @@ abstract class ChannelHosted extends Channel { me =>
         // make sure our signature match and if so then become OPEN using host supplied state data
         StoreBecomeSend(hc, OPEN, hc.lastCrossSignedState, askBrandingInfo)
         // Remote LCSS could contain pending incoming
-        events.notifyResolvers
+        events.notifyResolvers()
       }
 
     // CHANNEL IS ESTABLISHED
@@ -202,7 +202,7 @@ abstract class ChannelHosted extends Channel { me =>
             for (add <- failed)
               events addRejectedLocally InPrincipleNotSendable(localAdd = add)
             // There will be no state update
-            events.notifyResolvers
+            events.notifyResolvers()
           }
         }
 
@@ -241,7 +241,7 @@ abstract class ChannelHosted extends Channel { me =>
       BECOME(hc1.addRemoteProposal(msg), state)
       events fulfillReceived remoteFulfill
       // There will be no state update
-      events.notifyResolvers
+      events.notifyResolvers()
 
     case (hc: HostedCommits, CMD_SIGN, OPEN)
         if (hc.nextLocalUpdates.nonEmpty || hc.resizeProposal.isDefined) && hc.error.isEmpty =>
@@ -412,7 +412,7 @@ abstract class ChannelHosted extends Channel { me =>
       StoreBecomeSend(hc1, OPEN, completeLocalLCSS.stateUpdate)
       rejectOverriddenOutgoingAdds(hc, hc1)
       // We may have pendig incoming
-      events.notifyResolvers
+      events.notifyResolvers()
 
     case (hc: HostedCommits, remote: Fail, WAIT_FOR_ACCEPT | OPEN)
         if hc.remoteError.isEmpty =>
@@ -475,7 +475,7 @@ abstract class ChannelHosted extends Channel { me =>
       // Forget about their unsigned updates, they are expected to resend
       BECOME(hc1.copy(nextRemoteUpdates = Nil), OPEN)
       // There will be no state update
-      events.notifyResolvers
+      events.notifyResolvers()
     } else {
       val localUpdatesAcked =
         remoteLCSS.remoteUpdates - hc1.lastCrossSignedState.localUpdates
@@ -522,7 +522,7 @@ abstract class ChannelHosted extends Channel { me =>
       }
 
       // There will be no state update
-      events.notifyResolvers
+      events.notifyResolvers()
     }
   }
 
@@ -568,7 +568,7 @@ abstract class ChannelHosted extends Channel { me =>
 
       StoreBecomeSend(hc1, OPEN, lcss1.stateUpdate)
       for (reject <- remoteRejects) events addRejectedRemotely reject
-      events.notifyResolvers
+      events.notifyResolvers()
     }
   }
 
@@ -585,7 +585,9 @@ abstract class ChannelHosted extends Channel { me =>
   def disconnectAndBecomeSleeping(hc: HostedCommits): Unit = {
     // Could have implemented a more involved partially-signed LCSS resolution
     // but for now we will just disconnect and resolve on reconnect if it gets too busy
-    CommsTower.workers.get(hc.remoteInfo.nodeSpecificPair).foreach(_.disconnect)
+    CommsTower.workers
+      .get(hc.remoteInfo.nodeSpecificPair)
+      .foreach(_.disconnect())
     StoreBecomeSend(hc, SLEEPING)
   }
 }
