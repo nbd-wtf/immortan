@@ -3,6 +3,7 @@ package fr.acinq.bitcoin
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, OutputStream}
 import java.math.BigInteger
 import java.nio.ByteOrder
+import scala.language.implicitConversions
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.Protocol._

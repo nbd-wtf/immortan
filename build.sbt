@@ -2,7 +2,6 @@ name                   := "immortan"
 organization           := "com.fiatjaf"
 scalaVersion           := "2.13.8"
 version                := "0.1.2-SNAPSHOT"
-scalacOptions          += "-deprecation"
 sonatypeProfileName    := "com.fiatjaf"
 homepage               := Some(url("https://github.com/fiatjaf/immortan"))
 scmInfo                := Some(ScmInfo(url("https://github.com/fiatjaf/immortan"), "git@github.com:fiatjaf/immortan.git"))
@@ -29,3 +28,4 @@ libraryDependencies   ++= Seq(
   "org.bouncycastle" % "bcprov-jdk15to18" % "1.68",
   "com.sparrowwallet" % "hummingbird" % "1.6.2"
 )
+scalacOptions        ++= Seq("-deprecation", "-feature")

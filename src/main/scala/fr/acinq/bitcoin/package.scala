@@ -2,6 +2,7 @@ package fr.acinq
 
 import java.math.BigInteger
 import scala.util.Try
+import scala.language.implicitConversions
 import fr.acinq.bitcoin.Crypto.PublicKey
 
 /** see https://en.bitcoin.it/wiki/Protocol_specification

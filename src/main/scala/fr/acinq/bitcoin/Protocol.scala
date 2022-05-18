@@ -3,10 +3,10 @@ package fr.acinq.bitcoin
 import java.io._
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 import java.nio.{ByteBuffer, ByteOrder}
+import scala.language.implicitConversions
+import scala.collection.mutable.ArrayBuffer
 
 import scodec.bits._
-
-import scala.collection.mutable.ArrayBuffer
 
 /** see https://en.bitcoin.it/wiki/Protocol_specification
   */

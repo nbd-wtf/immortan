@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair
 
+import scala.language.implicitConversions
 import com.google.common.primitives.UnsignedLongs
 import scodec.bits.ByteVector
 
