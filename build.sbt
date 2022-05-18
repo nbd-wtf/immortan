@@ -15,17 +15,17 @@ publishMavenStyle      := true
 publishTo              := sonatypePublishToBundle.value
 sonatypeCredentialHost := "s01.oss.sonatype.org"
 libraryDependencies   ++= Seq(
-  "com.google.guava" % "guava" % "31.1-jre", // eclair
-  "org.scala-lang.modules" % "scala-parser-combinators_2.13" % "2.1.0", // immortan
-  "fr.acinq.secp256k1" % "secp256k1-kmp-jni-jvm" % "0.6.3", // eclair
-  "org.scodec" % "scodec-core_2.13" % "1.11.9", // immortan + eclair
-  "commons-codec" % "commons-codec" % "1.10", // immortan + eclair
-  "io.reactivex" % "rxscala_2.13" % "0.27.0", // immortan
-  "org.json4s" % "json4s-native_2.13" % "3.6.7", // electrum,
-  "io.spray" % "spray-json_2.13" % "1.3.5", // immortan,
-  "com.typesafe.akka" % "akka-actor_2.13" % "2.6.9", // immortan + eclair
-  "io.netty" % "netty-all" % "4.1.42.Final", // electrum
-  "com.softwaremill.quicklens" % "quicklens_2.13" % "1.8.4", // immortan
-  "org.bouncycastle" % "bcprov-jdk15to18" % "1.68", // eclair
-  "com.sparrowwallet" % "hummingbird" % "1.6.2" // immortan
+  "com.google.guava" % "guava" % "31.1-jre",
+  "org.scala-lang.modules" % "scala-parser-combinators_2.13" % "2.1.0",
+  "fr.acinq.secp256k1" % "secp256k1-kmp-jni-jvm" % "0.6.3",
+  "org.scodec" % "scodec-core_2.13" % "1.11.9",
+  "commons-codec" % "commons-codec" % "1.10",
+  "io.reactivex" % "rxscala_2.13" % "0.27.0",
+  "org.json4s" % "json4s-native_2.13" % "3.6.7",
+  "io.spray" % "spray-json_2.13" % "1.3.5",
+  "com.typesafe.akka" % "akka-actor_2.13" % "2.6.9",
+  "io.netty" % "netty-all" % "4.1.42.Final",
+  "com.softwaremill.quicklens" % "quicklens_2.13" % "1.8.4",
+  "org.bouncycastle" % "bcprov-jdk15to18" % "1.68",
+  "com.sparrowwallet" % "hummingbird" % "1.6.2"
 )
