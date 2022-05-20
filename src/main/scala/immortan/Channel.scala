@@ -55,6 +55,11 @@ object Channel {
     case _                            => false
   }
 
+  def isErrored(chan: Channel): Boolean = chan.data match {
+    case hostedCommits: HostedCommits if !hostedCommits.error.isEmpty => true
+    case _                                                            => false
+  }
+
   def isWaiting(chan: Channel): Boolean = chan.data match {
     case _: DATA_WAIT_FOR_FUNDING_CONFIRMED => true
     case _: DATA_WAIT_FOR_FUNDING_LOCKED    => true
