@@ -15,10 +15,6 @@ import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 
 object SwapOutFeeratesHandler {
-  final val WAITING_FIRST_RESPONSE = 0
-  final val WAITING_REST_OF_RESPONSES = 1
-  final val FINALIZED = 2
-
   final val CMDCancel = "feerates-cmd-cancel"
   case class NoSwapOutSupport(worker: CommsTower.Worker)
   case class YesSwapOutSupport(worker: CommsTower.Worker, msg: SwapOut)
@@ -26,6 +22,12 @@ object SwapOutFeeratesHandler {
       msg: SwapOutFeerates,
       remoteInfo: RemoteNodeInfo
   )
+
+  sealed trait State
+  case class Initial() extends State
+  case class WaitingFirstResponse() extends State
+  case class WaitingRestOfResponses() extends State
+  case class Finalized() extends State
 
   type SwapOutResponseOpt = Option[SwapOutResponseExt]
   case class FeeratesData(
@@ -36,12 +38,13 @@ object SwapOutFeeratesHandler {
   final val minChainFee = Satoshi(253)
 }
 
-abstract class SwapOutFeeratesHandler extends StateMachine[FeeratesData, Int] {
+abstract class SwapOutFeeratesHandler
+    extends StateMachine[FeeratesData, SwapOutFeeratesHandler.State] {
   me =>
   implicit val context: ExecutionContextExecutor =
     ExecutionContext fromExecutor Executors.newSingleThreadExecutor
 
-  def initialState = -1
+  def initialState = SwapOutFeeratesHandler.Initial()
 
   def process(changeMessage: Any): Unit =
     scala.concurrent.Future(me doProcess changeMessage)
@@ -78,14 +81,16 @@ abstract class SwapOutFeeratesHandler extends StateMachine[FeeratesData, Int] {
   def doProcess(change: Any): Unit = (change, state) match {
     case (
           NoSwapOutSupport(worker),
-          WAITING_FIRST_RESPONSE | WAITING_REST_OF_RESPONSES
+          _: SwapOutFeeratesHandler.WaitingFirstResponse |
+          _: SwapOutFeeratesHandler.WaitingRestOfResponses
         ) =>
       become(data.copy(results = data.results - worker.info), state)
       doSearch(force = false)
 
     case (
           YesSwapOutSupport(worker, msg: SwapOutFeerates),
-          WAITING_FIRST_RESPONSE | WAITING_REST_OF_RESPONSES
+          _: SwapOutFeeratesHandler.WaitingFirstResponse |
+          _: SwapOutFeeratesHandler.WaitingRestOfResponses
         )
         // Provider has sent feerates which are too low, tx won't likely ever confirm
         if msg.feerates.feerates.forall(params => minChainFee > params.fee) =>
@@ -94,7 +99,7 @@ abstract class SwapOutFeeratesHandler extends StateMachine[FeeratesData, Int] {
 
     case (
           YesSwapOutSupport(worker, msg: SwapOutFeerates),
-          WAITING_FIRST_RESPONSE
+          _: SwapOutFeeratesHandler.WaitingFirstResponse
         ) =>
       val results1 = data.results.updated(
         worker.info,
@@ -102,7 +107,7 @@ abstract class SwapOutFeeratesHandler extends StateMachine[FeeratesData, Int] {
       )
       become(
         data.copy(results = results1),
-        WAITING_REST_OF_RESPONSES
+        SwapOutFeeratesHandler.WaitingRestOfResponses()
       ) // Start waiting for the rest of responses
       Rx.ioQueue
         .delay(5.seconds)
@@ -113,7 +118,7 @@ abstract class SwapOutFeeratesHandler extends StateMachine[FeeratesData, Int] {
 
     case (
           YesSwapOutSupport(worker, msg: SwapOutFeerates),
-          WAITING_REST_OF_RESPONSES
+          _: SwapOutFeeratesHandler.WaitingRestOfResponses
         ) =>
       val results1 = data.results.updated(
         worker.info,
@@ -122,19 +127,23 @@ abstract class SwapOutFeeratesHandler extends StateMachine[FeeratesData, Int] {
       become(data.copy(results = results1), state)
       doSearch(force = false)
 
-    case (CMDCancel, WAITING_FIRST_RESPONSE | WAITING_REST_OF_RESPONSES) =>
+    case (
+          CMDCancel,
+          _: SwapOutFeeratesHandler.WaitingFirstResponse |
+          _: SwapOutFeeratesHandler.WaitingRestOfResponses
+        ) =>
       // Do not disconnect from remote peer because we have a channel with them, but remove this exact SwapIn listener
       for (cnc <- data.cmdStart.capableCncs)
         CommsTower.rmListenerNative(cnc.commits.remoteInfo, swapOutListener)
-      become(data, FINALIZED)
+      become(data, SwapOutFeeratesHandler.Finalized())
 
-    case (cmd: CMDStart, -1) =>
+    case (cmd: CMDStart, _: SwapOutFeeratesHandler.Initial) =>
       become(
         FeeratesData(
           results = cmd.capableCncs.map(_.commits.remoteInfo -> None).toMap,
           cmd
         ),
-        WAITING_FIRST_RESPONSE
+        SwapOutFeeratesHandler.WaitingFirstResponse()
       )
       for (cnc <- cmd.capableCncs)
         CommsTower.listenNative(Set(swapOutListener), cnc.commits.remoteInfo)

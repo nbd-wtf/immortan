@@ -12,7 +12,6 @@ import fr.acinq.eclair.wire.{
 }
 import immortan.crypto.StateMachine
 import immortan.crypto.Tools.randomKeyPair
-import immortan.fsm.PreimageCheck.{FINALIZED, OPERATIONAL}
 import immortan.utils.Rx
 import immortan.{
   CommsTower,
@@ -25,8 +24,10 @@ import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 
 object PreimageCheck {
-  final val OPERATIONAL = 0
-  final val FINALIZED = 1
+  sealed trait State
+  case class Initial() extends State()
+  case class Operational() extends State()
+  case class Finalized() extends State()
 
   final val CMDCancel = "preimage-check-cmd-cancel"
   case class PeerDisconnected(worker: CommsTower.Worker)
@@ -45,12 +46,12 @@ object PreimageCheck {
 }
 
 abstract class PreimageCheck
-    extends StateMachine[PreimageCheck.CheckData, Int] {
+    extends StateMachine[PreimageCheck.CheckData, PreimageCheck.State] {
   me =>
   implicit val context: ExecutionContextExecutor =
     ExecutionContext fromExecutor Executors.newSingleThreadExecutor
 
-  def initialState = -1
+  def initialState = PreimageCheck.Initial()
 
   def randomPair(info: RemoteNodeInfo): (RemoteNodeInfo, KeyPairAndPubKey) =
     info -> KeyPairAndPubKey(randomKeyPair, info.nodeId)
@@ -74,36 +75,39 @@ abstract class PreimageCheck
   }
 
   def doProcess(change: Any): Unit = (change, state) match {
-    case (msg: PreimageCheck.PeerDisconnected, OPERATIONAL) =>
+    case (msg: PreimageCheck.PeerDisconnected, _: PreimageCheck.Operational) =>
       // Keep trying to reconnect with delays until final timeout
       Rx.ioQueue.delay(3.seconds).foreach(_ => me process msg.worker)
       CommsTower forget msg.worker.pair
 
-    case (worker: CommsTower.Worker, OPERATIONAL) =>
+    case (worker: CommsTower.Worker, _: PreimageCheck.Operational) =>
       val newPair @ (info, pair) = randomPair(worker.info)
       CommsTower.listen(listeners1 = Set(listener), pair, info)
-      become(data.copy(pairs = data.pairs + newPair), OPERATIONAL)
+      become(
+        data.copy(pairs = data.pairs + newPair),
+        PreimageCheck.Operational()
+      )
 
     case (
           PreimageCheck.PeerResponse(msg: ReplyPreimages, worker),
-          OPERATIONAL
+          _: PreimageCheck.Operational
         ) =>
       // One of remote nodes replies, check if we have all preimages of interest collected
       become(
         merge(data, msg).copy(pending = data.pending - worker.info),
-        OPERATIONAL
+        PreimageCheck.Operational()
       )
       doCheck(force = false)
 
-    case (PreimageCheck.CMDCancel, OPERATIONAL) =>
+    case (PreimageCheck.CMDCancel, _: PreimageCheck.Operational) =>
       // User has manually cancelled a check, disconnect all peers
       for (pair <- data.pairs.values) CommsTower forget pair
-      become(data, FINALIZED)
+      become(data, PreimageCheck.Finalized())
 
-    case (PreimageCheck.CMDStart(hashes, hosts), -1) =>
+    case (PreimageCheck.CMDStart(hashes, hosts), _: PreimageCheck.Initial) =>
       become(
         PreimageCheck.CheckData(hosts.map(randomPair).toMap, hosts, hashes),
-        OPERATIONAL
+        PreimageCheck.Operational()
       )
       for (Tuple2(info, pair) <- data.pairs)
         CommsTower.listen(Set(listener), pair, info)

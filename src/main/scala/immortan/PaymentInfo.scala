@@ -208,7 +208,8 @@ case class PaymentInfo(
   )
 
   def isActivelyHolding(fsm: IncomingPaymentProcessor): Boolean =
-    IncomingPaymentProcessor.RECEIVING == fsm.state && prExt.isEnough(
+    fsm.state
+      .isInstanceOf[IncomingPaymentProcessor.Receiving] && prExt.isEnough(
       fsm.lastAmountIn
     ) && fsm.isHolding
 
