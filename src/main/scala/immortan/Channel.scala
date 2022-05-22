@@ -18,12 +18,14 @@ import scala.concurrent.{ExecutionContextExecutor, Future}
 import scala.util.Failure
 
 object Channel {
-  final val WAIT_FOR_INIT = 0
-  final val WAIT_FOR_ACCEPT = 1
-  final val WAIT_FUNDING_DONE = 2
-  final val SLEEPING = 3
-  final val CLOSING = 4
-  final val OPEN = 5
+  sealed trait State
+  case class Initial() extends State
+  case class WaitForInit() extends State
+  case class WaitForAccept() extends State
+  case class WaitFundingDone() extends State
+  case class Sleeping() extends State
+  case class Closing() extends State
+  case class Open() extends State
 
   // Single stacking thread for all channels, must be used when asking channels for pending payments to avoid race conditions
   implicit val channelContext: ExecutionContextExecutor =
@@ -70,10 +72,10 @@ object Channel {
     isOperational(chan) || isWaiting(chan)
 
   def isOperationalAndOpen(chan: Channel): Boolean =
-    isOperational(chan) && OPEN == chan.state
+    isOperational(chan) && chan.state.isInstanceOf[Open]
 
   def isOperationalAndSleeping(chan: Channel): Boolean =
-    isOperational(chan) && SLEEPING == chan.state
+    isOperational(chan) && chan.state.isInstanceOf[Sleeping]
 
   def totalBalance(chans: Iterable[Channel] = Nil): MilliSatoshi =
     chans.filter(isOperationalOrWaiting).map(_.data.ourBalance).sum
@@ -90,22 +92,21 @@ trait Channel extends StateMachine[ChannelData] with CanBeRepliedTo { me =>
 
   def STORE(data: PersistentChannelData): PersistentChannelData
 
-  def BECOME(data1: ChannelData, state1: Int): Unit = {
+  def BECOME(newData: ChannelData, newState: Channel.State): Unit = {
     // Transition must be defined before vars are updated
-    val trans = (me, data, data1, state, state1)
-    super.become(data1, state1)
+    val trans = (me, data, newData, state, newState)
+    super.become(newData, newState)
     events.onBecome(trans)
   }
 
   def StoreBecomeSend(
-      data1: PersistentChannelData,
-      state1: Int,
+      newData: PersistentChannelData,
+      newState: Channel.State,
       lnMessage: LightningMessage*
   ): Unit = {
     // Storing first to ensure we retain an updated data before revealing it if anything goes wrong
-
-    STORE(data1)
-    BECOME(data1, state1)
+    STORE(newData)
+    BECOME(newData, newState)
     SEND(lnMessage: _*)
   }
 
@@ -178,7 +179,8 @@ trait Channel extends StateMachine[ChannelData] with CanBeRepliedTo { me =>
 
 object ChannelListener {
   type Malfunction = (Throwable, Channel, ChannelData)
-  type Transition = (Channel, ChannelData, ChannelData, Int, Int)
+  type Transition =
+    (Channel, ChannelData, ChannelData, Channel.State, Channel.State)
 }
 
 trait ChannelListener {

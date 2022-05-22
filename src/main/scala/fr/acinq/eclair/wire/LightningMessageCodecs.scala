@@ -8,7 +8,6 @@ import scodec.bits.ByteVector
 import scodec.codecs._
 
 object LightningMessageCodecs {
-
   val featuresCodec: Codec[Features[FeatureScope]] =
     varsizebinarydata.xmap[Features[FeatureScope]](
       { bytes => Features(bytes) },

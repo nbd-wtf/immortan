@@ -56,9 +56,11 @@ object CommsTower {
   def sendMany(
       messages: Iterable[LightningMessage],
       pair: KeyPairAndPubKey
-  ): Unit = CommsTower.workers
-    .get(pair)
-    .foreach(worker => messages foreach worker.handler.process)
+  ): Unit =
+    CommsTower.workers
+      .get(pair)
+      .foreach(worker => messages foreach worker.handler.process)
+
   // Add or remove listeners to a connection where our nodeId is stable, not a randomly generated one (one which makes us seen as a constant peer by remote)
   def listenNative(
       listeners1: Set[ConnectionListener],

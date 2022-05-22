@@ -3,6 +3,9 @@ package immortan.crypto
 import java.io.ByteArrayInputStream
 import java.nio.ByteOrder
 import java.util.concurrent.TimeUnit
+import scala.collection.mutable
+import scala.concurrent.duration._
+import scala.language.implicitConversions
 
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import com.sparrowwallet.hummingbird.UR
@@ -22,12 +25,9 @@ import fr.acinq.eclair.transactions.CommitmentSpec
 import immortan.crypto.Noise.KeyPair
 import immortan.crypto.Tools.runAnd
 import immortan.utils.{FeeRatesInfo, ThrottledWork}
+import immortan.Channel
 import rx.lang.scala.Observable
 import scodec.bits.ByteVector
-
-import scala.collection.mutable
-import scala.concurrent.duration._
-import scala.language.implicitConversions
 
 object Tools {
   type Bytes = Array[Byte]
@@ -246,7 +246,7 @@ trait CanBeRepliedTo {
 }
 
 abstract class StateMachine[T] { me =>
-  def become(freshData: T, freshState: Int): StateMachine[T] = {
+  def become(freshData: T, freshState: Channel.State): StateMachine[T] = {
     // Update state, data and return itself for easy chaining operations
     state = freshState
     data = freshData
@@ -256,7 +256,7 @@ abstract class StateMachine[T] { me =>
   def doProcess(change: Any): Unit
   var TOTAL_INTERVAL_SECONDS: Long = 60
   var secondsLeft: Long = _
-  var state: Int = -1
+  var state: Channel.State = Channel.Initial()
   var data: T = _
 
   lazy val delayedCMDWorker: ThrottledWork[String, Long] =
