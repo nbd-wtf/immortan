@@ -81,7 +81,11 @@ object Channel {
     chans.filter(isOperationalOrWaiting).map(_.data.ourBalance).sum
 }
 
-trait Channel extends StateMachine[ChannelData] with CanBeRepliedTo { me =>
+trait Channel
+    extends StateMachine[ChannelData, Channel.State]
+    with CanBeRepliedTo { me =>
+  def initialState = Channel.Initial()
+
   def process(changeMsg: Any): Unit =
     Future(me doProcess changeMsg).onComplete {
       case Failure(reason) => events onException Tuple3(reason, me, data)

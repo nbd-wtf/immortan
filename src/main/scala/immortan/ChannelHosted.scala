@@ -293,7 +293,7 @@ abstract class ChannelHosted extends Channel { me =>
       hc.sendAdd(cmd, blockHeight = LNParams.blockCount.get) match {
         case _ if hc.error.isDefined =>
           events addRejectedLocally ChannelNotAbleToSend(cmd.incompleteAdd)
-        case _ if Channel.Sleeping == state =>
+        case _ if state.isInstanceOf[Channel.Sleeping] =>
           events addRejectedLocally ChannelOffline(cmd.incompleteAdd)
         case Left(reason) => events addRejectedLocally reason
 

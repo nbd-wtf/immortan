@@ -56,7 +56,9 @@ object PathFinder {
 }
 
 abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag)
-    extends StateMachine[Data] { me =>
+    extends StateMachine[Data, Int] { me =>
+  def initialState = -1
+
   private val extraEdgesCache = CacheBuilder.newBuilder
     .expireAfterWrite(1, TimeUnit.DAYS)
     .maximumSize(500)

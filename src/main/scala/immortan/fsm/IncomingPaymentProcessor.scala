@@ -33,8 +33,9 @@ object IncomingPaymentProcessor {
 }
 
 sealed trait IncomingPaymentProcessor
-    extends StateMachine[IncomingProcessorData]
+    extends StateMachine[IncomingProcessorData, Int]
     with CanBeShutDown { me =>
+  def initialState = -1
   lazy val tuple: (FullPaymentTag, IncomingPaymentProcessor) = (fullTag, me)
   var lastAmountIn: MilliSatoshi = MilliSatoshi(0L)
   var isHolding: Boolean = false
@@ -42,7 +43,6 @@ sealed trait IncomingPaymentProcessor
 }
 
 // LOCAL RECEIVER
-
 sealed trait IncomingProcessorData { val fullTag: FullPaymentTag }
 
 case class IncomingRevealed(preimage: ByteVector32, fullTag: FullPaymentTag)

@@ -71,7 +71,6 @@ case class RemoteFailure(packet: Sphinx.DecryptedFailurePacket, route: Route)
 }
 
 // Master commands and data
-
 case class CutIntoHalves(amount: MilliSatoshi)
 case class RemoveSenderFSM(fullTag: FullPaymentTag)
 case class CreateSenderFSM(
@@ -115,7 +114,6 @@ case class OutgoingPaymentMasterData(
     directionFailedTimes: Map[NodeDirectionDesc, Int] = Map.empty,
     chanNotRoutable: Set[ChannelDesc] = Set.empty
 ) { me =>
-
   def withFailuresReduced(stampInFuture: Long): OutgoingPaymentMasterData = {
     // Reduce failure times to give previously failing channels a chance
     // failed-at-amount is restored gradually within a time window
@@ -149,37 +147,54 @@ object OutgoingPaymentMaster {
   final val CMDAskForRoute = "cmd-ask-for-route"
   final val CMDAbort = "cmd-abort"
 
-  final val EXPECTING_PAYMENTS = 0
-  final val WAITING_FOR_ROUTE = 1
+  sealed trait State
+  case class Initial() extends State
+  case class ExpectingPayments() extends State
+  case class WaitingForRoute() extends State
 }
 
 class OutgoingPaymentMaster(val cm: ChannelMaster)
-    extends StateMachine[OutgoingPaymentMasterData]
+    extends StateMachine[OutgoingPaymentMasterData, OutgoingPaymentMaster.State]
     with CanBeRepliedTo { me =>
+  def initialState = OutgoingPaymentMaster.Initial()
+
+  become(
+    OutgoingPaymentMasterData(Map.empty),
+    OutgoingPaymentMaster.ExpectingPayments()
+  )
+
   def process(change: Any): Unit =
     scala.concurrent.Future(me doProcess change)(Channel.channelContext)
-  become(OutgoingPaymentMasterData(Map.empty), EXPECTING_PAYMENTS)
+
   var clearFailures: Boolean = true
 
   def doProcess(change: Any): Unit = (change, state) match {
-    case (send: SendMultiPart, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
+    case (
+          send: SendMultiPart,
+          _: OutgoingPaymentMaster.ExpectingPayments |
+          _: OutgoingPaymentMaster.WaitingForRoute
+        ) =>
       if (clearFailures)
         become(data.withFailuresReduced(System.currentTimeMillis), state)
       for (graphEdge <- send.assistedEdges) cm.pf process graphEdge
       data.payments(send.fullTag) doProcess send
       me process CMDAskForRoute
 
-    case (CMDChanGotOnline, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
+    case (
+          CMDChanGotOnline,
+          _: OutgoingPaymentMaster.ExpectingPayments |
+          _: OutgoingPaymentMaster.WaitingForRoute
+        ) =>
       // Payments may still have awaiting parts due to offline channels
       data.payments.values.foreach(_ doProcess CMDChanGotOnline)
       me process CMDAskForRoute
 
-    case (CMDAskForRoute, EXPECTING_PAYMENTS) =>
+    case (CMDAskForRoute, _: OutgoingPaymentMaster.ExpectingPayments) =>
       // This is a proxy to always send command in payment master thread
       // IMPLICIT GUARD: this message is ignored in all other states
       data.payments.values.foreach(_ doProcess CMDAskForRoute)
 
-    case (req: RouteRequest, EXPECTING_PAYMENTS) =>
+    case (req: RouteRequest, _: OutgoingPaymentMaster.ExpectingPayments) =>
       // IMPLICIT GUARD: this message is ignored in all other states
       val currentUsedCapacities: mutable.Map[DescAndCapacity, MilliSatoshi] =
         usedCapacities
@@ -217,19 +232,24 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
           data.chanNotRoutable ++ ignoreChansCanNotHandle ++ ignoreChansFailedAtAmount,
         ignoreDirections = ignoreDirectionsFailedTimes.toSet
       )
-      // Note: we may get many route request messages from payment FSMs with parts waiting for routes so it is important to immediately switch to WAITING_FOR_ROUTE after seeing a first message
+      // Note: we may get many route request messages from payment FSMs with parts waiting for routes so it is important to immediately switch to _:OutgoingPaymentMaster.WaitingForRoute after seeing a first message
       cm.pf process PathFinder.FindRoute(me, req1)
-      become(data, WAITING_FOR_ROUTE)
+      become(data, OutgoingPaymentMaster.WaitingForRoute())
 
-    case (response: RouteResponse, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
+    case (
+          response: RouteResponse,
+          _: OutgoingPaymentMaster.ExpectingPayments |
+          _: OutgoingPaymentMaster.WaitingForRoute
+        ) =>
       data.payments.get(response.fullTag).foreach(_ doProcess response)
       // Switch state to allow new route requests to come through
-      become(data, EXPECTING_PAYMENTS)
+      become(data, OutgoingPaymentMaster.ExpectingPayments())
       me process CMDAskForRoute
 
     case (
           ChannelFailedAtAmount(descAndCapacity),
-          EXPECTING_PAYMENTS | WAITING_FOR_ROUTE
+          _: OutgoingPaymentMaster.ExpectingPayments |
+          _: OutgoingPaymentMaster.WaitingForRoute
         ) =>
       // At this point an affected InFlight status IS STILL PRESENT so failedAtAmount1 = usedCapacities = sum(inFlight)
       val amount1 = data.chanFailedAtAmount
@@ -255,7 +275,8 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
 
     case (
           NodeFailed(nodeId, increment),
-          EXPECTING_PAYMENTS | WAITING_FOR_ROUTE
+          _: OutgoingPaymentMaster.ExpectingPayments |
+          _: OutgoingPaymentMaster.WaitingForRoute
         ) =>
       val newNodeFailedTimes =
         data.nodeFailedWithUnknownUpdateTimes.getOrElse(nodeId, 0) + increment
@@ -265,39 +286,63 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
       )
       become(data.copy(nodeFailedWithUnknownUpdateTimes = atTimes1), state)
 
-    case (ChannelNotRoutable(desc), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
+    case (
+          ChannelNotRoutable(desc),
+          _: OutgoingPaymentMaster.ExpectingPayments |
+          _: OutgoingPaymentMaster.WaitingForRoute
+        ) =>
       become(data.copy(chanNotRoutable = data.chanNotRoutable + desc), state)
 
-    case (bag: InFlightPayments, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
+    case (
+          bag: InFlightPayments,
+          _: OutgoingPaymentMaster.ExpectingPayments |
+          _: OutgoingPaymentMaster.WaitingForRoute
+        ) =>
       // We need this to issue "wholePaymentSucceeded" AFTER neither in-flight parts nor leftovers in channels are present
       // because FIRST peer sends a preimage (removing in-flight in FSM), THEN peer sends a state update (clearing channel leftovers)
       data.payments.values.foreach(_ doProcess bag)
 
-    case (RemoveSenderFSM(fullTag), EXPECTING_PAYMENTS | WAITING_FOR_ROUTE)
-        if data.payments.contains(fullTag) =>
+    case (
+          RemoveSenderFSM(fullTag),
+          _: OutgoingPaymentMaster.ExpectingPayments |
+          _: OutgoingPaymentMaster.WaitingForRoute
+        ) if data.payments.contains(fullTag) =>
       // First we get their fail, then stateUpdateStream fires, then we fire it here again if FSM is to be removed
       become(data.copy(payments = data.payments - fullTag), state)
       ChannelMaster.next(ChannelMaster.stateUpdateStream)
 
     case (
           CreateSenderFSM(listeners, fullTag),
-          EXPECTING_PAYMENTS | WAITING_FOR_ROUTE
+          _: OutgoingPaymentMaster.ExpectingPayments |
+          _: OutgoingPaymentMaster.WaitingForRoute
         ) if !data.payments.contains(fullTag) =>
-      val data1 = data.payments.updated(
-        value = new OutgoingPaymentSender(fullTag, listeners, me),
-        key = fullTag
+      become(
+        data.copy(payments =
+          data.payments.updated(
+            value = new OutgoingPaymentSender(fullTag, listeners, me),
+            key = fullTag
+          )
+        ),
+        state
       )
-      become(data.copy(payments = data1), state)
 
     // Following messages expect that target FSM is always present
     // this won't be the case with failed/fulfilled leftovers in channels on app restart
     // so it has to be made sure that all relevalnt FSMs are manually re-initialized on startup
 
-    case (reject: LocalReject, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
+    case (
+          reject: LocalReject,
+          _: OutgoingPaymentMaster.ExpectingPayments |
+          _: OutgoingPaymentMaster.WaitingForRoute
+        ) =>
       data.payments.get(reject.localAdd.fullTag).foreach(_ doProcess reject)
       me process CMDAskForRoute
 
-    case (fulfill: RemoteFulfill, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
+    case (
+          fulfill: RemoteFulfill,
+          _: OutgoingPaymentMaster.ExpectingPayments |
+          _: OutgoingPaymentMaster.WaitingForRoute
+        ) =>
       // We may have local and multiple routed outgoing payment sets at once, all of them must be notified
       data.payments.view
         .filterKeys(_.paymentHash == fulfill.ourAdd.paymentHash)
@@ -305,7 +350,11 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
         .foreach(_ doProcess fulfill)
       me process CMDAskForRoute
 
-    case (remoteReject: RemoteReject, EXPECTING_PAYMENTS | WAITING_FOR_ROUTE) =>
+    case (
+          remoteReject: RemoteReject,
+          _: OutgoingPaymentMaster.ExpectingPayments |
+          _: OutgoingPaymentMaster.WaitingForRoute
+        ) =>
       data.payments
         .get(remoteReject.ourAdd.fullTag)
         .foreach(_ doProcess remoteReject)
@@ -459,7 +508,9 @@ class OutgoingPaymentSender(
     val fullTag: FullPaymentTag,
     val listeners: Iterable[OutgoingPaymentListener],
     opm: OutgoingPaymentMaster
-) extends StateMachine[OutgoingPaymentSenderData] { me =>
+) extends StateMachine[OutgoingPaymentSenderData, Int] { me =>
+  def initialState = -1
+
   become(
     OutgoingPaymentSenderData(
       SendMultiPart(
@@ -819,12 +870,12 @@ class OutgoingPaymentSender(
 
   def assignToChans(
       sendable: mutable.Map[ChanAndCommits, MilliSatoshi],
-      data1: OutgoingPaymentSenderData,
+      senderData: OutgoingPaymentSenderData,
       amount: MilliSatoshi
   ): Unit = {
     // This is a terminal method in a sense that it either successfully assigns a given amount to channels or turns a payment into failed state
     val directChansFirst = shuffle(sendable.toSeq) sortBy { case (cnc, _) =>
-      if (cnc.commits.remoteInfo.nodeId == data1.cmd.targetNodeId) 0 else 1
+      if (cnc.commits.remoteInfo.nodeId == senderData.cmd.targetNodeId) 0 else 1
     }
     // This method always sets a new partId to assigned parts so old payment statuses in data must be cleared before calling it
 
@@ -847,20 +898,21 @@ class OutgoingPaymentSender(
       case (newParts, rest) if rest <= 0L.msat =>
         // A whole amount has been fully split across our local channels
         // leftover may be slightly negative due to min sendable corrections
-        become(data1.copy(parts = data1.parts ++ newParts), PENDING)
+        become(senderData.copy(parts = senderData.parts ++ newParts), PENDING)
 
       case (_, rest)
           if opm
             .getSendable(
-              data1.cmd.allowedChans.filter(Channel.isOperationalAndSleeping),
+              senderData.cmd.allowedChans
+                .filter(Channel.isOperationalAndSleeping),
               feeLeftover
             )
             .values
             .sum >= rest =>
         // Amount has not been fully split, but it is possible to further successfully split it once some SLEEPING channel becomes OPEN
         become(
-          data1.copy(parts =
-            data1.parts + WaitForChanOnline(randomKey, amount).tuple
+          senderData.copy(parts =
+            senderData.parts + WaitForChanOnline(randomKey, amount).tuple
           ),
           PENDING
         )
@@ -868,7 +920,10 @@ class OutgoingPaymentSender(
       case _ =>
         // A positive leftover is present with no more channels left
         // partId should have already been removed from data at this point
-        me abortMaybeNotify data1.withLocalFailure(NOT_ENOUGH_FUNDS, amount)
+        me abortMaybeNotify senderData.withLocalFailure(
+          NOT_ENOUGH_FUNDS,
+          amount
+        )
     }
 
     // It may happen that all chans are to stay offline indefinitely, payment parts will then await indefinitely

@@ -245,18 +245,20 @@ trait CanBeRepliedTo {
   def process(reply: Any): Unit
 }
 
-abstract class StateMachine[T] { me =>
-  def become(freshData: T, freshState: Channel.State): StateMachine[T] = {
+abstract class StateMachine[T, S] {
+  def become(freshData: T, freshState: S): StateMachine[T, S] = {
     // Update state, data and return itself for easy chaining operations
     state = freshState
     data = freshData
-    me
+    this
   }
+
+  def initialState: S
 
   def doProcess(change: Any): Unit
   var TOTAL_INTERVAL_SECONDS: Long = 60
   var secondsLeft: Long = _
-  var state: Channel.State = Channel.Initial()
+  var state: S = initialState
   var data: T = _
 
   lazy val delayedCMDWorker: ThrottledWork[String, Long] =
@@ -269,7 +271,7 @@ abstract class StateMachine[T] { me =>
       def process(cmd: String, tickUpdateInterval: Long): Unit = {
         secondsLeft = TOTAL_INTERVAL_SECONDS - (tickUpdateInterval + 1)
         if (secondsLeft <= 0L)
-          runAnd(unsubscribeCurrentWork())(me doProcess cmd)
+          runAnd(unsubscribeCurrentWork())(doProcess(cmd))
       }
     }
 }

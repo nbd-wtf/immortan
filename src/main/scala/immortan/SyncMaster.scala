@@ -135,9 +135,11 @@ case class SyncWorker(
     keyPair: KeyPair,
     remoteInfo: RemoteNodeInfo,
     ourInit: Init
-) extends StateMachine[SyncWorkerData] { me =>
+) extends StateMachine[SyncWorkerData, Int] { me =>
   implicit val context: ExecutionContextExecutor =
     ExecutionContext fromExecutor Executors.newSingleThreadExecutor
+
+  def initialState = -1
 
   val pair: KeyPairAndPubKey = KeyPairAndPubKey(keyPair, remoteInfo.nodeId)
 
@@ -337,8 +339,10 @@ abstract class SyncMaster(
     requestNodeAnnounce: ShortChanIdSet,
     routerData: Data,
     maxConnections: Int
-) extends StateMachine[SyncMasterData]
+) extends StateMachine[SyncMasterData, Int]
     with CanBeRepliedTo { me =>
+  def initialState = -1
+
   private[this] val confirmedChanUpdates = mutable.Map
     .empty[UpdateCore, UpdateConifrmState] withDefaultValue UpdateConifrmState(
     None,
@@ -611,13 +615,14 @@ case class SyncMasterPHCData(
 ) extends SyncMasterData
 
 abstract class PHCSyncMaster(routerData: Data)
-    extends StateMachine[SyncMasterData]
+    extends StateMachine[SyncMasterData, Int]
     with CanBeRepliedTo { me =>
   implicit val context: ExecutionContextExecutor =
     ExecutionContext fromExecutor Executors.newSingleThreadExecutor
+  def initialState = PHC_SYNC
+
   def process(changeMessage: Any): Unit =
     scala.concurrent.Future(me doProcess changeMessage)
-  become(null, PHC_SYNC)
 
   // These checks require graph
   def isAcceptable(ann: ChannelAnnouncement): Boolean = {

@@ -7,7 +7,7 @@ import fr.acinq.eclair.channel.{
   PersistentChannelData
 }
 import fr.acinq.eclair.wire._
-import immortan.Channel.{OPEN, WAIT_FOR_ACCEPT}
+import immortan.Channel
 import immortan.ChannelListener.{Malfunction, Transition}
 import immortan.crypto.Tools
 import immortan._
@@ -58,7 +58,13 @@ abstract class HCOpenHandler(
     }
 
     override def onBecome: PartialFunction[Transition, Unit] = {
-      case (_, _, hostedCommits: HostedCommits, WAIT_FOR_ACCEPT, OPEN) =>
+      case (
+            _,
+            _,
+            hostedCommits: HostedCommits,
+            _: Channel.WaitFundingDone,
+            _: Channel.Open
+          ) =>
         onEstablished(hostedCommits, freshChannel)
         CommsTower.rmListenerNative(info, me)
     }

@@ -31,7 +31,8 @@ object SwapInAddressHandler {
   case class CMDStart(capableCncs: Set[ChanAndCommits] = Set.empty)
 }
 
-abstract class SwapInAddressHandler extends StateMachine[AddressData] { me =>
+abstract class SwapInAddressHandler extends StateMachine[AddressData, Int] {
+  me =>
   implicit val context: ExecutionContextExecutor =
     ExecutionContext fromExecutor Executors.newSingleThreadExecutor
   def process(changeMessage: Any): Unit =

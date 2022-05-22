@@ -36,9 +36,13 @@ object SwapOutFeeratesHandler {
   final val minChainFee = Satoshi(253)
 }
 
-abstract class SwapOutFeeratesHandler extends StateMachine[FeeratesData] { me =>
+abstract class SwapOutFeeratesHandler extends StateMachine[FeeratesData, Int] {
+  me =>
   implicit val context: ExecutionContextExecutor =
     ExecutionContext fromExecutor Executors.newSingleThreadExecutor
+
+  def initialState = -1
+
   def process(changeMessage: Any): Unit =
     scala.concurrent.Future(me doProcess changeMessage)
 

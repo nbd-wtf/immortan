@@ -505,7 +505,9 @@ class ChannelMaster(
       next(stateUpdateStream)
     case (_, _: DATA_NORMAL, _: DATA_NEGOTIATING, _, _) =>
       next(stateUpdateStream)
-    case (_, _, _, prev, CLOSING) if prev != CLOSING => next(stateUpdateStream)
+    case (_, _, _, prev, _: Channel.Closing)
+        if !prev.isInstanceOf[Channel.Closing] =>
+      next(stateUpdateStream)
 
     case (_, prevHc: HostedCommits, nextHc: HostedCommits, _, _)
         if prevHc.error.isEmpty && nextHc.error.nonEmpty =>
@@ -518,12 +520,14 @@ class ChannelMaster(
       opm process CMDChanGotOnline
       next(stateUpdateStream)
 
-    case (_, _, _, prev, SLEEPING) if prev != SLEEPING =>
+    case (_, _, _, prev, _: Channel.Sleeping)
+        if !prev.isInstanceOf[Channel.Sleeping] =>
       // Channel which was not SLEEPING became SLEEPING
       next(statusUpdateStream)
 
-    case (chan, _, _, prev, OPEN) if prev != OPEN =>
-      // Channel which was not OPEN became operational and OPEN
+    case (chan, _, _, prev, _: Channel.Open)
+        if !prev.isInstanceOf[Channel.Open] =>
+      // Channel which was not open became operational and open
       // We may get here after getting fresh feerates so check again
       chan process CMD_CHECK_FEERATE
       opm process CMDChanGotOnline

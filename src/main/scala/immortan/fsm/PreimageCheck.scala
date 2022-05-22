@@ -44,12 +44,17 @@ object PreimageCheck {
   )
 }
 
-abstract class PreimageCheck extends StateMachine[PreimageCheck.CheckData] {
+abstract class PreimageCheck
+    extends StateMachine[PreimageCheck.CheckData, Int] {
   me =>
   implicit val context: ExecutionContextExecutor =
     ExecutionContext fromExecutor Executors.newSingleThreadExecutor
+
+  def initialState = -1
+
   def randomPair(info: RemoteNodeInfo): (RemoteNodeInfo, KeyPairAndPubKey) =
     info -> KeyPairAndPubKey(randomKeyPair, info.nodeId)
+
   def process(changeMessage: Any): Unit =
     scala.concurrent.Future(me doProcess changeMessage)
 

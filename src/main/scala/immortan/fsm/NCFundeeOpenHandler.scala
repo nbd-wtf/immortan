@@ -3,7 +3,7 @@ package immortan.fsm
 import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire._
-import immortan.Channel.{WAIT_FOR_ACCEPT, WAIT_FUNDING_DONE}
+import immortan.Channel
 import immortan.ChannelListener.{Malfunction, Transition}
 import immortan._
 
@@ -60,8 +60,8 @@ abstract class NCFundeeOpenHandler(
             _,
             _,
             data: DATA_WAIT_FOR_FUNDING_CONFIRMED,
-            WAIT_FOR_ACCEPT,
-            WAIT_FUNDING_DONE
+            Channel.WaitForAccept(),
+            Channel.WaitFundingDone()
           ) =>
         // It is up to NC to store itself and communicate successful opening
         onEstablished(data.commitments, freshChannel)

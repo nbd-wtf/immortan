@@ -14,9 +14,11 @@ import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
 
 // Used to decrypt remote messages -> send to channel as well as encrypt outgoing messages -> send to socket
 abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
-    extends StateMachine[Data] { me =>
+    extends StateMachine[Data, Int] { me =>
   implicit val context: ExecutionContextExecutor =
     ExecutionContext fromExecutor Executors.newSingleThreadExecutor
+  def initialState = -1
+
   def process(change: Any): Unit = Future(me doProcess change)
 
   def handleDecryptedIncomingData(data: ByteVector): Unit
