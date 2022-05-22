@@ -111,8 +111,8 @@ object Tools {
     val stream = new ByteArrayInputStream(
       hostedNodesCombined(pubkey1, pubkey2).toArray
     )
-    def getChunk: Long = Protocol.uint64(stream, ByteOrder.BIG_ENDIAN)
-    List.fill(8)(getChunk).sum
+    def getChunk(): Long = Protocol.uint64(stream, ByteOrder.BIG_ENDIAN)
+    List.fill(8)(getChunk()).sum
   }
 
   def mkFakeLocalEdge(from: PublicKey, toPeer: PublicKey): GraphEdge = {
