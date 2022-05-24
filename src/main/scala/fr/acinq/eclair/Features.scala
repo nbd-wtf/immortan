@@ -28,7 +28,6 @@ object FeatureSupport {
 }
 
 trait Feature {
-
   this: FeatureScope =>
 
   def rfcName: String
@@ -274,9 +273,15 @@ object Features {
     val mandatory = 32974
   }
 
+  case object PrivateRouting extends Feature with InitFeature with NodeFeature {
+    val rfcName = "Private routing"
+    val mandatory = 33174
+  }
+
   val knownFeatures: Set[Feature with FeatureScope] = Set(
     DataLossProtect,
     InitialRoutingSync,
+    PrivateRouting,
     ChannelRangeQueries,
     VariableLengthOnion,
     ChannelRangeQueriesExtended,

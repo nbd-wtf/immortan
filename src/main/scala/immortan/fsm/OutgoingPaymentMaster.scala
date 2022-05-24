@@ -28,6 +28,7 @@ import immortan.crypto.Tools._
 import immortan.crypto.{CanBeRepliedTo, StateMachine}
 import immortan.fsm.OutgoingPaymentMaster._
 import immortan.fsm.PaymentFailure._
+import com.softwaremill.quicklens._
 import scodec.bits.ByteVector
 
 import scala.collection.mutable
@@ -77,7 +78,7 @@ case class CreateSenderFSM(
     listeners: Iterable[OutgoingPaymentListener],
     fullTag: FullPaymentTag
 )
-//case class TrampolinePeerUpdated(from: PublicKey, status: TrampolineStatus)
+case class TrampolinePeerUpdated(from: PublicKey, status: TrampolineStatus)
 case class TrampolinePeerDisconnected(from: PublicKey)
 
 case class ChannelNotRoutable(failedDesc: ChannelDesc)
@@ -97,7 +98,7 @@ case class SendMultiPart(
     split: SplitInfo,
     routerConf: RouterConf,
     targetNodeId: PublicKey,
-    expectedRouteFees: Option[PathFinder.ExpectedFees],
+    expectedRouteFees: Option[PathFinder.ExpectedRouteFees],
     payeeMetadata: Option[ByteVector],
     totalFeeReserve: MilliSatoshi = MilliSatoshi(0L),
     allowedChans: Seq[Channel] = Nil,
@@ -108,12 +109,20 @@ case class SendMultiPart(
 )
 
 case class OutgoingPaymentMasterData(
+    trampolineStates: TrampolineRoutingStates,
     payments: Map[FullPaymentTag, OutgoingPaymentSender],
     chanFailedAtAmount: Map[DescAndCapacity, StampedChannelFailed] = Map.empty,
     nodeFailedWithUnknownUpdateTimes: Map[PublicKey, Int] = Map.empty,
     directionFailedTimes: Map[NodeDirectionDesc, Int] = Map.empty,
     chanNotRoutable: Set[ChannelDesc] = Set.empty
 ) { me =>
+  def withNewTrampolineStates(
+      states1: TrampolineRoutingStates
+  ): OutgoingPaymentMasterData = copy(trampolineStates = states1)
+
+  def withoutTrampolineStates(nodeId: PublicKey): OutgoingPaymentMasterData =
+    me.modify(_.trampolineStates.states).using(_ - nodeId)
+
   def withFailuresReduced(stampInFuture: Long): OutgoingPaymentMasterData = {
     // Reduce failure times to give previously failing channels a chance
     // failed-at-amount is restored gradually within a time window
@@ -148,7 +157,6 @@ object OutgoingPaymentMaster {
   final val CMDAbort = "cmd-abort"
 
   sealed trait State
-  case class Initial() extends State
   case class ExpectingPayments() extends State
   case class WaitingForRoute() extends State
 }
@@ -156,10 +164,10 @@ object OutgoingPaymentMaster {
 class OutgoingPaymentMaster(val cm: ChannelMaster)
     extends StateMachine[OutgoingPaymentMasterData, OutgoingPaymentMaster.State]
     with CanBeRepliedTo { me =>
-  def initialState = OutgoingPaymentMaster.Initial()
+  def initialState = OutgoingPaymentMaster.ExpectingPayments()
 
   become(
-    OutgoingPaymentMasterData(Map.empty),
+    OutgoingPaymentMasterData(TrampolineRoutingStates(Map.empty), Map.empty),
     OutgoingPaymentMaster.ExpectingPayments()
   )
 
@@ -169,6 +177,41 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
   var clearFailures: Boolean = true
 
   def doProcess(change: Any): Unit = (change, state) match {
+    case (
+          TrampolinePeerDisconnected(nodeId),
+          _: OutgoingPaymentMaster.ExpectingPayments |
+          _: OutgoingPaymentMaster.WaitingForRoute
+        ) =>
+      become(data withoutTrampolineStates nodeId, state)
+
+    case (
+          TrampolinePeerUpdated(nodeId, TrampolineUndesired),
+          _: OutgoingPaymentMaster.ExpectingPayments |
+          _: OutgoingPaymentMaster.WaitingForRoute
+        ) =>
+      become(data withoutTrampolineStates nodeId, state)
+
+    case (
+          TrampolinePeerUpdated(nodeId, init: TrampolineStatusInit),
+          _: OutgoingPaymentMaster.ExpectingPayments |
+          _: OutgoingPaymentMaster.WaitingForRoute
+        ) =>
+      become(
+        data withNewTrampolineStates data.trampolineStates.init(nodeId, init),
+        state
+      )
+
+    case (
+          TrampolinePeerUpdated(nodeId, update: TrampolineStatusUpdate),
+          _: OutgoingPaymentMaster.ExpectingPayments |
+          _: OutgoingPaymentMaster.WaitingForRoute
+        ) if data.trampolineStates.states.contains(nodeId) =>
+      become(
+        data withNewTrampolineStates data.trampolineStates
+          .merge(nodeId, update),
+        state
+      )
+
     case (
           send: SendMultiPart,
           _: OutgoingPaymentMaster.ExpectingPayments |
@@ -632,6 +675,7 @@ class OutgoingPaymentSender(
                 ),
                 PENDING
               )
+            // TODO: case None if <can use trampoline for this shard at affordable price?> =>
             case None if outgoingHtlcSlotsLeft >= 1 =>
               become(
                 data.withoutPartId(wait.partId),
@@ -648,6 +692,7 @@ class OutgoingPaymentSender(
       data.parts.values.collectFirst {
         case wait: WaitForRouteOrInFlight
             if wait.flight.isEmpty && wait.partId == found.partId =>
+          // TODO: even if route is found we can compare its fees against trampoline fees here and choose trampoline if its fees are more attractive
           val payeeExpiry = data.cmd.chainExpiry.fold(
             fb = _.toCltvExpiry(LNParams.blockCount.get + 1L),
             fa = identity
@@ -955,6 +1000,7 @@ class OutgoingPaymentSender(
           ),
           PENDING
         )
+      // TODO: case None if <can use trampoline for this shard at affordable price?> =>
       case _ if outgoingHtlcSlotsLeft >= 2 =>
         become(data, PENDING) doProcess CutIntoHalves(wait.amount)
       case _ =>

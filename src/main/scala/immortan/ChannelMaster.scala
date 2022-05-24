@@ -90,6 +90,7 @@ class ChannelMaster(
     payBag.getPreimage
   )
   val opm: OutgoingPaymentMaster = new OutgoingPaymentMaster(me)
+  val tb: TrampolineBroadcaster = new TrampolineBroadcaster(me)
 
   val localPaymentListeners: mutable.Set[OutgoingPaymentListener] = {
     val defListener: OutgoingPaymentListener = new OutgoingPaymentListener {
@@ -246,6 +247,8 @@ class ChannelMaster(
       worker: CommsTower.Worker,
       message: LightningMessage
   ): Unit = message match {
+    case msg: TrampolineStatus =>
+      opm process TrampolinePeerUpdated(worker.info.nodeId, msg)
     case msg: ChannelUpdate =>
       allFromNode(worker.info.nodeId).foreach(_.chan process msg)
     case msg: HasChannelId => sendTo(msg, msg.channelId)
@@ -274,6 +277,7 @@ class ChannelMaster(
     for (fsm <- inProcessors.values) fsm.becomeShutDown()
     for (sub <- pf.subscription) sub.unsubscribe()
     pf.listeners = Set.empty
+    tb.becomeShutDown()
   }
 
   def initConnect(): Unit =
@@ -466,7 +470,7 @@ class ChannelMaster(
     // Prepare sender FSM and fetch expected fees for payment
     // these fees will be replied back to FSM for trampoline sends
     opm process CreateSenderFSM(localPaymentListeners, cmd.fullTag)
-    pf process PathFinder.GetExpectedPaymentFees(opm, cmd)
+    pf process PathFinder.GetExpectedPaymentFees(opm, cmd, interHops = 3)
   }
 
   // These are executed in Channel context

@@ -143,6 +143,7 @@ object LNParams {
         (ShutdownAnySegwit, FeatureSupport.Optional),
         (StaticRemoteKey, FeatureSupport.Optional),
         (DataLossProtect, FeatureSupport.Optional),
+        (PrivateRouting, FeatureSupport.Optional),
         (HostedChannels, FeatureSupport.Optional),
         (PaymentSecret, FeatureSupport.Optional),
         (ChainSwap, FeatureSupport.Optional),

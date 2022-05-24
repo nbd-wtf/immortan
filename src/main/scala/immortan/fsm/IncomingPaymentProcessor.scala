@@ -275,16 +275,16 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
 // TRAMPOLINE RELAYER
 
 case class TrampolineStopping(retry: Boolean, fullTag: FullPaymentTag)
-    extends IncomingProcessorData // _:IncomingPaymentProcessor.Sending()
+    extends IncomingProcessorData // SENDING
 case class TrampolineProcessing(finalNodeId: PublicKey, fullTag: FullPaymentTag)
-    extends IncomingProcessorData // _:IncomingPaymentProcessor.Sending()
+    extends IncomingProcessorData // SENDING
 case class TrampolineRevealed(
     preimage: ByteVector32,
     senderData: Option[OutgoingPaymentSenderData],
     fullTag: FullPaymentTag
-) extends IncomingProcessorData // _:IncomingPaymentProcessor.Sending() | _:IncomingPaymentProcessor.Finalizing()
+) extends IncomingProcessorData // SENDING | FINALIZING
 case class TrampolineAborted(failure: FailureMessage, fullTag: FullPaymentTag)
-    extends IncomingProcessorData // _:IncomingPaymentProcessor.Finalizing()
+    extends IncomingProcessorData // FINALIZING
 
 class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
     extends IncomingPaymentProcessor
