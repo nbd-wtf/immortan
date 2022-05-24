@@ -62,7 +62,7 @@ abstract class HCOpenHandler(
             _,
             _,
             hostedCommits: HostedCommits,
-            _: Channel.WaitFundingDone,
+            _: Channel.WaitForAccept,
             _: Channel.Open
           ) =>
         onEstablished(hostedCommits, freshChannel)
