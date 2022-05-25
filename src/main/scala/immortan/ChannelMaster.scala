@@ -283,7 +283,7 @@ class ChannelMaster(
   def initConnect(): Unit =
     all.values.flatMap(Channel.chanAndCommitsOpt).foreach { cnc =>
       // Connect to all peers with channels, including CLOSED ones
-      CommsTower.listenNative(Set(me), cnc.commits.remoteInfo)
+      CommsTower.listenNative(Set(me, tb), cnc.commits.remoteInfo)
     }
 
   // Marks as failed those payments which did not make it into channels before an app has been restarted
