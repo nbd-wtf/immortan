@@ -224,7 +224,6 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
     )
 
   // Preimage storage
-
   def getPreimage(hash: ByteVector32): Try[ByteVector32] = preimageDb
     .select(PreimageTable.selectByHashSql, hash.toHex)
     .headTry(_ string PreimageTable.preimage)
@@ -234,7 +233,6 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
     preimageDb.change(PreimageTable.newSql, paymentHash.toHex, preimage.toHex)
 
   // Relayed payments
-
   def listRecentRelays(limit: Int): RichCursor =
     db.select(RelayTable.selectRecentSql, limit.toString)
 

@@ -7,7 +7,6 @@ import immortan.sqlite._
 import immortan.utils.SQLiteUtils
 import org.scalatest.funsuite.AnyFunSuite
 
-
 class DbSpec extends AnyFunSuite {
   test("Two transactions in a row") {
     val sameConnection = SQLiteUtils.getConnection
@@ -16,7 +15,8 @@ class DbSpec extends AnyFunSuite {
   }
 
   test("Insert, then select twice") {
-    val interface = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, DataTable)
+    val interface =
+      SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, DataTable)
     val sqLiteData = new SQLiteData(interface)
     val data = randomBytes(32)
 
@@ -27,12 +27,20 @@ class DbSpec extends AnyFunSuite {
 
   test("Handle collections") {
     val onion = OnionRoutingPacket(1, randomKey.publicKey.value, null, null)
-    val inserts = for (n <- 0L until 100L) yield IncomingHtlc(UpdateAddHtlc(null, n, 100L.msat, randomBytes32, CltvExpiry(n), onion))
-    val interface = SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, HtlcInfoTable)
+    val inserts =
+      for (n <- 0L until 100L)
+        yield IncomingHtlc(
+          UpdateAddHtlc(null, n, 100L.msat, randomBytes32, CltvExpiry(n), onion)
+        )
+    val interface =
+      SQLiteUtils.interfaceWithTables(SQLiteUtils.getConnection, HtlcInfoTable)
     val sqLiteChannel = new SQLiteChannel(interface, null)
 
     sqLiteChannel.putHtlcInfos(inserts, sid = 100L, commitNumber = 100)
-    assert(sqLiteChannel.htlcInfos(commitNumer = 100).map(_.cltvExpiry) == inserts.map(_.add.cltvExpiry))
+    assert(
+      sqLiteChannel.htlcInfos(commitNumer = 100).map(_.cltvExpiry) == inserts
+        .map(_.add.cltvExpiry)
+    )
 
     sqLiteChannel.rmHtlcInfos(sid = 100L)
     assert(sqLiteChannel.htlcInfos(commitNumer = 100).isEmpty)
