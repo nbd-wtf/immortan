@@ -1,18 +1,36 @@
 package immortan
 
+import java.net.Socket
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratePerKw, FeeratesPerKB}
+import fr.acinq.eclair.blockchain.fee.{
+  FeeratePerKB,
+  FeeratePerKw,
+  FeeratesPerKB
+}
 import immortan.utils.FeeRates._
+import immortan.ConnectionProvider
 import immortan.utils.{BitgoFeeProvider, EsploraFeeProvider}
 import org.scalatest.funsuite.AnyFunSuite
 
-
 class FeeRatesSpec extends AnyFunSuite {
-  LNParams.connectionProvider = new ClearnetConnectionProvider
+  LNParams.connectionProvider = new ConnectionProvider {
+    val proxyAddress = None
+    def doWhenReady(action: => Unit): Unit = action
+    def getSocket = new Socket
+    def get(url: String): String = ""
+  }
 
   test("Provider APIs are correctly parsed") {
-    assert(new EsploraFeeProvider("https://blockstream.info/api/fee-estimates").provide.block_1.toLong > 0)
-    assert(new EsploraFeeProvider("https://mempool.space/api/fee-estimates").provide.block_1.toLong > 0)
+    assert(
+      new EsploraFeeProvider(
+        "https://blockstream.info/api/fee-estimates"
+      ).provide.block_1.toLong > 0
+    )
+    assert(
+      new EsploraFeeProvider(
+        "https://mempool.space/api/fee-estimates"
+      ).provide.block_1.toLong > 0
+    )
     assert(BitgoFeeProvider.provide.block_1.toLong > 0)
   }
 

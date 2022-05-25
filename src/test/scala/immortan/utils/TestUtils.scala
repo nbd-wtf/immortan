@@ -3,7 +3,6 @@ package immortan.utils
 import scala.annotation.tailrec
 import scala.util.{Failure, Success, Try}
 
-
 object TestUtils {
   @tailrec def WAIT_UNTIL_TRUE(condition: => Boolean, left: Int = 100): Unit =
     Try(condition) match {
@@ -15,6 +14,8 @@ object TestUtils {
 
       case Failure(exception) =>
         throw exception
+
+      case _ =>
     }
 
   @tailrec def WAIT_UNTIL_RESULT[T](provider: => T, left: Int = 100): T =

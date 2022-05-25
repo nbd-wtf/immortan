@@ -1,22 +1,34 @@
 package immortan
 
+import java.net.{InetSocketAddress, Socket}
 import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.wire.{Init, LightningMessage, Pong}
+import immortan.ConnectionProvider
 import immortan.crypto.Tools
 import immortan.utils.TestUtils._
 import org.scalatest.funsuite.AnyFunSuite
 
-
 class CommsTowerSpec extends AnyFunSuite {
   test("Successfully connect, send Ping, get Pong") {
     var responses = List.empty[LightningMessage]
-    LNParams.connectionProvider = new ClearnetConnectionProvider
+    LNParams.connectionProvider = new ConnectionProvider {
+      val proxyAddress = None
+      def doWhenReady(action: => Unit): Unit = action
+      def getSocket = new Socket
+      def get(url: String): String = ""
+    }
     LNParams.chainHash = Block.LivenetGenesisBlock.hash
     LNParams.ourInit = LNParams.createInit
 
     val listener1 = new ConnectionListener {
-      override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = worker.sendPing
-      override def onMessage(worker: CommsTower.Worker, msg: LightningMessage): Unit = responses ::= msg
+      override def onOperational(
+          worker: CommsTower.Worker,
+          theirInit: Init
+      ): Unit = worker.sendPing()
+      override def onMessage(
+          worker: CommsTower.Worker,
+          msg: LightningMessage
+      ): Unit = responses ::= msg
     }
 
     val remoteInfo = (new SyncParams).acinq
@@ -29,8 +41,14 @@ class CommsTowerSpec extends AnyFunSuite {
     //
 
     val listener2 = new ConnectionListener {
-      override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = responses ::= theirInit
-      override def onMessage(worker: CommsTower.Worker, msg: LightningMessage): Unit = responses ::= msg
+      override def onOperational(
+          worker: CommsTower.Worker,
+          theirInit: Init
+      ): Unit = responses ::= theirInit
+      override def onMessage(
+          worker: CommsTower.Worker,
+          msg: LightningMessage
+      ): Unit = responses ::= msg
     }
 
     // Remote node is already connected with this local data
@@ -44,8 +62,14 @@ class CommsTowerSpec extends AnyFunSuite {
     //
 
     val listener3 = new ConnectionListener {
-      override def onOperational(worker: CommsTower.Worker, theirInit: Init): Unit = worker.sendPing
-      override def onMessage(worker: CommsTower.Worker, msg: LightningMessage): Unit = responses ::= msg
+      override def onOperational(
+          worker: CommsTower.Worker,
+          theirInit: Init
+      ): Unit = worker.sendPing()
+      override def onMessage(
+          worker: CommsTower.Worker,
+          msg: LightningMessage
+      ): Unit = responses ::= msg
     }
 
     // We connect as another local node to the same remote node (two socket connections)

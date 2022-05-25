@@ -26,6 +26,9 @@ libraryDependencies   ++= Seq(
   "io.netty" % "netty-all" % "4.1.42.Final",
   "com.softwaremill.quicklens" % "quicklens_2.13" % "1.8.4",
   "org.bouncycastle" % "bcprov-jdk15to18" % "1.68",
-  "com.sparrowwallet" % "hummingbird" % "1.6.2"
+  "com.sparrowwallet" % "hummingbird" % "1.6.2",
+
+  "org.scalatest" % "scalatest_2.13" % "3.1.4" % Test,
+  "org.xerial" % "sqlite-jdbc" % "3.27.2.1" % Test
 )
 scalacOptions        ++= Seq("-deprecation", "-feature")

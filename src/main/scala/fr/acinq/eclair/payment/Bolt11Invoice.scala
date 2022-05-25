@@ -203,6 +203,7 @@ object Bolt11Invoice {
     DEFAULT_EXPIRY_SECONDS * 24 * 7 * 2 // Invoices issued by us ALWAYS expire in two weeks
 
   val prefixes: Map[ByteVector32, String] = Map(
+    Block.SignetGenesisBlock.hash -> "lntbs",
     Block.RegtestGenesisBlock.hash -> "lnbcrt",
     Block.TestnetGenesisBlock.hash -> "lntb",
     Block.LivenetGenesisBlock.hash -> "lnbc"
