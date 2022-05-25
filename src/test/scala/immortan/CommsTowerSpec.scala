@@ -3,7 +3,6 @@ package immortan
 import java.net.{InetSocketAddress, Socket}
 import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.wire.{Init, LightningMessage, Pong}
-import immortan.ConnectionProvider
 import immortan.crypto.Tools
 import immortan.utils.TestUtils._
 import org.scalatest.funsuite.AnyFunSuite
@@ -11,12 +10,7 @@ import org.scalatest.funsuite.AnyFunSuite
 class CommsTowerSpec extends AnyFunSuite {
   test("Successfully connect, send Ping, get Pong") {
     var responses = List.empty[LightningMessage]
-    LNParams.connectionProvider = new ConnectionProvider {
-      val proxyAddress = None
-      def doWhenReady(action: => Unit): Unit = action
-      def getSocket = new Socket
-      def get(url: String): String = ""
-    }
+    LNParams.connectionProvider = new RequestsConnectionProvider
     LNParams.chainHash = Block.LivenetGenesisBlock.hash
     LNParams.ourInit = LNParams.createInit
 

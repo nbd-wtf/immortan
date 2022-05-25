@@ -8,17 +8,12 @@ import fr.acinq.eclair.blockchain.fee.{
   FeeratesPerKB
 }
 import immortan.utils.FeeRates._
-import immortan.ConnectionProvider
+import immortan.utils.TestUtils._
 import immortan.utils.{BitgoFeeProvider, EsploraFeeProvider}
 import org.scalatest.funsuite.AnyFunSuite
 
 class FeeRatesSpec extends AnyFunSuite {
-  LNParams.connectionProvider = new ConnectionProvider {
-    val proxyAddress = None
-    def doWhenReady(action: => Unit): Unit = action
-    def getSocket = new Socket
-    def get(url: String): String = ""
-  }
+  LNParams.connectionProvider = new RequestsConnectionProvider
 
   test("Provider APIs are correctly parsed") {
     assert(
