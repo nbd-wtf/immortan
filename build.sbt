@@ -28,8 +28,9 @@ libraryDependencies   ++= Seq(
   "org.bouncycastle" % "bcprov-jdk15to18" % "1.68",
   "com.sparrowwallet" % "hummingbird" % "1.6.2",
 
-  "org.scalatest" % "scalatest_2.13" % "3.1.4" % Test,
-  "org.xerial" % "sqlite-jdbc" % "3.27.2.1" % Test,
+  "com.lihaoyi" % "utest_2.13" % "0.7.11" % Test,
   "com.lihaoyi" % "requests_2.13" % "0.7.0" % Test,
+  "org.xerial" % "sqlite-jdbc" % "3.27.2.1" % Test,
 )
 scalacOptions        ++= Seq("-deprecation", "-feature")
+testFrameworks        += new TestFramework("utest.runner.Framework")
