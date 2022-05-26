@@ -275,7 +275,7 @@ object PsbtSpec extends TestSuite {
         assert(psbt.inputs(1).redeemScript.nonEmpty)
         assert(psbt.global.tx.txOut.length == 2)
         psbt.outputs.foreach(output => verifyEmptyOutput(output))
-        assert(ByteVector(Psbt.write(psbt)) == bin.toHex)
+        assert(ByteVector(Psbt.write(psbt)).toHex == bin.toHex)
       }
       {
         // PSBT with one P2PKH input which has a non-final scriptSig and has a sighash type specified. Outputs are empty

@@ -92,7 +92,7 @@ object PaymentUtils {
     val prExt = PaymentRequestExt(
       uri = Failure(new RuntimeException),
       invoice,
-      Bolt11Invoice.toString
+      invoice.toString
     )
     val desc = PaymentDescription(None, None, None, "Invoice", None)
     payBag.replaceIncomingPayment(
@@ -115,7 +115,6 @@ object PaymentUtils {
       cltvDelta: Int = LNParams.cltvRejectThreshold,
       tlvs: Seq[GenericTlv] = Nil
   ): ReasonableLocal = {
-
     val addFromRemote1 = createFinalAdd(
       partAmount,
       totalAmount,

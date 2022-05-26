@@ -1310,7 +1310,6 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       ) // Got after `wholePaymentFailed` has fired
       fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
       WAIT_UNTIL_TRUE(fsm.state.isInstanceOf[IncomingPaymentProcessor.Shutdown])
-      println(replies.head.asInstanceOf[CMD_FAIL_HTLC].reason)
       WAIT_UNTIL_TRUE(
         replies.head.asInstanceOf[CMD_FAIL_HTLC].reason == Right(
           TemporaryNodeFailure
@@ -1424,7 +1423,6 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       val x = cm.all.values
         .flatMap(Channel.chanAndCommitsOpt)
         .flatMap(_.commits.allOutgoing)
-      System.err.println(s"x: $x")
       val Seq(out1, out2) = x
         .filter(_.fullTag == reasonableTrampoline1.fullTag)
       fsm doProcess makeInFlightPayments(
