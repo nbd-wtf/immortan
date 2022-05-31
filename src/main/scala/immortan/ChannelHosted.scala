@@ -3,6 +3,7 @@ package immortan
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.{ByteVector64, SatoshiLong}
 import fr.acinq.eclair._
+import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.HashToPreimage
@@ -376,18 +377,6 @@ abstract class ChannelHosted extends Channel { me =>
 
     case (
           hc: HostedCommits,
-          cmd: HC_CMD_RESIZE,
-          _: Channel.Open | _: Channel.Sleeping
-        ) if hc.resizeProposal.isEmpty && hc.error.isEmpty =>
-      val capacitySat =
-        hc.lastCrossSignedState.initHostedChannel.channelCapacityMsat.truncateToSatoshi
-      val resize = ResizeChannel(capacitySat + cmd.delta)
-        .sign(hc.remoteInfo.nodeSpecificPrivKey)
-      StoreBecomeSend(hc.copy(resizeProposal = resize.asSome), state, resize)
-      process(CMD_SIGN)
-
-    case (
-          hc: HostedCommits,
           resize: ResizeChannel,
           _: Channel.Open | _: Channel.Sleeping
         ) if hc.resizeProposal.isEmpty && hc.error.isEmpty =>
@@ -404,60 +393,6 @@ abstract class ChannelHosted extends Channel { me =>
           _: Channel.Open | _: Channel.Sleeping
         ) if hc.error.isDefined && !hc.overrideProposal.contains(remoteSO) =>
       StoreBecomeSend(hc.copy(overrideProposal = remoteSO.asSome), state)
-
-    case (
-          hc: HostedCommits,
-          cmd @ CMD_HOSTED_STATE_OVERRIDE(remoteSO),
-          _: Channel.Open | _: Channel.Sleeping
-        ) if hc.error.isDefined =>
-      val overriddenLocalBalance =
-        hc.lastCrossSignedState.initHostedChannel.channelCapacityMsat - remoteSO.localBalanceMsat
-      val completeLocalLCSS = hc.lastCrossSignedState
-        .copy(
-          incomingHtlcs = Nil,
-          outgoingHtlcs = Nil,
-          localBalanceMsat = overriddenLocalBalance,
-          remoteBalanceMsat = remoteSO.localBalanceMsat,
-          localUpdates = remoteSO.remoteUpdates,
-          remoteUpdates = remoteSO.localUpdates,
-          blockDay = remoteSO.blockDay,
-          remoteSigOfLocal = remoteSO.localSigOfRemoteLCSS
-        )
-        .withLocalSigOfRemote(hc.remoteInfo.nodeSpecificPrivKey)
-
-      val isRemoteSigOk =
-        completeLocalLCSS.verifyRemoteSig(hc.remoteInfo.nodeId)
-      val hc1 = ChannelHosted.restoreCommits(completeLocalLCSS, hc.remoteInfo)
-
-      if (completeLocalLCSS.localBalanceMsat < 0L.msat)
-        throw CMDException(
-          "Override impossible: new local balance is larger than capacity",
-          cmd
-        )
-      if (remoteSO.localUpdates < hc.lastCrossSignedState.remoteUpdates)
-        throw CMDException(
-          "Override impossible: new local update number from remote host is wrong",
-          cmd
-        )
-      if (remoteSO.remoteUpdates < hc.lastCrossSignedState.localUpdates)
-        throw CMDException(
-          "Override impossible: new remote update number from remote host is wrong",
-          cmd
-        )
-      if (remoteSO.blockDay < hc.lastCrossSignedState.blockDay)
-        throw CMDException(
-          "Override impossible: new override blockday from remote host is not acceptable",
-          cmd
-        )
-      if (!isRemoteSigOk)
-        throw CMDException(
-          "Override impossible: new override signature from remote host is wrong",
-          cmd
-        )
-      StoreBecomeSend(hc1, Channel.Open(), completeLocalLCSS.stateUpdate)
-      rejectOverriddenOutgoingAdds(hc, hc1)
-      // We may have pendig incoming
-      events.notifyResolvers()
 
     case (
           hc: HostedCommits,
@@ -479,6 +414,76 @@ abstract class ChannelHosted extends Channel { me =>
     case (null, hc: HostedCommits, _: Channel.Initial) =>
       super.become(hc, Channel.Sleeping())
     case _ =>
+  }
+
+  def acceptOverride(): Either[String, Unit] =
+    data match {
+      case hc: HostedCommits
+          if hc.error.isDefined && hc.overrideProposal.isDefined => {
+        val remoteSO = hc.overrideProposal.get
+        val overriddenLocalBalance =
+          hc.lastCrossSignedState.initHostedChannel.channelCapacityMsat - remoteSO.localBalanceMsat
+        val completeLocalLCSS = hc.lastCrossSignedState
+          .copy(
+            incomingHtlcs = Nil,
+            outgoingHtlcs = Nil,
+            localBalanceMsat = overriddenLocalBalance,
+            remoteBalanceMsat = remoteSO.localBalanceMsat,
+            localUpdates = remoteSO.remoteUpdates,
+            remoteUpdates = remoteSO.localUpdates,
+            blockDay = remoteSO.blockDay,
+            remoteSigOfLocal = remoteSO.localSigOfRemoteLCSS
+          )
+          .withLocalSigOfRemote(hc.remoteInfo.nodeSpecificPrivKey)
+
+        val isRemoteSigOk =
+          completeLocalLCSS.verifyRemoteSig(hc.remoteInfo.nodeId)
+        val hc1 = ChannelHosted.restoreCommits(completeLocalLCSS, hc.remoteInfo)
+
+        if (completeLocalLCSS.localBalanceMsat < 0L.msat)
+          return Left(
+            "Override impossible: new local balance is larger than capacity"
+          )
+        if (remoteSO.localUpdates < hc.lastCrossSignedState.remoteUpdates)
+          return Left(
+            "Override impossible: new local update number from remote host is wrong"
+          )
+        if (remoteSO.remoteUpdates < hc.lastCrossSignedState.localUpdates)
+          return Left(
+            "Override impossible: new remote update number from remote host is wrong"
+          )
+        if (remoteSO.blockDay < hc.lastCrossSignedState.blockDay)
+          return Left(
+            "Override impossible: new override blockday from remote host is not acceptable"
+          )
+        if (!isRemoteSigOk)
+          return Left(
+            "Override impossible: new override signature from remote host is wrong"
+          )
+
+        StoreBecomeSend(hc1, Channel.Open(), completeLocalLCSS.stateUpdate)
+        rejectOverriddenOutgoingAdds(hc, hc1)
+
+        // We may have pending incoming
+        events.notifyResolvers()
+
+        Right(())
+      }
+      case _ => Left("No override proposal available")
+    }
+
+  def proposeResize(delta: Satoshi): Either[String, Unit] = data match {
+    case hc: HostedCommits if hc.resizeProposal.isEmpty && hc.error.isEmpty => {
+      val capacitySat =
+        hc.lastCrossSignedState.initHostedChannel.channelCapacityMsat.truncateToSatoshi
+      val resize = ResizeChannel(capacitySat + delta)
+        .sign(hc.remoteInfo.nodeSpecificPrivKey)
+      StoreBecomeSend(hc.copy(resizeProposal = resize.asSome), state, resize)
+      process(CMD_SIGN)
+
+      Right(())
+    }
+    case _ => Left("Channel not in clean state or resize proposal already sent")
   }
 
   def rejectOverriddenOutgoingAdds(
