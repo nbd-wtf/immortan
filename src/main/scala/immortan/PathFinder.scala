@@ -143,11 +143,14 @@ abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag)
     case (CMDLoadGraph, PathFinder.Waiting()) =>
       val normalShortIdToPubChan = normalBag.getRoutingData
       val hostedShortIdToPubChan = hostedBag.getRoutingData
-      val searchGraph1 = DirectedGraph
-        .makeGraph(normalShortIdToPubChan ++ hostedShortIdToPubChan)
-        .addEdges(extraEdges.values)
       become(
-        Data(normalShortIdToPubChan, hostedShortIdToPubChan, searchGraph1),
+        Data(
+          normalShortIdToPubChan,
+          hostedShortIdToPubChan,
+          DirectedGraph
+            .makeGraph(normalShortIdToPubChan ++ hostedShortIdToPubChan)
+            .addEdges(extraEdges.values)
+        ),
         PathFinder.Operational()
       )
 
@@ -248,20 +251,28 @@ abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag)
 
     case (cu: ChannelUpdate, _: PathFinder.Operational)
         if data.channels.contains(cu.shortChannelId) =>
-      val data1 = resolve(data.channels(cu.shortChannelId), cu, normalBag)
-      become(data1, PathFinder.Operational())
+      become(
+        resolve(data.channels(cu.shortChannelId), cu, normalBag),
+        PathFinder.Operational()
+      )
 
     case (cu: ChannelUpdate, _: PathFinder.Operational)
         if data.hostedChannels.contains(cu.shortChannelId) =>
-      val data1 = resolve(data.hostedChannels(cu.shortChannelId), cu, hostedBag)
-      become(data1, PathFinder.Operational())
+      become(
+        resolve(data.hostedChannels(cu.shortChannelId), cu, hostedBag),
+        PathFinder.Operational()
+      )
 
     case (cu: ChannelUpdate, _: PathFinder.Operational) =>
       extraEdges.get(cu.shortChannelId).foreach { extEdge =>
         // Last chance: not a known public update, maybe it's a private one
-        val edge1 = extEdge.copy(updExt = extEdge.updExt withNewUpdate cu)
-        val data1 = resolveKnownDesc(storeOpt = None, edge1)
-        become(data1, PathFinder.Operational())
+        become(
+          resolveKnownDesc(
+            storeOpt = None,
+            extEdge.copy(updExt = extEdge.updExt withNewUpdate cu)
+          ),
+          PathFinder.Operational()
+        )
       }
 
     case (edge: GraphEdge, _: PathFinder.Waiting | _: PathFinder.Operational)
@@ -269,29 +280,31 @@ abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag)
       // We add assisted routes to graph as if they are normal channels, also rememeber them to refill later if graph gets reloaded
       // these edges will be private most of the time, but they also may be public but yet not visible to us for some reason
       extraEdgesCache.put(edge.updExt.update.shortChannelId, edge)
-      val data1 = data.copy(graph = data.graph replaceEdge edge)
-      become(data1, state)
+      become(
+        data.copy(graph = data.graph replaceEdge edge),
+        state
+      )
 
     case _ =>
   }
 
   def resolve(
       pubChan: PublicChannel,
-      upd1: ChannelUpdate,
+      upd: ChannelUpdate,
       store: NetworkBag
   ): Data = {
     // Resoving normal/hosted public channel updates we get while trying to route payments
-    val desc = Router.getDesc(upd1, pubChan.ann)
+    val desc = Router.getDesc(upd, pubChan.ann)
 
-    pubChan.getChannelUpdateSameSideAs(upd1) match {
-      case Some(oldExt) if oldExt.update.timestamp < upd1.timestamp =>
+    pubChan.getChannelUpdateSameSideAs(upd) match {
+      case Some(oldExt) if oldExt.update.timestamp < upd.timestamp =>
         // We have an old updateExt and obtained one is newer, this is fine
-        val edge = GraphEdge(desc, oldExt withNewUpdate upd1)
+        val edge = GraphEdge(desc, oldExt withNewUpdate upd)
         resolveKnownDesc(storeOpt = Some(store), edge)
 
       case None =>
         // Somehow we don't have an old updateExt, create a new one
-        val edge = GraphEdge(desc, ChannelUpdateExt fromUpdate upd1)
+        val edge = GraphEdge(desc, ChannelUpdateExt fromUpdate upd)
         resolveKnownDesc(storeOpt = Some(store), edge)
 
       case _ =>

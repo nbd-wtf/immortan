@@ -14,7 +14,10 @@ import scala.collection.LazyZip3._
 import scala.concurrent.duration._
 
 object RouteCalculation {
-  def handleRouteRequest(graph: DirectedGraph, r: RouteRequest): RouteResponse =
+  def handleRouteRequest(
+      graph: DirectedGraph,
+      r: RouteRequest
+  ): RouteResponse = {
     findRouteInternal(
       graph,
       r.source,
@@ -25,14 +28,18 @@ object RouteCalculation {
       r.ignoreDirections,
       r.routeParams
     ) match {
-      case Some(searchResult) =>
+      case Some(searchResult) => {
         RouteFound(
           Route(searchResult.path.map(ChannelHop), searchResult.weight),
           r.fullTag,
           r.partId
         )
-      case _ => NoRouteAvailable(r.fullTag, r.partId)
+      }
+      case _ => {
+        NoRouteAvailable(r.fullTag, r.partId)
+      }
     }
+  }
 
   def makeExtraEdges(
       assistedRoutes: List[ExtraHops],
@@ -88,7 +95,6 @@ object RouteCalculation {
       ignoreDirections: Set[NodeDirectionDesc],
       rp: RouteParams
   ): Option[Graph.WeightedPath] = {
-
     Graph.bestPath(
       graph,
       sourceNode = localNodeId,

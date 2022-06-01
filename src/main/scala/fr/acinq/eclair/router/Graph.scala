@@ -45,7 +45,6 @@ object Graph {
       ignoreDirections: Set[NodeDirectionDesc],
       boundaries: RichWeight => Boolean
   ): Option[WeightedPath] = {
-
     val latestBlockExpectedStampMsecs = System.currentTimeMillis
     val targetWeight = RichWeight(
       costs = List(amount),
@@ -278,15 +277,17 @@ object Graph {
 
       def replaceEdge(edge: GraphEdge): DirectedGraph = {
         val isAlreadyPresent: Boolean = graphContainsEdge(edge.desc)
-
         if (isAlreadyPresent) {
           removeEdge(edge.desc).replaceEdge(edge)
         } else {
           val withVertices = addVertex(edge.desc.from).addVertex(edge.desc.to)
-          val vertices1: GraphEdges =
-            edge :: withVertices.vertices(edge.desc.to)
-          val vertices2 = withVertices.vertices.updated(edge.desc.to, vertices1)
-          DirectedGraph(vertices2)
+          DirectedGraph(
+            withVertices.vertices
+              .updated(
+                edge.desc.to,
+                edge :: withVertices.vertices(edge.desc.to)
+              )
+          )
         }
       }
 
@@ -294,9 +295,12 @@ object Graph {
         val isAlreadyPresent: Boolean = graphContainsEdge(desc)
 
         if (isAlreadyPresent) {
-          val vertices1 = vertices(desc.to).filterNot(_.desc == desc)
-          val vertices2 = vertices.updated(desc.to, vertices1)
-          DirectedGraph(vertices2)
+          DirectedGraph(
+            vertices.updated(
+              desc.to,
+              vertices(desc.to).filterNot(_.desc == desc)
+            )
+          )
         } else {
           this
         }
@@ -314,8 +318,7 @@ object Graph {
       def addVertex(key: PublicKey): DirectedGraph =
         if (vertices contains key) this
         else {
-          val vertices1 = vertices.updated(key, Nil)
-          DirectedGraph(vertices1)
+          DirectedGraph(vertices.updated(key, Nil))
         }
 
       def containsVertex(key: PublicKey): Boolean = vertices.contains(key)
