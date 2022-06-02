@@ -20,10 +20,10 @@ object SwapInAddressHandler {
   case class SwapInResponseExt(msg: SwapInResponse, remoteInfo: RemoteNodeInfo)
 
   sealed trait State
-  case class Initial() extends State
-  case class WaitingFirstResponse() extends State
-  case class WaitingRestOfResponses() extends State
-  case class Finalized() extends State
+  case object Initial extends State
+  case object WaitingFirstResponse extends State
+  case object WaitingRestOfResponses extends State
+  case object Finalized extends State
 
   type SwapInResponseOpt = Option[SwapInResponseExt]
   case class AddressData(
@@ -39,7 +39,7 @@ abstract class SwapInAddressHandler
   implicit val context: ExecutionContextExecutor =
     ExecutionContext fromExecutor Executors.newSingleThreadExecutor
 
-  def initialState = SwapInAddressHandler.Initial()
+  def initialState = SwapInAddressHandler.Initial
 
   def process(changeMessage: Any): Unit =
     scala.concurrent.Future(me doProcess changeMessage)
@@ -73,15 +73,15 @@ abstract class SwapInAddressHandler
   def doProcess(change: Any): Unit = (change, state) match {
     case (
           NoSwapInSupport(worker),
-          _: SwapInAddressHandler.WaitingFirstResponse |
-          _: SwapInAddressHandler.WaitingRestOfResponses
+          SwapInAddressHandler.WaitingFirstResponse |
+          SwapInAddressHandler.WaitingRestOfResponses
         ) =>
       become(data.copy(results = data.results - worker.info), state)
       doSearch(force = false)
 
     case (
           YesSwapInSupport(worker, msg: SwapInResponse),
-          _: SwapInAddressHandler.WaitingFirstResponse
+          SwapInAddressHandler.WaitingFirstResponse
         ) =>
       val results1 = data.results.updated(
         worker.info,
@@ -89,7 +89,7 @@ abstract class SwapInAddressHandler
       )
       become(
         data.copy(results = results1),
-        SwapInAddressHandler.WaitingRestOfResponses()
+        SwapInAddressHandler.WaitingRestOfResponses
       ) // Start waiting for the rest of responses
       Rx.ioQueue
         .delay(5.seconds)
@@ -100,7 +100,7 @@ abstract class SwapInAddressHandler
 
     case (
           YesSwapInSupport(worker, msg: SwapInResponse),
-          _: SwapInAddressHandler.WaitingRestOfResponses
+          SwapInAddressHandler.WaitingRestOfResponses
         ) =>
       val results1 = data.results.updated(
         worker.info,
@@ -111,21 +111,21 @@ abstract class SwapInAddressHandler
 
     case (
           CMDCancel,
-          _: SwapInAddressHandler.WaitingFirstResponse |
-          _: SwapInAddressHandler.WaitingRestOfResponses
+          SwapInAddressHandler.WaitingFirstResponse |
+          SwapInAddressHandler.WaitingRestOfResponses
         ) =>
       // Do not disconnect from remote peer because we have a channel with them, but remove this exact SwapIn listener
       for (cnc <- data.cmdStart.capableCncs)
         CommsTower.rmListenerNative(cnc.commits.remoteInfo, swapInListener)
-      become(data, SwapInAddressHandler.Finalized())
+      become(data, SwapInAddressHandler.Finalized)
 
-    case (cmd: CMDStart, _: SwapInAddressHandler.Initial) =>
+    case (cmd: CMDStart, SwapInAddressHandler.Initial) =>
       become(
         AddressData(
           results = cmd.capableCncs.map(_.commits.remoteInfo -> None).toMap,
           cmd
         ),
-        SwapInAddressHandler.WaitingFirstResponse()
+        SwapInAddressHandler.WaitingFirstResponse
       )
       for (cnc <- cmd.capableCncs)
         CommsTower.listenNative(Set(swapInListener), cnc.commits.remoteInfo)

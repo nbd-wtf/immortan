@@ -15,8 +15,8 @@ import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 
 object TrampolineBroadcaster {
   sealed trait State
-  case class RoutingDisabled() extends State
-  case class RoutingEnabled() extends State
+  case object RoutingDisabled extends State
+  case object RoutingEnabled extends State
 
   sealed trait BroadcastStatus
   case object RoutingOff extends BroadcastStatus
@@ -62,7 +62,7 @@ class TrampolineBroadcaster(cm: ChannelMaster)
   implicit val context: ExecutionContextExecutor =
     ExecutionContext fromExecutor Executors.newSingleThreadExecutor
 
-  def initialState = TrampolineBroadcaster.RoutingDisabled()
+  def initialState = TrampolineBroadcaster.RoutingDisabled
 
   private val subscription =
     Observable.interval(10.seconds).subscribe(_ => me process CMDBroadcast)
@@ -73,7 +73,7 @@ class TrampolineBroadcaster(cm: ChannelMaster)
   def process(message: Any): Unit =
     scala.concurrent.Future(me doProcess message)
   override def becomeShutDown(): Unit = subscription.unsubscribe()
-  become(RoutingOff, TrampolineBroadcaster.RoutingDisabled())
+  become(RoutingOff, TrampolineBroadcaster.RoutingDisabled)
 
   override def onOperational(
       worker: CommsTower.Worker,
@@ -92,7 +92,7 @@ class TrampolineBroadcaster(cm: ChannelMaster)
   def doProcess(msg: Any): Unit = (msg, state, data) match {
     case (
           CMDBroadcast,
-          _: TrampolineBroadcaster.RoutingEnabled,
+          TrampolineBroadcaster.RoutingEnabled,
           routingOn: RoutingOn
         ) =>
       // First make a map with updated values, then broadcast differences, then update mapto a new one
@@ -115,25 +115,25 @@ class TrampolineBroadcaster(cm: ChannelMaster)
 
     case (
           routingOn1: RoutingOn,
-          _: TrampolineBroadcaster.RoutingDisabled |
-          _: TrampolineBroadcaster.RoutingEnabled,
+          TrampolineBroadcaster.RoutingDisabled |
+          TrampolineBroadcaster.RoutingEnabled,
           _
         ) =>
       // User may either enable a previously disabled routing or update params
-      become(routingOn1, TrampolineBroadcaster.RoutingEnabled())
+      become(routingOn1, TrampolineBroadcaster.RoutingEnabled)
 
-    case (RoutingOff, _: TrampolineBroadcaster.RoutingEnabled, _) =>
+    case (RoutingOff, TrampolineBroadcaster.RoutingEnabled, _) =>
       broadcasters =
         for (Tuple2(nodeId, lastBroadcast) <- broadcasters)
           yield nodeId -> lastBroadcast.copy(last = TrampolineUndesired)
       for (lastBroadcast <- broadcasters.values)
         doBroadcast(TrampolineUndesired.asSome, lastBroadcast.info)
-      become(RoutingOff, TrampolineBroadcaster.RoutingEnabled())
+      become(RoutingOff, TrampolineBroadcaster.RoutingEnabled)
 
     case (
           lastOn1: LastBroadcast,
-          _: TrampolineBroadcaster.RoutingDisabled |
-          _: TrampolineBroadcaster.RoutingEnabled,
+          TrampolineBroadcaster.RoutingDisabled |
+          TrampolineBroadcaster.RoutingEnabled,
           _
         ) =>
       // A new peer has connected: unconditionally add it to connection map

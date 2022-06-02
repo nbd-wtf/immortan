@@ -19,13 +19,13 @@ import scala.util.Failure
 
 object Channel {
   sealed trait State
-  case class Initial() extends State
-  case class WaitForInit() extends State
-  case class WaitForAccept() extends State
-  case class WaitFundingDone() extends State
-  case class Sleeping() extends State
-  case class Closing() extends State
-  case class Open() extends State
+  case object Initial extends State
+  case object WaitForInit extends State
+  case object WaitForAccept extends State
+  case object WaitFundingDone extends State
+  case object Sleeping extends State
+  case object Closing extends State
+  case object Open extends State
 
   // Single stacking thread for all channels, must be used when asking channels for pending payments to avoid race conditions
   implicit val channelContext: ExecutionContextExecutor =
@@ -72,10 +72,10 @@ object Channel {
     isOperational(chan) || isWaiting(chan)
 
   def isOperationalAndOpen(chan: Channel): Boolean =
-    isOperational(chan) && chan.state.isInstanceOf[Open]
+    isOperational(chan) && chan.state == Open
 
   def isOperationalAndSleeping(chan: Channel): Boolean =
-    isOperational(chan) && chan.state.isInstanceOf[Sleeping]
+    isOperational(chan) && chan.state == Sleeping
 
   def totalBalance(chans: Iterable[Channel] = Nil): MilliSatoshi =
     chans.filter(isOperationalOrWaiting).map(_.data.ourBalance).sum
@@ -84,7 +84,7 @@ object Channel {
 trait Channel
     extends StateMachine[ChannelData, Channel.State]
     with CanBeRepliedTo { me =>
-  def initialState = Channel.Initial()
+  def initialState = Channel.Initial
 
   def process(changeMsg: Any): Unit =
     Future(me doProcess changeMsg).onComplete {

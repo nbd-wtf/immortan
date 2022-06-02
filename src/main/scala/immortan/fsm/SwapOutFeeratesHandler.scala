@@ -24,10 +24,10 @@ object SwapOutFeeratesHandler {
   )
 
   sealed trait State
-  case class Initial() extends State
-  case class WaitingFirstResponse() extends State
-  case class WaitingRestOfResponses() extends State
-  case class Finalized() extends State
+  case object Initial extends State
+  case object WaitingFirstResponse extends State
+  case object WaitingRestOfResponses extends State
+  case object Finalized extends State
 
   type SwapOutResponseOpt = Option[SwapOutResponseExt]
   case class FeeratesData(
@@ -44,7 +44,7 @@ abstract class SwapOutFeeratesHandler
   implicit val context: ExecutionContextExecutor =
     ExecutionContext fromExecutor Executors.newSingleThreadExecutor
 
-  def initialState = SwapOutFeeratesHandler.Initial()
+  def initialState = SwapOutFeeratesHandler.Initial
 
   def process(changeMessage: Any): Unit =
     scala.concurrent.Future(me doProcess changeMessage)
@@ -81,16 +81,16 @@ abstract class SwapOutFeeratesHandler
   def doProcess(change: Any): Unit = (change, state) match {
     case (
           NoSwapOutSupport(worker),
-          _: SwapOutFeeratesHandler.WaitingFirstResponse |
-          _: SwapOutFeeratesHandler.WaitingRestOfResponses
+          SwapOutFeeratesHandler.WaitingFirstResponse |
+          SwapOutFeeratesHandler.WaitingRestOfResponses
         ) =>
       become(data.copy(results = data.results - worker.info), state)
       doSearch(force = false)
 
     case (
           YesSwapOutSupport(worker, msg: SwapOutFeerates),
-          _: SwapOutFeeratesHandler.WaitingFirstResponse |
-          _: SwapOutFeeratesHandler.WaitingRestOfResponses
+          SwapOutFeeratesHandler.WaitingFirstResponse |
+          SwapOutFeeratesHandler.WaitingRestOfResponses
         )
         // Provider has sent feerates which are too low, tx won't likely ever confirm
         if msg.feerates.feerates.forall(params => minChainFee > params.fee) =>
@@ -99,7 +99,7 @@ abstract class SwapOutFeeratesHandler
 
     case (
           YesSwapOutSupport(worker, msg: SwapOutFeerates),
-          _: SwapOutFeeratesHandler.WaitingFirstResponse
+          SwapOutFeeratesHandler.WaitingFirstResponse
         ) =>
       val results1 = data.results.updated(
         worker.info,
@@ -107,7 +107,7 @@ abstract class SwapOutFeeratesHandler
       )
       become(
         data.copy(results = results1),
-        SwapOutFeeratesHandler.WaitingRestOfResponses()
+        SwapOutFeeratesHandler.WaitingRestOfResponses
       ) // Start waiting for the rest of responses
       Rx.ioQueue
         .delay(5.seconds)
@@ -118,7 +118,7 @@ abstract class SwapOutFeeratesHandler
 
     case (
           YesSwapOutSupport(worker, msg: SwapOutFeerates),
-          _: SwapOutFeeratesHandler.WaitingRestOfResponses
+          SwapOutFeeratesHandler.WaitingRestOfResponses
         ) =>
       val results1 = data.results.updated(
         worker.info,
@@ -129,21 +129,21 @@ abstract class SwapOutFeeratesHandler
 
     case (
           CMDCancel,
-          _: SwapOutFeeratesHandler.WaitingFirstResponse |
-          _: SwapOutFeeratesHandler.WaitingRestOfResponses
+          SwapOutFeeratesHandler.WaitingFirstResponse |
+          SwapOutFeeratesHandler.WaitingRestOfResponses
         ) =>
       // Do not disconnect from remote peer because we have a channel with them, but remove this exact SwapIn listener
       for (cnc <- data.cmdStart.capableCncs)
         CommsTower.rmListenerNative(cnc.commits.remoteInfo, swapOutListener)
-      become(data, SwapOutFeeratesHandler.Finalized())
+      become(data, SwapOutFeeratesHandler.Finalized)
 
-    case (cmd: CMDStart, _: SwapOutFeeratesHandler.Initial) =>
+    case (cmd: CMDStart, SwapOutFeeratesHandler.Initial) =>
       become(
         FeeratesData(
           results = cmd.capableCncs.map(_.commits.remoteInfo -> None).toMap,
           cmd
         ),
-        SwapOutFeeratesHandler.WaitingFirstResponse()
+        SwapOutFeeratesHandler.WaitingFirstResponse
       )
       for (cnc <- cmd.capableCncs)
         CommsTower.listenNative(Set(swapOutListener), cnc.commits.remoteInfo)

@@ -84,8 +84,8 @@ abstract class NCFunderOpenHandler(
               _,
               _: DATA_WAIT_FOR_ACCEPT_CHANNEL,
               data: DATA_WAIT_FOR_FUNDING_INTERNAL,
-              _: Channel.WaitForAccept,
-              _: Channel.WaitForAccept
+              Channel.WaitForAccept,
+              Channel.WaitForAccept
             ) =>
           // At this point wallet should produce a real funding tx and send it to channel
           onAwaitFunding(data)
@@ -94,8 +94,8 @@ abstract class NCFunderOpenHandler(
               _,
               _: DATA_WAIT_FOR_FUNDING_INTERNAL,
               data: DATA_WAIT_FOR_FUNDING_SIGNED,
-              _: Channel.WaitForAccept,
-              _: Channel.WaitForAccept
+              Channel.WaitForAccept,
+              Channel.WaitForAccept
             ) =>
           // Once funding tx becomes known peer will start sending messages using a real channel ID, not a temp one
           assignedChanId = Some(data.channelId)
@@ -104,8 +104,8 @@ abstract class NCFunderOpenHandler(
               _,
               _,
               data: DATA_WAIT_FOR_FUNDING_CONFIRMED,
-              _: Channel.WaitForAccept,
-              _: Channel.WaitFundingDone
+              Channel.WaitForAccept,
+              Channel.WaitFundingDone
             ) =>
           // On disconnect we remove this listener from CommsTower, but retain it as channel listener
           // this ensures successful implanting if disconnect happens while funding is being published

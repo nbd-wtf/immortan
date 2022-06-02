@@ -60,8 +60,8 @@ abstract class NCFundeeOpenHandler(
             _,
             _,
             data: DATA_WAIT_FOR_FUNDING_CONFIRMED,
-            Channel.WaitForAccept(),
-            Channel.WaitFundingDone()
+            Channel.WaitForAccept,
+            Channel.WaitFundingDone
           ) =>
         // It is up to NC to store itself and communicate successful opening
         onEstablished(data.commitments, freshChannel)

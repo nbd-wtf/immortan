@@ -17,7 +17,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
     extends StateMachine[Data, TransportHandler.State] { me =>
   implicit val context: ExecutionContextExecutor =
     ExecutionContext fromExecutor Executors.newSingleThreadExecutor
-  def initialState = TransportHandler.Initial()
+  def initialState = TransportHandler.Initial
 
   def process(change: Any): Unit = Future(me doProcess change)
 
@@ -30,7 +30,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
     val (reader, _, msg) = writer.write(ByteVector.empty)
     become(
       HandshakeData(reader, ByteVector.empty),
-      TransportHandler.Handshake()
+      TransportHandler.Handshake
     )
     handleEncryptedOutgoingData(prefix +: msg)
   }
@@ -41,12 +41,12 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
     case (
           HandshakeData(reader1, buffer),
           bv: ByteVector,
-          _: TransportHandler.Handshake
+          TransportHandler.Handshake
         ) =>
       me UPDATE HandshakeData(reader1, buffer ++ bv)
       doProcess(Ping)
 
-    case (HandshakeData(reader1, buffer), Ping, _: TransportHandler.Handshake)
+    case (HandshakeData(reader1, buffer), Ping, TransportHandler.Handshake)
         if buffer.length >= expectedLength(reader1) =>
       require(
         buffer.head == prefix,
@@ -60,7 +60,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
           val encoder1 = ExtendedCipherState(encoder, ck)
           val decoder1 = ExtendedCipherState(decoder, ck)
           val d1 = CyphertextData(encoder1, decoder1, None, remainder)
-          become(d1, TransportHandler.WaitingCyphertext())
+          become(d1, TransportHandler.WaitingCyphertext)
           handleEnterOperationalState()
           doProcess(Ping)
 
@@ -71,7 +71,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
               val decoder1 = ExtendedCipherState(decoder, ck)
               val d1 = CyphertextData(encoder1, decoder1, None, remainder)
               handleEncryptedOutgoingData(prefix +: message)
-              become(d1, TransportHandler.WaitingCyphertext())
+              become(d1, TransportHandler.WaitingCyphertext)
               handleEnterOperationalState()
               doProcess(Ping)
 
@@ -79,7 +79,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
               handleEncryptedOutgoingData(prefix +: message)
               become(
                 HandshakeData(reader2, remainder),
-                TransportHandler.Handshake()
+                TransportHandler.Handshake
               )
               doProcess(Ping)
           }
@@ -89,7 +89,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
     case (
           cd: CyphertextData,
           msg: LightningMessage,
-          _: TransportHandler.WaitingCyphertext
+          TransportHandler.WaitingCyphertext
         ) =>
       val encoded =
         LightningMessageCodecs.lightningMessageCodecWithFallback.encode(
@@ -103,7 +103,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
     case (
           cd: CyphertextData,
           bv: ByteVector,
-          _: TransportHandler.WaitingCyphertext
+          TransportHandler.WaitingCyphertext
         ) =>
       me UPDATE cd.copy(buffer = cd.buffer ++ bv)
       doProcess(Ping)
@@ -111,7 +111,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
     case (
           CyphertextData(encoder, decoder, None, buffer),
           Ping,
-          _: TransportHandler.WaitingCyphertext
+          TransportHandler.WaitingCyphertext
         ) if buffer.length >= 18 =>
       val (ciphertext, remainder) = buffer.splitAt(18)
       val (decoder1, plaintext) =
@@ -124,7 +124,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
     case (
           CyphertextData(encoder, decoder, Some(length), buffer),
           Ping,
-          _: TransportHandler.WaitingCyphertext
+          TransportHandler.WaitingCyphertext
         ) if buffer.length >= length + 16 =>
       val (ciphertext, remainder) = buffer.splitAt(length + 16)
       val (decoder1, plaintext) =
@@ -143,9 +143,9 @@ object TransportHandler {
   val Ping = "Ping"
 
   sealed trait State
-  case class Initial() extends State
-  case class Handshake() extends State
-  case class WaitingCyphertext() extends State
+  case object Initial extends State
+  case object Handshake extends State
+  case object WaitingCyphertext extends State
 
   def expectedLength(reader: HandshakeStateReader): Int =
     reader.messages.length match {

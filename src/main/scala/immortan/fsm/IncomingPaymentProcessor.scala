@@ -27,17 +27,17 @@ object IncomingPaymentProcessor {
   final val CMDReleaseHold = "cmd-release-hold"
 
   sealed trait State
-  case class Initial() extends State
-  case class Shutdown() extends State
-  case class Finalizing() extends State
-  case class Receiving() extends State
-  case class Sending() extends State
+  case object Initial extends State
+  case object Shutdown extends State
+  case object Finalizing extends State
+  case object Receiving extends State
+  case object Sending extends State
 }
 
 sealed trait IncomingPaymentProcessor
     extends StateMachine[IncomingProcessorData, IncomingPaymentProcessor.State]
     with CanBeShutDown { me =>
-  def initialState = IncomingPaymentProcessor.Initial()
+  def initialState = IncomingPaymentProcessor.Initial
 
   lazy val tuple: (FullPaymentTag, IncomingPaymentProcessor) = (fullTag, me)
   var lastAmountIn: MilliSatoshi = MilliSatoshi(0L)
@@ -60,18 +60,18 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
   private val paymentInfoOpt =
     cm.payBag.getPaymentInfo(fullTag.paymentHash).toOption
   override def becomeShutDown(): Unit =
-    become(null, IncomingPaymentProcessor.Shutdown())
+    become(null, IncomingPaymentProcessor.Shutdown)
 
   require(fullTag.tag == PaymentTagTlv.FINAL_INCOMING)
   delayedCMDWorker.replaceWork(CMDTimeout)
-  become(null, IncomingPaymentProcessor.Receiving())
+  become(null, IncomingPaymentProcessor.Receiving)
 
   def doProcess(msg: Any): Unit = (msg, data, state) match {
     case (
           inFlight: InFlightPayments,
           _,
-          _: IncomingPaymentProcessor.Receiving |
-          _: IncomingPaymentProcessor.Finalizing
+          IncomingPaymentProcessor.Receiving |
+          IncomingPaymentProcessor.Finalizing
         ) if !inFlight.in.contains(fullTag) =>
       // We have previously failed or fulfilled an incoming payment and all parts have been cleared
       cm.finalizeIncoming(data)
@@ -80,7 +80,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
     case (
           inFlight: InFlightPayments,
           null,
-          _: IncomingPaymentProcessor.Receiving
+          IncomingPaymentProcessor.Receiving
         ) =>
       val adds = inFlight.in(fullTag).asInstanceOf[ReasonableLocals]
       // Important: when creating new invoice we SPECIFICALLY DO NOT put a preimage into preimage storage
@@ -166,18 +166,18 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
           }
       }
 
-    case (_: ReasonableLocal, null, _: IncomingPaymentProcessor.Receiving) =>
+    case (_: ReasonableLocal, null, IncomingPaymentProcessor.Receiving) =>
       // Just saw another related add so prolong timeout
       delayedCMDWorker.replaceWork(CMDTimeout)
 
-    case (CMDTimeout, null, _: IncomingPaymentProcessor.Receiving) =>
+    case (CMDTimeout, null, IncomingPaymentProcessor.Receiving) =>
       // User is explicitly requesting failing of held payment
       // Or too much time has elapsed since we seen another incoming part
       becomeAborted(IncomingAborted(PaymentTimeout.asSome, fullTag), adds = Nil)
       // Actually request adds
       cm.notifyResolvers()
 
-    case (CMDReleaseHold, null, _: IncomingPaymentProcessor.Receiving) =>
+    case (CMDReleaseHold, null, IncomingPaymentProcessor.Receiving) =>
       paymentInfoOpt.filter(_ => isHolding) match {
         case Some(info) =>
           becomeRevealed(info.preimage, info.description.queryText, adds = Nil)
@@ -194,7 +194,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
     case (
           inFlight: InFlightPayments,
           revealed: IncomingRevealed,
-          _: IncomingPaymentProcessor.Finalizing
+          IncomingPaymentProcessor.Finalizing
         ) =>
       val adds = inFlight.in(fullTag).asInstanceOf[ReasonableLocals]
       fulfill(revealed.preimage, adds)
@@ -202,7 +202,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
     case (
           inFlight: InFlightPayments,
           aborted: IncomingAborted,
-          _: IncomingPaymentProcessor.Finalizing
+          IncomingPaymentProcessor.Finalizing
         ) =>
       val adds = inFlight.in(fullTag).asInstanceOf[ReasonableLocals]
       abort(aborted, adds)
@@ -247,7 +247,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
 
   def becomeAborted(data1: IncomingAborted, adds: ReasonableLocals): Unit = {
     // Fail parts and retain a failure message to maybe re-fail using the same error
-    become(data1, IncomingPaymentProcessor.Finalizing())
+    become(data1, IncomingPaymentProcessor.Finalizing)
     abort(data1, adds)
   }
 
@@ -266,7 +266,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
     // First record things in db, then send out fulfill commands
     become(
       IncomingRevealed(preimage, fullTag),
-      IncomingPaymentProcessor.Finalizing()
+      IncomingPaymentProcessor.Finalizing
     )
     fulfill(preimage, adds)
   }
@@ -372,15 +372,14 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
   require(fullTag.tag == PaymentTagTlv.TRAMPLOINE_ROUTED)
   cm.opm process CreateSenderFSM(Set(self), fullTag)
   delayedCMDWorker.replaceWork(CMDTimeout)
-  become(null, IncomingPaymentProcessor.Receiving())
+  become(null, IncomingPaymentProcessor.Receiving)
 
   def doProcess(msg: Any): Unit = (msg, data, state) match {
     case (
           inFlight: InFlightPayments,
           _,
-          _: IncomingPaymentProcessor.Receiving |
-          _: IncomingPaymentProcessor.Sending |
-          _: IncomingPaymentProcessor.Finalizing
+          IncomingPaymentProcessor.Receiving |
+          IncomingPaymentProcessor.Sending | IncomingPaymentProcessor.Finalizing
         ) if !inFlight.allTags.contains(fullTag) =>
       // This happens AFTER we have resolved all outgoing payments and started resolving related incoming payments
       cm.finalizeIncoming(data)
@@ -389,7 +388,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
     case (
           inFlight: InFlightPayments,
           TrampolineRevealed(preimage, senderData, _),
-          _: IncomingPaymentProcessor.Sending
+          IncomingPaymentProcessor.Sending
         ) =>
       // A special case after we have just received a first preimage and can become revealed
       val ins =
@@ -418,7 +417,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
     case (
           revealed: TrampolineRevealed,
           _: TrampolineAborted,
-          _: IncomingPaymentProcessor.Finalizing
+          IncomingPaymentProcessor.Finalizing
         ) =>
       // We were winding a relay down but suddenly got a preimage
       becomeInitRevealed(revealed)
@@ -426,51 +425,50 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
     case (
           revealed: TrampolineRevealed,
           _,
-          _: IncomingPaymentProcessor.Receiving |
-          _: IncomingPaymentProcessor.Sending
+          IncomingPaymentProcessor.Receiving | IncomingPaymentProcessor.Sending
         ) =>
-      // This specifically omits (TrampolineRevealed x _:IncomingPaymentProcessor.Finalizing()) state
+      // This specifically omits (TrampolineRevealed x _:IncomingPaymentProcessor.Finalizing) state
       // We have outgoing in-flight payments and just got a preimage
       becomeInitRevealed(revealed)
 
     case (
           _: OutgoingPaymentSenderData,
           TrampolineStopping(true, _),
-          _: IncomingPaymentProcessor.Sending
+          IncomingPaymentProcessor.Sending
         ) =>
       // We were waiting for all outgoing parts to fail on app restart, try again
       // Note that senderFSM has removed itself on first failure, so we create it again
-      become(null, IncomingPaymentProcessor.Receiving())
+      become(null, IncomingPaymentProcessor.Receiving)
       cm.notifyResolvers()
 
     case (
           data: OutgoingPaymentSenderData,
           TrampolineStopping(false, _),
-          _: IncomingPaymentProcessor.Sending
+          IncomingPaymentProcessor.Sending
         ) =>
       // We were waiting for all outgoing parts to fail on app restart, fail incoming
       become(
         abortedWithError(data.failures, invalidPubKey),
-        IncomingPaymentProcessor.Finalizing()
+        IncomingPaymentProcessor.Finalizing
       )
       cm.notifyResolvers()
 
     case (
           data: OutgoingPaymentSenderData,
           processing: TrampolineProcessing,
-          _: IncomingPaymentProcessor.Sending
+          IncomingPaymentProcessor.Sending
         ) =>
       // This was a normal operation where we were trying to deliver a payment to recipient
       become(
         abortedWithError(data.failures, processing.finalNodeId),
-        IncomingPaymentProcessor.Finalizing()
+        IncomingPaymentProcessor.Finalizing
       )
       cm.notifyResolvers()
 
     case (
           inFlight: InFlightPayments,
           null,
-          _: IncomingPaymentProcessor.Receiving
+          IncomingPaymentProcessor.Receiving
         ) =>
       val outs = inFlight.out.getOrElse(fullTag, default = Nil)
       val ins = inFlight.in
@@ -488,12 +486,12 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
         case _ if outs.nonEmpty && collectedEnough(ins) =>
           become(
             TrampolineStopping(retry = true, fullTag),
-            IncomingPaymentProcessor.Sending()
+            IncomingPaymentProcessor.Sending
           ) // Probably a restart: fail and retry afterwards
         case _ if outs.nonEmpty =>
           become(
             TrampolineStopping(retry = false, fullTag),
-            IncomingPaymentProcessor.Sending()
+            IncomingPaymentProcessor.Sending
           ) // Have not collected enough incoming, yet have outgoing: fail without retry
         case _ => // Do nothing, wait for more parts with a timeout
       }
@@ -501,23 +499,23 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
     case (
           _: ReasonableTrampoline,
           null,
-          _: IncomingPaymentProcessor.Receiving
+          IncomingPaymentProcessor.Receiving
         ) =>
       // Just saw another related add so prolong timeout
       delayedCMDWorker.replaceWork(CMDTimeout)
 
-    case (CMDTimeout, null, _: IncomingPaymentProcessor.Receiving) =>
+    case (CMDTimeout, null, IncomingPaymentProcessor.Receiving) =>
       // Sender must not have outgoing payments in this state
       become(
         TrampolineAborted(PaymentTimeout, fullTag),
-        IncomingPaymentProcessor.Finalizing()
+        IncomingPaymentProcessor.Finalizing
       )
       cm.notifyResolvers()
 
     case (
           inFlight: InFlightPayments,
           revealed: TrampolineRevealed,
-          _: IncomingPaymentProcessor.Finalizing
+          IncomingPaymentProcessor.Finalizing
         ) =>
       val ins =
         inFlight.in.getOrElse(fullTag, Nil).asInstanceOf[ReasonableTrampolines]
@@ -526,7 +524,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
     case (
           inFlight: InFlightPayments,
           aborted: TrampolineAborted,
-          _: IncomingPaymentProcessor.Finalizing
+          IncomingPaymentProcessor.Finalizing
         ) =>
       val ins =
         inFlight.in.getOrElse(fullTag, Nil).asInstanceOf[ReasonableTrampolines]
@@ -554,7 +552,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
     result match {
       case Some(failure) =>
         val data1 = TrampolineAborted(failure, fullTag)
-        become(data1, IncomingPaymentProcessor.Finalizing())
+        become(data1, IncomingPaymentProcessor.Finalizing)
         abort(data1, adds)
 
       case None =>
@@ -596,7 +594,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
 
         become(
           TrampolineProcessing(inner.outgoingNodeId, fullTag),
-          IncomingPaymentProcessor.Sending()
+          IncomingPaymentProcessor.Sending
         )
         // If invoice features are present then sender is asking for non-trampoline relay, it's known that recipient supports MPP
         if (inner.invoiceFeatures.isDefined)
@@ -619,7 +617,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
     cm.payBag.setPreimage(fullTag.paymentHash, revealed.preimage)
     cm.getPreimageMemo.invalidate(fullTag.paymentHash)
     // Await for subsequent incoming leftovers
-    become(revealed, IncomingPaymentProcessor.Sending())
+    become(revealed, IncomingPaymentProcessor.Sending)
     cm.notifyResolvers()
   }
 
@@ -630,13 +628,13 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
     // We might not have enough OR no incoming payments at all in pathological states
     become(
       TrampolineRevealed(preimage, senderData = None, fullTag),
-      IncomingPaymentProcessor.Finalizing()
+      IncomingPaymentProcessor.Finalizing
     )
     fulfill(preimage, adds)
   }
 
   override def becomeShutDown(): Unit = {
     cm.opm process RemoveSenderFSM(fullTag)
-    become(null, IncomingPaymentProcessor.Shutdown())
+    become(null, IncomingPaymentProcessor.Shutdown)
   }
 }

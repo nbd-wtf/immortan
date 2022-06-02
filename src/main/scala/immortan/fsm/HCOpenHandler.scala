@@ -62,8 +62,8 @@ abstract class HCOpenHandler(
             _,
             _,
             hostedCommits: HostedCommits,
-            _: Channel.WaitForAccept,
-            _: Channel.Open
+            Channel.WaitForAccept,
+            Channel.Open
           ) =>
         onEstablished(hostedCommits, freshChannel)
         CommsTower.rmListenerNative(info, me)
