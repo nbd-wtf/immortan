@@ -306,40 +306,44 @@ case class NormalCommits(
     if (add.id != remoteNextHtlcId) throw ChannelTransitionFail(channelId, add)
 
     // Let's compute the current commitment *as seen by us* including this change
-    val commitments1 =
+    val currentCommitments =
       addRemoteProposal(add).copy(remoteNextHtlcId = remoteNextHtlcId + 1)
     val reduced = CommitmentSpec.reduce(
-      commitments1.localCommit.spec,
-      commitments1.localChanges.acked,
-      commitments1.remoteChanges.proposed
+      currentCommitments.localCommit.spec,
+      currentCommitments.localChanges.acked,
+      currentCommitments.remoteChanges.proposed
     )
 
     val senderWithReserve =
-      reduced.toRemote - commitments1.localParams.channelReserve
+      reduced.toRemote - currentCommitments.localParams.channelReserve
     val receiverWithReserve =
-      reduced.toLocal - commitments1.remoteParams.channelReserve
+      reduced.toLocal - currentCommitments.remoteParams.channelReserve
     val fees = commitTxFee(
-      commitments1.remoteParams.dustLimit,
+      currentCommitments.remoteParams.dustLimit,
       reduced,
       channelFeatures.commitmentFormat
     )
     val missingForSender =
-      if (commitments1.localParams.isFunder) senderWithReserve
+      if (currentCommitments.localParams.isFunder) senderWithReserve
       else senderWithReserve - fees
     val missingForReceiver =
-      if (commitments1.localParams.isFunder) receiverWithReserve - fees
+      if (currentCommitments.localParams.isFunder) receiverWithReserve - fees
       else receiverWithReserve
 
     if (missingForSender < 0L.sat) throw ChannelTransitionFail(channelId, add)
     else if (missingForReceiver < 0L.sat && localParams.isFunder)
       throw ChannelTransitionFail(channelId, add)
-    // We do not check whether total incoming payments amount exceeds our local maxHtlcValueInFlightMsat becase it is always set to a whole channel capacity
+
+    // We do not check whether total incoming payments amount exceeds our local
+    // maxHtlcValueInFlightMsat becase it is always set to a whole channel capacity
+
     if (
       reduced.htlcs
         .collect(incoming)
-        .size > commitments1.localParams.maxAcceptedHtlcs
+        .size > currentCommitments.localParams.maxAcceptedHtlcs
     ) throw ChannelTransitionFail(channelId, add)
-    commitments1
+
+    currentCommitments
   }
 
   def receiveFulfill(
@@ -367,7 +371,7 @@ case class NormalCommits(
   def sendFee(rate: FeeratePerKw): (NormalCommits, Satoshi, UpdateFee) = {
     val msg: UpdateFee = UpdateFee(channelId = channelId, feeratePerKw = rate)
     // Let's compute the current commitment *as seen by them* with this change taken into account
-    val commitments1 = me
+    val currentCommitments = me
       .modify(_.localChanges.proposed)
       .using(changes =>
         changes.filter {
@@ -376,20 +380,20 @@ case class NormalCommits(
         } :+ msg
       )
     val fees = commitTxFee(
-      commitments1.remoteParams.dustLimit,
-      commitments1.latestReducedRemoteSpec,
+      currentCommitments.remoteParams.dustLimit,
+      currentCommitments.latestReducedRemoteSpec,
       channelFeatures.commitmentFormat
     )
     val reserve =
-      commitments1.latestReducedRemoteSpec.toRemote.truncateToSatoshi - commitments1.remoteParams.channelReserve - fees
-    (commitments1, reserve, msg)
+      currentCommitments.latestReducedRemoteSpec.toRemote.truncateToSatoshi - currentCommitments.remoteParams.channelReserve - fees
+    (currentCommitments, reserve, msg)
   }
 
   def receiveFee(fee: UpdateFee): NormalCommits = {
     if (localParams.isFunder) throw ChannelTransitionFail(channelId, fee)
     if (fee.feeratePerKw < FeeratePerKw.MinimumFeeratePerKw)
       throw ChannelTransitionFail(channelId, fee)
-    val commitments1 = me
+    val currentCommitments = me
       .modify(_.remoteChanges.proposed)
       .using(changes =>
         changes.filter {
@@ -398,9 +402,9 @@ case class NormalCommits(
         } :+ fee
       )
     val reduced = CommitmentSpec.reduce(
-      commitments1.localCommit.spec,
-      commitments1.localChanges.acked,
-      commitments1.remoteChanges.proposed
+      currentCommitments.localCommit.spec,
+      currentCommitments.localChanges.acked,
+      currentCommitments.remoteChanges.proposed
     )
 
     val threshold = Transactions.offeredHtlcTrimThreshold(
@@ -415,7 +419,7 @@ case class NormalCommits(
       LNParams.feeRates.info,
       reduced,
       LNParams.shouldForceClosePaymentFeerateDiff
-    ).isDefined && fee.feeratePerKw < commitments1.localCommit.spec.feeratePerKw
+    ).isDefined && fee.feeratePerKw < currentCommitments.localCommit.spec.feeratePerKw
 
     if (dangerousState) {
       // We force feerate update and block this thread while it's being executed, will have an updated info once done
@@ -436,21 +440,17 @@ case class NormalCommits(
     }
 
     val fees = commitTxFee(
-      commitments1.remoteParams.dustLimit,
+      currentCommitments.remoteParams.dustLimit,
       reduced,
       channelFeatures.commitmentFormat
     )
     val missing =
-      reduced.toRemote.truncateToSatoshi - commitments1.localParams.channelReserve - fees
+      reduced.toRemote.truncateToSatoshi - currentCommitments.localParams.channelReserve - fees
     if (missing < 0L.sat) throw ChannelTransitionFail(channelId, fee)
-    commitments1
+    currentCommitments
   }
 
   def sendCommit: (NormalCommits, CommitSig, RemoteCommit) = {
-    val localChanges1 =
-      localChanges.copy(proposed = Nil, signed = localChanges.proposed)
-    val remoteChanges1 =
-      remoteChanges.copy(acked = Nil, signed = remoteChanges.acked)
     val remoteNextPoint = remoteNextCommitInfo.toOption.get
 
     val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) =
@@ -495,12 +495,18 @@ case class NormalCommits(
       commitSig,
       localCommit.index
     )
-    val commitments1 = copy(
-      remoteNextCommitInfo = Left(waiting),
-      localChanges = localChanges1,
-      remoteChanges = remoteChanges1
+
+    (
+      copy(
+        remoteNextCommitInfo = Left(waiting),
+        localChanges =
+          localChanges.copy(proposed = Nil, signed = localChanges.proposed),
+        remoteChanges =
+          remoteChanges.copy(acked = Nil, signed = remoteChanges.acked)
+      ),
+      commitSig,
+      waiting.nextRemoteCommit
     )
-    (commitments1, commitSig, waiting.nextRemoteCommit)
   }
 
   def receiveCommit(commit: CommitSig): (NormalCommits, RevokeAndAck) = {
