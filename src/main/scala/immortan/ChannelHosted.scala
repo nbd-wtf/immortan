@@ -63,7 +63,7 @@ abstract class ChannelHosted extends Channel { me =>
   def isOutOfSync(blockDay: Long): Boolean =
     math.abs(blockDay - LNParams.currentBlockDay) > 1
 
-  def doProcess(change: Any): Unit = Tuple3(data, change, state) match {
+  def doProcess(change: Any): Unit = (data, change, state) match {
     case (
           wait: WaitRemoteHostedReply,
           CMD_SOCKET_ONLINE,

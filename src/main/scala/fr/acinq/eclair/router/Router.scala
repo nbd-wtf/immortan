@@ -84,7 +84,7 @@ object Router {
       val base = edge.updExt.update.feeBaseMsat
       val ppm = edge.updExt.update.feeProportionalMillionths
       val sid = ShortChannelId.asString(edge.desc.shortChannelId)
-      s"node: ${nodeId.toString}, base: $base, ppm: $ppm, sid: $sid"
+      s"node: ${nodeId}, base: $base, ppm: $ppm, cltv: ${cltvExpiryDelta.underlying}, sid: $sid, next node: ${nextNodeId}"
     }
   }
 
@@ -95,7 +95,7 @@ object Router {
       fee: MilliSatoshi
   ) extends Hop {
     override def toString: String =
-      s"Trampoline, node: ${nodeId.value.toHex}, fee reserve: $fee, cltv reserve: ${cltvExpiryDelta.underlying}"
+      s"Trampoline, node: ${nodeId}, fee reserve: $fee, cltv reserve: ${cltvExpiryDelta.underlying}, next node: ${nextNodeId}"
     override def fee(amount: MilliSatoshi): MilliSatoshi = fee
   }
 

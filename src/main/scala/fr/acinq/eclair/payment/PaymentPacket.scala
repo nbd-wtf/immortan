@@ -284,11 +284,15 @@ object OutgoingPaymentPacket {
   ): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] = {
     val (firstAmount, firstExpiry, payloads) =
       buildPayloads(hops.drop(1), finalPayload)
-    val nodes = hops.map(_.nextNodeId)
-    // BOLT 2 requires that associatedData == paymentHash
-    val onionTry =
-      buildOnion(sessionKey, packetPayloadLength, nodes, payloads, paymentHash)
-    onionTry.map(onion => (firstAmount, firstExpiry, onion))
+
+    buildOnion(
+      sessionKey,
+      packetPayloadLength,
+      hops.map(_.nextNodeId),
+      payloads,
+      paymentHash
+    )
+      .map(onion => (firstAmount, firstExpiry, onion))
   }
 
   def buildPaymentPacket(
