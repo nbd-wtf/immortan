@@ -82,7 +82,7 @@ abstract class PreimageCheck
 
     case (worker: CommsTower.Worker, PreimageCheck.Operational) =>
       val newPair @ (info, pair) = randomPair(worker.info)
-      CommsTower.listen(listeners1 = Set(listener), pair, info)
+      CommsTower.listen(Set(listener), pair, info)
       become(
         data.copy(pairs = data.pairs + newPair),
         PreimageCheck.Operational
@@ -109,7 +109,7 @@ abstract class PreimageCheck
         PreimageCheck.CheckData(hosts.map(randomPair).toMap, hosts, hashes),
         PreimageCheck.Operational
       )
-      for (Tuple2(info, pair) <- data.pairs)
+      for ((info, pair) <- data.pairs)
         CommsTower.listen(Set(listener), pair, info)
       Rx.ioQueue.delay(30.seconds).foreach(_ => me doCheck true)
 
@@ -139,12 +139,13 @@ abstract class PreimageCheck
   }
 
   def merge(
-      data1: PreimageCheck.CheckData,
+      currentData: PreimageCheck.CheckData,
       msg: ReplyPreimages
   ): PreimageCheck.CheckData = {
-    val hashToPreimage1 = data1.hashToPreimage ++ msg.preimages
-      .map(Crypto sha256 _)
-      .zip(msg.preimages)
-    data1.copy(hashToPreimage = hashToPreimage1)
+    currentData.copy(hashToPreimage =
+      currentData.hashToPreimage ++ msg.preimages
+        .map(Crypto sha256 _)
+        .zip(msg.preimages)
+    )
   }
 }

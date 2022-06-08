@@ -33,6 +33,7 @@ import scodec.bits.ByteVector
 
 import scala.collection.mutable
 import scala.util.Random.shuffle
+import scala.util.{Success, Failure}
 
 object PaymentFailure {
   type Failures = List[PaymentFailure]
@@ -726,26 +727,29 @@ class OutgoingPaymentSender(
             fullTag.paymentHash,
             found.route.hops,
             finalPayload
-          ) map { case (firstAmount, firstExpiry, onion) =>
-            val cmdAdd = CMD_ADD_HTLC(
-              fullTag,
-              firstAmount,
-              firstExpiry,
-              PacketAndSecrets(onion.packet, onion.sharedSecrets),
-              finalPayload
-            )
-            become(
-              data.copy(parts =
-                data.parts + wait.withKnownRoute(cmdAdd, found.route).tuple
-              ),
-              PENDING
-            )
-            wait.cnc.chan process cmdAdd
-          } getOrElse {
-            // One failure reason could be too much metadata, or too many routing hints if this is a trampoline payment
-            me abortMaybeNotify data
-              .withoutPartId(wait.partId)
-              .withLocalFailure(ONION_CREATION_FAILURE, wait.amount)
+          ) match {
+            case Success((firstAmount, firstExpiry, onion)) => {
+              val cmdAdd = CMD_ADD_HTLC(
+                fullTag,
+                firstAmount,
+                firstExpiry,
+                PacketAndSecrets(onion.packet, onion.sharedSecrets),
+                finalPayload
+              )
+              become(
+                data.copy(parts =
+                  data.parts + wait.withKnownRoute(cmdAdd, found.route).tuple
+                ),
+                PENDING
+              )
+              wait.cnc.chan.process(cmdAdd)
+            }
+            case Failure(err) => {
+              // One failure reason could be too much metadata, or too many routing hints if this is a trampoline payment
+              me abortMaybeNotify data
+                .withoutPartId(wait.partId)
+                .withLocalFailure(ONION_CREATION_FAILURE, wait.amount)
+            }
           }
       }
 

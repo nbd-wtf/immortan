@@ -85,10 +85,7 @@ abstract class HCOpenHandler(
       peerSpecificRefundPubKey,
       peerSpecificSecret
     )
-    CommsTower.listenNative(
-      listeners1 = Set(makeChanListener),
-      remoteInfo = info
-    )
+    CommsTower.listenNative(Set(makeChanListener), info)
   } else {
     // Only one HC per remote peer is allowed, make sure this condition holds
     val error = new RuntimeException("Hosted channel with peer exists already")

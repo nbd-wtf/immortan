@@ -261,10 +261,14 @@ abstract class ChannelHosted extends Channel { me =>
           Channel.Open | Channel.Sleeping
         ) if hc.error.isDefined =>
       // We may get into error state with this HTLC not expired yet so they may fulfill it afterwards
-      val hc1 = hc.modify(_.postErrorOutgoingResolvedIds).using(_ + msg.id)
       // This will throw if HTLC has already been settled post-error
       val remoteFulfill = hc.makeRemoteFulfill(msg)
-      BECOME(hc1.addRemoteProposal(msg), state)
+      BECOME(
+        hc.modify(_.postErrorOutgoingResolvedIds)
+          .using(_ + msg.id)
+          .addRemoteProposal(msg),
+        state
+      )
       events fulfillReceived remoteFulfill
       // There will be no state update
       events.notifyResolvers()
@@ -297,16 +301,17 @@ abstract class ChannelHosted extends Channel { me =>
         case _ if state == Channel.Sleeping =>
           events addRejectedLocally ChannelOffline(cmd.incompleteAdd)
         case Left(reason) => events addRejectedLocally reason
-
-        case Right(hc1 ~ updateAddHtlcMsg) =>
-          StoreBecomeSend(hc1, Channel.Open, updateAddHtlcMsg)
+        case Right(newHCState ~ updateAddHtlcMsg) => {
+          StoreBecomeSend(newHCState, Channel.Open, updateAddHtlcMsg)
           process(CMD_SIGN)
+        }
       }
 
-    case (_, cmd: CMD_ADD_HTLC, _) =>
+    case (_, cmd: CMD_ADD_HTLC, _) => {
       // Instruct upstream to skip this channel in such a state
       val reason = ChannelNotAbleToSend(cmd.incompleteAdd)
       events addRejectedLocally reason
+    }
 
     // Fulfilling is allowed even in error state
     // CMD_SIGN will be sent from ChannelMaster strictly after outgoing FSM sends this command
@@ -438,7 +443,8 @@ abstract class ChannelHosted extends Channel { me =>
 
         val isRemoteSigOk =
           completeLocalLCSS.verifyRemoteSig(hc.remoteInfo.nodeId)
-        val hc1 = ChannelHosted.restoreCommits(completeLocalLCSS, hc.remoteInfo)
+        val newHCState =
+          ChannelHosted.restoreCommits(completeLocalLCSS, hc.remoteInfo)
 
         if (completeLocalLCSS.localBalanceMsat < 0L.msat)
           return Left(
@@ -461,8 +467,8 @@ abstract class ChannelHosted extends Channel { me =>
             "Override impossible: new override signature from remote host is wrong"
           )
 
-        StoreBecomeSend(hc1, Channel.Open, completeLocalLCSS.stateUpdate)
-        rejectOverriddenOutgoingAdds(hc, hc1)
+        StoreBecomeSend(newHCState, Channel.Open, completeLocalLCSS.stateUpdate)
+        rejectOverriddenOutgoingAdds(hc, newHCState)
 
         // We may have pending incoming
         events.notifyResolvers()
@@ -487,10 +493,10 @@ abstract class ChannelHosted extends Channel { me =>
   }
 
   def rejectOverriddenOutgoingAdds(
-      hc: HostedCommits,
-      hc1: HostedCommits
+      old: HostedCommits,
+      updated: HostedCommits
   ): Unit =
-    for (add <- hc.allOutgoing -- hc1.allOutgoing)
+    for (add <- old.allOutgoing -- updated.allOutgoing)
       events addRejectedLocally InPrincipleNotSendable(add)
 
   def localSuspend(hc: HostedCommits, errCode: String): Unit = {
@@ -509,7 +515,7 @@ abstract class ChannelHosted extends Channel { me =>
       hc: HostedCommits,
       remoteLCSS: LastCrossSignedState
   ): Unit = {
-    val hc1 = hc.resizeProposal
+    val updated = hc.resizeProposal
       .filter(_ isRemoteResized remoteLCSS)
       .map(hc.withResize)
       .getOrElse(hc) // They may have a resized LCSS
@@ -518,40 +524,40 @@ abstract class ChannelHosted extends Channel { me =>
     val weAreAhead =
       hc.lastCrossSignedState.remoteUpdates > remoteLCSS.localUpdates || hc.lastCrossSignedState.localUpdates > remoteLCSS.remoteUpdates
     val isLocalSigOk =
-      remoteLCSS.verifyRemoteSig(hc1.remoteInfo.nodeSpecificPubKey)
+      remoteLCSS.verifyRemoteSig(updated.remoteInfo.nodeSpecificPubKey)
     val isRemoteSigOk =
-      remoteLCSS.reverse.verifyRemoteSig(hc1.remoteInfo.nodeId)
+      remoteLCSS.reverse.verifyRemoteSig(updated.remoteInfo.nodeId)
 
-    if (!isRemoteSigOk) localSuspend(hc1, ERR_HOSTED_WRONG_REMOTE_SIG)
-    else if (!isLocalSigOk) localSuspend(hc1, ERR_HOSTED_WRONG_LOCAL_SIG)
+    if (!isRemoteSigOk) localSuspend(updated, ERR_HOSTED_WRONG_REMOTE_SIG)
+    else if (!isLocalSigOk) localSuspend(updated, ERR_HOSTED_WRONG_LOCAL_SIG)
     else if (weAreAhead || weAreEven) {
       SEND(
         List(
           hc.lastCrossSignedState
-        ) ++ hc1.resizeProposal ++ hc1.nextLocalUpdates: _*
+        ) ++ updated.resizeProposal ++ updated.nextLocalUpdates: _*
       )
       // Forget about their unsigned updates, they are expected to resend
-      BECOME(hc1.copy(nextRemoteUpdates = Nil), Channel.Open)
+      BECOME(updated.copy(nextRemoteUpdates = Nil), Channel.Open)
       // There will be no state update
       events.notifyResolvers()
     } else {
       val localUpdatesAcked =
-        remoteLCSS.remoteUpdates - hc1.lastCrossSignedState.localUpdates
+        remoteLCSS.remoteUpdates - updated.lastCrossSignedState.localUpdates
       val remoteUpdatesAcked =
-        remoteLCSS.localUpdates - hc1.lastCrossSignedState.remoteUpdates
+        remoteLCSS.localUpdates - updated.lastCrossSignedState.remoteUpdates
 
       val remoteUpdatesAccounted =
-        hc1.nextRemoteUpdates take remoteUpdatesAcked.toInt
+        updated.nextRemoteUpdates take remoteUpdatesAcked.toInt
       val localUpdatesAccounted =
-        hc1.nextLocalUpdates take localUpdatesAcked.toInt
+        updated.nextLocalUpdates take localUpdatesAcked.toInt
       val localUpdatesLeftover =
-        hc1.nextLocalUpdates drop localUpdatesAcked.toInt
+        updated.nextLocalUpdates drop localUpdatesAcked.toInt
 
-      val hc2 = hc1.copy(
+      val updated2 = updated.copy(
         nextLocalUpdates = localUpdatesAccounted,
         nextRemoteUpdates = remoteUpdatesAccounted
       )
-      val syncedLCSS = hc2
+      val syncedLCSS = updated2
         .nextLocalUnsignedLCSS(remoteLCSS.blockDay)
         .copy(
           localSigOfRemote = remoteLCSS.remoteSigOfLocal,
@@ -560,23 +566,25 @@ abstract class ChannelHosted extends Channel { me =>
 
       if (syncedLCSS.reverse == remoteLCSS) {
         // We have fallen behind a bit but have all the data required to successfully synchronize such that an updated state is reached
-        val hc3 = hc2.copy(
+        val updated3 = updated2.copy(
           lastCrossSignedState = syncedLCSS,
-          localSpec = hc2.nextLocalSpec,
+          localSpec = updated2.nextLocalSpec,
           nextLocalUpdates = localUpdatesLeftover,
           nextRemoteUpdates = Nil
         )
         StoreBecomeSend(
-          hc3,
+          updated3,
           Channel.Open,
-          List(syncedLCSS) ++ hc2.resizeProposal ++ localUpdatesLeftover: _*
+          List(
+            syncedLCSS
+          ) ++ updated2.resizeProposal ++ localUpdatesLeftover: _*
         )
       } else {
         // We are too far behind, restore from their future data, nothing else to do
-        val hc3 =
-          ChannelHosted.restoreCommits(remoteLCSS.reverse, hc2.remoteInfo)
-        StoreBecomeSend(hc3, Channel.Open, remoteLCSS.reverse)
-        rejectOverriddenOutgoingAdds(hc1, hc3)
+        val newHCState =
+          ChannelHosted.restoreCommits(remoteLCSS.reverse, updated2.remoteInfo)
+        StoreBecomeSend(newHCState, Channel.Open, remoteLCSS.reverse)
+        rejectOverriddenOutgoingAdds(updated, newHCState)
       }
 
       // There will be no state update
@@ -585,22 +593,16 @@ abstract class ChannelHosted extends Channel { me =>
   }
 
   def attemptStateUpdate(remoteSU: StateUpdate, hc: HostedCommits): Unit = {
-    val lcss1 = hc
+    val lcssNew = hc
       .nextLocalUnsignedLCSS(remoteSU.blockDay)
       .copy(remoteSigOfLocal = remoteSU.localSigOfRemoteLCSS)
       .withLocalSigOfRemote(hc.remoteInfo.nodeSpecificPrivKey)
-    val hc1 = hc.copy(
-      lastCrossSignedState = lcss1,
-      localSpec = hc.nextLocalSpec,
-      nextLocalUpdates = Nil,
-      nextRemoteUpdates = Nil
-    )
-    val isRemoteSigOk = lcss1.verifyRemoteSig(hc.remoteInfo.nodeId)
+    val isRemoteSigOk = lcssNew.verifyRemoteSig(hc.remoteInfo.nodeId)
     val isBlockDayWrong = isOutOfSync(remoteSU.blockDay)
 
     if (isBlockDayWrong) {
       disconnectAndBecomeSleeping(hc)
-    } else if (remoteSU.remoteUpdates < lcss1.localUpdates) {
+    } else if (remoteSU.remoteUpdates < lcssNew.localUpdates) {
       // Persist unsigned remote updates to use them on re-sync
       // we do not update runtime data because ours is newer one
       process(CMD_SIGN)
@@ -624,7 +626,16 @@ abstract class ChannelHosted extends Channel { me =>
           )
       }
 
-      StoreBecomeSend(hc1, Channel.Open, lcss1.stateUpdate)
+      StoreBecomeSend(
+        hc.copy(
+          lastCrossSignedState = lcssNew,
+          localSpec = hc.nextLocalSpec,
+          nextLocalUpdates = Nil,
+          nextRemoteUpdates = Nil
+        ),
+        Channel.Open,
+        lcssNew.stateUpdate
+      )
       for (reject <- remoteRejects) events addRejectedRemotely reject
       events.notifyResolvers()
     }

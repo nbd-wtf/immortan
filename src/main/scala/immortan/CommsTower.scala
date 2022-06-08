@@ -31,18 +31,18 @@ object CommsTower {
     ].asScala withDefaultValue Set.empty
 
   def listen(
-      listeners1: Set[ConnectionListener],
+      newListeners: Set[ConnectionListener],
       pair: KeyPairAndPubKey,
       info: RemoteNodeInfo
   ): Unit = synchronized {
     // Update and either insert a new worker or fire onOperational on NEW listeners if worker currently exists and online
     // First add listeners, then try to add worker because we may already have a connected worker, but no listeners
-    listeners(pair) ++= listeners1
+    listeners(pair) ++= newListeners
 
     workers.get(pair) match {
       case Some(worker) =>
         for (init <- worker.theirInit)
-          worker.handleTheirRemoteInitMessage(listeners1, init)
+          worker.handleTheirRemoteInitMessage(newListeners, init)
       case None =>
         workers(pair) = new Worker(
           pair,
@@ -63,9 +63,9 @@ object CommsTower {
 
   // Add or remove listeners to a connection where our nodeId is stable, not a randomly generated one (one which makes us seen as a constant peer by remote)
   def listenNative(
-      listeners1: Set[ConnectionListener],
+      newListeners: Set[ConnectionListener],
       remoteInfo: RemoteNodeInfo
-  ): Unit = listen(listeners1, remoteInfo.nodeSpecificPair, remoteInfo)
+  ): Unit = listen(newListeners, remoteInfo.nodeSpecificPair, remoteInfo)
   def rmListenerNative(
       info: RemoteNodeInfo,
       listener: ConnectionListener
@@ -173,7 +173,7 @@ object CommsTower {
     catch none
 
     def handleTheirRemoteInitMessage(
-        listeners1: Set[ConnectionListener],
+        toListeners: Set[ConnectionListener],
         remoteInit: Init
     ): Unit = {
       // Use a separate variable for listeners here because a set of listeners provided to this method may be different
@@ -185,7 +185,7 @@ object CommsTower {
         val areFeaturesOK =
           Features.areCompatible(LNParams.ourInit.features, remoteInit.features)
         if (areFeaturesOK)
-          for (lst <- listeners1) lst.onOperational(me, remoteInit)
+          for (lst <- toListeners) lst.onOperational(me, remoteInit)
         else disconnect()
       }
     }
