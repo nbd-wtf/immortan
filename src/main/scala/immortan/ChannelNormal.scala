@@ -50,20 +50,24 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
       watchSpent: Boolean
   ): Unit = {
     if (watchConfirmed)
-      LNParams.chainWallets.watcher ! WatchConfirmed(
-        receiver,
-        cs.commitInput.outPoint.txid,
-        cs.commitInput.txOut.publicKeyScript,
-        LNParams.minDepthBlocks,
-        BITCOIN_FUNDING_DEPTHOK
+      LNParams.chainWallets.watcher.send(
+        WatchConfirmed(
+          receiver,
+          cs.commitInput.outPoint.txid,
+          cs.commitInput.txOut.publicKeyScript,
+          LNParams.minDepthBlocks,
+          BITCOIN_FUNDING_DEPTHOK
+        )
       )
     if (watchSpent)
-      LNParams.chainWallets.watcher ! WatchSpent(
-        receiver,
-        cs.commitInput.outPoint.txid,
-        cs.commitInput.outPoint.index.toInt,
-        cs.commitInput.txOut.publicKeyScript,
-        BITCOIN_FUNDING_SPENT
+      LNParams.chainWallets.watcher.send(
+        WatchSpent(
+          receiver,
+          cs.commitInput.outPoint.txid,
+          cs.commitInput.outPoint.index.toInt,
+          cs.commitInput.txOut.publicKeyScript,
+          BITCOIN_FUNDING_SPENT
+        )
       )
   }
 
@@ -961,12 +965,14 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
             Channel.Sleeping
           ) =>
         // We put back the watch (operation is idempotent) because corresponding event may have been already fired while we were in Channel.Sleeping state
-        LNParams.chainWallets.watcher ! WatchConfirmed(
-          receiver,
-          wait.commitments.commitInput.outPoint.txid,
-          wait.commitments.commitInput.txOut.publicKeyScript,
-          LNParams.minDepthBlocks,
-          BITCOIN_FUNDING_DEPTHOK
+        LNParams.chainWallets.watcher.send(
+          WatchConfirmed(
+            receiver,
+            wait.commitments.commitInput.outPoint.txid,
+            wait.commitments.commitInput.txOut.publicKeyScript,
+            LNParams.minDepthBlocks,
+            BITCOIN_FUNDING_DEPTHOK
+          )
         )
         // Getting remote ChannelReestablish means our chain wallet is online (since we start connecting channels only after it becomes online), it makes sense to retry a funding broadcast here
         wait.fundingTx.foreach(LNParams.chainWallets.lnWallet.broadcast)
@@ -1150,11 +1156,13 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
             Channel.Closing
           ) =>
         // An output in local/remote/revoked commit was spent, add it to irrevocably spent once confirmed
-        LNParams.chainWallets.watcher ! WatchConfirmed(
-          receiver,
-          tx,
-          event = BITCOIN_TX_CONFIRMED(tx),
-          minDepth = 1L
+        LNParams.chainWallets.watcher.send(
+          WatchConfirmed(
+            receiver,
+            tx,
+            event = BITCOIN_TX_CONFIRMED(tx),
+            minDepth = 1L
+          )
         )
         // Peer might have just used a preimage on chain to claim our timeout HTLCs UTXO: consider a payment sent then
         val remoteFulfills = Closing
@@ -1171,20 +1179,22 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
             LNParams.feeRates.info.onChainFeeConf.feeEstimator
           )
           for (claimTx <- txOpt)
-            LNParams.chainWallets.watcher ! WatchSpent(
-              receiver,
-              tx,
-              claimTx.txIn
-                .filter(_.outPoint.txid == tx.txid)
-                .head
-                .outPoint
-                .index
-                .toInt,
-              BITCOIN_OUTPUT_SPENT
+            LNParams.chainWallets.watcher.send(
+              WatchSpent(
+                receiver,
+                tx,
+                claimTx.txIn
+                  .filter(_.outPoint.txid == tx.txid)
+                  .head
+                  .outPoint
+                  .index
+                  .toInt,
+                BITCOIN_OUTPUT_SPENT
+              )
             )
 
           for (claimTx <- txOpt)
-            LNParams.chainWallets.watcher ! PublishAsap(claimTx)
+            LNParams.chainWallets.watcher.send(PublishAsap(claimTx))
 
           rev
         }
@@ -1654,13 +1664,15 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
 
   // Publish handlers
   private def doPublish(closingTx: Transaction): Unit = {
-    LNParams.chainWallets.watcher ! WatchConfirmed(
-      receiver,
-      closingTx,
-      BITCOIN_TX_CONFIRMED(closingTx),
-      minDepth = 1L
+    LNParams.chainWallets.watcher.send(
+      WatchConfirmed(
+        receiver,
+        closingTx,
+        BITCOIN_TX_CONFIRMED(closingTx),
+        minDepth = 1L
+      )
     )
-    LNParams.chainWallets.watcher ! PublishAsap(closingTx)
+    LNParams.chainWallets.watcher.send(PublishAsap(closingTx))
   }
 
   private def publishIfNeeded(
@@ -1670,7 +1682,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
     txes
       .filterNot(fcc.isIrrevocablySpent)
       .map(PublishAsap)
-      .foreach(event => LNParams.chainWallets.watcher ! event)
+      .foreach(event => LNParams.chainWallets.watcher.send(event))
 
   // Watch utxos only we can spend to get basically resolved
   private def watchConfirmedIfNeeded(
@@ -1679,11 +1691,13 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
   ): Unit =
     txes.filterNot(fcc.isIrrevocablySpent).map(BITCOIN_TX_CONFIRMED).foreach {
       replyEvent =>
-        LNParams.chainWallets.watcher ! WatchConfirmed(
-          receiver,
-          replyEvent.tx,
-          replyEvent,
-          minDepth = 1L
+        LNParams.chainWallets.watcher.send(
+          WatchConfirmed(
+            receiver,
+            replyEvent.tx,
+            replyEvent,
+            minDepth = 1L
+          )
         )
     }
 
@@ -1697,11 +1711,13 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
       .filterNot(fcc.isIrrevocablySpent)
       .map(_.txIn.head.outPoint.index.toInt)
       .foreach { outPointIndex =>
-        LNParams.chainWallets.watcher ! WatchSpent(
-          receiver,
-          parentTx,
-          outPointIndex,
-          BITCOIN_OUTPUT_SPENT
+        LNParams.chainWallets.watcher.send(
+          WatchSpent(
+            receiver,
+            parentTx,
+            outPointIndex,
+            BITCOIN_OUTPUT_SPENT
+          )
         )
       }
 

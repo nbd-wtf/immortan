@@ -1,2 +1,0 @@
-2022.04.03 06:20:59 INFO  tracing is disabled for protocol LSP, to enable tracing of incoming and outgoing JSON messages create an empty file at /home/fiatjaf/comp/cliche/src/main/scala/fr/acinq/eclair/blockchain/electrum/.metals/lsp.trace.json or /home/fiatjaf/.cache/metals/lsp.trace.json[0m
-2022.04.03 06:21:00 INFO  logging to file /home/fiatjaf/comp/cliche/.metals/metals.log[0m

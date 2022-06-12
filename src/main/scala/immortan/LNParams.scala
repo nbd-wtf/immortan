@@ -2,8 +2,6 @@ package immortan
 
 import java.util.concurrent.atomic.AtomicLong
 
-import akka.actor.{ActorRef, ActorSystem, PoisonPill, Props}
-import akka.util.Timeout
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin._
@@ -27,6 +25,7 @@ import immortan.crypto.Tools._
 import immortan.sqlite._
 import immortan.utils._
 import scodec.bits.{ByteVector, HexStringSyntax}
+import castor.Context.Simple.global
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext}
@@ -95,7 +94,6 @@ object LNParams {
   val minDepthBlocks: Int = 3
 
   // Variables to be assigned at runtime
-
   var secret: WalletSecret = _
   var chainHash: ByteVector32 = _
   var chainWallets: WalletExt = _
@@ -124,11 +122,6 @@ object LNParams {
     null != chainHash && null != secret && null != chainWallets && connectionProvider != null &&
       null != syncParams && null != trampoline && null != fiatRates && null != feeRates && null != cm &&
       null != cm.inProcessors && null != cm.sendTo && null != logBag && null != routerConf && null != ourInit
-
-  implicit val timeout: Timeout = Timeout(30.seconds)
-  implicit val system: ActorSystem = ActorSystem("immortan-actor-system")
-  implicit val ec: ExecutionContext =
-    scala.concurrent.ExecutionContext.Implicits.global
 
   def createInit: Init = {
     val networks: InitTlv = InitTlv.Networks(chainHash :: Nil)
@@ -214,9 +207,6 @@ object LNParams {
   )(feature: Feature with InitFeature): Boolean =
     Features.canUseFeature(ourInit.features, theirInit.features, feature)
 
-  def loggedActor(childProps: Props, childName: String): ActorRef =
-    system actorOf Props(classOf[LoggingSupervisor], childProps, childName)
-
   def addressToPubKeyScript(address: String): ByteVector =
     Script write addressToPublicKeyScript(address, chainHash)
 
@@ -225,18 +215,15 @@ object LNParams {
 
 case class WalletExt(
     wallets: List[ElectrumEclairWallet],
-    catcher: ActorRef,
-    sync: ActorRef,
-    pool: ActorRef,
-    watcher: ActorRef,
+    catcher: WalletEventsCatcher,
+    sync: ElectrumChainSync,
+    pool: ElectrumClientPool,
+    watcher: ElectrumWatcher,
     params: WalletParameters
-) extends CanBeShutDown { me =>
-
+) {
   lazy val lnWallet: ElectrumEclairWallet = wallets.find(_.isBuiltIn).get
-
   lazy val usableWallets: List[ElectrumEclairWallet] =
     wallets.filter(wallet => wallet.isBuiltIn || wallet.hasFingerprint)
-
   def findByPubKey(pub: PublicKey): Option[ElectrumEclairWallet] =
     wallets.find(_.ewt.xPub.publicKey == pub)
 
@@ -250,10 +237,7 @@ case class WalletExt(
       master = LNParams.secret.keys.master,
       chainHash = LNParams.chainHash
     )
-    val walletRef = LNParams.loggedActor(
-      Props(classOf[ElectrumWallet], pool, sync, params, ewt),
-      core.walletType + "-signing-wallet"
-    )
+    val electrumWallet = new ElectrumWallet(pool, sync, params, ewt)
     val infoNoPersistent = CompleteChainWalletInfo(
       core,
       data = ByteVector.empty,
@@ -261,7 +245,7 @@ case class WalletExt(
       label,
       isCoinControlOn = false
     )
-    ElectrumEclairWallet(walletRef, ewt, infoNoPersistent)
+    ElectrumEclairWallet(electrumWallet, ewt, infoNoPersistent)
   }
 
   def makeWatchingWallet84Parts(
@@ -274,10 +258,7 @@ case class WalletExt(
       xPub = core.xPub,
       chainHash = LNParams.chainHash
     )
-    val walletRef = LNParams.loggedActor(
-      Props(classOf[ElectrumWallet], pool, sync, params, ewt),
-      core.walletType + "-watching-wallet"
-    )
+    val walletRef = new ElectrumWallet(pool, sync, params, ewt)
     val infoNoPersistent = CompleteChainWalletInfo(
       core,
       data = ByteVector.empty,
@@ -294,8 +275,8 @@ case class WalletExt(
       params.emptyPersistentDataBytes,
       eclairWallet.ewt.xPub.publicKey
     )
-    eclairWallet.walletRef ! params.emptyPersistentDataBytes
-    sync ! ElectrumWallet.ChainFor(eclairWallet.walletRef)
+    eclairWallet.wallet.send(params.emptyPersistentDataBytes)
+    eclairWallet.wallet.send(sync.getChain)
     copy(wallets = eclairWallet :: wallets)
   }
 
@@ -304,7 +285,6 @@ case class WalletExt(
     params.walletDb.remove(pub = wallet.ewt.xPub.publicKey)
     params.txDb.removeByPub(xPub = wallet.ewt.xPub)
     val wallets1 = wallets diff List(wallet)
-    wallet.walletRef ! PoisonPill
     copy(wallets = wallets1)
   }
 
@@ -316,13 +296,7 @@ case class WalletExt(
     val sameXPub: ElectrumEclairWallet => Boolean =
       _.ewt.xPub == wallet.ewt.xPub
     params.walletDb.updateLabel(label, pub = wallet.ewt.xPub.publicKey)
-    me.modify(_.wallets.eachWhere(sameXPub).info.label).setTo(label)
-  }
-
-  override def becomeShutDown(): Unit = {
-    val actors = List(catcher, sync, pool, watcher)
-    val allActors = wallets.map(_.walletRef) ++ actors
-    allActors.foreach(_ ! PoisonPill)
+    this.modify(_.wallets.eachWhere(sameXPub).info.label).setTo(label)
   }
 }
 

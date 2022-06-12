@@ -2,10 +2,10 @@ package immortan
 
 import java.util.concurrent.Executors
 
-import akka.actor.{Actor, ActorRef, Props}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.CurrentBlockCount
+import fr.acinq.eclair.blockchain.electrum.EventStream
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteReject}
 import fr.acinq.eclair.wire.LightningMessage
@@ -83,12 +83,12 @@ object Channel {
 
 trait Channel
     extends StateMachine[ChannelData, Channel.State]
-    with CanBeRepliedTo { me =>
+    with CanBeRepliedTo {
   def initialState = Channel.Initial
 
   def process(changeMsg: Any): Unit =
-    Future(me doProcess changeMsg).onComplete {
-      case Failure(reason) => events onException Tuple3(reason, me, data)
+    Future(doProcess(changeMsg)).onComplete {
+      case Failure(reason) => events.onException((reason, this, data))
       case _               => // Do nothing
     }
 
@@ -98,7 +98,7 @@ trait Channel
 
   def BECOME(newData: ChannelData, newState: Channel.State): Unit = {
     // Transition must be defined before vars are updated
-    val trans = (me, data, newData, state, newState)
+    val trans = (this, data, newData, state, newState)
     super.become(newData, newState)
     events.onBecome(trans)
   }
@@ -143,37 +143,42 @@ trait Channel
       lst.notifyResolvers()
   }
 
-  val receiver: ActorRef =
-    LNParams.system actorOf Props(new ActorEventsReceiver)
+  val receiver = new castor.SimpleActor[Any]()(
+    castor.Context.Simple.global
+  ) { self =>
+    EventStream.subscribe { case c: CurrentBlockCount =>
+      self.send(c)
+    }
 
-  class ActorEventsReceiver extends Actor {
-    context.system.eventStream
-      .subscribe(channel = classOf[CurrentBlockCount], subscriber = self)
+    var lastSeenBlockCount: Option[CurrentBlockCount] = None
+    var useDelay = true
 
-    override def receive: Receive =
-      main(lastSeenBlockCount = None, useDelay = true)
-
-    def main(
-        lastSeenBlockCount: Option[CurrentBlockCount],
-        useDelay: Boolean
-    ): Receive = {
+    def run(msg: Any): Unit = msg match {
       case currentBlockCount: CurrentBlockCount
-          if lastSeenBlockCount.isEmpty && useDelay =>
-        context.system.scheduler.scheduleOnce(10.seconds)(self ! "propagate")(
-          LNParams.ec
-        )
-        context become main(currentBlockCount.asSome, useDelay = true)
+          if lastSeenBlockCount.isEmpty && useDelay => {
+        val t = new java.util.Timer()
+        val task = new java.util.TimerTask {
+          def run() = self.send("propagate")
+        }
+        t.schedule(task, 10000L)
+        lastSeenBlockCount = Some(currentBlockCount)
+        useDelay = true
+      }
 
       case currentBlockCount: CurrentBlockCount
-          if lastSeenBlockCount.isDefined && useDelay =>
+          if lastSeenBlockCount.isDefined && useDelay => {
         // We may get another chain tip while delaying a current one: store a new one then
-        context become main(currentBlockCount.asSome, useDelay = true)
+        lastSeenBlockCount = Some(currentBlockCount)
+        useDelay = true
+      }
 
-      case "propagate" =>
+      case "propagate" => {
         // Propagate subsequent block counts right away
-        context become main(None, useDelay = false)
+        useDelay = false
+        lastSeenBlockCount = None
         // Popagate the last delayed block count
         lastSeenBlockCount.foreach(process)
+      }
 
       case message =>
         process(message)
