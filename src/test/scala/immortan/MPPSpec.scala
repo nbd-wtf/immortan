@@ -144,7 +144,7 @@ object MPPSpec extends TestSuite {
       // First created FSM has been retained
       WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).listeners.head == noopListener)
       // Suppose this time we attempt a send when all channels are connected already
-      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open()))
+      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
 
       cm.opm process send
 
@@ -235,7 +235,7 @@ object MPPSpec extends TestSuite {
       )
       WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).data.parts.values.size == 1)
 
-      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open()))
+      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
 
       // Channel got online, sending is resumed
       WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).data.inFlightParts.size == 2)
@@ -314,7 +314,7 @@ object MPPSpec extends TestSuite {
         }
 
       // Payment is going to be split in two, both of them will fail locally
-      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open()))
+      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
       cm.opm process CreateSenderFSM(Set(failedListener), tag)
       cm.opm process send
 
@@ -394,7 +394,7 @@ object MPPSpec extends TestSuite {
       // First created FSM has been retained
       WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).listeners.head == noopListener)
       // Suppose this time we attempt a send when all channels are connected already
-      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open()))
+      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
 
       cm.opm.clearFailures = false
       cm.opm process send
@@ -503,7 +503,7 @@ object MPPSpec extends TestSuite {
       // First created FSM has been retained
       WAIT_UNTIL_TRUE(cm.opm.data.payments(tag).listeners.head == listener)
       // Suppose this time we attempt a send when all channels are connected already
-      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open()))
+      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
 
       cm.opm.clearFailures = false
       cm.opm process send
@@ -573,7 +573,7 @@ object MPPSpec extends TestSuite {
       cm.chanBag.put(hcs1)
       cm.chanBag.put(hcs2)
       cm.all = Channel.load(Set(cm), cm.chanBag)
-      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open()))
+      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
 
       val edgeDSFromD = makeEdge(
         6L,
@@ -814,7 +814,7 @@ object MPPSpec extends TestSuite {
         }
 
       // Payment is going to be split in two, both of them will fail locally
-      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open()))
+      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
       cm.opm process CreateSenderFSM(Set(failedListener), tag)
       cm.opm process send
 
@@ -864,7 +864,7 @@ object MPPSpec extends TestSuite {
 
       cm.opm process CreateSenderFSM(Set(noopListener), tag)
       // Suppose this time we attempt a send when all channels are connected already
-      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open()))
+      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
 
       cm.pf process PathFinder.CMDLoadGraph
       cm.pf process makeUpdate(

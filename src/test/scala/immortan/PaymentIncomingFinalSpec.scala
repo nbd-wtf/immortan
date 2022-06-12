@@ -59,7 +59,7 @@ object PaymentIncomingFinalSpec extends TestSuite {
       fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: Nil)
 
       WAIT_UNTIL_TRUE(
-        fsm.state.isInstanceOf[IncomingPaymentProcessor.Finalizing]
+        fsm.state == IncomingPaymentProcessor.Finalizing
       )
       WAIT_UNTIL_TRUE(
         fsm.data.asInstanceOf[IncomingRevealed].preimage == preimage
@@ -112,7 +112,7 @@ object PaymentIncomingFinalSpec extends TestSuite {
       fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: Nil)
 
       WAIT_UNTIL_TRUE(
-        fsm.state.isInstanceOf[IncomingPaymentProcessor.Receiving]
+        fsm.state == IncomingPaymentProcessor.Receiving
       )
       WAIT_UNTIL_TRUE(fsm.data == null)
 
@@ -135,7 +135,7 @@ object PaymentIncomingFinalSpec extends TestSuite {
 
       fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: add2 :: Nil)
       WAIT_UNTIL_TRUE(
-        fsm.state.isInstanceOf[IncomingPaymentProcessor.Receiving]
+        fsm.state == IncomingPaymentProcessor.Receiving
       )
       fsm doProcess makeInFlightPayments(
         out = Nil,
@@ -143,7 +143,7 @@ object PaymentIncomingFinalSpec extends TestSuite {
       )
 
       WAIT_UNTIL_TRUE(
-        fsm.state.isInstanceOf[IncomingPaymentProcessor.Finalizing]
+        fsm.state == IncomingPaymentProcessor.Finalizing
       )
       WAIT_UNTIL_TRUE(
         fsm.data.asInstanceOf[IncomingRevealed].preimage == preimage
@@ -161,13 +161,13 @@ object PaymentIncomingFinalSpec extends TestSuite {
       // Suppose user has restarted an app with only one part resolved in channels
 
       val fsm2 = new IncomingPaymentReceiver(add1.fullTag, cm)
-      assert(fsm2.state.isInstanceOf[IncomingPaymentProcessor.Receiving])
+      assert(fsm2.state == IncomingPaymentProcessor.Receiving)
       assert(fsm2.data == null)
 
       fsm2 doProcess makeInFlightPayments(out = Nil, in = add1 :: add2 :: Nil)
 
       WAIT_UNTIL_TRUE(
-        fsm2.state.isInstanceOf[IncomingPaymentProcessor.Finalizing]
+        fsm2.state == IncomingPaymentProcessor.Finalizing
       )
       WAIT_UNTIL_TRUE(
         fsm2.data.asInstanceOf[IncomingRevealed].preimage == preimage
@@ -291,7 +291,7 @@ object PaymentIncomingFinalSpec extends TestSuite {
       val fsm = new IncomingPaymentReceiver(add1.fullTag, cm)
       fsm doProcess makeInFlightPayments(out = Nil, in = add1 :: Nil)
       WAIT_UNTIL_TRUE(
-        fsm.state.isInstanceOf[IncomingPaymentProcessor.Receiving]
+        fsm.state == IncomingPaymentProcessor.Receiving
       )
       fsm doProcess makeInFlightPayments(
         out = Nil,
@@ -299,7 +299,7 @@ object PaymentIncomingFinalSpec extends TestSuite {
           add1 :: add2 :: add3 :: add4 :: add5 :: add6 :: add7 :: add8 :: add9 :: add10 :: Nil
       )
       WAIT_UNTIL_TRUE(
-        fsm.state.isInstanceOf[IncomingPaymentProcessor.Finalizing]
+        fsm.state == IncomingPaymentProcessor.Finalizing
       )
       WAIT_UNTIL_TRUE(fsm.data.asInstanceOf[IncomingAborted].failure.isEmpty)
     }
@@ -364,7 +364,7 @@ object PaymentIncomingFinalSpec extends TestSuite {
       )
 
       WAIT_UNTIL_TRUE(
-        fsm.state.isInstanceOf[IncomingPaymentProcessor.Receiving]
+        fsm.state == IncomingPaymentProcessor.Receiving
       )
       WAIT_UNTIL_TRUE(fsm.data == null)
 
@@ -382,7 +382,7 @@ object PaymentIncomingFinalSpec extends TestSuite {
       )
 
       WAIT_UNTIL_TRUE(
-        fsm.state.isInstanceOf[IncomingPaymentProcessor.Finalizing]
+        fsm.state == IncomingPaymentProcessor.Finalizing
       )
       WAIT_UNTIL_TRUE(
         fsm.data.asInstanceOf[IncomingRevealed].preimage == preimage
@@ -398,7 +398,7 @@ object PaymentIncomingFinalSpec extends TestSuite {
       ) // Sender has sent a bit more
 
       fsm doProcess makeInFlightPayments(out = Nil, in = add3 :: Nil)
-      WAIT_UNTIL_TRUE(fsm.state.isInstanceOf[IncomingPaymentProcessor.Shutdown])
+      WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.Shutdown)
     }
 
     test("Fail an unknown payment right away") {
@@ -448,13 +448,13 @@ object PaymentIncomingFinalSpec extends TestSuite {
 
       fsm doProcess IncomingPaymentProcessor.CMDTimeout
       WAIT_UNTIL_TRUE(
-        fsm.state.isInstanceOf[IncomingPaymentProcessor.Finalizing]
+        fsm.state == IncomingPaymentProcessor.Finalizing
       )
       WAIT_UNTIL_TRUE(fsm.data.asInstanceOf[IncomingAborted].failure.isEmpty)
 
       // All parts have been cleared in channels
       fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
-      WAIT_UNTIL_TRUE(fsm.state.isInstanceOf[IncomingPaymentProcessor.Shutdown])
+      WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.Shutdown)
     }
 
     test("Fail if one of parts is too close to chain tip") {
@@ -516,7 +516,7 @@ object PaymentIncomingFinalSpec extends TestSuite {
       )
 
       WAIT_UNTIL_TRUE(
-        fsm.state.isInstanceOf[IncomingPaymentProcessor.Finalizing]
+        fsm.state == IncomingPaymentProcessor.Finalizing
       )
       WAIT_UNTIL_TRUE(fsm.data.asInstanceOf[IncomingAborted].failure.isEmpty)
     }
@@ -583,7 +583,7 @@ object PaymentIncomingFinalSpec extends TestSuite {
       )
 
       WAIT_UNTIL_TRUE(
-        fsm.state.isInstanceOf[IncomingPaymentProcessor.Finalizing]
+        fsm.state == IncomingPaymentProcessor.Finalizing
       )
       WAIT_UNTIL_TRUE(
         fsm.data.asInstanceOf[IncomingAborted].failure.contains(PaymentTimeout)
@@ -591,7 +591,7 @@ object PaymentIncomingFinalSpec extends TestSuite {
 
       // All parts have been cleared in channels
       fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
-      WAIT_UNTIL_TRUE(fsm.state.isInstanceOf[IncomingPaymentProcessor.Shutdown])
+      WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.Shutdown)
     }
   }
 }

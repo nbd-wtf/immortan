@@ -155,7 +155,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       val hcs1 = makeHostedCommits(nodeId = a, alias = "peer-2")
       cm.chanBag.put(hcs1)
       cm.all = Channel.load(Set(cm), cm.chanBag)
-      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open()))
+      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
 
       val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) =
         createInnerLegacyTrampoline(
@@ -243,7 +243,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       val hcs1 = makeHostedCommits(nodeId = a, alias = "peer-2")
       cm.chanBag.put(hcs1)
       cm.all = Channel.load(Set(cm), cm.chanBag)
-      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open()))
+      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
 
       val (_, trampolineExpiry, trampolineOnion) = createInnerNativeTrampoline(
         partAmount = MilliSatoshi(400000L),
@@ -513,7 +513,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       val hcs1 = makeHostedCommits(nodeId = a, alias = "peer-2")
       cm.chanBag.put(hcs1)
       cm.all = Channel.load(Set(cm), cm.chanBag)
-      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open()))
+      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
 
       val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) =
         createInnerLegacyTrampoline(
@@ -562,7 +562,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       )
 
       WAIT_UNTIL_TRUE(
-        fsm.state.isInstanceOf[IncomingPaymentProcessor.Receiving]
+        fsm.state == IncomingPaymentProcessor.Receiving
       )
 
       fsm doProcess makeInFlightPayments(
@@ -571,7 +571,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
           reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil
       )
 
-      WAIT_UNTIL_TRUE(fsm.state.isInstanceOf[IncomingPaymentProcessor.Sending])
+      WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.Sending)
 
       val outPacket = WAIT_UNTIL_RESULT(
         cm.opm.data
@@ -641,7 +641,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       )
       fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
 
-      WAIT_UNTIL_TRUE(fsm.state.isInstanceOf[IncomingPaymentProcessor.Shutdown])
+      WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.Shutdown)
       val history = cm.payBag
         .listRecentRelays(10)
         .headTry(cm.payBag.toRelayedPreimageInfo)
@@ -715,11 +715,11 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
         in = reasonableTrampoline1 :: Nil
       )
       WAIT_UNTIL_TRUE(
-        fsm.state.isInstanceOf[IncomingPaymentProcessor.Receiving]
+        fsm.state == IncomingPaymentProcessor.Receiving
       )
 
       fsm doProcess IncomingPaymentProcessor.CMDTimeout
-      assert(fsm.state.isInstanceOf[IncomingPaymentProcessor.Finalizing])
+      assert(fsm.state == IncomingPaymentProcessor.Finalizing)
       // FSM asks channel master to provide current HTLC data right away
       fsm doProcess makeInFlightPayments(
         out = Nil,
@@ -730,7 +730,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
         replies.head.asInstanceOf[CMD_FAIL_HTLC].reason == Right(PaymentTimeout)
       )
       fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
-      WAIT_UNTIL_TRUE(fsm.state.isInstanceOf[IncomingPaymentProcessor.Shutdown])
+      WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.Shutdown)
       // Sender FSM has been removed
       WAIT_UNTIL_TRUE(cm.opm.data.payments.isEmpty)
     }
@@ -805,14 +805,14 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
         in = reasonableTrampoline1 :: Nil
       )
 
-      WAIT_UNTIL_TRUE(fsm.state.isInstanceOf[IncomingPaymentProcessor.Sending])
+      WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.Sending)
       // Channels are not open so outgoing payments are waiting for timeout
 
       WAIT_UNTIL_TRUE {
         cm.opm.data.payments(
           reasonableTrampoline1.fullTag
         ) doProcess OutgoingPaymentMaster.CMDAbort
-        fsm.state.isInstanceOf[IncomingPaymentProcessor.Finalizing]
+        fsm.state == IncomingPaymentProcessor.Finalizing
       }
 
       // FSM asks channel master to provide current HTLC data right away
@@ -826,7 +826,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
         )
       )
       fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
-      assert(fsm.state.isInstanceOf[IncomingPaymentProcessor.Shutdown])
+      assert(fsm.state == IncomingPaymentProcessor.Shutdown)
       // Sender FSM has been removed
       WAIT_UNTIL_TRUE(cm.opm.data.payments.isEmpty)
     }
@@ -877,7 +877,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       cm.chanBag.put(hcs1)
       cm.all = Channel.load(Set(cm), cm.chanBag)
       // Our only outgoing channel got unusable while we were collecting payment parts
-      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Closing()))
+      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Closing))
 
       val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) =
         createInnerLegacyTrampoline(
@@ -906,7 +906,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       )
 
       WAIT_UNTIL_TRUE(
-        fsm.state.isInstanceOf[IncomingPaymentProcessor.Finalizing]
+        fsm.state == IncomingPaymentProcessor.Finalizing
       )
       // FSM asks channel master to provide current HTLC data right away
       fsm doProcess makeInFlightPayments(
@@ -919,7 +919,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
         )
       )
       fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
-      assert(fsm.state.isInstanceOf[IncomingPaymentProcessor.Shutdown])
+      assert(fsm.state == IncomingPaymentProcessor.Shutdown)
       // Sender FSM has been removed
       WAIT_UNTIL_TRUE(cm.opm.data.payments.isEmpty)
     }
@@ -969,7 +969,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       val hcs1 = makeHostedCommits(nodeId = a, alias = "peer-2")
       cm.chanBag.put(hcs1)
       cm.all = Channel.load(Set(cm), cm.chanBag)
-      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open()))
+      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
 
       val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) =
         createInnerLegacyTrampoline(
@@ -998,7 +998,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       )
 
       WAIT_UNTIL_TRUE(
-        fsm.state.isInstanceOf[IncomingPaymentProcessor.Finalizing]
+        fsm.state == IncomingPaymentProcessor.Finalizing
       )
       // FSM asks channel master to provide current HTLC data right away
       fsm doProcess makeInFlightPayments(
@@ -1011,7 +1011,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
         )
       )
       fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
-      assert(fsm.state.isInstanceOf[IncomingPaymentProcessor.Shutdown])
+      assert(fsm.state == IncomingPaymentProcessor.Shutdown)
       // Sender FSM has been removed
       WAIT_UNTIL_TRUE(cm.opm.data.payments.isEmpty)
     }
@@ -1063,7 +1063,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       val hcs1 = makeHostedCommits(nodeId = a, alias = "peer-2")
       cm.chanBag.put(hcs1)
       cm.all = Channel.load(Set(cm), cm.chanBag)
-      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open()))
+      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
 
       val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) =
         createInnerLegacyTrampoline(
@@ -1113,7 +1113,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       )
 
       // Simulate making new FSM on restart
-      fsm.become(null, IncomingPaymentProcessor.Receiving())
+      fsm.become(null, IncomingPaymentProcessor.Receiving)
       WAIT_UNTIL_TRUE(
         cm.all.values
           .flatMap(Channel.chanAndCommitsOpt)
@@ -1147,8 +1147,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
         out2
       ) // Finishes it
       WAIT_UNTIL_TRUE(
-        fsm.data == null && fsm.state
-          .isInstanceOf[IncomingPaymentProcessor.Receiving]
+        fsm.data == null && fsm.state == IncomingPaymentProcessor.Receiving
       )
 
       // All outgoing parts have been cleared, but we still have incoming parts and maybe can try again (unless CLTV delta has expired)
@@ -1157,12 +1156,12 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
         in =
           reasonableTrampoline1 :: reasonableTrampoline3 :: reasonableTrampoline2 :: Nil
       )
-      assert(fsm.state.isInstanceOf[IncomingPaymentProcessor.Sending])
+      assert(fsm.state == IncomingPaymentProcessor.Sending)
       WAIT_UNTIL_TRUE(
-        fsm.state.isInstanceOf[IncomingPaymentProcessor.Finalizing]
+        fsm.state == IncomingPaymentProcessor.Finalizing
       )
       fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
-      assert(fsm.state.isInstanceOf[IncomingPaymentProcessor.Shutdown])
+      assert(fsm.state == IncomingPaymentProcessor.Shutdown)
     }
 
     test("Wind down after pathologc fail") {
@@ -1211,7 +1210,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       val hcs1 = makeHostedCommits(nodeId = a, alias = "peer-2")
       cm.chanBag.put(hcs1)
       cm.all = Channel.load(Set(cm), cm.chanBag)
-      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open()))
+      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
 
       val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) =
         createInnerLegacyTrampoline(
@@ -1261,7 +1260,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       )
 
       // Simulate making new FSM on restart
-      fsm.become(null, IncomingPaymentProcessor.Receiving())
+      fsm.become(null, IncomingPaymentProcessor.Receiving)
       WAIT_UNTIL_TRUE(
         cm.all.values
           .flatMap(Channel.chanAndCommitsOpt)
@@ -1302,14 +1301,14 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
         in = reasonableTrampoline2 :: Nil
       ) // Noisy event
       WAIT_UNTIL_TRUE(
-        fsm.state.isInstanceOf[IncomingPaymentProcessor.Finalizing]
+        fsm.state == IncomingPaymentProcessor.Finalizing
       )
       fsm doProcess makeInFlightPayments(
         out = Nil,
         in = reasonableTrampoline2 :: Nil
       ) // Got after `wholePaymentFailed` has fired
       fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
-      WAIT_UNTIL_TRUE(fsm.state.isInstanceOf[IncomingPaymentProcessor.Shutdown])
+      WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.Shutdown)
       WAIT_UNTIL_TRUE(
         replies.head.asInstanceOf[CMD_FAIL_HTLC].reason == Right(
           TemporaryNodeFailure
@@ -1363,7 +1362,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       val hcs1 = makeHostedCommits(nodeId = a, alias = "peer-2")
       cm.chanBag.put(hcs1)
       cm.all = Channel.load(Set(cm), cm.chanBag)
-      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open()))
+      cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
 
       val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) =
         createInnerLegacyTrampoline(
@@ -1413,7 +1412,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       )
 
       // Simulate making new FSM on restart
-      fsm.become(null, IncomingPaymentProcessor.Receiving())
+      fsm.become(null, IncomingPaymentProcessor.Receiving)
       WAIT_UNTIL_TRUE(
         cm.all.values
           .flatMap(Channel.chanAndCommitsOpt)
@@ -1454,10 +1453,10 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       )
       fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = Nil)
       WAIT_UNTIL_TRUE(
-        fsm.state.isInstanceOf[IncomingPaymentProcessor.Finalizing]
+        fsm.state == IncomingPaymentProcessor.Finalizing
       )
 
-      fsm.become(null, IncomingPaymentProcessor.Receiving())
+      fsm.become(null, IncomingPaymentProcessor.Receiving)
       WAIT_UNTIL_TRUE(
         cm.payBag.getPreimage(paymentHash).toOption.contains(preimage)
       )
@@ -1465,10 +1464,10 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       // This is fine since we have a preiamge in case of what, but FSM is kept working
       fsm doProcess makeInFlightPayments(out = out1 :: out2 :: Nil, in = Nil)
       WAIT_UNTIL_TRUE(
-        fsm.state.isInstanceOf[IncomingPaymentProcessor.Finalizing]
+        fsm.state == IncomingPaymentProcessor.Finalizing
       )
       fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
-      WAIT_UNTIL_TRUE(fsm.state.isInstanceOf[IncomingPaymentProcessor.Shutdown])
+      WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.Shutdown)
     }
   }
 }

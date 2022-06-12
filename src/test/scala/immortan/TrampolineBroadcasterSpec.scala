@@ -56,7 +56,7 @@ object TrampolineBroadcasterSpec extends TestSuite {
 
       broadcaster process RoutingOn(LNParams.trampoline)
       WAIT_UNTIL_TRUE(
-        broadcaster.state.isInstanceOf[TrampolineBroadcaster.RoutingEnabled]
+        broadcaster.state == TrampolineBroadcaster.RoutingEnabled
       )
 
       // Channel #1 becomes online
@@ -67,7 +67,7 @@ object TrampolineBroadcasterSpec extends TestSuite {
             .remoteInfo
             .nodeId == hcs1.remoteInfo.nodeId
         )
-        .foreach(chan => chan.BECOME(chan.data, Channel.Open()))
+        .foreach(chan => chan.BECOME(chan.data, Channel.Open))
       broadcaster process TrampolineBroadcaster.LastBroadcast(
         TrampolineUndesired,
         hcs1.remoteInfo,
@@ -86,7 +86,7 @@ object TrampolineBroadcasterSpec extends TestSuite {
             .remoteInfo
             .nodeId == hcs2.remoteInfo.nodeId
         )
-        .foreach(chan => chan.BECOME(chan.data, Channel.Open()))
+        .foreach(chan => chan.BECOME(chan.data, Channel.Open))
       broadcaster process TrampolineBroadcaster.LastBroadcast(
         TrampolineUndesired,
         hcs2.remoteInfo,
@@ -153,7 +153,7 @@ object TrampolineBroadcasterSpec extends TestSuite {
             .remoteInfo
             .nodeId == hcs2.remoteInfo.nodeId
         )
-        .foreach(chan => chan.BECOME(chan.data, Channel.Sleeping()))
+        .foreach(chan => chan.BECOME(chan.data, Channel.Sleeping))
       broadcaster.broadcasters -= hcs2.remoteInfo.nodeId
       broadcaster process TrampolineBroadcaster.CMDBroadcast
       WAIT_UNTIL_TRUE(sendings.size == 1)
@@ -168,7 +168,7 @@ object TrampolineBroadcasterSpec extends TestSuite {
             .remoteInfo
             .nodeId == hcs2.remoteInfo.nodeId
         )
-        .foreach(chan => chan.BECOME(chan.data, Channel.Open()))
+        .foreach(chan => chan.BECOME(chan.data, Channel.Open))
       broadcaster process TrampolineBroadcaster.LastBroadcast(
         TrampolineUndesired,
         hcs2.remoteInfo,
