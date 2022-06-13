@@ -19,8 +19,13 @@ import scodec.codecs._
 object SqliteWalletDb {
   private val anyOpt = Option.empty[Any]
 
+  val ignoreElectrumClientCodec: Codec[Option[ElectrumClient]] = {
+    ignore(0).xmapc(_ => None: Option[ElectrumClient])(_ => ())
+  }.as[Option[ElectrumClient]]
+
   val proofCodec = {
-    (bytes32 withContext "txid") ::
+    (ignoreElectrumClientCodec withContext "source") ::
+      (bytes32 withContext "txid") ::
       (listOfN(uint16, bytes32) withContext "merkle") ::
       (uint24 withContext "blockHeight") ::
       (uint24 withContext "pos") ::

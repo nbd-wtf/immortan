@@ -1,6 +1,5 @@
 package fr.acinq.eclair.blockchain
 
-import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Script, ScriptWitness, Transaction}
 import fr.acinq.eclair.channel.BitcoinEvent
@@ -9,12 +8,12 @@ import scodec.bits.ByteVector
 import scala.util.{Success, Try}
 
 sealed trait Watch {
-  def replyTo: ActorRef
+  def replyTo: castor.SimpleActor[Any]
   def event: BitcoinEvent
 }
 
 final case class WatchConfirmed(
-    replyTo: ActorRef,
+    replyTo: castor.SimpleActor[Any],
     txId: ByteVector32,
     publicKeyScript: ByteVector,
     minDepth: Long,
@@ -24,7 +23,7 @@ final case class WatchConfirmed(
 object WatchConfirmed {
   // if we have the entire transaction, we can get the publicKeyScript from any of the outputs
   def apply(
-      replyTo: ActorRef,
+      replyTo: castor.SimpleActor[Any],
       tx: Transaction,
       event: BitcoinEvent,
       minDepth: Long
@@ -52,7 +51,7 @@ object WatchConfirmed {
 }
 
 final case class WatchSpent(
-    replyTo: ActorRef,
+    replyTo: castor.SimpleActor[Any],
     txId: ByteVector32,
     outputIndex: Int,
     publicKeyScript: ByteVector,
@@ -63,7 +62,7 @@ final case class WatchSpent(
 object WatchSpent {
   // if we have the entire transaction, we can get the publicKeyScript from the relevant output
   def apply(
-      replyTo: ActorRef,
+      replyTo: castor.SimpleActor[Any],
       tx: Transaction,
       outputIndex: Int,
       event: BitcoinEvent
@@ -93,11 +92,3 @@ final case class WatchEventSpent(event: BitcoinEvent, tx: Transaction)
     extends WatchEvent
 
 final case class PublishAsap(tx: Transaction)
-
-final case class GetTxWithMeta(txid: ByteVector32)
-
-final case class GetTxWithMetaResponse(
-    txid: ByteVector32,
-    tx_opt: Option[Transaction],
-    lastBlockTimestamp: Long
-)

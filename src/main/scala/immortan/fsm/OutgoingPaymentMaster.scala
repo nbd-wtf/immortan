@@ -64,12 +64,15 @@ case class UnreadableRemoteFailure(route: Route) extends PaymentFailure {
 
 case class RemoteFailure(packet: Sphinx.DecryptedFailurePacket, route: Route)
     extends PaymentFailure {
-  override def asString: String = {
-    val originShortChanId = route
-      .getEdgeForNode(packet.originNode)
-      .map(ShortChannelId asString _.updExt.update.shortChannelId)
-      .getOrElse("first hop")
+  lazy val originShortChanId: Option[Long] = route
+    .getEdgeForNode(packet.originNode)
+    .map(_.updExt.update.shortChannelId)
 
+  def chanString = originShortChanId
+    .map(ShortChannelId.asString(_))
+    .getOrElse("first hop")
+
+  override def asString: String = {
     s"- ${packet.failureMessage.message} at ${originShortChanId}.\n${route.asString}"
   }
 }

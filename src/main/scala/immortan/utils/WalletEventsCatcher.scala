@@ -2,42 +2,24 @@ package immortan.utils
 
 import java.net.InetSocketAddress
 
-import akka.actor.Actor
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.electrum.ElectrumChainSync
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
+import fr.acinq.eclair.blockchain.electrum.EventStream
 import immortan.crypto.Tools.none
 
-object WalletEventsCatcher {
-  case class Remove(listener: WalletEventsListener)
-}
-
-class WalletEventsCatcher extends Actor {
+class WalletEventsCatcher {
   // Not using a set to ensure insertion order
   var listeners: List[WalletEventsListener] = Nil
 
-  context.system.eventStream
-    .subscribe(channel = classOf[WalletEvent], subscriber = self)
-  context.system.eventStream
-    .subscribe(channel = classOf[ElectrumEvent], subscriber = self)
-  context.system.eventStream
-    .subscribe(channel = classOf[CurrentBlockCount], subscriber = self)
-  context.system.eventStream.subscribe(
-    channel = classOf[ElectrumChainSync.ChainSyncStarted],
-    subscriber = self
-  )
-  context.system.eventStream.subscribe(
-    channel = classOf[ElectrumChainSync.ChainSyncEnded],
-    subscriber = self
-  )
+  def add(listener: WalletEventsListener): Unit =
+    listeners = (listeners :+ listener).distinct
 
-  override def receive: Receive = {
-    case listener: WalletEventsListener =>
-      listeners = (listeners :+ listener).distinct
-    case WalletEventsCatcher.Remove(listener) =>
-      listeners = listeners diff List(listener)
+  def remove(listener: WalletEventsListener): Unit =
+    listeners = listeners diff List(listener)
 
+  EventStream.subscribe {
     case event: WalletReady => for (lst <- listeners) lst.onWalletReady(event)
     case event: TransactionReceived =>
       for (lst <- listeners) lst.onTransactionReceived(event)
