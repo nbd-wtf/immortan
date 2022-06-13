@@ -1,8 +1,8 @@
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
 case class JsonRPCRequest(
-    jsonrpc: String = "1.0",
-    id: String = "scala-client",
+    jsonrpc: String = "2.0",
+    id: String,
     method: String,
     params: Seq[Any] = Nil
 )

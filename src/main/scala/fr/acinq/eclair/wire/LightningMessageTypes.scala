@@ -367,7 +367,6 @@ case class ChannelUpdate(
     htlcMaximumMsat: Option[MilliSatoshi],
     unknownFields: ByteVector = ByteVector.empty
 ) extends LightningMessage {
-
   lazy val position: java.lang.Integer =
     if (Announcements isNode1 channelFlags) ChannelUpdate.POSITION1NODE
     else ChannelUpdate.POSITION2NODE

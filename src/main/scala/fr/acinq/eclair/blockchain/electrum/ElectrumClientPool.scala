@@ -38,13 +38,11 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
 
         case (ElectrumClient.ElectrumDisconnected(source), _) => {
           val t = new java.util.Timer()
-          val task = new java.util.TimerTask { def run() = self.send(Connect) }
+          val task = new java.util.TimerTask { def run() = self.connect() }
           t.schedule(task, 5000L)
           addresses -= source
           stay
         }
-
-        case other => whenUnhandled(other)
       })
 
   case class Connected(master: ElectrumClient, tips: ActorTipAndHeader)
@@ -69,14 +67,13 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
           val tips = d.tips - source
 
           val t = new java.util.Timer()
-          val task = new java.util.TimerTask { def run() = self.send(Connect) }
+          val task = new java.util.TimerTask { def run() = self.connect() }
           t.schedule(task, 5000L)
           addresses -= source
 
           if (tips.isEmpty) {
             System.err.println(
-              "[info] lost connection to {}, no active connections left",
-              address
+              s"[info] lost connection to $address, no active connections left"
             )
             statusListeners.foreach(
               // we send the original disconnect source here but it doesn't matter, pool listeners will ignore it since there is only one pool
@@ -87,18 +84,15 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
             Disconnected() // no more connections
           } else if (d.master != source) {
             System.err.println(
-              "[debug] lost connection to {}, we still have our master server",
-              address
+              s"[debug] lost connection to $address, we still have our master server"
             )
             Connected(
               master = master,
               tips = tips
             ) // we don't care, this wasn't our master
           } else {
-            System.err.println(
-              "[info] lost connection to our master server {}",
-              address
-            )
+            System.err
+              .println(s"[info] lost connection to our master server $address")
             // we choose next best candidate as master
             val tips = d.tips - source
             val (bestClient, bestTip) = tips.toSeq.maxBy(_._2._1)
@@ -110,29 +104,23 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
             )
           }
         }
-
-        case other => whenUnhandled(other)
       }) {
     def blockHeight: Int = tips.get(master).map(_._1).getOrElse(0)
   }
 
-  def whenUnhandled(other: (Any, State)): State = other match {
-    case (InitConnect, _) => {
-      val connections =
-        Math.min(LNParams.maxChainConnectionsCount, serverAddresses.size)
-      (0 until connections).foreach(_ => self.send(Connect))
-      stay
-    }
+  def initConnect(): Unit = {
+    val connections =
+      Math.min(LNParams.maxChainConnectionsCount, serverAddresses.size)
+    (0 until connections).foreach(_ => self.connect())
+  }
 
-    case (Connect, _) => {
-      pickAddress(serverAddresses, addresses.values.toSet) foreach { esa =>
-        val resolved =
-          new InetSocketAddress(esa.address.getHostName, esa.address.getPort)
-        val client = new ElectrumClient(self, resolved, esa.ssl)
-        client.addStatusListener(self.asInstanceOf[castor.SimpleActor[Any]])
-        addresses += (client -> esa.address)
-      }
-      stay
+  def connect(): Unit = {
+    pickAddress(serverAddresses, addresses.values.toSet) foreach { esa =>
+      val resolved =
+        new InetSocketAddress(esa.address.getHostName, esa.address.getPort)
+      val client = new ElectrumClient(self, resolved, esa.ssl)
+      client.addStatusListener(self.asInstanceOf[castor.SimpleActor[Any]])
+      addresses += (client -> esa.address)
     }
   }
 
@@ -208,11 +196,7 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
     data match {
       case None => {
         // as soon as we have a connection to an electrum server, we select it as master
-        System.err.println(
-          "[info] selecting master {} at {}",
-          remoteAddress,
-          tip
-        )
+        System.err.println(s"[info] selecting master $remoteAddress at $height")
         statusListeners.foreach(
           _.send(
             ElectrumClient.ElectrumReady(
@@ -238,9 +222,7 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
         // (and maybe on testnet in some pathological cases where there's a block every second) it may seen like our master
         // skipped a block and is suddenly at height + 2
         System.err.println(
-          "[info] switching to master {} at {}",
-          remoteAddress,
-          tip
+          s"[info] switching to master $remoteAddress at $$tip"
         )
         // we've switched to a new master, treat this as a disconnection/reconnection
         // so users (wallet, watcher, ...) will reset their subscriptions
@@ -261,10 +243,7 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
       }
       case Some(d) => {
         System.err.println(
-          "[debug] received tip {} from {} at {}",
-          tip,
-          remoteAddress,
-          height
+          s"[debug] received tip $tip from $remoteAddress at $height"
         )
         d.copy(tips = d.tips + (connection -> (height, tip)))
       }
@@ -274,7 +253,7 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
   private def updateBlockCount(blockCount: Long): Unit = {
     // when synchronizing we don't want to advertise previous blocks
     if (this.blockCount.get() < blockCount) {
-      System.err.println("[debug] current blockchain height={}", blockCount)
+      System.err.println(s"[debug] current blockchain height=$blockCount")
       EventStream.publish(CurrentBlockCount(blockCount))
       this.blockCount.set(blockCount)
     }
@@ -336,7 +315,4 @@ object ElectrumClientPool {
 
   type TipAndHeader = (Int, BlockHeader)
   type ActorTipAndHeader = Map[ElectrumClient, TipAndHeader]
-
-  case object Connect
-  case object InitConnect
 }

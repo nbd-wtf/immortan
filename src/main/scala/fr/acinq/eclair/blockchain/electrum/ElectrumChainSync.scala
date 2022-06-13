@@ -25,7 +25,6 @@ class ElectrumChainSync(
   case object SYNCING extends State
   case object RUNNING extends State
 
-  var state: State = DISCONNECTED
   var blockchain: Blockchain =
     if (chainHash != Block.RegtestGenesisBlock.hash) {
       // In case if anything at all goes wrong we just use an initial blockchain and resync it from checkpoint
@@ -48,8 +47,9 @@ class ElectrumChainSync(
         Block.RegtestGenesisBlock.header
       )
 
-  pool.addStatusListener(this)
+  pool.addStatusListener(self)
 
+  var state: State = DISCONNECTED
   def stay = state
 
   def run(msg: Any): Unit = {
@@ -186,7 +186,7 @@ class ElectrumChainSync(
               }
             case Failure(err) => {
               System.err
-                .println("[error] Electrum peer sent bad headers", err)
+                .println(s"[error] Electrum peer sent bad headers: $err")
               source.send(PoisonPill)
               state = DISCONNECTED
             }

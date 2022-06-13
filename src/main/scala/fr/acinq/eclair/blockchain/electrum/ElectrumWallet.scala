@@ -735,10 +735,10 @@ case class ElectrumData(
     publicScriptAccountMap ++ publicScriptChangeMap
 
   lazy val accountKeyMap: Map[ByteVector32, ExtendedPublicKey] =
-    for (Tuple2(serialized, key) <- publicScriptAccountMap)
+    for ((serialized, key) <- publicScriptAccountMap)
       yield (computeScriptHash(serialized), key)
   lazy val changeKeyMap: Map[ByteVector32, ExtendedPublicKey] =
-    for (Tuple2(serialized, key) <- publicScriptChangeMap)
+    for ((serialized, key) <- publicScriptChangeMap)
       yield (computeScriptHash(serialized), key)
 
   lazy val currentReadyMessage: WalletReady = WalletReady(
@@ -781,7 +781,6 @@ case class ElectrumData(
       accountKeyMap.get(scriptHash) orElse changeKeyMap.get(scriptHash) map {
         key =>
           // We definitely have a private key generated for corresponding scriptHash here
-
           val unspents = for {
             item <- historyItems
             tx <- transactions.get(item.txHash).toList
