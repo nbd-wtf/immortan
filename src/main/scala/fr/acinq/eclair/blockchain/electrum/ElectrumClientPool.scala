@@ -14,7 +14,7 @@ import org.json4s.native.JsonMethods
 
 import scala.concurrent.{Future, ExecutionContext}
 import scala.concurrent.duration._
-import scala.util.Random
+import scala.util.{Try, Random}
 
 class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
     implicit ac: castor.Context
@@ -43,10 +43,14 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
           addresses -= source
           stay
         }
+
+        case _ => stay
       })
 
-  case class Connected(master: ElectrumClient, tips: ActorTipAndHeader)
-      extends State({
+  case class Connected(
+      master: ElectrumClient,
+      tips: Map[ElectrumClient, TipAndHeader]
+  ) extends State({
         case (
               ElectrumClient.ElectrumReady(source, height, tip, _),
               d: Connected
@@ -62,7 +66,8 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
           handleHeader(source, height, tip, Some(d))
         }
 
-        case (ElectrumClient.ElectrumDisconnected(source), d: Connected) => {
+        case (ElectrumClient.ElectrumDisconnected(source), d: Connected)
+            if addresses.contains(source) => {
           val address = addresses(source)
           val tips = d.tips - source
 
@@ -104,6 +109,8 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
             )
           }
         }
+
+        case _ => stay
       }) {
     def blockHeight: Int = tips.get(master).map(_._1).getOrElse(0)
   }
@@ -115,10 +122,8 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
   }
 
   def connect(): Unit = {
-    pickAddress(serverAddresses, addresses.values.toSet) foreach { esa =>
-      val resolved =
-        new InetSocketAddress(esa.address.getHostName, esa.address.getPort)
-      val client = new ElectrumClient(self, resolved, esa.ssl)
+    pickAddress(serverAddresses, addresses.values.toSet).foreach { esa =>
+      val client = new ElectrumClient(self, esa.resolved.get, esa.ssl)
       client.addStatusListener(self.asInstanceOf[castor.SimpleActor[Any]])
       addresses += (client -> esa.address)
     }
@@ -261,7 +266,11 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
 }
 
 object ElectrumClientPool {
-  case class ElectrumServerAddress(address: InetSocketAddress, ssl: SSL)
+  case class ElectrumServerAddress(address: InetSocketAddress, ssl: SSL) {
+    lazy val resolved = Try(
+      new InetSocketAddress(address.getHostName, address.getPort)
+    ).toOption
+  }
 
   var loadFromChainHash: ByteVector32 => Set[ElectrumServerAddress] = {
     case Block.LivenetGenesisBlock.hash =>
@@ -312,7 +321,10 @@ object ElectrumClientPool {
           .toSeq
       )
       .headOption
+      .flatMap { addr =>
+        if (addr.resolved.isDefined) Some(addr)
+        else pickAddress(serverAddresses, usedAddresses + addr.address)
+      }
 
   type TipAndHeader = (Int, BlockHeader)
-  type ActorTipAndHeader = Map[ElectrumClient, TipAndHeader]
 }
