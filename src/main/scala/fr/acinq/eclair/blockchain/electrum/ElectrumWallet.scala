@@ -743,7 +743,7 @@ case class ElectrumData(
 
   lazy val currentReadyMessage: WalletReady = WalletReady(
     balance,
-    blockchain.tip.height,
+    blockchain.height,
     proofs.hashCode + transactions.hashCode,
     ewt.xPub,
     unExcludedUtxos,

@@ -83,7 +83,7 @@ class ElectrumChainSync(
       case (
             WAITING_FOR_TIP,
             response: ElectrumClient.HeaderSubscriptionResponse
-          ) if response.header == blockchain.tip.header => {
+          ) if Some(response.header) == blockchain.tip.map(_.header) => {
         EventStream publish ElectrumChainSync.ChainSyncEnded(
           blockchain.height
         )
@@ -99,7 +99,7 @@ class ElectrumChainSync(
           blockchain.height,
           response.height
         )
-        getHeaders(blockchain.tip.height + 1, RETARGETING_PERIOD)
+        getHeaders(blockchain.height + 1, RETARGETING_PERIOD)
         SYNCING
       }
 
@@ -116,7 +116,7 @@ class ElectrumChainSync(
       case (
             RUNNING,
             ElectrumClient.HeaderSubscriptionResponse(source, height, header)
-          ) if blockchain.tip.header != header => {
+          ) if blockchain.tip.map(_.header) != Some(header) => {
         val difficultyOk = Blockchain
           .getDifficulty(blockchain, height, headerDb)
           .forall(header.bits.==)
@@ -169,9 +169,9 @@ class ElectrumChainSync(
                   val (obc, chunks) = Blockchain.optimize(bc)
                   headerDb.addHeaders(chunks.map(_.header), chunks.head.height)
                   System.err.println(
-                    s"[info] Got new headers chunk at ${obc.tip.height}, requesting next chunk"
+                    s"[info] Got new headers chunk at ${obc.height}, requesting next chunk"
                   )
-                  getHeaders(obc.tip.height + 1, RETARGETING_PERIOD)
+                  getHeaders(obc.height + 1, RETARGETING_PERIOD)
                   blockchain = obc
                   state = SYNCING
                 }

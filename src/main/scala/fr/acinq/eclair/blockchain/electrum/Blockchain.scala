@@ -38,7 +38,7 @@ case class Blockchain(
     s"invalid chain hash $chainHash"
   )
 
-  def tip = bestchain.last
+  def tip = if (bestchain.size == 0) None else Some(bestchain.last)
 
   def height = if (bestchain.isEmpty) 0 else bestchain.last.height
 
@@ -276,7 +276,7 @@ object Blockchain {
           None,
           chainwork + Blockchain.chainWork(headers.head)
         )
-        val bestchain1 = headers.tail.foldLeft(Vector(blockIndex)) {
+        val bestchain = headers.tail.foldLeft(Vector(blockIndex)) {
           case (indexes, header) =>
             indexes :+ BlockIndex(
               header,
@@ -285,9 +285,11 @@ object Blockchain {
               indexes.last.chainwork + Blockchain.chainWork(header)
             )
         }
-        val headersMap1 =
-          blockchain.headersMap ++ bestchain1.map(bi => bi.hash -> bi)
-        blockchain.copy(bestchain = bestchain1, headersMap = headersMap1)
+        blockchain.copy(
+          bestchain = bestchain,
+          headersMap =
+            blockchain.headersMap ++ bestchain.map(bi => bi.hash -> bi)
+        )
       case _ if height < blockchain.checkpoints.length * RETARGETING_PERIOD =>
         blockchain
       case _ if height == blockchain.height + 1 =>
