@@ -31,7 +31,7 @@ Whatever possible is taken from Acinq's [Eclair](https://github.com/ACINQ/eclair
 Install it by adding to your `build.sbt`:
 
 ```sbt
-libraryDependencies += "com.fiatjaf" %% "immortan" % "0.1.1"
+libraryDependencies += "com.fiatjaf" %% "immortan" % "0.7.1"
 ```
 
 ### Very dense and confusing guide
@@ -41,7 +41,7 @@ Then you must
   2. Implement some [database traits](https://github.com/fiatjaf/IMMORTAN/blob/master/src/main/scala/immortan/sqlite/DBInterface.scala) (or copy the implementation from [SBW](https://github.com/btcontract/wallet) as it was done in [Cliché](https://github.com/fiatjaf/cliche/blob/b00cb3fdf62cd65854a14b005825dcab45df1002/src/main/scala/com/btcontract/wallet/sqlite/DBInterfaceSQLiteAndroidMisc.scala) by [Ilya](https://github.com/engenegr) -- see also [Cliché's DB.scala](https://github.com/fiatjaf/cliche/blob/b00cb3fdf62cd65854a14b005825dcab45df1002/src/main/scala/DB.scala) for the final touch).
   3. Instantiate a `PathFinder`, which will take care of syncing Lightning gossip data and later sending out payments.
   4. Fill in `.connectionProvider`, `.logBag`, `.chainHash`, `.ourInit`, `.syncParams`, `.secret`, `.feeRates`, `.fiatRates`, `.cm` and `.chainWallets`;
-  5. Initiate actors for `ElectrumClientPool`, `ElectrumChainSync`, `ElectrumWatcher` and `WalletEventsCatcher`;
+  5. Instantiate `ElectrumClientPool`, `ElectrumChainSync`, `ElectrumWatcher` and `WalletEventsCatcher`;
 
 See [Cliché's Main.scala](https://github.com/fiatjaf/cliche/blob/b00cb3fdf62cd65854a14b005825dcab45df1002/src/main/scala/Main.scala) for a mostly clean implementation of all of the above.
 
@@ -54,7 +54,7 @@ After that you should be able to easily
   6. Create Lightning invoices;
   7. Send Lightning payments.
 
-Again, [Cliché's Commands.scala](https://github.com/fiatjaf/cliche/blob/b00cb3fdf62cd65854a14b005825dcab45df1002/src/main/scala/Commands.scala) has some implementations you might be able to understand and copy (the listeners are in [Main.scala](https://github.com/fiatjaf/cliche/blob/b00cb3fdf62cd65854a14b005825dcab45df1002/src/main/scala/Main.scala)).
+Again, [Cliché's `Commands.scala`](https://github.com/fiatjaf/cliche/blob/b00cb3fdf62cd65854a14b005825dcab45df1002/src/main/scala/Commands.scala) has some implementations you might be able to understand and copy (the listeners are in [Main.scala](https://github.com/fiatjaf/cliche/blob/b00cb3fdf62cd65854a14b005825dcab45df1002/src/main/scala/Main.scala)).
 
 ### [API Documentation (Scaladoc)](https://fiatjaf.github.io/IMMORTAN/immortan/index.html)
 
