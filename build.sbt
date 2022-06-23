@@ -33,3 +33,6 @@ libraryDependencies   ++= Seq(
 )
 scalacOptions        ++= Seq("-deprecation", "-feature")
 testFrameworks        += new TestFramework("utest.runner.Framework")
+
+// maven magic, see https://github.com/makingthematrix/scala-suffix/tree/56270a6b4abbb1cd1008febbd2de6eea29a23b52#but-wait-thats-not-all
+Compile / packageBin / packageOptions += Package.ManifestAttributes("Automatic-Module-Name" -> "immortan")
