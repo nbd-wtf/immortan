@@ -42,12 +42,11 @@ import scala.util.{Failure, Success, Try}
 
 class ElectrumClient(
     connectionPool: ElectrumClientPool,
-    serverAddress: InetSocketAddress,
-    ssl: SSL
+    server: ElectrumClientPool.ElectrumServerAddress
 )(implicit
     ac: castor.Context
 ) extends castor.StateMachineActor[Any] { self =>
-  def address = serverAddress.toString
+  def address = server.address.getHostName()
   System.err.println(s"[info] connecting to $address")
 
   var requests =
@@ -64,14 +63,14 @@ class ElectrumClient(
 
   b handler new ChannelInitializer[SocketChannel] {
     override def initChannel(ch: SocketChannel): Unit = {
-      if (ssl == SSL.LOOSE || serverAddress.getPort == 50002) {
+      if (server.ssl == SSL.LOOSE || server.address.getPort() == 50002) {
         val sslCtx = SslContextBuilder.forClient
           .trustManager(InsecureTrustManagerFactory.INSTANCE)
           .build
         ch.pipeline addLast sslCtx.newHandler(
           ch.alloc,
-          serverAddress.getHostName,
-          serverAddress.getPort
+          server.address.getHostName(),
+          server.address.getPort()
         )
       }
 
@@ -97,7 +96,7 @@ class ElectrumClient(
   }
 
   val channelOpenFuture: ChannelFuture =
-    b.connect(serverAddress.getHostName, serverAddress.getPort)
+    b.connect(server.address.getHostName(), server.address.getPort())
 
   if (LNParams.connectionProvider.proxyAddress.isDefined)
     b.resolver(NoopAddressResolverGroup.INSTANCE)
@@ -268,7 +267,7 @@ class ElectrumClient(
       extends State({
         case HeaderSubscriptionResponse(_, height, tip) => {
           statusListeners.foreach(
-            _.send(ElectrumReady(self, height, tip, serverAddress))
+            _.send(ElectrumReady(self, height, tip, server.address))
           )
           Connected(ctx, height, tip)
         }
@@ -297,7 +296,7 @@ class ElectrumClient(
 
     state match {
       case d: Connected =>
-        listener.send(ElectrumReady(self, d.height, d.tip, serverAddress))
+        listener.send(ElectrumReady(self, d.height, d.tip, server.address))
       case _ => {}
     }
   }
@@ -337,7 +336,7 @@ class ElectrumClient(
       self.close()
       promise.failure(
         new Exception(
-          s"channel not writable. connection to $serverAddress was closed."
+          s"channel not writable. connection to $address was closed."
         )
       )
     }

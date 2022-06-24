@@ -21,9 +21,9 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
 ) extends CastorStateMachineActorWithState[Any] { self =>
   val serverAddresses: Set[ElectrumServerAddress] = loadFromChainHash(chainHash)
   val addresses =
-    collection.mutable.Map.empty[ElectrumClient, InetSocketAddress]
+    scala.collection.mutable.Map.empty[ElectrumClient, InetSocketAddress]
   val statusListeners =
-    collection.mutable.HashSet.empty[castor.SimpleActor[Any]]
+    scala.collection.mutable.HashSet.empty[castor.SimpleActor[Any]]
 
   def initialState: State = Disconnected()
   def stay = state
@@ -122,11 +122,12 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
   }
 
   def connect(): Unit = {
-    pickAddress(serverAddresses, addresses.values.toSet).foreach { esa =>
-      val client = new ElectrumClient(self, esa.resolved.get, esa.ssl)
-      client.addStatusListener(self.asInstanceOf[castor.SimpleActor[Any]])
-      addresses += (client -> esa.address)
-    }
+    pickAddress(serverAddresses, addresses.values.toSet)
+      .foreach { esa =>
+        val client = new ElectrumClient(self, esa)
+        client.addStatusListener(self.asInstanceOf[castor.SimpleActor[Any]])
+        addresses += (client -> esa.address)
+      }
   }
 
   def addStatusListener(listener: castor.SimpleActor[Any]): Unit = {
@@ -266,12 +267,7 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
 }
 
 object ElectrumClientPool {
-  case class ElectrumServerAddress(address: InetSocketAddress, ssl: SSL) {
-    lazy val resolved = Try(
-      new InetSocketAddress(address.getHostName, address.getPort)
-    ).toOption
-  }
-
+  case class ElectrumServerAddress(address: InetSocketAddress, ssl: SSL)
   var loadFromChainHash: ByteVector32 => Set[ElectrumServerAddress] = {
     case Block.LivenetGenesisBlock.hash =>
       readServerAddresses(
@@ -321,10 +317,6 @@ object ElectrumClientPool {
           .toSeq
       )
       .headOption
-      .flatMap { addr =>
-        if (addr.resolved.isDefined) Some(addr)
-        else pickAddress(serverAddresses, usedAddresses + addr.address)
-      }
 
   type TipAndHeader = (Int, BlockHeader)
 }
