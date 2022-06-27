@@ -16,10 +16,22 @@ import scala.concurrent.{Future, ExecutionContext}
 import scala.concurrent.duration._
 import scala.util.{Try, Random}
 
-class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
-    implicit ac: castor.Context
+class ElectrumClientPool(
+    blockCount: AtomicLong,
+    chainHash: ByteVector32,
+    useOnion: Boolean = false
+)(implicit
+    ac: castor.Context
 ) extends CastorStateMachineActorWithState[Any] { self =>
-  val serverAddresses: Set[ElectrumServerAddress] = loadFromChainHash(chainHash)
+  val serverAddresses: Set[ElectrumServerAddress] = {
+    val addresses = loadFromChainHash(chainHash)
+
+    if (useOnion) addresses
+    else
+      addresses.filterNot(address =>
+        address.address.getHostName().endsWith(".onion")
+      )
+  }
   val addresses =
     scala.collection.mutable.Map.empty[ElectrumClient, InetSocketAddress]
   val statusListeners =
@@ -268,34 +280,27 @@ class ElectrumClientPool(blockCount: AtomicLong, chainHash: ByteVector32)(
 
 object ElectrumClientPool {
   case class ElectrumServerAddress(address: InetSocketAddress, ssl: SSL)
-  var loadFromChainHash: ByteVector32 => Set[ElectrumServerAddress] = {
-    case Block.LivenetGenesisBlock.hash =>
-      readServerAddresses(
-        classOf[
-          ElectrumServerAddress
-        ] getResourceAsStream "/electrum/servers_mainnet.json"
-      )
-    case Block.TestnetGenesisBlock.hash =>
-      readServerAddresses(
-        classOf[
-          ElectrumServerAddress
-        ] getResourceAsStream "/electrum/servers_testnet.json"
-      )
-    case Block.RegtestGenesisBlock.hash =>
-      readServerAddresses(
-        classOf[
-          ElectrumServerAddress
-        ] getResourceAsStream "/electrum/servers_regtest.json"
-      )
-    case _ => throw new RuntimeException
-  }
+  def loadFromChainHash(chainHash: ByteVector32): Set[ElectrumServerAddress] =
+    readServerAddresses(
+      classOf[
+        ElectrumServerAddress
+      ] getResourceAsStream ("/electrum/servers_" +
+        (chainHash match {
+          case Block.LivenetGenesisBlock.hash => "mainnet.json"
+          case Block.SignetGenesisBlock.hash  => "signet.json"
+          case Block.TestnetGenesisBlock.hash => "testnet.json"
+          case Block.RegtestGenesisBlock.hash => "regtest.json"
+          case _                              => throw new RuntimeException
+        }))
+    )
 
   def readServerAddresses(stream: InputStream): Set[ElectrumServerAddress] =
     try {
       val JObject(values) = JsonMethods.parse(stream)
 
       for ((name, fields) <- values.toSet) yield {
-        val port = (fields \ "s").asInstanceOf[JString].s.toInt
+        val port = Try((fields \ "s").asInstanceOf[JString].s.toInt).toOption
+          .getOrElse(0)
         val address = InetSocketAddress.createUnresolved(name, port)
         ElectrumServerAddress(address, SSL.LOOSE)
       }
