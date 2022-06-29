@@ -70,7 +70,6 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
     sCodecJsonFmt(extendedPublicKeyCodec)
 
   // Chain wallet types
-
   implicit object ChainWalletInfoFmt extends JsonFormat[ChainWalletInfo] {
     def read(raw: JsValue): ChainWalletInfo = raw.asJsObject.fields(TAG) match {
       case JsString("WatchingWallet") => raw.convertTo[WatchingWallet]
@@ -110,7 +109,6 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
     )
 
   // PaymentInfo stuff
-
   implicit val semanticOrderFmt: JsonFormat[SemanticOrder] =
     jsonFormat[String, Long, SemanticOrder](SemanticOrder.apply, "id", "order")
 

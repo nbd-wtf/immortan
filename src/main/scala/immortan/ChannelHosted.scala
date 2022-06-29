@@ -179,7 +179,6 @@ abstract class ChannelHosted extends Channel { me =>
       }
 
     // CHANNEL IS ESTABLISHED
-
     case (
           hc: HostedCommits,
           CurrentBlockCount(tip),

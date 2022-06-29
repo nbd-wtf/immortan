@@ -52,6 +52,14 @@ class ElectrumClient(
   var requests =
     scala.collection.mutable.Map.empty[String, (Request, Promise[Response])]
 
+  // We need to regularly send a ping in order not to get disconnected
+  val cancelPingTrigger = {
+    val t = new java.util.Timer()
+    val task = new java.util.TimerTask { def run() = self.request(Ping) }
+    t.schedule(task, 30000L, 30000L)
+    () => task.cancel()
+  }
+
   val b = new Bootstrap
   b channel classOf[NioSocketChannel]
   b group workerGroup
@@ -227,14 +235,6 @@ class ElectrumClient(
     collection.mutable.HashSet
       .empty[castor.SimpleActor[Any]]
   var reqId = 0
-
-  // We need to regularly send a ping in order not to get disconnected
-  val cancelPingTrigger = {
-    val t = new java.util.Timer()
-    val task = new java.util.TimerTask { def run() = self.request(Ping) }
-    t.schedule(task, 30000L, 30000L)
-    () => task.cancel()
-  }
 
   def initialState = Disconnected()
   def stay = state
