@@ -3,15 +3,10 @@ package immortan.sqlite
 import java.lang.{Double => JDouble, Integer => JInt, Long => JLong}
 import java.sql.PreparedStatement
 
-import immortan.crypto.Tools.Bytes
-
 trait PreparedQuery {
   def bound(params: Object*): PreparedQuery
-
   def executeQuery: RichCursor
-
   def executeUpdate(): Unit
-
   def close(): Unit
 }
 
@@ -28,7 +23,7 @@ case class PreparedQuerySQLiteGeneral(stmt: PreparedStatement)
           stmt.setDouble(positionIndex, queryParameter)
         case queryParameter: String =>
           stmt.setString(positionIndex, queryParameter)
-        case queryParameter: Bytes =>
+        case queryParameter: Array[Byte] =>
           stmt.setBytes(positionIndex, queryParameter)
         case queryParameter: JLong =>
           stmt.setLong(positionIndex, queryParameter)
@@ -43,8 +38,6 @@ case class PreparedQuerySQLiteGeneral(stmt: PreparedStatement)
   }
 
   def executeQuery: RichCursor = RichCursorSQLiteGeneral(stmt.executeQuery)
-
   def executeUpdate(): Unit = stmt.executeUpdate
-
   def close(): Unit = stmt.close
 }

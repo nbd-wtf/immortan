@@ -9,7 +9,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.wire.LightningMessageCodecs.lightningMessageCodecWithFallback
 import fr.acinq.eclair.wire._
 import immortan.crypto.Noise.KeyPair
-import immortan.crypto.Tools.{Bytes, none}
+import immortan.crypto.Tools.none
 import rx.lang.scala.{Observable, Subscription}
 import scodec.bits.ByteVector
 
@@ -47,7 +47,7 @@ object CommsTower {
         workers(pair) = new Worker(
           pair,
           info,
-          new Bytes(1024),
+          new Array[Byte](1024),
           LNParams.connectionProvider.getSocket
         )
     }
@@ -83,7 +83,7 @@ object CommsTower {
   class Worker(
       val pair: KeyPairAndPubKey,
       val info: RemoteNodeInfo,
-      buffer: Bytes,
+      buffer: Array[Byte],
       val sock: Socket
   ) { me =>
     implicit val context: ExecutionContextExecutor =

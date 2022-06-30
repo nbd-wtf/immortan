@@ -9,7 +9,7 @@ import fr.acinq.eclair.channel.{DATA_CLOSING, HasNormalCommitments}
 import fr.acinq.eclair.wire.{FullPaymentTag, PaymentTagTlv}
 import immortan.ChannelMaster.TxConfirmedAtOpt
 import immortan.crypto.Tools
-import immortan.crypto.Tools.{Any2Some, Bytes, Fiat2Btc, SEPARATOR}
+import immortan.crypto.Tools.{Any2Some, Fiat2Btc, SEPARATOR}
 import immortan.fsm.{IncomingPaymentProcessor, SendMultiPart, SplitInfo}
 import immortan.utils.ImplicitJsonFormats._
 import immortan.utils.{LNUrl, PayRequestMeta, PaymentRequestExt}
@@ -126,7 +126,7 @@ case class LNUrlPayLink(
     payMetaString.parseJson.asInstanceOf[JsArray].elements
   ).map(PayRequestMeta)
 
-  lazy val imageBytes: Option[Bytes] =
+  lazy val imageBytes: Option[Array[Byte]] =
     payMetaData.map(_.imageBase64s.head).map(Base64.decode).toOption
 
   lazy val lastComment: Option[String] =
@@ -243,11 +243,11 @@ case class AESAction(
     ciphertext: String,
     iv: String
 ) extends PaymentAction {
-  val ciphertextBytes: Bytes = ByteVector
+  val ciphertextBytes: Array[Byte] = ByteVector
     .fromValidBase64(ciphertext)
     .take(1024 * 4)
     .toArray // up to ~2kb of encrypted data
-  val ivBytes: Bytes =
+  val ivBytes: Array[Byte] =
     ByteVector.fromValidBase64(iv).take(24).toArray // 16 bytes
   val finalMessage = s"<br>${description take 144}"
 }

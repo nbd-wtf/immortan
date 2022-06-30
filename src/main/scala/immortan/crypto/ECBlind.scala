@@ -6,7 +6,6 @@ import scala.collection.LazyZip3._
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.Crypto.curve.{getCurve, getG, getN}
 import fr.acinq.eclair._
-import immortan.crypto.Tools.Bytes
 import org.bouncycastle.math.ec.ECPoint
 import scodec.bits.ByteVector
 
@@ -36,7 +35,7 @@ case class BlindMemo(
 
 // We blind a token but unblind it's signature
 case class BlindParam(
-    point: Bytes,
+    point: Array[Byte],
     a: BigInteger,
     b: BigInteger,
     c: BigInteger,

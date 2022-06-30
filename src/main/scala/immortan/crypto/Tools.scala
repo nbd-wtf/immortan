@@ -28,7 +28,6 @@ import rx.lang.scala.Observable
 import scodec.bits.ByteVector
 
 object Tools {
-  type Bytes = Array[Byte]
   type Fiat2Btc = Map[String, Double]
   final val SEPARATOR = " "
   final val PERCENT = "%"

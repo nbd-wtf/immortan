@@ -11,7 +11,6 @@ import fr.acinq.eclair.wire.LightningMessageCodecs.{
   trampolineOnCodec
 }
 import fr.acinq.eclair.wire.{HostedChannelBranding, SwapInState, TrampolineOn}
-import immortan.crypto.Tools.Bytes
 import immortan.sqlite.SQLiteData._
 import immortan.utils.ImplicitJsonFormats._
 import immortan.utils.{FeeRatesInfo, FiatRatesInfo}
@@ -40,7 +39,7 @@ class SQLiteData(val db: DBInterface) extends HeaderDb with DataBag {
     db.select(DataTable.selectSql, keyValueLabel)
       .headTry(_ byteVec DataTable.content)
 
-  def put(label: String, content: Bytes): Unit = {
+  def put(label: String, content: Array[Byte]): Unit = {
     // Insert and then update because of INSERT IGNORE
     db.change(DataTable.newSql, label, content)
     db.change(DataTable.updSql, content, label)
