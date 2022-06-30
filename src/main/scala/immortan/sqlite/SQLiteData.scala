@@ -47,7 +47,6 @@ class SQLiteData(val db: DBInterface) extends HeaderDb with DataBag {
   }
 
   // StorageFormat
-
   def putSecret(secret: WalletSecret): Unit =
     put(LABEL_FORMAT, walletSecretCodec.encode(secret).require.toByteArray)
 
@@ -56,7 +55,6 @@ class SQLiteData(val db: DBInterface) extends HeaderDb with DataBag {
   )
 
   // Fiat rates, fee rates
-
   def putTrampolineOn(ton: TrampolineOn): Unit =
     put(LABLEL_TRAMPOLINE_ON, trampolineOnCodec.encode(ton).require.toByteArray)
 

@@ -7,11 +7,10 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet._
 import fr.acinq.bitcoin.{ByteVector32, Protocol}
 import fr.acinq.eclair.crypto.Mac32
-import immortan.crypto.Tools.Bytes
 import scodec.bits.ByteVector
 
 object LightningNodeKeys {
-  def makeFromSeed(seed: Bytes): LightningNodeKeys = {
+  def makeFromSeed(seed: Array[Byte]): LightningNodeKeys = {
     val master: ExtendedPrivateKey = generate(ByteVector view seed)
     val extendedNodeKey: ExtendedPrivateKey =
       derivePrivateKey(master, hardened(46L) :: hardened(0L) :: Nil)

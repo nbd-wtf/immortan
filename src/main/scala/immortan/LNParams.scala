@@ -445,15 +445,17 @@ case class RemoteNodeInfo(
 }
 
 case class WalletSecret(
-    keys: LightningNodeKeys,
     mnemonic: List[String],
-    seed: ByteVector
-)
+    passphrase: String = ""
+) {
+  val seed = MnemonicCode.toSeed(mnemonic, passphrase)
+  val keys = LightningNodeKeys.makeFromSeed(seed.toArray)
+}
+
 case class UpdateAddHtlcExt(theirAdd: UpdateAddHtlc, remoteInfo: RemoteNodeInfo)
 case class SwapInStateExt(state: SwapInState, nodeId: PublicKey)
 
 // Interfaces
-
 trait NetworkBag {
   def addChannelAnnouncement(
       ca: ChannelAnnouncement,
