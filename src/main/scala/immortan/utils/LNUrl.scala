@@ -98,16 +98,12 @@ case class LNUrl(request: String) {
 }
 
 sealed trait LNUrlData
-
 sealed trait CallbackLNUrlData extends LNUrlData {
-
   val callbackUri: Uri = LNUrl.checkHost(callback)
-
   def callback: String
 }
 
 // LNURL-CHANNEL
-
 sealed trait HasRemoteInfo {
   val remoteInfo: RemoteNodeInfo
   def cancel(): Unit = Tools.none
@@ -139,12 +135,9 @@ case class NormalChannelRequest(uri: String, callback: String, k1: String)
     .foreach(Tools.none, Tools.none)
 
   val InputParser.nodeLink(nodeKey, hostAddress, portNumber) = uri
-
   val pubKey: PublicKey = PublicKey.fromBin(ByteVector fromValidHex nodeKey)
-
   val address: NodeAddress =
     NodeAddress.fromParts(hostAddress, portNumber.toInt)
-
   val remoteInfo: RemoteNodeInfo = RemoteNodeInfo(pubKey, address, hostAddress)
 }
 
@@ -153,19 +146,14 @@ case class HostedChannelRequest(uri: String, alias: Option[String], k1: String)
     with HasRemoteInfo {
 
   val secret: ByteVector32 = ByteVector32.fromValidHex(k1)
-
   val InputParser.nodeLink(nodeKey, hostAddress, portNumber) = uri
-
   val pubKey: PublicKey = PublicKey(ByteVector fromValidHex nodeKey)
-
   val address: NodeAddress =
     NodeAddress.fromParts(hostAddress, portNumber.toInt)
-
   val remoteInfo: RemoteNodeInfo = RemoteNodeInfo(pubKey, address, hostAddress)
 }
 
 // LNURL-WITHDRAW
-
 case class WithdrawRequest(
     callback: String,
     k1: String,
@@ -176,7 +164,6 @@ case class WithdrawRequest(
     balanceCheck: Option[String] = None,
     payLink: Option[String] = None
 ) extends CallbackLNUrlData { me =>
-
   def requestWithdraw(ext: PaymentRequestExt): Observable[String] =
     LNUrl.level2DataResponse {
       callbackUri.buildUpon
@@ -310,8 +297,6 @@ case class PayRequestFinal(
     disposable: Option[Boolean],
     pr: String
 ) extends LNUrlData {
-
   lazy val prExt: PaymentRequestExt = PaymentRequestExt.fromUri(pr)
-
   val isThrowAway: Boolean = disposable.getOrElse(true)
 }

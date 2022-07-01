@@ -115,11 +115,8 @@ case class LNUrlPayLink(
     lastNodeIdString: String,
     lastCommentString: String
 ) extends TransactionDetails {
-
   override val seenAt: Long = updatedAt
-
   override val identity: String = payString
-
   lazy val payLink: Option[LNUrl] = Try(payString).map(LNUrl.apply).toOption
 
   lazy val payMetaData: Try[PayRequestMeta] = Try(
@@ -136,21 +133,15 @@ case class LNUrlPayLink(
 case class DelayedRefunds(
     txToParent: Map[Transaction, TxConfirmedAtOpt] = Map.empty
 ) extends TransactionDetails {
-
   val totalAmount: MilliSatoshi =
     txToParent.keys.flatMap(_.txOut).map(_.amount).sum.toMilliSatoshi
-
   override val description: TransactionDescription = EmptyTransactionDescription
-
   override val updatedAt: Long = System.currentTimeMillis * 2
-
   override val seenAt: Long = System.currentTimeMillis * 2
-
   override val identity: String = "DelayedRefunds"
 }
 
 // Payment descriptions
-
 case class PaymentDescription(
     split: Option[SplitInfo],
     label: Option[String],
@@ -188,36 +179,27 @@ case class PaymentInfo(
     chainFee: MilliSatoshi,
     incoming: Long
 ) extends TransactionDetails {
-
   override val identity: String = prString
-
   lazy val isIncoming: Boolean = 1 == incoming
-
   lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
-
   lazy val prExt: PaymentRequestExt = PaymentRequestExt.fromUri(prString)
-
   lazy val action: Option[PaymentAction] =
     if (actionString == PaymentInfo.NO_ACTION) None
     else to[PaymentAction](actionString).asSome
-
   lazy val fullTag: FullPaymentTag = FullPaymentTag(
     paymentHash,
     paymentSecret,
     if (isIncoming) PaymentTagTlv.FINAL_INCOMING else PaymentTagTlv.LOCALLY_SENT
   )
-
   def isActivelyHolding(fsm: IncomingPaymentProcessor): Boolean =
     fsm.state == IncomingPaymentProcessor.Receiving && prExt.isEnough(
       fsm.lastAmountIn
     ) && fsm.isHolding
-
   def ratio(fsm: IncomingPaymentProcessor): Long =
     Tools.ratio(received, fsm.lastAmountIn).toLong
 }
 
 // Payment actions
-
 sealed trait PaymentAction {
   val domain: Option[String]
   val finalMessage: String
@@ -253,7 +235,6 @@ case class AESAction(
 }
 
 // Relayed preimages
-
 case class RelayedPreimageInfo(
     paymentHashString: String,
     paymentSecretString: String,
@@ -263,25 +244,18 @@ case class RelayedPreimageInfo(
     seenAt: Long,
     updatedAt: Long
 ) extends TransactionDetails {
-
   override val identity: String = paymentHashString + paymentSecretString
-
   override val description: TransactionDescription = EmptyTransactionDescription
-
   lazy val preimage: ByteVector32 = ByteVector32.fromValidHex(preimageString)
-
   lazy val paymentHash: ByteVector32 =
     ByteVector32.fromValidHex(paymentHashString)
-
   lazy val paymentSecret: ByteVector32 =
     ByteVector32.fromValidHex(paymentSecretString)
-
   lazy val fullTag: FullPaymentTag =
     FullPaymentTag(paymentHash, paymentSecret, PaymentTagTlv.TRAMPLOINE_ROUTED)
 }
 
 // Tx descriptions
-
 case class TxInfo(
     txString: String,
     txidString: String,
@@ -298,21 +272,13 @@ case class TxInfo(
     incoming: Long,
     doubleSpent: Long
 ) extends TransactionDetails {
-
   override val identity: String = txidString
-
   lazy val isIncoming: Boolean = 1L == incoming
-
   lazy val isDoubleSpent: Boolean = 1L == doubleSpent
-
   lazy val isConfirmed: Boolean = depth >= LNParams.minDepthBlocks
-
   lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
-
   lazy val pubKey: PublicKey = PublicKey(ByteVector fromValidHex pubKeyString)
-
   lazy val txid: ByteVector32 = ByteVector32.fromValidHex(txidString)
-
   lazy val tx: Transaction = Transaction.read(txString)
 }
 
@@ -339,7 +305,6 @@ case class PlainTxDescription(
     cpfpOf: Option[ByteVector32] = None,
     rbf: Option[RBFParams] = None
 ) extends TxDescription { me =>
-
   override lazy val toAddress: Option[String] =
     if (addresses.size > 1) None else addresses.headOption
   override def queryText(txid: ByteVector32): String =
@@ -363,7 +328,6 @@ case class OpReturnTxDescription(
     cpfpOf: Option[ByteVector32] = None,
     rbf: Option[RBFParams] = None
 ) extends TxDescription { me =>
-
   override def queryText(txid: ByteVector32): String =
     txid.toHex + SEPARATOR + preimages
       .map(_.toHex)
@@ -392,7 +356,6 @@ case class ChanFundingTxDescription(
     cpfpOf: Option[ByteVector32] = None,
     rbf: Option[RBFParams] = None
 ) extends ChanTxDescription { me =>
-
   override def queryText(txid: ByteVector32): String =
     txid.toHex + SEPARATOR + nodeId.toString + SEPARATOR + label.getOrElse(
       new String
@@ -416,7 +379,6 @@ case class ChanRefundingTxDescription(
     cpfpOf: Option[ByteVector32] = None,
     rbf: Option[RBFParams] = None
 ) extends ChanTxDescription { me =>
-
   override def queryText(txid: ByteVector32): String =
     txid.toHex + SEPARATOR + nodeId.toString + SEPARATOR + label.getOrElse(
       new String
@@ -462,7 +424,6 @@ case class PenaltyTxDescription(
     cpfpOf: Option[ByteVector32] = None,
     rbf: Option[RBFParams] = None
 ) extends ChanTxDescription { me =>
-
   override def queryText(txid: ByteVector32): String =
     txid.toHex + SEPARATOR + nodeId.toString + SEPARATOR + label.getOrElse(
       new String

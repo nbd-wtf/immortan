@@ -332,7 +332,6 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
   )
 
   // LNURL
-
   implicit object LNUrlDataFmt extends JsonFormat[LNUrlData] {
     def write(unserialized: LNUrlData): JsValue = throw new RuntimeException
     def read(serialized: JsValue): LNUrlData =
@@ -349,7 +348,6 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
   }
 
   // Note: tag on these MUST start with lower case because it is defined that way on protocol level
-
   implicit val normalChannelRequestFmt: JsonFormat[NormalChannelRequest] =
     taggedJsonFmt(
       jsonFormat[String, String, String, NormalChannelRequest](
@@ -410,7 +408,6 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
     )
 
   // Fiat feerates
-
   implicit val blockchainInfoItemFmt: JsonFormat[BlockchainInfoItem] =
     jsonFormat[Double, BlockchainInfoItem](BlockchainInfoItem.apply, "last")
 
