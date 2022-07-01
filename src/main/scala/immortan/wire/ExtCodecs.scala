@@ -26,15 +26,7 @@ object ExtCodecs {
       (lastCrossSignedStateCodec withContext "lastCrossSignedState")
   }.as[HostedState]
 
-  val lightningNodeKeysCodec = {
-    (extendedPrivateKeyCodec withContext "master") ::
-      (extendedPrivateKeyCodec withContext "extendedNodeKey") ::
-      (privateKey withContext "hashingKey")
-  }.as[LightningNodeKeys]
-
-  val walletSecretCodec = {
-    (lightningNodeKeysCodec withContext "keys") ::
-      (listOfN(uint8, text) withContext "mnemonic") ::
-      (varsizebinarydata withContext "seed")
-  }.as[WalletSecret]
+  val mnemonicsCodec = {
+    (listOfN(uint8, text) withContext "mnemonic")
+  }.as[List[String]]
 }

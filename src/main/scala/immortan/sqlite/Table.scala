@@ -15,13 +15,9 @@ object ChannelTable extends Table {
   val (table, channelId, data) = ("channel", "chanid", "data")
 
   val newSql = s"INSERT OR IGNORE INTO $table ($channelId, $data) VALUES (?, ?)"
-
   val updSql = s"UPDATE $table SET $data = ? WHERE $channelId = ?"
-
   val killSql = s"DELETE FROM $table WHERE $channelId = ?"
-
   val selectAllSql = s"SELECT * FROM $table ORDER BY $id ASC"
-
   def createStatements: Seq[String] =
     s"CREATE TABLE IF NOT EXISTS $table($IDAUTOINC, $channelId TEXT NOT NULL $UNIQUE, $data BLOB NOT NULL)" :: Nil
 }
@@ -32,11 +28,8 @@ object HtlcInfoTable extends Table {
 
   val newSql =
     s"INSERT INTO $table ($sid, $commitNumber, $paymentHash160, $cltvExpiry) VALUES (?, ?, ?, ?)"
-
   val selectAllSql = s"SELECT * FROM $table WHERE $commitNumber = ?"
-
   val killSql = s"DELETE FROM $table WHERE $sid = ?"
-
   def createStatements: Seq[String] = {
     val createTable = s"""CREATE TABLE IF NOT EXISTS $table(
       $IDAUTOINC, $sid INTEGER NOT NULL, $commitNumber INTEGER NOT NULL,
@@ -55,9 +48,7 @@ object PreimageTable extends Table {
   val (table, hash, preimage) = ("preimages", "hash", "preimage")
 
   val newSql = s"INSERT OR IGNORE INTO $table ($hash, $preimage) VALUES (?, ?)"
-
   val selectByHashSql = s"SELECT * FROM $table WHERE $hash = ?"
-
   def createStatements: Seq[String] =
     s"CREATE TABLE IF NOT EXISTS $table($IDAUTOINC, $hash TEXT NOT NULL $UNIQUE, $preimage TEXT NOT NULL)" :: Nil
 }
@@ -70,18 +61,13 @@ abstract class ChannelAnnouncementTable(val table: String) extends Table {
 
   val newSql =
     s"INSERT OR IGNORE INTO $table ($features, $shortChannelId, $nodeId1, $nodeId2) VALUES (?, ?, ?, ?)"
-
   val selectAllSql = s"SELECT * FROM $table"
-
   val killAllSql = s"DELETE FROM $table"
-
   def createStatements: Seq[String] =
     s"CREATE TABLE IF NOT EXISTS $table($IDAUTOINC, $features BLOB NOT NULL, $shortChannelId INTEGER NOT NULL $UNIQUE, $nodeId1 BLOB NOT NULL, $nodeId2 BLOB NOT NULL)" :: Nil
-
   // This one must be a method, not a value because of late binding of abstract val
   def killNotPresentInChans =
     s"DELETE FROM $table WHERE $shortChannelId NOT IN ($selectFromRelatedUpdateTable)"
-
   val selectFromRelatedUpdateTable: String
 }
 
@@ -129,20 +115,14 @@ abstract class ChannelUpdateTable(val table: String, val useHeuristics: Boolean)
     )
 
   val updScoreSql = s"UPDATE $table SET $score = $score + 1 WHERE $sid = ?"
-
   val updSQL =
     s"UPDATE $table SET $timestamp = ?, $msgFlags = ?, $chanFlags = ?, $cltvExpiryDelta = ?, $minMsat = ?, $base = ?, $proportional = ?, $maxMsat = ?, $crc32 = ? WHERE $sid = ? AND $position = ?"
-
   val newSql =
     s"INSERT OR IGNORE INTO $table ($sid, $timestamp, $msgFlags, $chanFlags, $cltvExpiryDelta, $minMsat, $base, $proportional, $maxMsat, $position, $score, $crc32) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-
   val selectHavingOneUpdate =
     s"SELECT $sid FROM $table GROUP BY $sid HAVING COUNT($sid) < 2"
-
   val selectAllSql = s"SELECT * FROM $table"
-
   val killSql = s"DELETE FROM $table WHERE $sid = ?"
-
   val killAllSql = s"DELETE FROM $table"
 
   def createStatements: Seq[String] = {
@@ -471,13 +451,9 @@ object DataTable extends Table {
   val (table, label, content) = ("data", "label", "content")
 
   val newSql = s"INSERT OR IGNORE INTO $table ($label, $content) VALUES (?, ?)"
-
   val updSql = s"UPDATE $table SET $content = ? WHERE $label = ?"
-
   val selectSql = s"SELECT * FROM $table WHERE $label = ?"
-
   val killSql = s"DELETE FROM $table WHERE $label = ?"
-
   def createStatements: Seq[String] =
     s"CREATE TABLE IF NOT EXISTS $table($IDAUTOINC, $label TEXT NOT NULL $UNIQUE, $content BLOB NOT NULL)" :: Nil
 }
@@ -488,17 +464,12 @@ object ElectrumHeadersTable extends Table {
 
   val addHeaderSql =
     s"INSERT OR IGNORE INTO $table ($height, $blockHash, $header) VALUES (?, ?, ?)"
-
   val selectByHeightSql = s"SELECT * FROM $table WHERE $height = ?"
-
   val selectByBlockHashSql = s"SELECT * FROM $table WHERE $blockHash = ?"
-
   val selectHeadersSql =
     s"SELECT * FROM $table WHERE $height >= ? ORDER BY $height LIMIT ?"
-
   val selectTipSql =
     s"SELECT * FROM $table INNER JOIN (SELECT MAX($height) AS maxHeight FROM $table) t1 ON $height = t1.maxHeight"
-
   def createStatements: Seq[String] =
     s"CREATE TABLE IF NOT EXISTS $table($IDAUTOINC, $height INTEGER NOT NULL $UNIQUE, $blockHash TEXT NOT NULL, $header BLOB NOT NULL)" :: Nil
 }
@@ -529,20 +500,14 @@ object LNUrlPayTable extends Table {
 
   val newSql =
     s"INSERT OR IGNORE INTO $table ($domain, $pay, $payMeta, $updatedAt, $description, $lastNodeId, $lastComment) VALUES (?, ?, ?, ?, ?, ?, ?)"
-
   val newVirtualSql = s"INSERT INTO $fts$table ($search, $domain) VALUES (?, ?)"
-
   val selectRecentSql = s"SELECT * FROM $table ORDER BY $updatedAt DESC LIMIT ?"
-
   val searchSql =
     s"SELECT * FROM $table WHERE $domain IN (SELECT DISTINCT $domain FROM $fts$table WHERE $search MATCH ?) LIMIT 100"
-
   val updInfoSql =
     s"UPDATE $table SET $payMeta = ?, $updatedAt = ?, $description = ?, $lastNodeId = ?, $lastComment = ? WHERE $pay = ?"
-
   val updateDescriptionSql =
     s"UPDATE $table SET $description = ? WHERE $pay = ?"
-
   val killSql = s"DELETE FROM $table WHERE $pay = ?"
 
   def createStatements: Seq[String] = {
@@ -564,11 +529,8 @@ object LogTable extends Table {
   val (table, stamp, tag, content) = ("log", "stamp", "tag", "content")
 
   val newSql = s"INSERT INTO $table ($stamp, $tag, $content) VALUES (?, ?, ?)"
-
   val recentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT 50"
-
   val countSql = s"SELECT COUNT(*) FROM $table"
-
   def createStatements: Seq[String] =
     s"""CREATE TABLE IF NOT EXISTS $table($IDAUTOINC, $stamp INTEGER NOT NULL, $tag STRING NOT NULL, $content STRING NOT NULL)""" :: Nil
 }

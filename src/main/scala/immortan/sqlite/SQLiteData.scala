@@ -14,7 +14,7 @@ import fr.acinq.eclair.wire.{HostedChannelBranding, SwapInState, TrampolineOn}
 import immortan.sqlite.SQLiteData._
 import immortan.utils.ImplicitJsonFormats._
 import immortan.utils.{FeeRatesInfo, FiatRatesInfo}
-import immortan.wire.ExtCodecs.walletSecretCodec
+import immortan.wire.ExtCodecs.mnemonicsCodec
 import immortan.{DataBag, SwapInStateExt, WalletSecret}
 import scodec.bits.ByteVector
 import spray.json._
@@ -46,12 +46,13 @@ class SQLiteData(val db: DBInterface) extends HeaderDb with DataBag {
   }
 
   // StorageFormat
-  def putSecret(secret: WalletSecret): Unit =
-    put(LABEL_FORMAT, walletSecretCodec.encode(secret).require.toByteArray)
+  def putMnemonics(mnemonics: List[String]): Unit =
+    put(LABEL_FORMAT, mnemonicsCodec.encode(mnemonics).require.toByteArray)
 
-  def tryGetSecret: Try[WalletSecret] = tryGet(LABEL_FORMAT).map(raw =>
-    walletSecretCodec.decode(raw.toBitVector).require.value
-  )
+  def tryGetMnemonics: Try[List[String]] =
+    tryGet(LABEL_FORMAT).map(raw =>
+      mnemonicsCodec.decode(raw.toBitVector).require.value
+    )
 
   // Fiat rates, fee rates
   def putTrampolineOn(ton: TrampolineOn): Unit =
