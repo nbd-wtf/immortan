@@ -19,18 +19,21 @@ import scala.util.{Try, Random}
 class ElectrumClientPool(
     blockCount: AtomicLong,
     chainHash: ByteVector32,
-    useOnion: Boolean = false
+    useOnion: Boolean = false,
+    customAddress: Option[ElectrumServerAddress] = None
 )(implicit
     ac: castor.Context
 ) extends CastorStateMachineActorWithState[Any] { self =>
-  val serverAddresses: Set[ElectrumServerAddress] = {
-    val addresses = loadFromChainHash(chainHash)
-
-    if (useOnion) addresses
-    else
-      addresses.filterNot(address =>
-        address.address.getHostName().endsWith(".onion")
-      )
+  val serverAddresses: Set[ElectrumServerAddress] = customAddress match {
+    case Some(address) => Set(address)
+    case None => {
+      val addresses = loadFromChainHash(chainHash)
+      if (useOnion) addresses
+      else
+        addresses.filterNot(address =>
+          address.address.getHostName().endsWith(".onion")
+        )
+    }
   }
   val addresses =
     scala.collection.mutable.Map.empty[ElectrumClient, InetSocketAddress]
