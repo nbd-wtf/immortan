@@ -1,5 +1,7 @@
 package immortan.utils
 
+import scala.util.chaining._
+import scala.util.Try
 import com.google.common.base.CharMatcher
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Bech32, ByteVector32, ByteVector64, Crypto}
@@ -10,11 +12,10 @@ import immortan.crypto.Tools.Any2Some
 import immortan.utils.ImplicitJsonFormats._
 import immortan.utils.uri.Uri
 import immortan.{LNParams, PaymentAction, RemoteNodeInfo}
+import com.softwaremill.quicklens._
 import rx.lang.scala.Observable
 import scodec.bits.ByteVector
 import spray.json._
-
-import scala.util.Try
 
 object LNUrl {
   def fromIdentifier(identifier: String): LNUrl = {
@@ -241,9 +242,6 @@ case class PayRequest(
     commentAllowed: Option[Int] = None,
     payerData: Option[PayerDataSpec] = None
 ) extends CallbackLNUrlData {
-  def metadataHash(rawPayerData: String): ByteVector32 =
-    Crypto.sha256(ByteVector.view(metadata.getBytes ++ rawPayerData.getBytes()))
-
   val meta: PayRequestMeta = PayRequestMeta(
     metadata.parseJson.asInstanceOf[JsArray].elements
   )
@@ -265,6 +263,71 @@ case class PayRequest(
     minSendable <= maxSendable,
     s"max=$maxSendable while min=$minSendable"
   )
+
+  def metadataHash(rawPayerData: String): ByteVector32 =
+    Crypto.sha256(ByteVector.view(metadata.getBytes ++ rawPayerData.getBytes()))
+
+  def getFinal(
+      amount: MilliSatoshi,
+      comment: Option[String],
+
+      // LUD-18
+      name: Option[String] = None,
+      randomKey: Option[Crypto.PublicKey] = None,
+      authKeyHost: Option[String] = None // None means never include auth key
+  ): Observable[PayRequestFinal] = {
+    val rawPayerdata: Option[String] = this.payerData
+      .map(spec =>
+        PayerData(
+          name = if (spec.name.isDefined) name else None,
+          pubkey =
+            if (spec.pubkey.isDefined) randomKey.map(_.toString) else None,
+          auth = for {
+            authSpec <- spec.auth
+            host <- authKeyHost
+            authData <- Try(
+              LNUrlAuther.make(host, authSpec.k1)
+            ).toOption
+          } yield authData
+        )
+      )
+      .map(_.toJson.compactPrint)
+
+    val url = this.callbackUri.buildUpon
+      .appendQueryParameter("amount", amount.toLong.toString)
+      .pipe(base =>
+        (this.commentAllowed.getOrElse(0) > 0, comment) match {
+          case (true, Some(c)) => base.appendQueryParameter("comment", c)
+          case _               => base
+        }
+      )
+      .pipe(base =>
+        rawPayerdata match {
+          case Some(r) => base.appendQueryParameter("payerdata", r)
+          case _       => base
+        }
+      )
+
+    LNUrl
+      .level2DataResponse(url)
+      .map(to[PayRequestFinal](_))
+      .map { payRequestFinal =>
+        val descriptionHashOpt =
+          payRequestFinal.prExt.pr.description.toOption
+        val expectedHash = this.metadataHash(rawPayerdata.getOrElse(""))
+        require(
+          descriptionHashOpt == Some(expectedHash),
+          s"Metadata hash mismatch, expected=${expectedHash}, provided in invoice=$descriptionHashOpt"
+        )
+        require(
+          payRequestFinal.prExt.pr.amountOpt == Some(amount),
+          s"Payment amount mismatch, requested by wallet=$amount, provided in invoice=${payRequestFinal.prExt.pr.amountOpt}"
+        )
+        payRequestFinal
+          .modify(_.successAction.each.domain)
+          .setTo(this.callbackUri.getHost.asSome)
+      }
+  }
 }
 
 case class PayerDataSpec(

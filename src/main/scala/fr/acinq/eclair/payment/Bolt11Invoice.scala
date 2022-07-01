@@ -69,7 +69,6 @@ case class Bolt11Invoice(
     tags: List[Bolt11Invoice.TaggedField],
     signature: ByteVector
 ) extends Invoice {
-
   import fr.acinq.eclair.payment.Bolt11Invoice._
 
   amountOpt.foreach(a => require(a > 0.msat, s"amount is not valid"))
