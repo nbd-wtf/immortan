@@ -76,8 +76,15 @@ case class LNUrl(request: String) {
   }.mkString
 
   lazy val k1: Try[String] = Try(uri getQueryParameter "k1")
-  lazy val isAuth: Boolean =
-    Try(uri.getQueryParameter("tag").toLowerCase == "login").getOrElse(false)
+  lazy val isAuth: Boolean = {
+    val authTag =
+      Try(uri.getQueryParameter("tag").toLowerCase == "login").getOrElse(false)
+    val validK1 = k1
+      .flatMap(k1str => Try(ByteVector.fromValidHex(k1str)))
+      .map(_.size == 32)
+      .getOrElse(false)
+    authTag && validK1
+  }
   lazy val authAction: String =
     Try(uri.getQueryParameter("action").toLowerCase).getOrElse("login")
 
@@ -190,65 +197,39 @@ case class WithdrawRequest(
 }
 
 // LNURL-PAY
-
-case class LNUrlAuthSpec(host: String, k1: ByteVector32) {
-  val linkingPrivKey: Crypto.PrivateKey =
-    LNParams.secret.keys.makeLinkingKey(host)
-  val linkingPubKey: String = linkingPrivKey.publicKey.toString
-
-  def signature: ByteVector64 = Crypto.sign(k1, linkingPrivKey)
-  def derSignatureHex: String = Crypto.compact2der(signature).toHex
-}
-
 object PayRequest {
   type TagAndContent = Vector[JsValue]
 }
 
-case class ExpectedAuth(k1: ByteVector32, isMandatory: Boolean) {
-  def getRecord(host: String): List[String] = LNUrlAuthSpec(host, k1) match {
-    case spec =>
-      List(
-        "application/lnurl-auth",
-        spec.linkingPubKey.toString,
-        spec.derSignatureHex
-      )
-  }
-}
-
-case class ExpectedIds(wantsAuth: Option[ExpectedAuth], wantsRandomKey: Boolean)
-
 case class PayRequestMeta(records: PayRequest.TagAndContent) {
-
-  val texts: Vector[String] = records.collect {
+  val text: Option[String] = records.collectFirst {
     case JsArray(JsString("text/plain") +: JsString(txt) +: _) => txt
   }
-
-  val emails: Vector[String] = records.collect {
+  val longDesc: Option[String] = records.collectFirst {
+    case JsArray(JsString("text/long-desc") +: JsString(txt) +: _) => txt
+  }
+  val email: Option[String] = records.collectFirst {
     case JsArray(JsString("text/email") +: JsString(email) +: _) => email
   }
-
-  val identities: Vector[String] = records.collect {
+  val identity: Option[String] = records.collectFirst {
     case JsArray(JsString("text/identifier") +: JsString(identifier) +: _) =>
       identifier
   }
-
-  val textPlain: String = Tools.trimmed(texts.head)
-
-  val imageBase64s: Seq[String] = for {
-    JsArray(
-      JsString("image/png;base64" | "image/jpeg;base64") +: JsString(image) +: _
-    ) <- records
-    _ = require(
-      image.length <= 136536,
-      s"Image is too big, length=${image.length}, max=136536"
-    )
-  } yield image
+  val textFull: Option[String] = longDesc.orElse(text)
+  val textShort: Option[String] = text.map(Tools.trimmed(_))
+  val imageBase64: Option[String] = records.collectFirst {
+    case JsArray(
+          JsString("image/png;base64" | "image/jpeg;base64") +: JsString(
+            image
+          ) +: _
+        ) =>
+      image
+  }
 
   def queryText(domain: String): String = {
-    val ids =
-      emails.headOption.orElse(identities.headOption).getOrElse(new String)
+    val id = email.orElse(identity).getOrElse("")
     val tokenizedDomain = domain.replace('.', ' ')
-    s"$ids $textPlain $tokenizedDomain"
+    s"$id $textShort $tokenizedDomain"
   }
 }
 
@@ -257,39 +238,68 @@ case class PayRequest(
     maxSendable: Long,
     minSendable: Long,
     metadata: String,
-    commentAllowed: Option[Int] = None
+    commentAllowed: Option[Int] = None,
+    payerData: Option[PayerDataSpec] = None
 ) extends CallbackLNUrlData {
-
-  def metaDataHash: ByteVector32 =
-    Crypto.sha256(ByteVector view metadata.getBytes)
+  def metadataHash(rawPayerData: String): ByteVector32 =
+    Crypto.sha256(ByteVector.view(metadata.getBytes ++ rawPayerData.getBytes()))
 
   val meta: PayRequestMeta = PayRequestMeta(
     metadata.parseJson.asInstanceOf[JsArray].elements
   )
 
-  private[this] val identifiers = meta.emails ++ meta.identities
+  private[this] val identifiers = meta.email ++ meta.identity
   require(
     identifiers.forall(id =>
       InputParser.identifier.findFirstMatchIn(id).isDefined
     ),
     "text/email or text/identity format is wrong"
   )
-  require(
-    meta.imageBase64s.size <= 1,
-    "There can be at most one image/png;base64 or image/jpeg;base64 entry in metadata"
-  )
-  require(
-    identifiers.size <= 1,
-    "There can be at most one text/email or text/identity entry in metadata"
-  )
-  require(
-    meta.texts.size == 1,
-    "There must be exactly one text/plain entry in metadata"
-  )
+  meta.imageBase64.foreach { image =>
+    require(
+      image.length <= 136536,
+      s"Image is too big, length=${image.length}, max=136536"
+    )
+  }
   require(
     minSendable <= maxSendable,
     s"max=$maxSendable while min=$minSendable"
   )
+}
+
+case class PayerDataSpec(
+    name: Option[PayerDataSpecEntry] = None,
+    pubkey: Option[PayerDataSpecEntry] = None,
+    auth: Option[PayerDataSpecEntry] = None
+)
+case class PayerDataSpecEntry(mandatory: Boolean = false, k1: String = "")
+case class PayerData(
+    name: Option[String] = None,
+    pubkey: Option[String] = None,
+    auth: Option[LNUrlAuthData] = None
+)
+case class LNUrlAuthData(
+    key: String,
+    k1: String,
+    sig: String
+)
+
+// LNURL-AUTH
+object LNUrlAuther {
+  def make(host: String, k1: String): LNUrlAuthData = {
+    val linkingPrivKey: Crypto.PrivateKey =
+      LNParams.secret.keys.makeLinkingKey(host)
+    val linkingPubKey: String = linkingPrivKey.publicKey.toString
+    val signature: ByteVector64 =
+      Crypto.sign(ByteVector.fromValidHex(k1), linkingPrivKey)
+    val derSignatureHex: String = Crypto.compact2der(signature).toHex
+
+    LNUrlAuthData(
+      k1 = k1,
+      key = linkingPubKey.toString,
+      sig = derSignatureHex
+    )
+  }
 }
 
 case class PayRequestFinal(

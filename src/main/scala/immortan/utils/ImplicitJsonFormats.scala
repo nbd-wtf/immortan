@@ -113,9 +113,15 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
     jsonFormat[String, Long, SemanticOrder](SemanticOrder.apply, "id", "order")
 
   implicit val lNUrlDescription: JsonFormat[LNUrlDescription] =
-    jsonFormat[Option[String], Option[
-      SemanticOrder
-    ], String, ByteVector32, ByteVector32, MilliSatoshi, LNUrlDescription](
+    jsonFormat[
+      Option[String],
+      Option[SemanticOrder],
+      String,
+      ByteVector32,
+      ByteVector32,
+      MilliSatoshi,
+      LNUrlDescription
+    ](
       LNUrlDescription.apply,
       "label",
       "semanticOrder",
@@ -387,14 +393,54 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
     tag = "withdrawRequest"
   )
 
+  implicit val payerDataSpecEntryFmt: JsonFormat[PayerDataSpecEntry] =
+    jsonFormat[
+      Boolean,
+      String,
+      PayerDataSpecEntry
+    ](PayerDataSpecEntry.apply, "mandatory", "k1")
+
+  implicit val payerDataSpecFmt: JsonFormat[PayerDataSpec] =
+    jsonFormat[
+      Option[PayerDataSpecEntry],
+      Option[PayerDataSpecEntry],
+      Option[PayerDataSpecEntry],
+      PayerDataSpec
+    ](PayerDataSpec.apply, "name", "pubkey", "auth")
+
+  implicit val lnurlAuthDataFmt: JsonFormat[LNUrlAuthData] =
+    jsonFormat[
+      String,
+      String,
+      String,
+      LNUrlAuthData
+    ](LNUrlAuthData.apply, "key", "k1", "sig")
+
+  implicit val payerDataFmt: JsonFormat[PayerData] =
+    jsonFormat[
+      Option[String],
+      Option[String],
+      Option[LNUrlAuthData],
+      PayerData
+    ](PayerData.apply, "name", "pubkey", "auth")
+
   implicit val payRequestFmt: JsonFormat[PayRequest] = taggedJsonFmt(
-    jsonFormat[String, Long, Long, String, Option[Int], PayRequest](
+    jsonFormat[
+      String,
+      Long,
+      Long,
+      String,
+      Option[Int],
+      Option[PayerDataSpec],
+      PayRequest
+    ](
       PayRequest.apply,
       "callback",
       "maxSendable",
       "minSendable",
       "metadata",
-      "commentAllowed"
+      "commentAllowed",
+      "payerData"
     ),
     tag = "payRequest"
   )

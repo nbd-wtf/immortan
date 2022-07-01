@@ -118,14 +118,11 @@ case class LNUrlPayLink(
   override val seenAt: Long = updatedAt
   override val identity: String = payString
   lazy val payLink: Option[LNUrl] = Try(payString).map(LNUrl.apply).toOption
-
-  lazy val payMetaData: Try[PayRequestMeta] = Try(
-    payMetaString.parseJson.asInstanceOf[JsArray].elements
-  ).map(PayRequestMeta)
-
+  lazy val payMetaData: Try[PayRequestMeta] =
+    Try(payMetaString.parseJson.asInstanceOf[JsArray].elements)
+      .map(PayRequestMeta)
   lazy val imageBytes: Option[Array[Byte]] =
-    payMetaData.map(_.imageBase64s.head).map(Base64.decode).toOption
-
+    payMetaData.toOption.flatMap(_.imageBase64).map(Base64.decode)
   lazy val lastComment: Option[String] =
     Option(lastCommentString).filter(_.nonEmpty)
 }
