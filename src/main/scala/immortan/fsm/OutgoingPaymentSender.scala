@@ -4,6 +4,7 @@ import scala.collection.mutable
 import scala.util.Random.shuffle
 import scala.util.{Success, Failure}
 import scodec.bits.ByteVector
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.eclair._
 import fr.acinq.eclair.wire._
@@ -77,6 +78,7 @@ case class RemoteFailure(packet: Sphinx.DecryptedFailurePacket, route: Route)
 case class OutgoingPaymentSenderData(
     cmd: SendMultiPart,
     parts: Map[ByteVector, PartStatus],
+    preimage: Option[ByteVector32] = None,
     failures: Failures = Nil
 ) {
   def withLocalFailure(
@@ -169,7 +171,12 @@ class OutgoingPaymentSender(
         if fulfill.ourAdd.paymentHash == fullTag.paymentHash =>
       // Provide listener with ORIGINAL data which has all used routes intact
       for (listener <- listeners) listener.gotFirstPreimage(data, fulfill)
-      become(data.withoutPartId(fulfill.ourAdd.partId), SUCCEEDED)
+      become(
+        data
+          .withoutPartId(fulfill.ourAdd.partId)
+          .copy(preimage = Some(fulfill.theirPreimage)),
+        SUCCEEDED
+      )
 
     case (CMDChanGotOnline, PENDING) =>
       for (waitOnline <- data.waitOnlinePart) {

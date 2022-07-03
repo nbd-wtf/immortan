@@ -128,57 +128,34 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
   var clearFailures: Boolean = true
 
   def doProcess(change: Any): Unit = (change, state) match {
-    case (
-          TrampolinePeerDisconnected(nodeId),
-          OutgoingPaymentMaster.ExpectingPayments |
-          OutgoingPaymentMaster.WaitingForRoute
-        ) =>
+    case (TrampolinePeerDisconnected(nodeId), _) =>
       become(data withoutTrampolineStates nodeId, state)
 
-    case (
-          TrampolinePeerUpdated(nodeId, TrampolineUndesired),
-          OutgoingPaymentMaster.ExpectingPayments |
-          OutgoingPaymentMaster.WaitingForRoute
-        ) =>
+    case (TrampolinePeerUpdated(nodeId, TrampolineUndesired), _) =>
       become(data withoutTrampolineStates nodeId, state)
 
-    case (
-          TrampolinePeerUpdated(nodeId, init: TrampolineStatusInit),
-          OutgoingPaymentMaster.ExpectingPayments |
-          OutgoingPaymentMaster.WaitingForRoute
-        ) =>
+    case (TrampolinePeerUpdated(nodeId, init: TrampolineStatusInit), _) =>
       become(
         data withNewTrampolineStates data.trampolineStates.init(nodeId, init),
         state
       )
 
-    case (
-          TrampolinePeerUpdated(nodeId, update: TrampolineStatusUpdate),
-          OutgoingPaymentMaster.ExpectingPayments |
-          OutgoingPaymentMaster.WaitingForRoute
-        ) if data.trampolineStates.states.contains(nodeId) =>
+    case (TrampolinePeerUpdated(nodeId, update: TrampolineStatusUpdate), _)
+        if data.trampolineStates.states.contains(nodeId) =>
       become(
         data withNewTrampolineStates data.trampolineStates
           .merge(nodeId, update),
         state
       )
 
-    case (
-          send: SendMultiPart,
-          OutgoingPaymentMaster.ExpectingPayments |
-          OutgoingPaymentMaster.WaitingForRoute
-        ) =>
+    case (send: SendMultiPart, _) =>
       if (clearFailures)
         become(data.withFailuresReduced(System.currentTimeMillis), state)
       for (graphEdge <- send.assistedEdges) cm.pf process graphEdge
       data.paymentSenders(send.fullTag) doProcess send
       me process CMDAskForRoute
 
-    case (
-          CMDChanGotOnline,
-          OutgoingPaymentMaster.ExpectingPayments |
-          OutgoingPaymentMaster.WaitingForRoute
-        ) =>
+    case (CMDChanGotOnline, _) =>
       // Payments may still have awaiting parts due to offline channels
       data.paymentSenders.values.foreach(_ doProcess CMDChanGotOnline)
       me process CMDAskForRoute
@@ -220,7 +197,8 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
             if nodeFailedTimes >= LNParams.routerConf.maxStrangeNodeFailures =>
           affectedNodeId
       }
-      // Note: we may get many route request messages from payment FSMs with parts waiting for routes so it is important to immediately switch to WaitingForRoute after seeing a first message
+      // Note: we may get many route request messages from payment FSMs with parts waiting for routes
+      // so it is important to immediately switch to WaitingForRoute after seeing a first message
       cm.pf process PathFinder.FindRoute(
         me,
         req.copy(
@@ -232,21 +210,13 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
       )
       become(data, OutgoingPaymentMaster.WaitingForRoute)
 
-    case (
-          response: RouteResponse,
-          OutgoingPaymentMaster.ExpectingPayments |
-          OutgoingPaymentMaster.WaitingForRoute
-        ) =>
+    case (response: RouteResponse, _) =>
       data.paymentSenders.get(response.fullTag).foreach(_ doProcess response)
       // Switch state to allow new route requests to come through
       become(data, OutgoingPaymentMaster.ExpectingPayments)
       me process CMDAskForRoute
 
-    case (
-          ChannelFailedAtAmount(descAndCapacity),
-          OutgoingPaymentMaster.ExpectingPayments |
-          OutgoingPaymentMaster.WaitingForRoute
-        ) =>
+    case (ChannelFailedAtAmount(descAndCapacity), _) =>
       // At this point an affected InFlight status IS STILL PRESENT so failedAtAmount1 = usedCapacities = sum(inFlight)
       become(
         data.copy(
@@ -274,11 +244,7 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
         state
       )
 
-    case (
-          NodeFailed(nodeId, increment),
-          OutgoingPaymentMaster.ExpectingPayments |
-          OutgoingPaymentMaster.WaitingForRoute
-        ) =>
+    case (NodeFailed(nodeId, increment), _) =>
       val newNodeFailedTimes =
         data.nodeFailedWithUnknownUpdateTimes.getOrElse(nodeId, 0) + increment
       become(
@@ -291,27 +257,17 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
         state
       )
 
-    case (
-          ChannelNotRoutable(desc),
-          OutgoingPaymentMaster.ExpectingPayments |
-          OutgoingPaymentMaster.WaitingForRoute
-        ) =>
+    case (ChannelNotRoutable(desc), _) =>
       become(data.copy(chanNotRoutable = data.chanNotRoutable + desc), state)
 
-    case (
-          RemoveSenderFSM(fullTag),
-          OutgoingPaymentMaster.ExpectingPayments |
-          OutgoingPaymentMaster.WaitingForRoute
-        ) if data.paymentSenders.contains(fullTag) =>
+    case (RemoveSenderFSM(fullTag), _)
+        if data.paymentSenders.contains(fullTag) =>
       // First we get their fail, then stateUpdateStream fires, then we fire it here again if FSM is to be removed
       become(data.copy(paymentSenders = data.paymentSenders - fullTag), state)
       ChannelMaster.next(ChannelMaster.stateUpdateStream)
 
-    case (
-          CreateSenderFSM(listeners, fullTag),
-          OutgoingPaymentMaster.ExpectingPayments |
-          OutgoingPaymentMaster.WaitingForRoute
-        ) if !data.paymentSenders.contains(fullTag) =>
+    case (CreateSenderFSM(listeners, fullTag), _)
+        if !data.paymentSenders.contains(fullTag) =>
       become(
         data.copy(paymentSenders =
           data.paymentSenders.updated(
@@ -326,21 +282,13 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
     // this won't be the case with failed/fulfilled leftovers in channels on app restart
     // so it has to be made sure that all relevalnt FSMs are manually re-initialized on startup
 
-    case (
-          reject: LocalReject,
-          OutgoingPaymentMaster.ExpectingPayments |
-          OutgoingPaymentMaster.WaitingForRoute
-        ) =>
+    case (reject: LocalReject, _) =>
       data.paymentSenders
         .get(reject.localAdd.fullTag)
         .foreach(_ doProcess reject)
       me process CMDAskForRoute
 
-    case (
-          fulfill: RemoteFulfill,
-          OutgoingPaymentMaster.ExpectingPayments |
-          OutgoingPaymentMaster.WaitingForRoute
-        ) =>
+    case (fulfill: RemoteFulfill, _) =>
       // We may have local and multiple routed outgoing payment sets at once, all of them must be notified
       data.paymentSenders.view
         .filterKeys(_.paymentHash == fulfill.ourAdd.paymentHash)
@@ -348,11 +296,7 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
         .foreach(_ doProcess fulfill)
       me process CMDAskForRoute
 
-    case (
-          remoteReject: RemoteReject,
-          OutgoingPaymentMaster.ExpectingPayments |
-          OutgoingPaymentMaster.WaitingForRoute
-        ) =>
+    case (remoteReject: RemoteReject, _) =>
       data.paymentSenders
         .get(remoteReject.ourAdd.fullTag)
         .foreach(_ doProcess remoteReject)
