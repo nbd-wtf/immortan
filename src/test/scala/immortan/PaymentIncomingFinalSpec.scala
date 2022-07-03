@@ -20,11 +20,7 @@ import utest._
 object PaymentIncomingFinalSpec extends TestSuite {
   val tests = Tests {
     test("Fulfill a single part incoming payment") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       val remoteNodeInfo =
         RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
       val (_, _, Seq(paymentSecret), cm) =
@@ -76,11 +72,7 @@ object PaymentIncomingFinalSpec extends TestSuite {
     }
 
     test("Fulfill multipart incoming payment") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       val remoteNodeInfo =
         RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
       val (_, _, Seq(paymentSecret), cm) =
@@ -184,11 +176,7 @@ object PaymentIncomingFinalSpec extends TestSuite {
     }
 
     test("Fail multipart incoming payment when we run out of slots") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       val remoteNodeInfo =
         RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
       val (_, _, Seq(paymentSecret), cm) =
@@ -307,11 +295,7 @@ object PaymentIncomingFinalSpec extends TestSuite {
     test(
       "Do not react to incoming payment with same hash, but different secret"
     ) {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       val remoteNodeInfo =
         RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
       val (_, _, Seq(paymentSecret), cm) =
@@ -402,11 +386,7 @@ object PaymentIncomingFinalSpec extends TestSuite {
     }
 
     test("Fail an unknown payment right away") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       val remoteNodeInfo =
         RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
       val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Seq(randomBytes32))
@@ -458,11 +438,7 @@ object PaymentIncomingFinalSpec extends TestSuite {
     }
 
     test("Fail if one of parts is too close to chain tip") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       val remoteNodeInfo =
         RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
       val (_, _, Seq(paymentSecret), cm) =
@@ -522,11 +498,7 @@ object PaymentIncomingFinalSpec extends TestSuite {
     }
 
     test("Do not reveal a preimage on FSM entering failed state") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       val remoteNodeInfo =
         RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
       val (_, _, Seq(paymentSecret), cm) =

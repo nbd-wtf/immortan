@@ -115,11 +115,7 @@ object WireSpec extends TestSuite {
     }
 
     test("UpdateAddHtlc tag encryption and partId equivalence") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
 
       val payload = PaymentOnion.createSinglePartPayload(
         1000000L.msat,
@@ -151,11 +147,7 @@ object WireSpec extends TestSuite {
     }
 
     test("LCSS") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
 
       val payload = PaymentOnion.createSinglePartPayload(
         1000000L.msat,

@@ -31,11 +31,7 @@ import utest._
 object PaymentTrampolineRoutingSpec extends TestSuite {
   val tests = Tests {
     test("Correctly parse trampoline routed payments sent to our fake nodeId") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
 
       val ourParams = TrampolineOn(
@@ -112,11 +108,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
     }
 
     test("Successfully parse a trampoline-to-legacy payment on payee side") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       LNParams.trampoline = TrampolineOn(
         minMsat = MilliSatoshi(1000L),
         maxMsat = MilliSatoshi(Long.MaxValue),
@@ -199,11 +191,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       "Successfully parse a multipart native trampoline payment on payee side"
     ) {
       // In this case payer sends 400,000 sat through us while total requested amount is 700,000 sat
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       LNParams.trampoline = TrampolineOn(
         minMsat = MilliSatoshi(1000L),
         maxMsat = MilliSatoshi(Long.MaxValue),
@@ -296,11 +284,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
     }
 
     test("Successfully parse a double trampoline payment") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
 
       // e -(trampoline)-> s -(trampoline)-> us -(legacy)-> d
 
@@ -468,11 +452,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
     }
 
     test("Successfully route a multipart trampoline payment") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       LNParams.trampoline = TrampolineOn(
         minMsat = MilliSatoshi(1000L),
         maxMsat = MilliSatoshi(Long.MaxValue),
@@ -575,7 +555,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
 
       val outPacket = WAIT_UNTIL_RESULT(
         cm.opm.data
-          .payments(reasonableTrampoline1.fullTag)
+          .paymentSenders(reasonableTrampoline1.fullTag)
           .data
           .inFlightParts
           .head
@@ -598,7 +578,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       )
       WAIT_UNTIL_TRUE(
         cm.opm.data
-          .payments(reasonableTrampoline1.fullTag)
+          .paymentSenders(reasonableTrampoline1.fullTag)
           .data
           .cmd
           .split
@@ -606,7 +586,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       ) // With trampoline-to-legacy we find out a final amount
       assert(
         cm.opm.data
-          .payments(reasonableTrampoline1.fullTag)
+          .paymentSenders(reasonableTrampoline1.fullTag)
           .data
           .cmd
           .totalFeeReserve == feeReserve - ourMinimalFee
@@ -651,11 +631,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
     }
 
     test("Reject on incoming timeout") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       LNParams.trampoline = TrampolineOn(
         minMsat = MilliSatoshi(1000L),
         maxMsat = MilliSatoshi(Long.MaxValue),
@@ -732,15 +708,11 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
       WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.Shutdown)
       // Sender FSM has been removed
-      WAIT_UNTIL_TRUE(cm.opt.data.paymentSenders.isEmpty)
+      WAIT_UNTIL_TRUE(cm.opm.data.paymentSenders.isEmpty)
     }
 
     test("Reject on outgoing timeout") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       LNParams.trampoline = TrampolineOn(
         minMsat = MilliSatoshi(1000L),
         maxMsat = MilliSatoshi(Long.MaxValue),
@@ -809,7 +781,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       // Channels are not open so outgoing payments are waiting for timeout
 
       WAIT_UNTIL_TRUE {
-        cm.opt.data.paymentSenders(
+        cm.opm.data.paymentSenders(
           reasonableTrampoline1.fullTag
         ) doProcess OutgoingPaymentMaster.CMDAbort
         fsm.state == IncomingPaymentProcessor.Finalizing
@@ -828,15 +800,11 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
       assert(fsm.state == IncomingPaymentProcessor.Shutdown)
       // Sender FSM has been removed
-      WAIT_UNTIL_TRUE(cm.opt.data.paymentSenders.isEmpty)
+      WAIT_UNTIL_TRUE(cm.opm.data.paymentSenders.isEmpty)
     }
 
     test("Fail to relay with outgoing channel getting SUSPENDED") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       LNParams.trampoline = TrampolineOn(
         minMsat = MilliSatoshi(1000L),
         maxMsat = MilliSatoshi(Long.MaxValue),
@@ -921,15 +889,11 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
       assert(fsm.state == IncomingPaymentProcessor.Shutdown)
       // Sender FSM has been removed
-      WAIT_UNTIL_TRUE(cm.opt.data.paymentSenders.isEmpty)
+      WAIT_UNTIL_TRUE(cm.opm.data.paymentSenders.isEmpty)
     }
 
     test("Fail to relay with no route found") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       LNParams.trampoline = TrampolineOn(
         minMsat = MilliSatoshi(1000L),
         maxMsat = MilliSatoshi(Long.MaxValue),
@@ -1013,15 +977,11 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
       assert(fsm.state == IncomingPaymentProcessor.Shutdown)
       // Sender FSM has been removed
-      WAIT_UNTIL_TRUE(cm.opt.data.paymentSenders.isEmpty)
+      WAIT_UNTIL_TRUE(cm.opm.data.paymentSenders.isEmpty)
     }
 
     test("Restart after first fail, wind down on second fail") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       LNParams.trampoline = TrampolineOn(
         minMsat = MilliSatoshi(1000L),
         maxMsat = MilliSatoshi(Long.MaxValue),
@@ -1165,11 +1125,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
     }
 
     test("Wind down after pathologc fail") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       LNParams.trampoline = TrampolineOn(
         minMsat = MilliSatoshi(1000L),
         maxMsat = MilliSatoshi(Long.MaxValue),
@@ -1317,11 +1273,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
     }
 
     test("Fulfill in a pathologic fail state") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       LNParams.trampoline = TrampolineOn(
         minMsat = MilliSatoshi(1000L),
         maxMsat = MilliSatoshi(Long.MaxValue),
@@ -1432,7 +1384,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       assert(!fsm.data.asInstanceOf[TrampolineStopping].retry)
 
       val senderDataSnapshot =
-        cm.opt.data.paymentSenders(reasonableTrampoline1.fullTag).data
+        cm.opm.data.paymentSenders(reasonableTrampoline1.fullTag).data
       val ourAdd = UpdateAddHtlc(
         null,
         1,

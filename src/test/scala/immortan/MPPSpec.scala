@@ -26,7 +26,7 @@ object MPPSpec extends TestSuite {
       )
       val data1 = OutgoingPaymentMasterData(
         TrampolineRoutingStates(Map.empty),
-        payments = Map.empty,
+        paymentSenders = Map.empty,
         chanFailedAtAmount = fail
       )
       assert(
@@ -48,11 +48,7 @@ object MPPSpec extends TestSuite {
     }
 
     test("Split between direct and non-direct channel") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       val (normalStore, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
 
       // Add a US -> C -> A channel
@@ -143,7 +139,7 @@ object MPPSpec extends TestSuite {
 
       // First created FSM has been retained
       WAIT_UNTIL_TRUE(
-        cm.opt.data.paymentSenders(tag).listeners.head == noopListener
+        cm.opm.data.paymentSenders(tag).listeners.head == noopListener
       )
       // Suppose this time we attempt a send when all channels are connected already
       cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
@@ -151,10 +147,10 @@ object MPPSpec extends TestSuite {
       cm.opm process send
 
       WAIT_UNTIL_TRUE(
-        cm.opt.data.paymentSenders(tag).data.inFlightParts.size == 2
+        cm.opm.data.paymentSenders(tag).data.inFlightParts.size == 2
       )
       val List(part1, part2) =
-        cm.opt.data
+        cm.opm.data
           .paymentSenders(tag)
           .data
           .inFlightParts
@@ -177,20 +173,16 @@ object MPPSpec extends TestSuite {
       )
 
       WAIT_UNTIL_TRUE(
-        cm.opt.data.paymentSenders(tag).state == PaymentStatus.ABORTED
+        cm.opm.data.paymentSenders(tag).state == PaymentStatus.ABORTED
       )
       WAIT_UNTIL_TRUE(
-        cm.opt.data.paymentSenders(tag).data.inFlightParts.size == 1
+        cm.opm.data.paymentSenders(tag).data.inFlightParts.size == 1
       )
       LNParams.blockCount.set(0)
     }
 
     test("Split after no route found on first attempt") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
 
       val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -238,7 +230,7 @@ object MPPSpec extends TestSuite {
       // Our only channel is offline, sender FSM awaits for it to become operational
       WAIT_UNTIL_TRUE(
         cm.opm.data
-          .payments(tag)
+          .paymentSenders(tag)
           .data
           .parts
           .values
@@ -247,17 +239,17 @@ object MPPSpec extends TestSuite {
           .amount == send.split.myPart
       )
       WAIT_UNTIL_TRUE(
-        cm.opt.data.paymentSenders(tag).data.parts.values.size == 1
+        cm.opm.data.paymentSenders(tag).data.parts.values.size == 1
       )
 
       cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
 
       // Channel got online, sending is resumed
       WAIT_UNTIL_TRUE(
-        cm.opt.data.paymentSenders(tag).data.inFlightParts.size == 2
+        cm.opm.data.paymentSenders(tag).data.inFlightParts.size == 2
       )
       val List(part1, part2) =
-        cm.opt.data.paymentSenders(tag).data.inFlightParts
+        cm.opm.data.paymentSenders(tag).data.inFlightParts
       // First chosen route can not handle a second part so another route is chosen
       WAIT_UNTIL_TRUE(
         part2.route.hops.map(_.nodeId) == Seq(invalidPubKey, a, c, d)
@@ -266,18 +258,14 @@ object MPPSpec extends TestSuite {
         part1.route.hops.map(_.nodeId) == Seq(invalidPubKey, a, b, d)
       )
       WAIT_UNTIL_TRUE(
-        cm.opt.data.paymentSenders(tag).data.usedFee == MilliSatoshi(24L)
+        cm.opm.data.paymentSenders(tag).data.usedFee == MilliSatoshi(24L)
       )
       WAIT_UNTIL_TRUE(part2.cmd.firstAmount == MilliSatoshi(300012L))
       WAIT_UNTIL_TRUE(part1.cmd.firstAmount == MilliSatoshi(300012L))
     }
 
     test("Halt on excessive local failures") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
 
       val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -348,11 +336,7 @@ object MPPSpec extends TestSuite {
     }
 
     test("Correctly process failed-at-amount") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
 
       val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -411,7 +395,7 @@ object MPPSpec extends TestSuite {
 
       // First created FSM has been retained
       WAIT_UNTIL_TRUE(
-        cm.opt.data.paymentSenders(tag).listeners.head == noopListener
+        cm.opm.data.paymentSenders(tag).listeners.head == noopListener
       )
       // Suppose this time we attempt a send when all channels are connected already
       cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
@@ -420,11 +404,11 @@ object MPPSpec extends TestSuite {
       cm.opm process send
 
       WAIT_UNTIL_TRUE {
-        val parts = cm.opt.data.paymentSenders(tag).data.parts.values.collect {
+        val parts = cm.opm.data.paymentSenders(tag).data.parts.values.collect {
           case inFlight: WaitForRouteOrInFlight => inFlight
         }
         assert(
-          cm.opt.data
+          cm.opm.data
             .paymentSenders(tag)
             .feeLeftover == send.totalFeeReserve - parts
             .flatMap(_.flight)
@@ -442,16 +426,12 @@ object MPPSpec extends TestSuite {
             .toList
             .sorted
         )
-        cm.opt.data.paymentSenders(tag).data.parts.size == 3
+        cm.opm.data.paymentSenders(tag).data.parts.size == 3
       }
     }
 
     test("Correctly process fulfilled payment") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
 
       val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -524,7 +504,7 @@ object MPPSpec extends TestSuite {
 
       // First created FSM has been retained
       WAIT_UNTIL_TRUE(
-        cm.opt.data.paymentSenders(tag).listeners.head == listener
+        cm.opm.data.paymentSenders(tag).listeners.head == listener
       )
       // Suppose this time we attempt a send when all channels are connected already
       cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
@@ -534,7 +514,7 @@ object MPPSpec extends TestSuite {
 
       WAIT_UNTIL_RESULT {
         val List(p1, p2, p3) =
-          cm.opt.data.paymentSenders(tag).data.inFlightParts.toList
+          cm.opm.data.paymentSenders(tag).data.inFlightParts.toList
         cm.opm process RemoteFulfill(
           UpdateAddHtlc(
             null,
@@ -571,25 +551,21 @@ object MPPSpec extends TestSuite {
           ),
           preimage
         )
-        cm.opm process InFlightPayments(Map.empty, Map.empty)
+        cm.opm.stateUpdated(InFlightPayments(Map.empty, Map.empty))
       }
 
       WAIT_UNTIL_TRUE {
         // Original data contains all successful routes
         assert(results.head.inFlightParts.size == 3)
         // FSM has been removed on payment success
-        assert(cm.opt.data.paymentSenders.isEmpty)
+        assert(cm.opm.data.paymentSenders.isEmpty)
         // We got a single revealed message
         results.size == 1
       }
     }
 
     test("Handle multiple competing payments") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
 
       val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -682,13 +658,13 @@ object MPPSpec extends TestSuite {
 
       WAIT_UNTIL_TRUE {
         // First one enjoys full channel capacity
-        val ws1 = cm.opt.data.paymentSenders(tag1).data.parts.values.collect {
+        val ws1 = cm.opm.data.paymentSenders(tag1).data.parts.values.collect {
           case inFlight: WaitForRouteOrInFlight => inFlight
         }
         assert(Set(MilliSatoshi(300000L)) == ws1.map(_.amount).toSet)
 
         // Second one had to be split to get through
-        val ws2 = cm.opt.data.paymentSenders(tag2).data.parts.values.collect {
+        val ws2 = cm.opm.data.paymentSenders(tag2).data.parts.values.collect {
           case inFlight: WaitForRouteOrInFlight => inFlight
         }
         assert(
@@ -700,16 +676,12 @@ object MPPSpec extends TestSuite {
         )
 
         // Third one has been knocked out
-        cm.opt.data.paymentSenders(tag3).state == PaymentStatus.ABORTED
+        cm.opm.data.paymentSenders(tag3).state == PaymentStatus.ABORTED
       }
     }
 
     test("Fail on local timeout") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
 
       val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -759,7 +731,7 @@ object MPPSpec extends TestSuite {
       cm.opm process send
 
       WAIT_UNTIL_TRUE {
-        val parts1 = cm.opt.data.paymentSenders(tag).data.parts.values
+        val parts1 = cm.opm.data.paymentSenders(tag).data.parts.values
         // Our only channel is offline, sender FSM awaits for it to become operational
         assert(
           parts1.head
@@ -769,7 +741,7 @@ object MPPSpec extends TestSuite {
         parts1.size == 1
       }
 
-      cm.opt.data.paymentSenders(tag) doProcess OutgoingPaymentMaster.CMDAbort
+      cm.opm.data.paymentSenders(tag) doProcess OutgoingPaymentMaster.CMDAbort
 
       WAIT_UNTIL_TRUE {
         assert(senderDataWhenFailed.head.parts.isEmpty)
@@ -783,11 +755,7 @@ object MPPSpec extends TestSuite {
     }
 
     test("Halt fast on terminal failure") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
 
       LNParams.blockCount.set(Int.MaxValue)
@@ -858,11 +826,7 @@ object MPPSpec extends TestSuite {
     }
 
     test("Smaller part takes disproportionally larger fee from reserve") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
 
       val hcs1 = makeHostedCommits(nodeId = a, alias = "peer1")
@@ -906,7 +870,7 @@ object MPPSpec extends TestSuite {
 
       WAIT_UNTIL_TRUE {
         val List(part1, part2) =
-          cm.opt.data.paymentSenders(tag).data.parts.values.collect {
+          cm.opm.data.paymentSenders(tag).data.parts.values.collect {
             case inFlight: WaitForRouteOrInFlight => inFlight
           }
         assert(

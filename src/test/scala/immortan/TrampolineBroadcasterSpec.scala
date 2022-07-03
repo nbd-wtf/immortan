@@ -19,11 +19,7 @@ import scala.collection.mutable
 object TrampolineBroadcasterSpec extends TestSuite {
   val tests = Tests {
     test("Broadcast routable amounts to peers") {
-      LNParams.secret = WalletSecret(
-        LightningNodeKeys.makeFromSeed(randomBytes(32).toArray),
-        mnemonic = Nil,
-        seed = randomBytes32
-      )
+      LNParams.secret = WalletSecret.random()
       LNParams.trampoline = TrampolineOn(
         LNParams.minPayment,
         Long.MaxValue.msat,

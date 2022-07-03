@@ -444,6 +444,12 @@ case class RemoteNodeInfo(
   def safeAlias: RemoteNodeInfo = copy(alias = alias take 24)
 }
 
+object WalletSecret {
+  def random(): WalletSecret = WalletSecret(
+    MnemonicCode.toMnemonics(randomBytes(16))
+  )
+}
+
 case class WalletSecret(
     mnemonic: List[String],
     passphrase: String = ""
