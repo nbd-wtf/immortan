@@ -350,7 +350,6 @@ class ChannelMaster(
   // It is correct to only use availableForReceive for both HC/NC and not take their maxHtlcValueInFlightMsat into account because:
   // - in NC case we always set local NC.maxHtlcValueInFlightMsat to channel capacity so NC.availableForReceive is always less than NC.maxHtlcValueInFlightMsat
   // - in HC case we don't have local HC.maxHtlcValueInFlightMsat at all and only look at HC.availableForReceive
-
   def operationalCncs(chans: Iterable[Channel] = Nil): Seq[ChanAndCommits] =
     chans
       .filter(Channel.isOperational)
@@ -474,7 +473,6 @@ class ChannelMaster(
   }
 
   // These are executed in Channel context
-
   override def onException: PartialFunction[Malfunction, Unit] = {
     case (
           error: ExpiredHtlcInNormalChannel,

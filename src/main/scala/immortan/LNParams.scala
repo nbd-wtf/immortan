@@ -493,7 +493,6 @@ trait NetworkBag {
 }
 
 // Bag of stored payments and successful relays
-
 trait PaymentBag {
   def getPreimage(hash: ByteVector32): Try[ByteVector32]
   def setPreimage(paymentHash: ByteVector32, preimage: ByteVector32): Unit

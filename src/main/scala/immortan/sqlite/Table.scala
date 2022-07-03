@@ -4,7 +4,7 @@ import immortan.PaymentStatus.{ABORTED, PENDING, SUCCEEDED}
 
 trait Table {
   def createStatements: Seq[String]
-  val Tuple2(id, fts) = Tuple2("_id", "fts4")
+  val (id, fts) = Tuple2("_id", "fts4")
   val IDAUTOINC = s"$id INTEGER PRIMARY KEY AUTOINCREMENT"
   val UNIQUE = "UNIQUE"
 }
@@ -292,7 +292,6 @@ object PaymentTable extends Table {
   val killSql = s"DELETE FROM $table WHERE $hash = ?"
 
   // Selecting
-
   val selectRecentSql: String = {
     val recentFailed =
       s"($updatedAt > ? AND $status = $ABORTED AND $incoming = 0)" // Skip outgoing which have been failed a long time ago
@@ -393,7 +392,6 @@ object TxTable extends Table {
   val newVirtualSql = s"INSERT INTO $fts$table ($search, $txid) VALUES (?, ?)"
 
   // Selecting
-
   val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT ?"
 
   val selectSummarySql =
@@ -403,7 +401,6 @@ object TxTable extends Table {
     s"SELECT * FROM $table WHERE $txid IN (SELECT DISTINCT $txid FROM $fts$table WHERE $search MATCH ? LIMIT 100)"
 
   // Updating
-
   val updStatusSql =
     s"UPDATE $table SET $depth = ?, $doubleSpent = ?, $updatedAt = ? WHERE $txid = ?"
 
@@ -411,7 +408,6 @@ object TxTable extends Table {
     s"UPDATE $table SET $description = ? WHERE $txid = ?"
 
   // Removing
-
   val killByPubSql = s"DELETE FROM $table WHERE $pub = ?"
 
   def createStatements: Seq[String] = {

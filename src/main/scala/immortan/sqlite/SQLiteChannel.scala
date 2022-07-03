@@ -45,7 +45,6 @@ class SQLiteChannel(val db: DBInterface, channelTxFeesDb: DBInterface)
     db.change(ChannelTable.killSql, channelId.toHex)
 
   // HTLC infos
-
   override def htlcInfos(
       commitNumer: Long
   ): Iterable[ChannelBag.Hash160AndCltv] =
@@ -82,7 +81,6 @@ class SQLiteChannel(val db: DBInterface, channelTxFeesDb: DBInterface)
     db.change(HtlcInfoTable.killSql, sid: JLong)
 
   // Channel related tx fees
-
   def channelTxFeesSummary: Try[ChannelTxFeesSummary] =
     channelTxFeesDb.select(ChannelTxFeesTable.selectSummarySql).headTry { rc =>
       ChannelTxFeesSummary(fees = Satoshi(rc long 0), count = rc long 1)
