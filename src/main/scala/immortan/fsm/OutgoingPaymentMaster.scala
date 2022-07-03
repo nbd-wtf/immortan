@@ -305,14 +305,14 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
     case _ =>
   }
 
-  def stateUpdated(bag: InFlightPayments): Unit = {
+  def stateUpdated(bag: InFlightPayments): Unit = Future {
     // We need this to issue "wholePaymentSucceeded" AFTER neither in-flight parts nor leftovers in channels are present
     // because FIRST peer sends a preimage (removing in-flight in FSM), THEN peer sends a state update (clearing channel leftovers)
     data.paymentSenders.foreach { case (fullTag, sender) =>
       if (!bag.out.contains(fullTag))
         sender.stateUpdated()
     }
-  }
+  }(Channel.channelContext)
 
   def rightNowSendable(
       chans: Iterable[Channel],

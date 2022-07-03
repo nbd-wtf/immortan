@@ -578,7 +578,7 @@ class ChannelMaster(
     for (chan <- all.values) chan process CMD_SIGN
 
     // Maybe remove successful outgoing FSMs
-    Future(opm.stateUpdated(inFlightsBag))
+    opm.stateUpdated(inFlightsBag)
 
     next(stateUpdateStream)
   }
