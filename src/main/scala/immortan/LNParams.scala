@@ -541,6 +541,7 @@ trait PaymentBag {
 
   def listRecentRelays(limit: Int): RichCursor
   def listRecentPayments(limit: Int): RichCursor
+  def listAllPendingOutgoing: Iterable[PaymentInfo]
   def listPendingSecrets: Iterable[ByteVector32]
 
   def paymentSummary: Try[PaymentSummary]

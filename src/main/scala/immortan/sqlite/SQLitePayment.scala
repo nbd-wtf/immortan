@@ -70,6 +70,10 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
     )
   }
 
+  def listAllPendingOutgoing: Iterable[PaymentInfo] =
+    db.select(PaymentTable.selectAllPendingOutgoing)
+      .map(LNParams.cm.payBag.toPaymentInfo)
+
   def updDescription(
       description: PaymentDescription,
       payHash: ByteVector32

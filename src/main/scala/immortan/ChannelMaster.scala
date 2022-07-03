@@ -287,22 +287,15 @@ class ChannelMaster(
     }
 
   // Marks as failed those payments which did not make it into channels before an app has been restarted
-  def markAsFailed(
-      paymentInfos: Iterable[PaymentInfo],
-      inFlightOutgoing: Map[FullPaymentTag, OutgoingAdds] = Map.empty
-  ): Unit = paymentInfos
-    .collect {
-      case outgoingPayInfo
-          if !outgoingPayInfo.isIncoming && outgoingPayInfo.status == PaymentStatus.PENDING =>
-        outgoingPayInfo.fullTag
-    }
+  def cleanupUntriedPending(): Unit = payBag.listAllPendingOutgoing
+    .map(_.fullTag)
     .collect {
       case fullTag
-          if fullTag.tag == PaymentTagTlv.LOCALLY_SENT && !inFlightOutgoing
+          if fullTag.tag == PaymentTagTlv.LOCALLY_SENT && !allInChannelOutgoing
             .contains(fullTag) =>
         fullTag.paymentHash
     }
-    .foreach(payBag.updAbortedOutgoing)
+    .foreach(payBag.updAbortedOutgoing(_))
 
   def allInChannelOutgoing: Map[FullPaymentTag, OutgoingAdds] = all.values
     .flatMap(Channel.chanAndCommitsOpt)

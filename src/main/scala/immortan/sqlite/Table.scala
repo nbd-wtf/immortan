@@ -304,6 +304,9 @@ object PaymentTable extends Table {
     s"SELECT * FROM $table WHERE $recentFailed OR $nonFailedOutgoing OR $recentPendingIncoming OR $allFulfilledIncoming ORDER BY $id DESC LIMIT ?"
   }
 
+  val selectAllPendingOutgoing =
+    s"SELECT * FROM $table WHERE $incoming = 0 AND $status = $PENDING"
+
   val selectSummarySql =
     s"SELECT SUM($feeMsat), SUM($chainFeeMsat), SUM($receivedMsat), SUM($sentMsat), COUNT($id) FROM $table WHERE $status = $SUCCEEDED"
 
