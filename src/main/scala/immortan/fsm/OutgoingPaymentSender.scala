@@ -149,9 +149,6 @@ class OutgoingPaymentSender(
     case (fulfill: RemoteFulfill, SUCCEEDED)
         if fulfill.ourAdd.paymentHash == fullTag.paymentHash =>
       become(data.withoutPartId(fulfill.ourAdd.partId), SUCCEEDED)
-    case (bag: InFlightPayments, SUCCEEDED)
-        if data.inFlightParts.isEmpty && !bag.out.contains(fullTag) =>
-      for (listener <- listeners) listener.wholePaymentSucceeded(data)
 
     case (cmd: SendMultiPart, INIT | ABORTED) =>
       val chans = opm.rightNowSendable(cmd.allowedChans, cmd.totalFeeReserve)
@@ -471,6 +468,12 @@ class OutgoingPaymentSender(
       )
 
     case _ =>
+  }
+
+  def stateUpdated(): Unit = {
+    if (state == SUCCEEDED && data.inFlightParts.isEmpty) {
+      for (listener <- listeners) listener.wholePaymentSucceeded(data)
+    }
   }
 
   def feeLeftover: MilliSatoshi = data.cmd.totalFeeReserve - data.usedFee

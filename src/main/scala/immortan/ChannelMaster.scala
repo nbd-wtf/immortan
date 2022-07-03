@@ -1,7 +1,10 @@
 package immortan
 
 import java.util.concurrent.atomic.AtomicLong
-
+import scala.collection.mutable
+import scala.concurrent.Future
+import scala.concurrent.duration._
+import scala.util.Try
 import com.google.common.cache.LoadingCache
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -20,10 +23,6 @@ import immortan.fsm.OutgoingPaymentMaster.CMDChanGotOnline
 import immortan.fsm._
 import immortan.utils.{PaymentRequestExt, Rx}
 import rx.lang.scala.Subject
-
-import scala.collection.mutable
-import scala.concurrent.duration._
-import scala.util.Try
 
 object ChannelMaster {
   type PreimageTry = Try[ByteVector32]
@@ -577,8 +576,10 @@ class ChannelMaster(
     for (incomingFSM <- inProcessors.values) incomingFSM doProcess inFlightsBag
     // Sign all fails and fulfills that could have been sent from FSMs above
     for (chan <- all.values) chan process CMD_SIGN
+
     // Maybe remove successful outgoing FSMs
-    opm process inFlightsBag
+    Future(opm.stateUpdated(inFlightsBag))
+
     next(stateUpdateStream)
   }
 

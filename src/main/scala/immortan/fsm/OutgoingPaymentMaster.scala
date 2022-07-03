@@ -1,6 +1,7 @@
 package immortan.fsm
 
 import scala.collection.mutable
+import scala.concurrent.Future
 import com.softwaremill.quicklens._
 import scodec.bits.ByteVector
 import fr.acinq.bitcoin.ByteVector32
@@ -122,7 +123,7 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
   )
 
   def process(change: Any): Unit =
-    scala.concurrent.Future(me doProcess change)(Channel.channelContext)
+    Future(me doProcess change)(Channel.channelContext)
 
   var clearFailures: Boolean = true
 
@@ -298,15 +299,6 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
       become(data.copy(chanNotRoutable = data.chanNotRoutable + desc), state)
 
     case (
-          bag: InFlightPayments,
-          OutgoingPaymentMaster.ExpectingPayments |
-          OutgoingPaymentMaster.WaitingForRoute
-        ) =>
-      // We need this to issue "wholePaymentSucceeded" AFTER neither in-flight parts nor leftovers in channels are present
-      // because FIRST peer sends a preimage (removing in-flight in FSM), THEN peer sends a state update (clearing channel leftovers)
-      data.paymentSenders.values.foreach(_ doProcess bag)
-
-    case (
           RemoveSenderFSM(fullTag),
           OutgoingPaymentMaster.ExpectingPayments |
           OutgoingPaymentMaster.WaitingForRoute
@@ -367,6 +359,15 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
       me process CMDAskForRoute
 
     case _ =>
+  }
+
+  def stateUpdated(bag: InFlightPayments): Unit = {
+    // We need this to issue "wholePaymentSucceeded" AFTER neither in-flight parts nor leftovers in channels are present
+    // because FIRST peer sends a preimage (removing in-flight in FSM), THEN peer sends a state update (clearing channel leftovers)
+    data.paymentSenders.foreach { case (fullTag, sender) =>
+      if (!bag.out.contains(fullTag))
+        sender.stateUpdated()
+    }
   }
 
   def rightNowSendable(
