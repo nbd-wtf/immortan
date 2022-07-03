@@ -317,7 +317,6 @@ object PaymentTable extends Table {
   val selectByHashSql = s"SELECT * FROM $table WHERE $hash = ?"
 
   // Updating
-
   val updOkOutgoingSql =
     s"UPDATE $table SET $status = $SUCCEEDED, $preimage = ?, $feeMsat = ?, $updatedAt = ? WHERE $hash = ? AND ($updatedAt > 0 AND $status <> $SUCCEEDED AND $incoming = 0)"
 

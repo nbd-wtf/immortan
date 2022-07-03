@@ -455,15 +455,16 @@ class ChannelMaster(
     PaymentRequestExt.from(pr)
   }
 
-  def checkIfSendable(paymentHash: ByteVector32): Option[Int] = {
-    val isActive = opm.data.payments.values.exists(fsm =>
-      fsm.fullTag.tag == PaymentTagTlv.LOCALLY_SENT && fsm.fullTag.paymentHash == paymentHash
-    )
-    if (isActive) Some(PaymentInfo.NOT_SENDABLE_IN_FLIGHT)
+  def checkIfSendable(paymentHash: ByteVector32): PaymentInfo.PaymentSendable =
+    if (
+      opm.data.paymentSenders.values
+        .exists(fsm =>
+          fsm.fullTag.tag == PaymentTagTlv.LOCALLY_SENT && fsm.fullTag.paymentHash == paymentHash
+        )
+    ) PaymentInfo.NotSendableInFlight
     else if (getPreimageMemo.get(paymentHash).isSuccess)
-      Some(PaymentInfo.NOT_SENDABLE_SUCCESS)
-    else None
-  }
+      PaymentInfo.NotSendableSuccess
+    else PaymentInfo.Sendable
 
   def localSend(cmd: SendMultiPart): Unit = {
     // Prepare sender FSM and fetch expected fees for payment

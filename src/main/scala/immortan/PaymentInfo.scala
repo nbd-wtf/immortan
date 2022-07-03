@@ -21,8 +21,11 @@ import scala.util.Try
 
 object PaymentInfo {
   final val NO_ACTION = "no-action"
-  final val NOT_SENDABLE_IN_FLIGHT = 0
-  final val NOT_SENDABLE_SUCCESS = 1
+
+  sealed trait PaymentSendable
+  case object Sendable extends PaymentSendable
+  case object NotSendableInFlight extends PaymentSendable
+  case object NotSendableSuccess extends PaymentSendable
 }
 
 object PaymentStatus {

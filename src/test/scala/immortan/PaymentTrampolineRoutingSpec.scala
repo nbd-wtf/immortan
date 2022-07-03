@@ -732,7 +732,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
       WAIT_UNTIL_TRUE(fsm.state == IncomingPaymentProcessor.Shutdown)
       // Sender FSM has been removed
-      WAIT_UNTIL_TRUE(cm.opm.data.payments.isEmpty)
+      WAIT_UNTIL_TRUE(cm.opt.data.paymentSenders.isEmpty)
     }
 
     test("Reject on outgoing timeout") {
@@ -809,7 +809,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       // Channels are not open so outgoing payments are waiting for timeout
 
       WAIT_UNTIL_TRUE {
-        cm.opm.data.payments(
+        cm.opt.data.paymentSenders(
           reasonableTrampoline1.fullTag
         ) doProcess OutgoingPaymentMaster.CMDAbort
         fsm.state == IncomingPaymentProcessor.Finalizing
@@ -828,7 +828,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
       assert(fsm.state == IncomingPaymentProcessor.Shutdown)
       // Sender FSM has been removed
-      WAIT_UNTIL_TRUE(cm.opm.data.payments.isEmpty)
+      WAIT_UNTIL_TRUE(cm.opt.data.paymentSenders.isEmpty)
     }
 
     test("Fail to relay with outgoing channel getting SUSPENDED") {
@@ -921,7 +921,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
       assert(fsm.state == IncomingPaymentProcessor.Shutdown)
       // Sender FSM has been removed
-      WAIT_UNTIL_TRUE(cm.opm.data.payments.isEmpty)
+      WAIT_UNTIL_TRUE(cm.opt.data.paymentSenders.isEmpty)
     }
 
     test("Fail to relay with no route found") {
@@ -1013,7 +1013,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       fsm doProcess makeInFlightPayments(out = Nil, in = Nil)
       assert(fsm.state == IncomingPaymentProcessor.Shutdown)
       // Sender FSM has been removed
-      WAIT_UNTIL_TRUE(cm.opm.data.payments.isEmpty)
+      WAIT_UNTIL_TRUE(cm.opt.data.paymentSenders.isEmpty)
     }
 
     test("Restart after first fail, wind down on second fail") {
@@ -1432,7 +1432,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       assert(!fsm.data.asInstanceOf[TrampolineStopping].retry)
 
       val senderDataSnapshot =
-        cm.opm.data.payments(reasonableTrampoline1.fullTag).data
+        cm.opt.data.paymentSenders(reasonableTrampoline1.fullTag).data
       val ourAdd = UpdateAddHtlc(
         null,
         1,
