@@ -1,7 +1,7 @@
 package immortan
 
 import java.util.Date
-
+import scala.util.{Success, Failure, Try}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi, Transaction}
 import fr.acinq.eclair._
@@ -12,12 +12,10 @@ import immortan.crypto.Tools
 import immortan.crypto.Tools.{Any2Some, Fiat2Btc, SEPARATOR}
 import immortan.fsm.{IncomingPaymentProcessor, SendMultiPart, SplitInfo}
 import immortan.utils.ImplicitJsonFormats._
-import immortan.utils.{LNUrl, PayRequestMeta, PaymentRequestExt}
+import immortan.utils.{LNUrl, PayRequestMeta, PaymentRequestExt, AES}
 import org.bouncycastle.util.encoders.Base64
 import scodec.bits.ByteVector
 import spray.json._
-
-import scala.util.Try
 
 object PaymentInfo {
   final val NO_ACTION = "no-action"
@@ -203,11 +201,13 @@ case class PaymentInfo(
 sealed trait PaymentAction {
   val domain: Option[String]
   val finalMessage: String
+  def printable(preimage: ByteVector32): String
 }
 
 case class MessageAction(domain: Option[String], message: String)
     extends PaymentAction {
   val finalMessage = s"<br>${message take 144}"
+  def printable(preimage: ByteVector32): String = message
 }
 
 case class UrlAction(domain: Option[String], description: String, url: String)
@@ -216,7 +216,10 @@ case class UrlAction(domain: Option[String], description: String, url: String)
     domain.map(_.toLowerCase).forall(url.toLowerCase.contains),
     "Payment action domain mismatch"
   )
-  val finalMessage = s"<br>${description take 144}<br><br><tt>$url</tt><br>"
+  def trimmedDescription: String = description.trim().stripSuffix(":")
+  val finalMessage =
+    s"<br>${trimmedDescription take 144}<br><br><tt>$url</tt><br>"
+  def printable(preimage: ByteVector32): String = s"$trimmedDescription: $url"
 }
 
 case class AESAction(
@@ -225,13 +228,30 @@ case class AESAction(
     ciphertext: String,
     iv: String
 ) extends PaymentAction {
-  val ciphertextBytes: Array[Byte] = ByteVector
-    .fromValidBase64(ciphertext)
-    .take(1024 * 4)
-    .toArray // up to ~2kb of encrypted data
-  val ivBytes: Array[Byte] =
-    ByteVector.fromValidBase64(iv).take(24).toArray // 16 bytes
-  val finalMessage = s"<br>${description take 144}"
+  def trimmedDescription: String = description.trim().stripSuffix(":")
+  val finalMessage = s"<br>${trimmedDescription take 144}"
+  def plaintext(preimage: ByteVector32): String = {
+    val ct = ByteVector
+      .fromValidBase64(ciphertext)
+      .take(1024 * 4)
+      .toArray // up to ~2kb of encrypted data
+
+    Try(
+      AES
+        .decode(
+          data = ct,
+          key = preimage.toArray,
+          initVector =
+            ByteVector.fromValidBase64(iv).take(24).toArray // 16 bytes
+        )
+    ) match {
+      case Success(decrypted) =>
+        decrypted.decodeUtf8.getOrElse(s"decrypted bytes: ${decrypted.toHex}")
+      case Failure(_) => "<failed to decrypt payload>"
+    }
+  }
+  def printable(preimage: ByteVector32): String =
+    s"$trimmedDescription: ${plaintext(preimage)}"
 }
 
 // Relayed preimages

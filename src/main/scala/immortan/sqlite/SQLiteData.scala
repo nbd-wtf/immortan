@@ -29,7 +29,6 @@ object SQLiteData {
   final val LABEL_BRANDING_PREFIX = "label-branding-node-"
   final val LABEL_SWAP_IN_STATE_PREFIX = "label-swap-in-node-"
   final val LABEL_PAYMENT_REPORT_PREFIX = "label-payment-report-"
-  def byteVecToString(bv: ByteVector): String = new String(bv.toArray, "UTF-8")
 }
 
 class SQLiteData(val db: DBInterface) extends HeaderDb with DataBag {
@@ -67,14 +66,14 @@ class SQLiteData(val db: DBInterface) extends HeaderDb with DataBag {
     put(LABEL_FIAT_RATES, data.toJson.compactPrint getBytes "UTF-8")
 
   def tryGetFiatRatesInfo: Try[FiatRatesInfo] = tryGet(LABEL_FIAT_RATES).map(
-    SQLiteData.byteVecToString
+    _.decodeUtf8.toOption.get
   ) map to[FiatRatesInfo]
 
   def putFeeRatesInfo(data: FeeRatesInfo): Unit =
     put(LABEL_FEE_RATES, data.toJson.compactPrint getBytes "UTF-8")
 
   def tryGetFeeRatesInfo: Try[FeeRatesInfo] =
-    tryGet(LABEL_FEE_RATES).map(SQLiteData.byteVecToString) map to[FeeRatesInfo]
+    tryGet(LABEL_FEE_RATES).map(_.decodeUtf8.toOption.get) map to[FeeRatesInfo]
 
   // Payment reports
 
@@ -84,7 +83,8 @@ class SQLiteData(val db: DBInterface) extends HeaderDb with DataBag {
   )
 
   def tryGetReport(paymentHash: ByteVector32): Try[String] =
-    tryGet(LABEL_PAYMENT_REPORT_PREFIX + paymentHash.toHex).map(byteVecToString)
+    tryGet(LABEL_PAYMENT_REPORT_PREFIX + paymentHash.toHex)
+      .map(_.decodeUtf8.toOption.get)
 
   // HostedChannelBranding
 
