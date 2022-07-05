@@ -458,10 +458,16 @@ class ChannelMaster(
       PaymentInfo.NotSendableSuccess
     else PaymentInfo.Sendable
 
-  def localSend(cmd: SendMultiPart): Unit = {
+  def localSend(
+      cmd: SendMultiPart,
+      extraListeners: Set[OutgoingPaymentListener] = Set.empty
+  ): Unit = {
     // Prepare sender FSM and fetch expected fees for payment
     // these fees will be replied back to FSM for trampoline sends
-    opm process CreateSenderFSM(localPaymentListeners, cmd.fullTag)
+    opm process CreateSenderFSM(
+      localPaymentListeners ++ extraListeners,
+      cmd.fullTag
+    )
     pf process PathFinder.GetExpectedPaymentFees(opm, cmd, interHops = 3)
   }
 
