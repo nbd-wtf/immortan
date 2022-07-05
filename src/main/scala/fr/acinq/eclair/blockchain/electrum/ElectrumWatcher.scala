@@ -50,6 +50,7 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
           pool.subscribeToHeaders(self)
           stay
         }
+
         case ElectrumClient.HeaderSubscriptionResponse(_, height, header) => {
           watches.foreach(self.send(_))
           publishQueue.foreach(self.send(_))
@@ -62,6 +63,7 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
             Queue.empty
           )
         }
+
         case watch: Watch => {
           Disconnected(
             watches + watch,
@@ -69,6 +71,7 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
             block2tx
           )
         }
+
         case publish: PublishAsap => {
           Disconnected(
             watches,
@@ -76,6 +79,8 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
             block2tx
           )
         }
+
+        case ElectrumClient.ElectrumDisconnected => stay
       })
 
   case class Running(
