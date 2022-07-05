@@ -31,7 +31,7 @@ Whatever possible is taken from Acinq's [Eclair](https://github.com/ACINQ/eclair
 Install it by adding to your `build.sbt`:
 
 ```sbt
-libraryDependencies += "com.fiatjaf" %% "immortan" % "0.7.1"
+libraryDependencies += "com.fiatjaf" %% "immortan" % "0.7.2"
 ```
 
 ### Very dense and confusing guide
