@@ -396,15 +396,21 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
   implicit val payerDataSpecEntryFmt: JsonFormat[PayerDataSpecEntry] =
     jsonFormat[
       Boolean,
-      String,
       PayerDataSpecEntry
-    ](PayerDataSpecEntry.apply, "mandatory", "k1")
+    ](PayerDataSpecEntry.apply, "mandatory")
+
+  implicit val AuthPayerDataSpecEntryFmt: JsonFormat[AuthPayerDataSpecEntry] =
+    jsonFormat[
+      String,
+      Boolean,
+      AuthPayerDataSpecEntry
+    ](AuthPayerDataSpecEntry.apply, "k1", "mandatory")
 
   implicit val payerDataSpecFmt: JsonFormat[PayerDataSpec] =
     jsonFormat[
       Option[PayerDataSpecEntry],
       Option[PayerDataSpecEntry],
-      Option[PayerDataSpecEntry],
+      Option[AuthPayerDataSpecEntry],
       PayerDataSpec
     ](PayerDataSpec.apply, "name", "pubkey", "auth")
 

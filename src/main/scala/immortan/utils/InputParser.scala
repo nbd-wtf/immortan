@@ -31,6 +31,9 @@ object InputParser {
 
   private[this] val lnUrl = "(?im).*?(lnurl)([0-9]+[a-z0-9]+)".r.unanchored
 
+  private[this] val lud17 =
+    "(lnurlw|lnurlp|lnurlc|keyauth|https?)://(.*)".r.unanchored
+
   private[this] val shortNodeLink =
     "([a-fA-F0-9]{66})@([a-zA-Z0-9:.\\-_]+)".r.unanchored
 
@@ -44,7 +47,6 @@ object InputParser {
     "^([a-zA-Z0-9][a-zA-Z0-9\\-_.]*)?[a-zA-Z0-9]@([a-zA-Z0-9][a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9]\\.)+[a-zA-Z0-9][a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9]$".r
 
   val lightning: String = "lightning:"
-
   val bitcoin: String = "bitcoin:"
 
   def recordValue(raw: String): Unit = value = parse(raw)
@@ -63,7 +65,19 @@ object InputParser {
         NodeAddress.fromParts(host, port = 9735),
         host
       )
+    case lud17(prefix, rest) => {
+      val actualPrefix =
+        if (rest.endsWith(NodeAddress.onionSuffix)) "http" else "https"
 
+      prefix match {
+        case "lnurlw"  => LNUrl(s"$actualPrefix://$rest")
+        case "lnurlp"  => LNUrl(s"$actualPrefix://$rest")
+        case "lnurlc"  => LNUrl(s"$actualPrefix://$rest")
+        case "keyauth" => LNUrl(s"$actualPrefix://$rest")
+        case "http"    => LNUrl(s"$actualPrefix://$rest")
+        case "https"   => LNUrl(s"$actualPrefix://$rest")
+      }
+    }
     case _ =>
       val withoutSlashes = PaymentRequestExt.removePrefix(rawInput).trim
       val isLightningInvoice = lnPayReq.findFirstMatchIn(rawInput).isDefined

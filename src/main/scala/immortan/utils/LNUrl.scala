@@ -291,6 +291,7 @@ case class PayRequest(
           } yield authData
         )
       )
+      .flatMap(d => if (d == PayerData()) None else Some(d))
       .map(_.toJson.compactPrint)
 
     val url = this.callbackUri.buildUpon
@@ -333,9 +334,10 @@ case class PayRequest(
 case class PayerDataSpec(
     name: Option[PayerDataSpecEntry] = None,
     pubkey: Option[PayerDataSpecEntry] = None,
-    auth: Option[PayerDataSpecEntry] = None
+    auth: Option[AuthPayerDataSpecEntry] = None
 )
-case class PayerDataSpecEntry(mandatory: Boolean = false, k1: String = "")
+case class PayerDataSpecEntry(mandatory: Boolean = false)
+case class AuthPayerDataSpecEntry(k1: String, mandatory: Boolean = false)
 case class PayerData(
     name: Option[String] = None,
     pubkey: Option[String] = None,
