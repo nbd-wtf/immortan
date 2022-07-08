@@ -35,13 +35,14 @@ abstract class HCOpenHandler(
   def onFailure(err: Throwable): Unit
 
   private val makeChanListener = new ConnectionListener with ChannelListener {
-    me =>
     override def onDisconnect(worker: CommsTower.Worker): Unit =
-      CommsTower.rmListenerNative(info, me)
+      CommsTower.rmListenerNative(info, this)
+
     override def onOperational(
         worker: CommsTower.Worker,
         theirInit: Init
     ): Unit = freshChannel process CMD_SOCKET_ONLINE
+
     override def onHostedMessage(
         worker: CommsTower.Worker,
         message: HostedChannelMessage
@@ -66,14 +67,14 @@ abstract class HCOpenHandler(
             Channel.Open
           ) =>
         onEstablished(hostedCommits, freshChannel)
-        CommsTower.rmListenerNative(info, me)
+        CommsTower.rmListenerNative(info, this)
     }
 
     override def onException: PartialFunction[Malfunction, Unit] = {
       // Something went wrong while trying to establish a channel
 
       case (openingPhaseError, _, _) =>
-        CommsTower.rmListenerNative(info, me)
+        CommsTower.rmListenerNative(info, this)
         onFailure(openingPhaseError)
     }
   }

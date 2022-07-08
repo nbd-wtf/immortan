@@ -243,7 +243,7 @@ class ElectrumClientPool(
         // (and maybe on testnet in some pathological cases where there's a block every second) it may seen like our master
         // skipped a block and is suddenly at height + 2
         System.err.println(
-          s"[info] switching to master $remoteAddress at $$tip"
+          s"[info] switching to master $remoteAddress at $tip"
         )
         // we've switched to a new master, treat this as a disconnection/reconnection
         // so users (wallet, watcher, ...) will reset their subscriptions

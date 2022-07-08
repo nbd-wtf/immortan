@@ -26,11 +26,6 @@ import immortan.fsm.OutgoingPaymentMaster._
 
 // Master commands and data
 case class CutIntoHalves(amount: MilliSatoshi)
-case class RemoveSenderFSM(fullTag: FullPaymentTag)
-case class CreateSenderFSM(
-    listeners: Iterable[OutgoingPaymentListener],
-    fullTag: FullPaymentTag
-)
 case class TrampolinePeerUpdated(from: PublicKey, status: TrampolineStatus)
 case class TrampolinePeerDisconnected(from: PublicKey)
 
@@ -260,24 +255,6 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
     case (ChannelNotRoutable(desc), _) =>
       become(data.copy(chanNotRoutable = data.chanNotRoutable + desc), state)
 
-    case (RemoveSenderFSM(fullTag), _)
-        if data.paymentSenders.contains(fullTag) =>
-      // First we get their fail, then stateUpdateStream fires, then we fire it here again if FSM is to be removed
-      become(data.copy(paymentSenders = data.paymentSenders - fullTag), state)
-      ChannelMaster.next(ChannelMaster.stateUpdateStream)
-
-    case (CreateSenderFSM(listeners, fullTag), _)
-        if !data.paymentSenders.contains(fullTag) =>
-      become(
-        data.copy(paymentSenders =
-          data.paymentSenders.updated(
-            value = new OutgoingPaymentSender(fullTag, listeners, me),
-            key = fullTag
-          )
-        ),
-        state
-      )
-
     // Following messages expect that target FSM is always present
     // this won't be the case with failed/fulfilled leftovers in channels on app restart
     // so it has to be made sure that all relevalnt FSMs are manually re-initialized on startup
@@ -303,6 +280,31 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
       me process CMDAskForRoute
 
     case _ =>
+  }
+
+  def removeSenderFSM(fullTag: FullPaymentTag): Unit = {
+    if (data.paymentSenders.contains(fullTag)) {
+      // First we get their fail, then stateUpdateStream fires, then we fire it here again if FSM is to be removed
+      become(data.copy(paymentSenders = data.paymentSenders - fullTag), state)
+      ChannelMaster.next(ChannelMaster.stateUpdateStream)
+    }
+  }
+
+  def createSenderFSM(
+      listeners: Iterable[OutgoingPaymentListener],
+      fullTag: FullPaymentTag
+  ): Unit = {
+    if (!data.paymentSenders.contains(fullTag)) {
+      become(
+        data.copy(paymentSenders =
+          data.paymentSenders.updated(
+            value = new OutgoingPaymentSender(fullTag, listeners, me),
+            key = fullTag
+          )
+        ),
+        state
+      )
+    }
   }
 
   def stateUpdated(bag: InFlightPayments): Unit = Future {

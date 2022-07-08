@@ -89,6 +89,9 @@ abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag)
     PathFinder.Waiting
   )
 
+  def isIncompleteGraph: Boolean =
+    me.data.channels.isEmpty || syncMaster.isDefined
+
   def getLastTotalResyncStamp: Long
   def getLastNormalResyncStamp: Long
 

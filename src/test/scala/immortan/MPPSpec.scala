@@ -128,11 +128,11 @@ object MPPSpec extends TestSuite {
         allowedChans = cm.all.values.toSeq
       )
 
-      cm.opm process CreateSenderFSM(
+      cm.opm.createSenderFSM(
         Set(noopListener),
         tag
       ) // Create since FSM is missing
-      cm.opm process CreateSenderFSM(
+      cm.opm.createSenderFSM(
         null,
         tag
       ) // Disregard since FSM will be present
@@ -224,7 +224,7 @@ object MPPSpec extends TestSuite {
         assistedEdges = Set(edgeDSFromD)
       )
 
-      cm.opm process CreateSenderFSM(Set(noopListener), tag)
+      cm.opm.createSenderFSM(Set(noopListener), tag)
       cm.opm process send
 
       // Our only channel is offline, sender FSM awaits for it to become operational
@@ -321,7 +321,7 @@ object MPPSpec extends TestSuite {
 
       // Payment is going to be split in two, both of them will fail locally
       cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
-      cm.opm process CreateSenderFSM(Set(failedListener), tag)
+      cm.opm.createSenderFSM(Set(failedListener), tag)
       cm.opm process send
 
       WAIT_UNTIL_TRUE(
@@ -384,11 +384,11 @@ object MPPSpec extends TestSuite {
         )
       )
 
-      cm.opm process CreateSenderFSM(
+      cm.opm.createSenderFSM(
         Set(noopListener),
         tag
       ) // Create since FSM is missing
-      cm.opm process CreateSenderFSM(
+      cm.opm.createSenderFSM(
         null,
         tag
       ) // Disregard since FSM will be present
@@ -490,14 +490,14 @@ object MPPSpec extends TestSuite {
         ): Unit = results ::= data
         override def wholePaymentSucceeded(
             data: OutgoingPaymentSenderData
-        ): Unit = cm.opm process RemoveSenderFSM(data.cmd.fullTag)
+        ): Unit = cm.opm.removeSenderFSM(data.cmd.fullTag)
       }
 
-      cm.opm process CreateSenderFSM(
+      cm.opm.createSenderFSM(
         Set(listener),
         tag
       ) // Create since FSM is missing
-      cm.opm process CreateSenderFSM(
+      cm.opm.createSenderFSM(
         null,
         tag
       ) // Disregard since FSM will be present
@@ -647,13 +647,13 @@ object MPPSpec extends TestSuite {
         assistedEdges = Set(edgeDSFromD)
       )
 
-      cm.opm process CreateSenderFSM(Set(noopListener), tag1)
+      cm.opm.createSenderFSM(Set(noopListener), tag1)
       cm.opm process send1
 
-      cm.opm process CreateSenderFSM(Set(noopListener), tag2)
+      cm.opm.createSenderFSM(Set(noopListener), tag2)
       cm.opm process send2
 
-      cm.opm process CreateSenderFSM(Set(noopListener), tag3)
+      cm.opm.createSenderFSM(Set(noopListener), tag3)
       cm.opm process send3
 
       WAIT_UNTIL_TRUE {
@@ -727,7 +727,7 @@ object MPPSpec extends TestSuite {
           senderDataWhenFailed ::= data
       }
 
-      cm.opm process CreateSenderFSM(Set(listener), tag)
+      cm.opm.createSenderFSM(Set(listener), tag)
       cm.opm process send
 
       WAIT_UNTIL_TRUE {
@@ -807,7 +807,7 @@ object MPPSpec extends TestSuite {
 
       // Payment is going to be split in two, both of them will fail locally
       cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
-      cm.opm process CreateSenderFSM(Set(failedListener), tag)
+      cm.opm.createSenderFSM(Set(failedListener), tag)
       cm.opm process send
 
       WAIT_UNTIL_TRUE {
@@ -850,7 +850,7 @@ object MPPSpec extends TestSuite {
         allowedChans = cm.all.values.toSeq
       )
 
-      cm.opm process CreateSenderFSM(Set(noopListener), tag)
+      cm.opm.createSenderFSM(Set(noopListener), tag)
       // Suppose this time we attempt a send when all channels are connected already
       cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
 

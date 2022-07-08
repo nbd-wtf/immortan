@@ -370,7 +370,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
   }
 
   require(fullTag.tag == PaymentTagTlv.TRAMPLOINE_ROUTED)
-  cm.opm process CreateSenderFSM(Set(self), fullTag)
+  cm.opm.createSenderFSM(Set(self), fullTag)
   delayedCMDWorker.replaceWork(CMDTimeout)
   become(null, IncomingPaymentProcessor.Receiving)
 
@@ -634,7 +634,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
   }
 
   override def becomeShutDown(): Unit = {
-    cm.opm process RemoveSenderFSM(fullTag)
+    cm.opm.removeSenderFSM(fullTag)
     become(null, IncomingPaymentProcessor.Shutdown)
   }
 }

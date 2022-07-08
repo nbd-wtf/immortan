@@ -221,15 +221,14 @@ class OutgoingPaymentSender(
         case wait: WaitForRouteOrInFlight
             if wait.flight.isEmpty && wait.partId == fail.partId =>
           // localFailedChans includes a channel we just tried because there are no routes found starting at this channel
-          val singleCapableCncCandidates = opm.rightNowSendable(
-            data.cmd.allowedChans diff wait.localFailedChans,
-            feeLeftover
-          )
-          val otherOpt = singleCapableCncCandidates.collectFirst {
-            case (cnc, sendable) if sendable >= wait.amount => cnc
-          }
-
-          otherOpt match {
+          opm
+            .rightNowSendable(
+              data.cmd.allowedChans diff wait.localFailedChans,
+              feeLeftover
+            )
+            .collectFirst {
+              case (cnc, sendable) if sendable >= wait.amount => cnc
+            } match {
             case Some(okCnc) =>
               become(
                 data.copy(parts =
@@ -305,15 +304,14 @@ class OutgoingPaymentSender(
         case wait: WaitForRouteOrInFlight
             if wait.flight.isDefined && wait.partId == reject.localAdd.partId =>
           // localFailedChans includes a channel we just tried because for whatever reason this channel is incapable now
-          val singleCapableCncCandidates = opm.rightNowSendable(
-            data.cmd.allowedChans diff wait.localFailedChans,
-            feeLeftover
-          )
-          val otherOpt = singleCapableCncCandidates.collectFirst {
-            case (cnc, sendable) if sendable >= wait.amount => cnc
-          }
-
-          otherOpt match {
+          opm
+            .rightNowSendable(
+              data.cmd.allowedChans diff wait.localFailedChans,
+              feeLeftover
+            )
+            .collectFirst {
+              case (cnc, sendable) if sendable >= wait.amount => cnc
+            } match {
             case _ if reject.isInstanceOf[InPrincipleNotSendable] =>
               me abortMaybeNotify data
                 .withoutPartId(wait.partId)

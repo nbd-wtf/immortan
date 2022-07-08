@@ -96,14 +96,14 @@ class ChannelMaster(
       override def wholePaymentSucceeded(
           data: OutgoingPaymentSenderData
       ): Unit =
-        opm process RemoveSenderFSM(data.cmd.fullTag)
+        opm.removeSenderFSM(data.cmd.fullTag)
 
       override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit =
         chanBag.db txWrap {
           // This method gets called after NO payment parts are left in system, irregardless of restarts
           dataBag.putReport(data.cmd.fullTag.paymentHash, data.failuresAsString)
           payBag.updAbortedOutgoing(data.cmd.fullTag.paymentHash)
-          opm process RemoveSenderFSM(data.cmd.fullTag)
+          opm.removeSenderFSM(data.cmd.fullTag)
         }
 
       override def gotFirstPreimage(
@@ -464,7 +464,7 @@ class ChannelMaster(
   ): Unit = {
     // Prepare sender FSM and fetch expected fees for payment
     // these fees will be replied back to FSM for trampoline sends
-    opm process CreateSenderFSM(
+    opm.createSenderFSM(
       localPaymentListeners ++ extraListeners,
       cmd.fullTag
     )
@@ -569,7 +569,7 @@ class ChannelMaster(
             .contains(fullTag) =>
         inProcessors += new IncomingPaymentReceiver(fullTag, me).tuple
       case fullTag if PaymentTagTlv.LOCALLY_SENT == fullTag.tag =>
-        opm process CreateSenderFSM(localPaymentListeners, fullTag)
+        opm.createSenderFSM(localPaymentListeners, fullTag)
     }
 
     // First, fail invalid and malformed incoming HTLCs right away
