@@ -6,7 +6,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
-import immortan.crypto.Tools.{Any2Some, hostedChanId}
+import immortan.crypto.Tools.{Any2Some, hostedChanId, hostedShortChanId}
 import scodec.bits.ByteVector
 
 case class WaitRemoteHostedReply(
@@ -50,6 +50,12 @@ case class HostedCommits(
 
   lazy val channelId: ByteVector32 =
     hostedChanId(remoteInfo.nodeSpecificPubKey.value, remoteInfo.nodeId.value)
+
+  lazy val shortChannelId: Long =
+    hostedShortChanId(
+      remoteInfo.nodeSpecificPubKey.value,
+      remoteInfo.nodeId.value
+    )
 
   lazy val allOutgoing: Set[UpdateAddHtlc] = {
     val allOutgoingAdds = localSpec.outgoingAdds ++ nextLocalSpec.outgoingAdds
