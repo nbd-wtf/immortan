@@ -77,7 +77,7 @@ case class RemoteFailure(packet: Sphinx.DecryptedFailurePacket, route: Route)
     .getOrElse("first hop")
 
   override def asString: String = {
-    s"- ${packet.failureMessage.message} at ${originShortChanId}.\n${route.asString}"
+    s"- ${packet.failureMessage.message} at ${chanString}.\n${route.asString}"
   }
 }
 
