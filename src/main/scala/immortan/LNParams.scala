@@ -138,6 +138,7 @@ object LNParams {
         (DataLossProtect, FeatureSupport.Optional),
         (PrivateRouting, FeatureSupport.Optional),
         (HostedChannels, FeatureSupport.Optional),
+        (HostedChannelsLegacy, FeatureSupport.Optional),
         (PaymentSecret, FeatureSupport.Optional),
         (ChainSwap, FeatureSupport.Optional),
         (Wumbo, FeatureSupport.Optional)

@@ -260,9 +260,17 @@ object Features {
     val mandatory = 32770
   }
 
-  case object HostedChannels extends Feature with InitFeature with NodeFeature {
+  case object HostedChannelsLegacy
+      extends Feature
+      with InitFeature
+      with NodeFeature {
     val rfcName = "Hosted channels"
     val mandatory = 32972
+  }
+
+  case object HostedChannels extends Feature with InitFeature with NodeFeature {
+    val rfcName = "Hosted channels"
+    val mandatory = 256
   }
 
   case object ResizeableHostedChannels
