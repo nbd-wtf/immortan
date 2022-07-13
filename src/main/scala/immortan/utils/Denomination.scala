@@ -40,7 +40,6 @@ trait Denomination {
       zeroColor: String,
       isIncoming: Boolean
   ): String = {
-
     if (isIncoming && incoming == 0L.msat)
       parsedWithSign(incoming, inColor, zeroColor)
     else if (isIncoming)
