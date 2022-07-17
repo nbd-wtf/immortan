@@ -205,8 +205,21 @@ object LNParams {
 
   def isPeerSupports(
       theirInit: Init
-  )(feature: Feature with InitFeature): Boolean =
-    Features.canUseFeature(ourInit.features, theirInit.features, feature)
+  )(feature: Feature with InitFeature): Boolean = feature match {
+    case HostedChannels =>
+      // DEPRECATED: in the future use just Hostedchannels (delete this case)
+      Features.canUseFeature(
+        ourInit.features,
+        theirInit.features,
+        HostedChannels
+      ) || Features.canUseFeature(
+        ourInit.features,
+        theirInit.features,
+        HostedChannelsLegacy
+      )
+    case _ =>
+      Features.canUseFeature(ourInit.features, theirInit.features, feature)
+  }
 
   def addressToPubKeyScript(address: String): ByteVector =
     Script write addressToPublicKeyScript(address, chainHash)

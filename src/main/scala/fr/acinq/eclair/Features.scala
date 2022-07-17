@@ -133,7 +133,6 @@ case class Features[T <: FeatureScope](
 }
 
 object Features {
-
   def empty[T <: FeatureScope]: Features[T] =
     Features[T](Map.empty[Feature with T, FeatureSupport])
 
@@ -264,7 +263,7 @@ object Features {
       extends Feature
       with InitFeature
       with NodeFeature {
-    val rfcName = "Hosted channels"
+    val rfcName = "Hosted channels legacy"
     val mandatory = 32972
   }
 
@@ -303,6 +302,7 @@ object Features {
     TrampolinePayment,
     ChainSwap,
     HostedChannels,
+    HostedChannelsLegacy,
     ResizeableHostedChannels
   )
 
