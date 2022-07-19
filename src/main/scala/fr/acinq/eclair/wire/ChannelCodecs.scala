@@ -63,8 +63,12 @@ object ChannelCodecs {
   val htlcCodec =
     discriminated[DirectedHtlc]
       .by(bool8)
-      .typecase(true, lengthDelimited(updateAddHtlcCodec).as[IncomingHtlc])
-      .typecase(false, lengthDelimited(updateAddHtlcCodec).as[OutgoingHtlc])
+      .\(true) { case v: IncomingHtlc => v }(
+        lengthDelimited(updateAddHtlcCodec).as[IncomingHtlc]
+      )
+      .\(false) { case v: OutgoingHtlc => v }(
+        lengthDelimited(updateAddHtlcCodec).as[OutgoingHtlc]
+      )
 
   val commitmentSpecCodec = {
     ("feeratePerKw" | feeratePerKw) ::
@@ -87,46 +91,37 @@ object ChannelCodecs {
   val txWithInputInfoCodec =
     discriminated[TransactionWithInputInfo]
       .by(uint16)
-      .typecase(0x01, commitTxCodec)
-      .typecase(
-        0x02,
+      .\(0x01) { case v: CommitTx => v }(commitTxCodec)
+      .\(2) { case v: HtlcSuccessTx => v }(
         (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32))
           .as[HtlcSuccessTx]
       )
-      .typecase(
-        0x03,
+      .\(3) { case v: HtlcTimeoutTx => v }(
         (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[HtlcTimeoutTx]
       )
-      .typecase(
-        0x04,
+      .\(4) { case v: ClaimHtlcSuccessTx => v }(
         (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec))
           .as[ClaimHtlcSuccessTx]
       )
-      .typecase(
-        0x05,
+      .\(5) { case v: ClaimHtlcTimeoutTx => v }(
         (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec))
           .as[ClaimHtlcTimeoutTx]
       )
-      .typecase(
-        0x06,
+      .\(6) { case v: ClaimP2WPKHOutputTx => v }(
         (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec))
           .as[ClaimP2WPKHOutputTx]
       )
-      .typecase(
-        0x07,
+      .\(7) { case v: ClaimLocalDelayedOutputTx => v }(
         (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec))
           .as[ClaimLocalDelayedOutputTx]
       )
-      .typecase(
-        0x08,
+      .\(8) { case v: MainPenaltyTx => v }(
         (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[MainPenaltyTx]
       )
-      .typecase(
-        0x09,
+      .\(9) { case v: HtlcPenaltyTx => v }(
         (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[HtlcPenaltyTx]
       )
-      .typecase(
-        0x10,
+      .\(0) { case v: ClosingTx => v }(
         (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClosingTx]
       )
 
@@ -238,7 +233,9 @@ object ChannelCodecs {
   val channelLabelCodec = (text withContext "label").as[ChannelLabel]
 
   val extParamsCodec =
-    discriminated[ExtParams].by(uint16).typecase(1, channelLabelCodec)
+    discriminated[ExtParams]
+      .by(uint16)
+      .\(1) { case v: ChannelLabel => v }(channelLabelCodec)
 
   val commitmentsCodec = {
     (byte withContext "channelFlags") ::
@@ -418,11 +415,17 @@ object ChannelCodecs {
   val persistentDataCodec =
     discriminated[PersistentChannelData]
       .by(uint16)
-      .typecase(1, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
-      .typecase(2, DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
-      .typecase(3, DATA_NORMAL_Codec)
-      .typecase(4, DATA_NEGOTIATING_Codec)
-      .typecase(5, DATA_CLOSING_Codec)
-      .typecase(6, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec)
-      .typecase(7, hostedCommitsCodec)
+      .\(1) { case v: DATA_WAIT_FOR_FUNDING_CONFIRMED => v }(
+        DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec
+      )
+      .\(2) { case v: DATA_WAIT_FOR_FUNDING_LOCKED => v }(
+        DATA_WAIT_FOR_FUNDING_LOCKED_Codec
+      )
+      .\(3) { case v: DATA_NORMAL => v }(DATA_NORMAL_Codec)
+      .\(4) { case v: DATA_NEGOTIATING => v }(DATA_NEGOTIATING_Codec)
+      .\(5) { case v: DATA_CLOSING => v }(DATA_CLOSING_Codec)
+      .\(6) { case v: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => v }(
+        DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec
+      )
+      .\(7) { case v: HostedCommits => v }(hostedCommitsCodec)
 }

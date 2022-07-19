@@ -65,8 +65,8 @@ object ReplyChannelRangeTlv {
 
   val innerCodec = discriminated[ReplyChannelRangeTlv]
     .by(varint)
-    .typecase(UInt64(1), encodedTimestampsCodec)
-    .typecase(UInt64(3), encodedChecksumsCodec)
+    .\(UInt64(1)) { case v: EncodedTimestamps => v }(encodedTimestampsCodec)
+    .\(UInt64(3)) { case v: EncodedChecksums => v }(encodedChecksumsCodec)
 
   val codec: Codec[TlvStream[ReplyChannelRangeTlv]] =
     TlvCodecs.tlvStream(innerCodec)

@@ -268,7 +268,7 @@ object LightningMessageCodecs {
       ("tlvStream" | QueryShortChannelIdsTlv.codec)
   }.as[QueryShortChannelIds]
 
-  val replyShortChanelIdsEndCodec = {
+  val replyShortChannelIdsEndCodec = {
     ("chainHash" | bytes32) ::
       ("complete" | byte)
   }.as[ReplyShortChannelIdsEnd]
@@ -565,35 +565,41 @@ object LightningMessageCodecs {
   val lightningMessageCodec: DiscriminatorCodec[LightningMessage, Int] =
     discriminated[LightningMessage]
       .by(uint16)
-      .typecase(1, warningCodec)
-      .typecase(16, initCodec)
-      .typecase(17, failCodec)
-      .typecase(18, pingCodec)
-      .typecase(19, pongCodec)
-      .typecase(32, openChannelCodec)
-      .typecase(33, acceptChannelCodec)
-      .typecase(34, fundingCreatedCodec)
-      .typecase(35, fundingSignedCodec)
-      .typecase(36, fundingLockedCodec)
-      .typecase(38, shutdownCodec)
-      .typecase(39, closingSignedCodec)
-      .typecase(128, updateAddHtlcCodec)
-      .typecase(130, updateFulfillHtlcCodec)
-      .typecase(131, updateFailHtlcCodec)
-      .typecase(132, commitSigCodec)
-      .typecase(133, revokeAndAckCodec)
-      .typecase(134, updateFeeCodec)
-      .typecase(135, updateFailMalformedHtlcCodec)
-      .typecase(136, channelReestablishCodec)
-      .typecase(256, channelAnnouncementCodec)
-      .typecase(257, nodeAnnouncementCodec)
-      .typecase(258, channelUpdateCodec)
-      .typecase(259, announcementSignaturesCodec)
-      .typecase(261, queryShortChannelIdsCodec)
-      .typecase(262, replyShortChanelIdsEndCodec)
-      .typecase(263, queryChannelRangeCodec)
-      .typecase(264, replyChannelRangeCodec)
-      .typecase(265, gossipTimestampFilterCodec)
+      .\(1) { case v: Warning => v }(warningCodec)
+      .\(16) { case v: Init => v }(initCodec)
+      .\(17) { case v: Fail => v }(failCodec)
+      .\(18) { case v: Ping => v }(pingCodec)
+      .\(19) { case v: Pong => v }(pongCodec)
+      .\(32) { case v: OpenChannel => v }(openChannelCodec)
+      .\(33) { case v: AcceptChannel => v }(acceptChannelCodec)
+      .\(34) { case v: FundingCreated => v }(fundingCreatedCodec)
+      .\(35) { case v: FundingSigned => v }(fundingSignedCodec)
+      .\(36) { case v: FundingLocked => v }(fundingLockedCodec)
+      .\(38) { case v: Shutdown => v }(shutdownCodec)
+      .\(39) { case v: ClosingSigned => v }(closingSignedCodec)
+      .\(128) { case v: UpdateAddHtlc => v }(updateAddHtlcCodec)
+      .\(130) { case v: UpdateFulfillHtlc => v }(updateFulfillHtlcCodec)
+      .\(131) { case v: UpdateFailHtlc => v }(updateFailHtlcCodec)
+      .\(132) { case v: CommitSig => v }(commitSigCodec)
+      .\(133) { case v: RevokeAndAck => v }(revokeAndAckCodec)
+      .\(134) { case v: UpdateFee => v }(updateFeeCodec)
+      .\(135) { case v: UpdateFailMalformedHtlc => v }(
+        updateFailMalformedHtlcCodec
+      )
+      .\(136) { case v: ChannelReestablish => v }(channelReestablishCodec)
+      .\(256) { case v: ChannelAnnouncement => v }(channelAnnouncementCodec)
+      .\(257) { case v: NodeAnnouncement => v }(nodeAnnouncementCodec)
+      .\(258) { case v: ChannelUpdate => v }(channelUpdateCodec)
+      .\(259) { case v: AnnouncementSignatures => v }(
+        announcementSignaturesCodec
+      )
+      .\(261) { case v: QueryShortChannelIds => v }(queryShortChannelIdsCodec)
+      .\(262) { case v: ReplyShortChannelIdsEnd => v }(
+        replyShortChannelIdsEndCodec
+      )
+      .\(263) { case v: QueryChannelRange => v }(queryChannelRangeCodec)
+      .\(264) { case v: ReplyChannelRange => v }(replyChannelRangeCodec)
+      .\(265) { case v: GossipTimestampFilter => v }(gossipTimestampFilterCodec)
 
   //
 

@@ -26,7 +26,7 @@ object InitTlvCodecs {
   val initTlvCodec: Codec[TlvStream[InitTlv]] = TlvCodecs.tlvStream(
     discriminated[InitTlv]
       .by(varint)
-      .typecase(UInt64(1), networks)
+      .\(UInt64(1)) { case v: Networks => v }(networks)
   )
 
 }

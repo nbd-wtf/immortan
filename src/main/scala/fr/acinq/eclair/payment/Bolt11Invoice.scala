@@ -525,7 +525,7 @@ object Bolt11Invoice {
 
     val taggedFieldCodec: Codec[TaggedField] = discriminated[TaggedField]
       .by(ubyte(5))
-      .typecase(0, dataCodec(bits).as[UnknownTag0])
+      .\(0) { case v: UnknownTag0 => v }(dataCodec(bits).as[UnknownTag0])
       .\(1) {
         case a: PaymentHash => a: TaggedField
         case a: InvalidTag1 => a: TaggedField
@@ -537,31 +537,30 @@ object Bolt11Invoice {
           dataCodec(bits).as[InvalidTag1].upcast[TaggedField]
         )
       )
-      .typecase(2, dataCodec(bits).as[UnknownTag2])
-      .typecase(
-        3,
+      .\(2) { case v: UnknownTag2 => v }(dataCodec(bits).as[UnknownTag2])
+      .\(3) { case v: RoutingInfo => v }(
         dataCodec(listOfN(extraHopsLengthCodec, extraHopCodec)).as[RoutingInfo]
       )
-      .typecase(4, dataCodec(bits).as[UnknownTag4])
-      .typecase(
-        5,
+      .\(4) { case v: UnknownTag4 => v }(dataCodec(bits).as[UnknownTag4])
+      .\(5) { case v: InvoiceFeatures => v }(
         dataCodec(bits)
           .xmap[Features[FeatureScope]](Features(_), features2bits)
           .as[InvoiceFeatures]
       )
-      .typecase(6, dataCodec(bits).as[Expiry])
-      .typecase(7, dataCodec(bits).as[UnknownTag7])
-      .typecase(8, dataCodec(bits).as[UnknownTag8])
-      .typecase(
-        9,
+      .\(6) { case v: Expiry => v }(dataCodec(bits).as[Expiry])
+      .\(7) { case v: UnknownTag7 => v }(dataCodec(bits).as[UnknownTag7])
+      .\(8) { case v: UnknownTag8 => v }(dataCodec(bits).as[UnknownTag8])
+      .\(9) { case v: FallbackAddress => v }(
         dataCodec(ubyte(5) :: alignedBytesCodec(bytes)).as[FallbackAddress]
       )
-      .typecase(10, dataCodec(bits).as[UnknownTag10])
-      .typecase(11, dataCodec(bits).as[UnknownTag11])
-      .typecase(12, dataCodec(bits).as[UnknownTag12])
-      .typecase(13, dataCodec(alignedBytesCodec(utf8)).as[Description])
-      .typecase(14, dataCodec(bits).as[UnknownTag14])
-      .typecase(15, dataCodec(bits).as[UnknownTag15])
+      .\(10) { case v: UnknownTag10 => v }(dataCodec(bits).as[UnknownTag10])
+      .\(11) { case v: UnknownTag11 => v }(dataCodec(bits).as[UnknownTag11])
+      .\(12) { case v: UnknownTag12 => v }(dataCodec(bits).as[UnknownTag12])
+      .\(13) { case v: Description => v }(
+        dataCodec(alignedBytesCodec(utf8)).as[Description]
+      )
+      .\(14) { case v: UnknownTag14 => v }(dataCodec(bits).as[UnknownTag14])
+      .\(15) { case v: UnknownTag15 => v }(dataCodec(bits).as[UnknownTag15])
       .\(16) {
         case a: PaymentSecret => a: TaggedField
         case a: InvalidTag16  => a: TaggedField
@@ -573,12 +572,12 @@ object Bolt11Invoice {
           dataCodec(bits).as[InvalidTag16].upcast[TaggedField]
         )
       )
-      .typecase(17, dataCodec(bits).as[UnknownTag17])
-      .typecase(18, dataCodec(bits).as[UnknownTag18])
-      .typecase(19, dataCodec(bits).as[UnknownTag19])
-      .typecase(20, dataCodec(bits).as[UnknownTag20])
-      .typecase(21, dataCodec(bits).as[UnknownTag21])
-      .typecase(22, dataCodec(bits).as[UnknownTag22])
+      .\(17) { case v: UnknownTag17 => v }(dataCodec(bits).as[UnknownTag17])
+      .\(18) { case v: UnknownTag18 => v }(dataCodec(bits).as[UnknownTag18])
+      .\(19) { case v: UnknownTag19 => v }(dataCodec(bits).as[UnknownTag19])
+      .\(20) { case v: UnknownTag20 => v }(dataCodec(bits).as[UnknownTag20])
+      .\(21) { case v: UnknownTag21 => v }(dataCodec(bits).as[UnknownTag21])
+      .\(22) { case v: UnknownTag22 => v }(dataCodec(bits).as[UnknownTag22])
       .\(23) {
         case a: DescriptionHash => a: TaggedField
         case a: InvalidTag23    => a: TaggedField
@@ -590,14 +589,18 @@ object Bolt11Invoice {
           dataCodec(bits).as[InvalidTag23].upcast[TaggedField]
         )
       )
-      .typecase(24, dataCodec(bits).as[MinFinalCltvExpiry])
-      .typecase(25, dataCodec(bits).as[UnknownTag25])
-      .typecase(26, dataCodec(bits).as[UnknownTag26])
-      .typecase(27, dataCodec(alignedBytesCodec(bytes)).as[PaymentMetadata])
-      .typecase(28, dataCodec(bits).as[UnknownTag28])
-      .typecase(29, dataCodec(bits).as[UnknownTag29])
-      .typecase(30, dataCodec(bits).as[UnknownTag30])
-      .typecase(31, dataCodec(bits).as[UnknownTag31])
+      .\(24) { case v: MinFinalCltvExpiry => v }(
+        dataCodec(bits).as[MinFinalCltvExpiry]
+      )
+      .\(25) { case v: UnknownTag25 => v }(dataCodec(bits).as[UnknownTag25])
+      .\(26) { case v: UnknownTag26 => v }(dataCodec(bits).as[UnknownTag26])
+      .\(27) { case v: PaymentMetadata => v }(
+        dataCodec(alignedBytesCodec(bytes)).as[PaymentMetadata]
+      )
+      .\(28) { case v: UnknownTag28 => v }(dataCodec(bits).as[UnknownTag28])
+      .\(29) { case v: UnknownTag29 => v }(dataCodec(bits).as[UnknownTag29])
+      .\(30) { case v: UnknownTag30 => v }(dataCodec(bits).as[UnknownTag30])
+      .\(31) { case v: UnknownTag31 => v }(dataCodec(bits).as[UnknownTag31])
 
     def fixedSizeTrailingCodec[A](codec: Codec[A], size: Int): Codec[A] =
       Codec[A](

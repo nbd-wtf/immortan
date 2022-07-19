@@ -28,9 +28,12 @@ object QueryChannelRangeTlv {
   val codec: Codec[TlvStream[QueryChannelRangeTlv]] = TlvCodecs.tlvStream(
     discriminated
       .by(varint)
-      .typecase(
-        UInt64(1),
+      .subcaseP(UInt64(1))(toQueryFlags)(
         variableSizeBytesLong(varintoverflow, queryFlagsCodec)
       )
   )
+
+  def toQueryFlags: PartialFunction[QueryChannelRangeTlv, QueryFlags] = {
+    case v: QueryFlags => v
+  }
 }

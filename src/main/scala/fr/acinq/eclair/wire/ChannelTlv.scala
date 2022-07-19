@@ -30,8 +30,7 @@ object OpenChannelTlv {
   val openTlvCodec: Codec[TlvStream[OpenChannelTlv]] = tlvStream(
     discriminated[OpenChannelTlv]
       .by(varint)
-      .typecase(
-        UInt64(0),
+      .\(UInt64(0)) { case v: UpfrontShutdownScript => v }(
         variableSizeBytesLong(varintoverflow, bytes).as[UpfrontShutdownScript]
       )
   )
@@ -45,9 +44,13 @@ object AcceptChannelTlv {
   val acceptTlvCodec: Codec[TlvStream[AcceptChannelTlv]] = tlvStream(
     discriminated[AcceptChannelTlv]
       .by(varint)
-      .typecase(
-        UInt64(0),
+      .subcaseP(UInt64(0))(toUpfrontShutdownScript)(
         variableSizeBytesLong(varintoverflow, bytes).as[UpfrontShutdownScript]
       )
   )
+
+  def toUpfrontShutdownScript
+      : PartialFunction[AcceptChannelTlv, UpfrontShutdownScript] = {
+    case v: UpfrontShutdownScript => v
+  }
 }

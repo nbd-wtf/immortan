@@ -86,69 +86,86 @@ object FailureMessageCodecs {
   val failureMessageCodec = discriminatorWithDefault(
     discriminated[FailureMessage]
       .by(uint16)
-      .typecase(PERM | 1, provide(InvalidRealm))
-      .typecase(NODE | 2, provide(TemporaryNodeFailure))
-      .typecase(PERM | NODE | 2, provide(PermanentNodeFailure))
-      .typecase(PERM | NODE | 3, provide(RequiredNodeFeatureMissing))
-      .typecase(BADONION | PERM | 4, sha256.as[InvalidOnionVersion])
-      .typecase(BADONION | PERM | 5, sha256.as[InvalidOnionHmac])
-      .typecase(BADONION | PERM | 6, sha256.as[InvalidOnionKey])
-      .typecase(
-        UPDATE | 7,
+      .\(PERM | 1) { case v if v == InvalidRealm => v }(provide(InvalidRealm))
+      .\(NODE | 2) { case v if v == TemporaryNodeFailure => v }(
+        provide(TemporaryNodeFailure)
+      )
+      .\(PERM | NODE | 2) { case v if v == PermanentNodeFailure => v }(
+        provide(PermanentNodeFailure)
+      )
+      .\(PERM | NODE | 3) { case v if v == RequiredNodeFeatureMissing => v }(
+        provide(RequiredNodeFeatureMissing)
+      )
+      .\(BADONION | PERM | 4)(_.asInstanceOf[InvalidOnionVersion])(
+        sha256.as[InvalidOnionVersion]
+      )
+      .\(BADONION | PERM | 5)(_.asInstanceOf[InvalidOnionHmac])(
+        sha256.as[InvalidOnionHmac]
+      )
+      .\(BADONION | PERM | 6)(_.asInstanceOf[InvalidOnionKey])(
+        sha256.as[InvalidOnionKey]
+      )
+      .\(UPDATE | 7)(_.asInstanceOf[TemporaryChannelFailure])(
         ("channelUpdate" | channelUpdateWithLengthCodec)
           .as[TemporaryChannelFailure]
       )
-      .typecase(PERM | 8, provide(PermanentChannelFailure))
-      .typecase(PERM | 9, provide(RequiredChannelFeatureMissing))
-      .typecase(PERM | 10, provide(UnknownNextPeer))
-      .typecase(
-        UPDATE | 11,
+      .\(PERM | 8) { case v if v == PermanentChannelFailure => v }(
+        provide(PermanentChannelFailure)
+      )
+      .\(PERM | 9) { case v if v == RequiredChannelFeatureMissing => v }(
+        provide(RequiredChannelFeatureMissing)
+      )
+      .\(PERM | 10) { case v if v == UnknownNextPeer => v }(
+        provide(UnknownNextPeer)
+      )
+      .\(UPDATE | 11)(_.asInstanceOf[AmountBelowMinimum])(
         (("amountMsat" | millisatoshi) :: ("channelUpdate" | channelUpdateWithLengthCodec))
           .as[AmountBelowMinimum]
       )
-      .typecase(
-        UPDATE | 12,
+      .\(UPDATE | 12)(_.asInstanceOf[FeeInsufficient])(
         (("amountMsat" | millisatoshi) :: ("channelUpdate" | channelUpdateWithLengthCodec))
           .as[FeeInsufficient]
       )
-      .typecase(
-        UPDATE | 13,
+      .\(UPDATE | 13)(_.asInstanceOf[IncorrectCltvExpiry])(
         (("expiry" | cltvExpiry) :: ("channelUpdate" | channelUpdateWithLengthCodec))
           .as[IncorrectCltvExpiry]
       )
-      .typecase(
-        UPDATE | 14,
+      .\(UPDATE | 14)(_.asInstanceOf[ExpiryTooSoon])(
         ("channelUpdate" | channelUpdateWithLengthCodec).as[ExpiryTooSoon]
       )
-      .typecase(
-        UPDATE | 20,
+      .\(UPDATE | 20)(_.asInstanceOf[ChannelDisabled])(
         (("messageFlags" | byte) :: ("channelFlags" | byte) :: ("channelUpdate" | channelUpdateWithLengthCodec))
           .as[ChannelDisabled]
       )
-      .typecase(
-        PERM | 15,
+      .\(PERM | 15)(_.asInstanceOf[IncorrectOrUnknownPaymentDetails])(
         (("amountMsat" | withDefaultValue(
           optional(bitsRemaining, millisatoshi),
           MilliSatoshi(0L)
-        )) :: ("height" | withDefaultValue(
-          optional(bitsRemaining, uint32),
-          0L
-        ))).as[IncorrectOrUnknownPaymentDetails]
+        )) ::
+          ("height" | withDefaultValue(optional(bitsRemaining, uint32), 0L)))
+          .as[IncorrectOrUnknownPaymentDetails]
       )
       // PERM | 16 (incorrect_payment_amount) has been deprecated because it allowed probing attacks: IncorrectOrUnknownPaymentDetails should be used instead.
       // PERM | 17 (final_expiry_too_soon) has been deprecated because it allowed probing attacks: IncorrectOrUnknownPaymentDetails should be used instead.
-      .typecase(18, ("expiry" | cltvExpiry).as[FinalIncorrectCltvExpiry])
-      .typecase(19, ("amountMsat" | millisatoshi).as[FinalIncorrectHtlcAmount])
-      .typecase(21, provide(ExpiryTooFar))
-      .typecase(
-        PERM | 22,
+      .\(18)(_.asInstanceOf[FinalIncorrectCltvExpiry])(
+        ("expiry" | cltvExpiry).as[FinalIncorrectCltvExpiry]
+      )
+      .\(19)(_.asInstanceOf[FinalIncorrectHtlcAmount])(
+        ("amountMsat" | millisatoshi).as[FinalIncorrectHtlcAmount]
+      )
+      .\(21) { case v if v == ExpiryTooFar => v }(provide(ExpiryTooFar))
+      .\(PERM | 22)(_.asInstanceOf[InvalidOnionPayload])(
         (("tag" | varint) :: ("offset" | uint16)).as[InvalidOnionPayload]
       )
-      .typecase(23, provide(PaymentTimeout))
+      .\(23) { case v if v == PaymentTimeout => v }(provide(PaymentTimeout))
       // TODO: @t-bast: once fully spec-ed, these should probably include a NodeUpdate and use a different ID.
       // We should update Phoenix and our nodes at the same time, or first update Phoenix to understand both new and old errors.
-      .typecase(NODE | 51, provide(TrampolineFeeInsufficient))
-      .typecase(NODE | 52, provide(TrampolineExpiryTooSoon)),
+      .\(NODE | 51) { case v if v == TrampolineFeeInsufficient => v }(
+        provide(TrampolineFeeInsufficient)
+      )
+      .\(NODE | 52) { case v if v == TrampolineExpiryTooSoon => v }(
+        provide(TrampolineExpiryTooSoon)
+      ),
     uint16.xmap(
       code => {
         val failureMessage = code match {

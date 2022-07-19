@@ -150,11 +150,11 @@ object CommonCodecs {
   val nodeaddress: Codec[NodeAddress] =
     discriminated[NodeAddress]
       .by(uint8)
-      .typecase(1, (ipv4address :: uint16).as[IPv4])
-      .typecase(2, (ipv6address :: uint16).as[IPv6])
-      .typecase(3, (base32(10) :: uint16).as[Tor2])
-      .typecase(4, (base32(35) :: uint16).as[Tor3])
-      .typecase(5, (zeropaddedstring(64) :: uint16).as[Domain])
+      .\(1) { case v: IPv4 => v }((ipv4address :: uint16).as[IPv4])
+      .\(2) { case v: IPv6 => v }((ipv6address :: uint16).as[IPv6])
+      .\(3) { case v: Tor2 => v }((base32(10) :: uint16).as[Tor2])
+      .\(4) { case v: Tor3 => v }((base32(35) :: uint16).as[Tor3])
+      .\(5) { case v: Domain => v }((zeropaddedstring(64) :: uint16).as[Domain])
 
   // this one is a bit different from most other codecs: the first 'len' element is *not* the number of items
   // in the list but rather the  number of bytes of the encoded list. The rationale is once we've read this

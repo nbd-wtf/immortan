@@ -67,9 +67,13 @@ object QueryShortChannelIdsTlv {
   val codec: Codec[TlvStream[QueryShortChannelIdsTlv]] = TlvCodecs.tlvStream(
     discriminated
       .by(varint)
-      .typecase(
-        UInt64(1),
+      .subcaseP(UInt64(1))(toEncodedQueryFlags)(
         variableSizeBytesLong(varintoverflow, encodedQueryFlagsCodec)
       )
   )
+
+  def toEncodedQueryFlags
+      : PartialFunction[QueryShortChannelIdsTlv, EncodedQueryFlags] = {
+    case v: EncodedQueryFlags => v
+  }
 }

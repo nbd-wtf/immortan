@@ -33,7 +33,8 @@ object PaymentTagTlv {
 
   private val discriminator = discriminated[EncryptedPaymentSecret]
     .by(varint)
-    .typecase(TlvStream.paymentTag, encryptedPaymentSecretCodec)
-
+    .\(TlvStream.paymentTag) { case v: EncryptedPaymentSecret => v }(
+      encryptedPaymentSecretCodec
+    )
   val codec: Codec[EncryptedSecretStream] = TlvCodecs.tlvStream(discriminator)
 }

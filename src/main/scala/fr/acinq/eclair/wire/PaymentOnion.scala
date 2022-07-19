@@ -527,19 +527,23 @@ object PaymentOnionCodecs {
 
   private val onionTlvCodec = discriminated[OnionPaymentPayloadTlv]
     .by(varint)
-    .typecase(UInt64(2), amountToForward)
-    .typecase(UInt64(4), outgoingCltv)
-    .typecase(UInt64(6), outgoingChannelId)
-    .typecase(UInt64(8), paymentData)
-    .typecase(UInt64(10), encryptedRecipientData)
-    .typecase(UInt64(12), blindingPoint)
-    .typecase(UInt64(16), paymentMetadata)
+    .\(UInt64(2)) { case v: AmountToForward => v }(amountToForward)
+    .\(UInt64(4)) { case v: OutgoingCltv => v }(outgoingCltv)
+    .\(UInt64(6)) { case v: OutgoingChannelId => v }(outgoingChannelId)
+    .\(UInt64(8)) { case v: PaymentData => v }(paymentData)
+    .\(UInt64(10)) { case v: EncryptedRecipientData => v }(
+      encryptedRecipientData
+    )
+    .\(UInt64(12)) { case v: BlindingPoint => v }(blindingPoint)
+    .\(UInt64(16)) { case v: PaymentMetadata => v }(paymentMetadata)
     // Types below aren't specified - use cautiously when deploying (be careful with backwards-compatibility).
-    .typecase(UInt64(66097), invoiceFeatures)
-    .typecase(UInt64(66098), outgoingNodeId)
-    .typecase(UInt64(66099), invoiceRoutingInfo)
-    .typecase(UInt64(66100), trampolineOnion)
-    .typecase(UInt64(5482373484L), keySend)
+    .\(UInt64(66097)) { case v: InvoiceFeatures => v }(invoiceFeatures)
+    .\(UInt64(66098)) { case v: OutgoingNodeId => v }(outgoingNodeId)
+    .\(UInt64(66099)) { case v: InvoiceRoutingInfo => v }(
+      invoiceRoutingInfo
+    )
+    .\(UInt64(66100)) { case v: TrampolineOnion => v }(trampolineOnion)
+    .\(UInt64(5482373484L)) { case v: KeySend => v }(keySend)
 
   val tlvPerHopPayloadCodec: Codec[TlvStream[OnionPaymentPayloadTlv]] =
     TlvCodecs

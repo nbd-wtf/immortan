@@ -64,11 +64,11 @@ object RouteBlindingEncryptedDataCodecs {
   private val encryptedDataTlvCodec =
     discriminated[RouteBlindingEncryptedDataTlv]
       .by(varint)
-      .typecase(UInt64(1), padding)
-      .typecase(UInt64(2), outgoingChannelId)
-      .typecase(UInt64(4), outgoingNodeId)
-      .typecase(UInt64(6), pathId)
-      .typecase(UInt64(8), nextBlinding)
+      .\(UInt64(1)) { case v: Padding => v }(padding)
+      .\(UInt64(2)) { case v: OutgoingChannelId => v }(outgoingChannelId)
+      .\(UInt64(4)) { case v: OutgoingNodeId => v }(outgoingNodeId)
+      .\(UInt64(6)) { case v: PathId => v }(pathId)
+      .\(UInt64(8)) { case v: NextBlinding => v }(nextBlinding)
 
   val encryptedDataCodec: Codec[TlvStream[RouteBlindingEncryptedDataTlv]] =
     TlvCodecs
