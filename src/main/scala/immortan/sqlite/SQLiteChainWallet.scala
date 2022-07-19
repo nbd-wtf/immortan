@@ -15,7 +15,7 @@ import spray.json._
 
 class SQLiteChainWallet(val db: DBInterface) extends WalletDb {
   def remove(pub: PublicKey): Unit =
-    db.change(ChainWalletTable.killSql, pub.toString)
+    db.change(ChainWalletTable.killSql, Array(pub.toString))
 
   // Specifically do not use info.data because it may be empty ByteVector
   def addChainWallet(
@@ -25,11 +25,13 @@ class SQLiteChainWallet(val db: DBInterface) extends WalletDb {
   ): Unit =
     db.change(
       ChainWalletTable.newSql,
-      info.core.toJson.compactPrint,
-      pub.toString,
-      data.toArray,
-      info.lastBalance.toLong: java.lang.Long,
-      info.label
+      Array(
+        info.core.toJson.compactPrint,
+        pub.toString,
+        data.toArray,
+        info.lastBalance.toLong: java.lang.Long,
+        info.label
+      )
     )
 
   def persist(
@@ -39,13 +41,15 @@ class SQLiteChainWallet(val db: DBInterface) extends WalletDb {
   ): Unit =
     db.change(
       ChainWalletTable.updSql,
-      persistentDataCodec.encode(data).require.toByteArray,
-      lastBalance.toLong: java.lang.Long,
-      pub.toString
+      Array(
+        persistentDataCodec.encode(data).require.toByteArray,
+        lastBalance.toLong: java.lang.Long,
+        pub.toString
+      )
     )
 
   def updateLabel(label: String, pub: PublicKey): Unit =
-    db.change(ChainWalletTable.updLabelSql, label, pub.toString)
+    db.change(ChainWalletTable.updLabelSql, Array(label, pub.toString))
 
   def listWallets: Iterable[CompleteChainWalletInfo] =
     db.select(ChainWalletTable.selectSql).iterable { rc =>

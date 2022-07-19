@@ -32,16 +32,16 @@ object SQLiteData {
 }
 
 class SQLiteData(val db: DBInterface) extends HeaderDb with DataBag {
-  def delete(label: String): Unit = db.change(DataTable.killSql, label)
+  def delete(label: String): Unit = db.change(DataTable.killSql, Array(label))
 
   def tryGet(keyValueLabel: String): Try[ByteVector] =
-    db.select(DataTable.selectSql, keyValueLabel)
+    db.select(DataTable.selectSql, Array(keyValueLabel))
       .headTry(_ byteVec DataTable.content)
 
   def put(label: String, content: Array[Byte]): Unit = {
     // Insert and then update because of INSERT IGNORE
-    db.change(DataTable.newSql, label, content)
-    db.change(DataTable.updSql, content, label)
+    db.change(DataTable.newSql, Array(label, content))
+    db.change(DataTable.updSql, Array(content, label))
   }
 
   // StorageFormat
@@ -119,27 +119,20 @@ class SQLiteData(val db: DBInterface) extends HeaderDb with DataBag {
     }
 
   // HeadersDb
-
   override def addHeaders(headers: Seq[BlockHeader], atHeight: Int): Unit = {
-    val addHeaderSqlPQ = db.makePreparedQuery(ElectrumHeadersTable.addHeaderSql)
-
     db txWrap {
       for (Tuple2(header, idx) <- headers.zipWithIndex) {
         val serialized: Array[Byte] = BlockHeader.write(header).toArray
         db.change(
-          addHeaderSqlPQ,
-          atHeight + idx: JInt,
-          header.hash.toHex,
-          serialized
+          ElectrumHeadersTable.addHeaderSql,
+          Array(atHeight + idx: JInt, header.hash.toHex, serialized)
         )
       }
     }
-
-    addHeaderSqlPQ.close()
   }
 
   override def getHeader(height: Int): Option[BlockHeader] =
-    db.select(ElectrumHeadersTable.selectByHeightSql, height.toString)
+    db.select(ElectrumHeadersTable.selectByHeightSql, Array(height.toString))
       .headTry { rc =>
         BlockHeader.read(rc bytes ElectrumHeadersTable.header)
       }
@@ -147,7 +140,7 @@ class SQLiteData(val db: DBInterface) extends HeaderDb with DataBag {
 
   // Only used in testing currently
   override def getHeader(blockHash: ByteVector32): Option[HeightAndHeader] =
-    db.select(ElectrumHeadersTable.selectByBlockHashSql, blockHash.toHex)
+    db.select(ElectrumHeadersTable.selectByBlockHashSql, Array(blockHash.toHex))
       .headTry { rc =>
         val header = BlockHeader.read(rc bytes ElectrumHeadersTable.header)
         val height = rc int ElectrumHeadersTable.height
@@ -158,8 +151,7 @@ class SQLiteData(val db: DBInterface) extends HeaderDb with DataBag {
   override def getHeaders(startHeight: Int, maxCount: Int): Seq[BlockHeader] =
     db.select(
       ElectrumHeadersTable.selectHeadersSql,
-      startHeight.toString,
-      maxCount.toString
+      Array(startHeight.toString, maxCount.toString)
     ).iterable { rc =>
       BlockHeader.read(rc bytes ElectrumHeadersTable.header)
     }.toList

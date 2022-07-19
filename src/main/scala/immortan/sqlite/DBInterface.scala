@@ -2,37 +2,35 @@ package immortan.sqlite
 
 trait DBInterface {
   def txWrap[T](run: => T): T
-
-  def change(sql: String, params: Object*): Unit
-
-  def change(prepared: PreparedQuery, params: Object*): Unit
-
-  def select(sql: String, params: String*): RichCursor
-
-  def select(prepared: PreparedQuery, params: String*): RichCursor
-
-  def makePreparedQuery(sql: String): PreparedQuery
-
+  def change(sql: String, params: Array[Object]): Unit
+  def change(prepared: PreparedQuery, params: Array[Object]): Unit
+  def select(sql: String, params: Array[String] = Array.empty): RichCursor
   def search(sqlSelectQuery: String, rawQuery: String): RichCursor =
-    select(sqlSelectQuery, s"${rawQuery.replaceAll("'", "\\'").trim}*")
+    select(sqlSelectQuery, Array(s"${rawQuery.replaceAll("'", "\\'").trim}*"))
+  def makePreparedQuery(sql: String): PreparedQuery
 }
 
 case class DBInterfaceSQLiteGeneral(connection: java.sql.Connection)
     extends DBInterface {
-  def change(sql: String, params: Object*): Unit =
-    change(makePreparedQuery(sql), params: _*)
+  def change(sql: String, params: Array[Object]): Unit = {
+    val stmt = makePreparedQuery(sql)
+    stmt.bound(params).executeUpdate()
+    stmt.close()
+  }
 
-  def change(stmt: PreparedQuery, params: Object*): Unit =
-    stmt.bound(params: _*).executeUpdate()
+  override def change(prepared: PreparedQuery, params: Array[Object]): Unit = {
+    prepared.bound(params).executeUpdate()
+  }
 
-  def select(sql: String, params: String*): RichCursor =
-    select(makePreparedQuery(sql), params: _*)
-
-  def select(stmt: PreparedQuery, params: String*): RichCursor =
-    stmt.bound(params: _*).executeQuery
+  def select(sql: String, params: Array[String]): RichCursor = {
+    val stmt = makePreparedQuery(sql)
+    val res = stmt.bound(params).executeQuery()
+    stmt.close()
+    res
+  }
 
   def makePreparedQuery(sql: String): PreparedQuery =
-    PreparedQuerySQLiteGeneral(connection prepareStatement sql)
+    PreparedQuerySQLiteGeneral(connection.prepareStatement(sql))
 
   def txWrap[T](run: => T): T = {
     val old = connection.getAutoCommit

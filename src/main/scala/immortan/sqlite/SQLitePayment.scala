@@ -32,18 +32,19 @@ case class PaymentSummary(
 class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
     extends PaymentBag {
   def getPaymentInfo(paymentHash: ByteVector32): Try[PaymentInfo] = db
-    .select(PaymentTable.selectByHashSql, paymentHash.toHex)
+    .select(PaymentTable.selectByHashSql, Array(paymentHash.toHex))
     .headTry(toPaymentInfo)
 
   def removePaymentInfo(paymentHash: ByteVector32): Unit = {
-    db.change(PaymentTable.killSql, paymentHash.toHex)
+    db.change(PaymentTable.killSql, Array(paymentHash.toHex))
     ChannelMaster.next(ChannelMaster.paymentDbStream)
   }
 
   def addSearchablePayment(search: String, paymentHash: ByteVector32): Unit = {
-    val newVirtualSqlPQ = db.makePreparedQuery(PaymentTable.newVirtualSql)
-    db.change(newVirtualSqlPQ, search.toLowerCase, paymentHash.toHex)
-    newVirtualSqlPQ.close()
+    db.change(
+      PaymentTable.newVirtualSql,
+      Array(search.toLowerCase, paymentHash.toHex)
+    )
   }
 
   def searchPayments(rawSearchQuery: String): RichCursor =
@@ -51,8 +52,10 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
 
   def listPendingSecrets: Iterable[ByteVector32] = {
     val incomingThreshold =
-      System.currentTimeMillis - Bolt11Invoice.OUR_EXPIRY_SECONDS * 1000L // Skip incoming payments which are expired by now
-    db.select(PaymentTable.selectPendingSql, incomingThreshold.toString)
+      // Skip incoming payments which are expired by now
+      System.currentTimeMillis - Bolt11Invoice.OUR_EXPIRY_SECONDS * 1000L
+
+    db.select(PaymentTable.selectPendingSql, Array(incomingThreshold.toString))
       .iterable(_ string PaymentTable.secret)
       .map(ByteVector32.fromValidHex)
   }
@@ -64,9 +67,11 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
       System.currentTimeMillis - Bolt11Invoice.OUR_EXPIRY_SECONDS * 1000L // Skip incoming payments which are expired by now
     db.select(
       PaymentTable.selectRecentSql,
-      outgoingThreshold.toString,
-      incomingThreshold.toString,
-      limit.toString
+      Array(
+        outgoingThreshold.toString,
+        incomingThreshold.toString,
+        limit.toString
+      )
     )
   }
 
@@ -78,25 +83,23 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
       description: PaymentDescription,
       payHash: ByteVector32
   ): Unit = {
-    val updateDescriptionSqlPQ =
-      db.makePreparedQuery(PaymentTable.updateDescriptionSql)
     db.change(
-      updateDescriptionSqlPQ,
-      description.toJson.compactPrint,
-      payHash.toHex
+      PaymentTable.updateDescriptionSql,
+      Array(description.toJson.compactPrint, payHash.toHex)
     )
     for (label <- description.label) addSearchablePayment(label, payHash)
     ChannelMaster.next(ChannelMaster.paymentDbStream)
-    updateDescriptionSqlPQ.close()
   }
 
   def updOkOutgoing(fulfill: RemoteFulfill, fee: MilliSatoshi): Unit = {
     db.change(
       PaymentTable.updOkOutgoingSql,
-      fulfill.theirPreimage.toHex,
-      fee.toLong: JLong,
-      System.currentTimeMillis: JLong /* UPDATED */,
-      fulfill.ourAdd.paymentHash.toHex
+      Array(
+        fulfill.theirPreimage.toHex,
+        fee.toLong: JLong,
+        System.currentTimeMillis: JLong /* UPDATED */,
+        fulfill.ourAdd.paymentHash.toHex
+      )
     )
     ChannelMaster.next(ChannelMaster.paymentDbStream)
   }
@@ -107,10 +110,12 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
   ): Unit = {
     db.change(
       PaymentTable.updOkIncomingSql,
-      receivedAmount.toLong: JLong,
-      System.currentTimeMillis: JLong /* SEEN */,
-      System.currentTimeMillis: JLong /* UPDATED */,
-      paymentHash.toHex
+      Array(
+        receivedAmount.toLong: JLong,
+        System.currentTimeMillis: JLong /* SEEN */,
+        System.currentTimeMillis: JLong /* UPDATED */,
+        paymentHash.toHex
+      )
     )
     ChannelMaster.next(ChannelMaster.paymentDbStream)
   }
@@ -118,9 +123,11 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
   def updAbortedOutgoing(paymentHash: ByteVector32): Unit = {
     db.change(
       PaymentTable.updStatusSql,
-      PaymentStatus.ABORTED: JInt,
-      System.currentTimeMillis: JLong /* UPDATED */,
-      paymentHash.toHex
+      Array(
+        PaymentStatus.ABORTED: JInt,
+        System.currentTimeMillis: JLong /* UPDATED */,
+        paymentHash.toHex
+      )
     )
     ChannelMaster.next(ChannelMaster.paymentDbStream)
   }
@@ -137,28 +144,28 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
   ): Unit =
     db txWrap {
       removePaymentInfo(prex.pr.paymentHash)
-      val newSqlPQ = db.makePreparedQuery(PaymentTable.newSql)
       db.change(
-        newSqlPQ,
-        prex.raw,
-        ChannelMaster.NO_PREIMAGE.toHex,
-        PaymentStatus.PENDING: JInt,
-        seenAt: JLong,
-        System.currentTimeMillis: JLong /* UPDATED */,
-        description.toJson.compactPrint,
-        action.map(_.toJson.compactPrint).getOrElse(PaymentInfo.NO_ACTION),
-        prex.pr.paymentHash.toHex,
-        prex.pr.paymentSecret.get.toHex,
-        0L: JLong /* RECEIVED AMOUNT = 0 FOR OUTGOING PAYMENT */,
-        finalAmount.toLong: JLong,
-        0L: JLong /* FEE IS UNCERTAIN YET */,
-        balanceSnap.toLong: JLong,
-        fiatRateSnap.toJson.compactPrint,
-        chainFee.toLong: JLong,
-        0: JInt /* INCOMING TYPE = 0 */
+        PaymentTable.newSql,
+        Array(
+          prex.raw,
+          ChannelMaster.NO_PREIMAGE.toHex,
+          PaymentStatus.PENDING: JInt,
+          seenAt: JLong,
+          System.currentTimeMillis: JLong /* UPDATED */,
+          description.toJson.compactPrint,
+          action.map(_.toJson.compactPrint).getOrElse(PaymentInfo.NO_ACTION),
+          prex.pr.paymentHash.toHex,
+          prex.pr.paymentSecret.get.toHex,
+          0L: JLong /* RECEIVED AMOUNT = 0 FOR OUTGOING PAYMENT */,
+          finalAmount.toLong: JLong,
+          0L: JLong /* FEE IS UNCERTAIN YET */,
+          balanceSnap.toLong: JLong,
+          fiatRateSnap.toJson.compactPrint,
+          chainFee.toLong: JLong,
+          0: JInt /* INCOMING TYPE = 0 */
+        )
       )
       ChannelMaster.next(ChannelMaster.paymentDbStream)
-      newSqlPQ.close()
     }
 
   def replaceIncomingPayment(
@@ -170,30 +177,30 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
   ): Unit =
     db txWrap {
       removePaymentInfo(prex.pr.paymentHash)
-      val newSqlPQ = db.makePreparedQuery(PaymentTable.newSql)
       db.change(
-        newSqlPQ,
-        prex.raw,
-        preimage.toHex,
-        PaymentStatus.PENDING: JInt,
-        System.currentTimeMillis: JLong /* SEEN */,
-        System.currentTimeMillis: JLong /* UPDATED */,
-        description.toJson.compactPrint,
-        PaymentInfo.NO_ACTION,
-        prex.pr.paymentHash.toHex,
-        prex.pr.paymentSecret.get.toHex,
-        prex.pr.amountOpt
-          .getOrElse(0L.msat)
-          .toLong: JLong /* 0 WHEN UNDEFINED */,
-        0L: JLong /* SENT = 0 MSAT, NOTHING TO SEND */,
-        0L: JLong /* NO FEE FOR INCOMING PAYMENT */,
-        balanceSnap.toLong: JLong,
-        fiatRateSnap.toJson.compactPrint,
-        0L: JLong /* NO CHAIN FEE FOR INCOMING PAYMENTS */,
-        1: JInt /* INCOMING TYPE = 1 */
+        PaymentTable.newSql,
+        Array(
+          prex.raw,
+          preimage.toHex,
+          PaymentStatus.PENDING: JInt,
+          System.currentTimeMillis: JLong /* SEEN */,
+          System.currentTimeMillis: JLong /* UPDATED */,
+          description.toJson.compactPrint,
+          PaymentInfo.NO_ACTION,
+          prex.pr.paymentHash.toHex,
+          prex.pr.paymentSecret.get.toHex,
+          prex.pr.amountOpt
+            .getOrElse(0L.msat)
+            .toLong: JLong /* 0 WHEN UNDEFINED */,
+          0L: JLong /* SENT = 0 MSAT, NOTHING TO SEND */,
+          0L: JLong /* NO FEE FOR INCOMING PAYMENT */,
+          balanceSnap.toLong: JLong,
+          fiatRateSnap.toJson.compactPrint,
+          0L: JLong /* NO CHAIN FEE FOR INCOMING PAYMENTS */,
+          1: JInt /* INCOMING TYPE = 1 */
+        )
       )
       ChannelMaster.next(ChannelMaster.paymentDbStream)
-      newSqlPQ.close()
     }
 
   def paymentSummary: Try[PaymentSummary] =
@@ -229,16 +236,19 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
 
   // Preimage storage
   def getPreimage(hash: ByteVector32): Try[ByteVector32] = preimageDb
-    .select(PreimageTable.selectByHashSql, hash.toHex)
+    .select(PreimageTable.selectByHashSql, Array(hash.toHex))
     .headTry(_ string PreimageTable.preimage)
     .map(ByteVector32.fromValidHex)
 
   def setPreimage(paymentHash: ByteVector32, preimage: ByteVector32): Unit =
-    preimageDb.change(PreimageTable.newSql, paymentHash.toHex, preimage.toHex)
+    preimageDb.change(
+      PreimageTable.newSql,
+      Array(paymentHash.toHex, preimage.toHex)
+    )
 
   // Relayed payments
   def listRecentRelays(limit: Int): RichCursor =
-    db.select(RelayTable.selectRecentSql, limit.toString)
+    db.select(RelayTable.selectRecentSql, Array(limit.toString))
 
   def addRelayedPreimageInfo(
       fullTag: FullPaymentTag,
@@ -248,13 +258,15 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
   ): Unit = {
     db.change(
       RelayTable.newSql,
-      fullTag.paymentHash.toHex,
-      fullTag.paymentSecret.toHex,
-      preimage.toHex,
-      System.currentTimeMillis: JLong /* SEEN AT */,
-      System.currentTimeMillis: JLong /* UPDATED AT */,
-      relayed.toLong: JLong,
-      earned.toLong: JLong
+      Array(
+        fullTag.paymentHash.toHex,
+        fullTag.paymentSecret.toHex,
+        preimage.toHex,
+        System.currentTimeMillis: JLong /* SEEN AT */,
+        System.currentTimeMillis: JLong /* UPDATED AT */,
+        relayed.toLong: JLong,
+        earned.toLong: JLong
+      )
     )
     ChannelMaster.next(ChannelMaster.relayDbStream)
   }
