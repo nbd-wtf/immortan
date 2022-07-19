@@ -16,12 +16,12 @@
 
 package fr.acinq.eclair.router
 
-import com.google.common.hash.Hashing
+import java.util.zip.CRC32
+import scodec.bits.ByteVector
+import shapeless.HNil
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire._
-import scodec.bits.ByteVector
-import shapeless.HNil
 
 object Sync {
   def shouldRequestUpdate(
@@ -62,7 +62,9 @@ object Sync {
   }
 
   def crc32c(data: ByteVector): Long = {
-    Hashing.crc32c.hashBytes(data.toArray).asInt() & 0xffffffffL
+    val digest = new CRC32
+    digest.update(data.toArray)
+    digest.getValue() & 0xffffffffL
   }
 
   def getChecksum(u: ChannelUpdate): Long = {

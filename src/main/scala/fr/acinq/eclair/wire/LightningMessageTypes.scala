@@ -1,6 +1,5 @@
 package fr.acinq.eclair.wire
 
-import com.google.common.base.Charsets
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Protocol, Satoshi}
 import fr.acinq.eclair._
@@ -40,7 +39,7 @@ case class Init(
 
 object Fail {
   def apply(channelId: ByteVector32, msg: String): Fail = {
-    val bytes = msg.getBytes(Charsets.US_ASCII)
+    val bytes = msg.getBytes(StandardCharsets.US_ASCII)
     Fail(channelId, ByteVector view bytes)
   }
 }
