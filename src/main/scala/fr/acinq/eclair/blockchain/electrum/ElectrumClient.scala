@@ -30,347 +30,21 @@ import io.netty.handler.ssl.SslContextBuilder
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory
 import io.netty.resolver.NoopAddressResolverGroup
 import io.netty.util.CharsetUtil
+import io.netty.util.internal.logging.{InternalLoggerFactory, JdkLoggerFactory}
 import org.json4s.JsonAST._
 import org.json4s.native.JsonMethods
 import org.json4s.{JInt, JLong, JString}
 import scodec.bits.ByteVector
-
 import scala.annotation.{tailrec, nowarn}
 import scala.concurrent.{ExecutionContext, Promise, Future}
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
-class ElectrumClient(
-    connectionPool: ElectrumClientPool,
-    server: ElectrumClientPool.ElectrumServerAddress
-)(implicit
-    ac: castor.Context
-) extends castor.StateMachineActor[Any] { self =>
-  def address = server.address.getHostName()
-  System.err.println(s"[info] connecting to $address")
-
-  var requests =
-    scala.collection.mutable.Map.empty[String, (Request, Promise[Response])]
-
-  // We need to regularly send a ping in order not to get disconnected
-  val cancelPingTrigger = {
-    val t = new java.util.Timer()
-    val task = new java.util.TimerTask { def run() = self.request(Ping) }
-    t.schedule(task, 30000L, 30000L)
-    () => task.cancel()
-  }
-
-  val b = new Bootstrap
-  b channel classOf[NioSocketChannel]
-  b group workerGroup
-
-  b.option[java.lang.Boolean](ChannelOption.TCP_NODELAY, true)
-  b.option[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
-  b.option[java.lang.Integer](ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000)
-  b.option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-
-  b handler new ChannelInitializer[SocketChannel] {
-    override def initChannel(ch: SocketChannel): Unit = {
-      if (server.ssl == SSL.LOOSE || server.address.getPort() == 50002) {
-        val sslCtx = SslContextBuilder.forClient
-          .trustManager(InsecureTrustManagerFactory.INSTANCE)
-          .build
-        ch.pipeline addLast sslCtx.newHandler(
-          ch.alloc,
-          server.address.getHostName(),
-          server.address.getPort()
-        )
-      }
-
-      // Inbound
-      ch.pipeline.addLast(new LineBasedFrameDecoder(Int.MaxValue, true, true))
-      ch.pipeline.addLast(new StringDecoder(CharsetUtil.UTF_8))
-      ch.pipeline.addLast(new ElectrumResponseDecoder)
-      ch.pipeline.addLast(new ResponseHandler())
-
-      // Outbound
-      ch.pipeline.addLast(new LineEncoder)
-      ch.pipeline.addLast(new JsonRPCRequestEncoder)
-
-      // Error handler
-      ch.pipeline.addLast(new ExceptionHandler)
-
-      LNParams.connectionProvider.proxyAddress.foreach { address =>
-        // Optional proxy which must be the first handler
-        val handler = new Socks5ProxyHandler(address)
-        ch.pipeline.addFirst(handler)
-      }
-    }
-  }
-
-  val channelOpenFuture: ChannelFuture =
-    b.connect(server.address.getHostName(), server.address.getPort())
-
-  if (LNParams.connectionProvider.proxyAddress.isDefined)
-    b.resolver(NoopAddressResolverGroup.INSTANCE)
-
-  channelOpenFuture addListeners new ChannelFutureListener {
-    override def operationComplete(future: ChannelFuture): Unit = {
-      if (!future.isSuccess) {
-        // the connection was not open successfully, close this actor
-        System.err.println(s"[info] failed to connect to $address: $future")
-        self.close()
-      } else {
-        // if we are here it means the connection was opened successfully
-        // listen for when the connection is closed
-        future.channel.closeFuture addListener new ChannelFutureListener {
-          override def operationComplete(future: ChannelFuture): Unit =
-            // this just means it was closed
-            self.close()
-        }
-      }
-    }
-  }
-
-  class ExceptionHandler extends ChannelDuplexHandler {
-    override def connect(
-        ctx: ChannelHandlerContext,
-        remoteAddress: SocketAddress,
-        localAddress: SocketAddress,
-        promise: ChannelPromise
-    ): Unit = {
-      val listener = new ChannelFutureListener {
-        override def operationComplete(future: ChannelFuture): Unit =
-          if (!future.isSuccess) self.close()
-      }
-      ctx.connect(remoteAddress, localAddress, promise addListener listener)
-    }
-
-    override def write(
-        ctx: ChannelHandlerContext,
-        msg: scala.Any,
-        promise: ChannelPromise
-    ): Unit = {
-      val listener = new ChannelFutureListener {
-        override def operationComplete(future: ChannelFuture): Unit = {
-          if (!future.isSuccess) {
-            System.err.println(s"[info] failed to write to $address: $future")
-            self.close()
-          }
-        }
-      }
-      ctx.write(msg, promise addListener listener)
-    }
-
-    override def exceptionCaught(
-        ctx: ChannelHandlerContext,
-        cause: Throwable
-    ): Unit = self.close()
-  }
-
-  class ElectrumResponseDecoder extends MessageToMessageDecoder[String] {
-    override def decode(
-        ctx: ChannelHandlerContext,
-        msg: String,
-        out: util.List[AnyRef]
-    ): Unit = {
-      val s = msg.asInstanceOf[String]
-      val r = parseResponse(self, s)
-      out.add(r)
-    }
-  }
-
-  class JsonRPCRequestEncoder extends MessageToMessageEncoder[JsonRPCRequest] {
-    override def encode(
-        ctx: ChannelHandlerContext,
-        request: JsonRPCRequest,
-        out: util.List[AnyRef]
-    ): Unit = {
-      import org.json4s.JsonDSL._
-      import org.json4s._
-
-      val json =
-        ("method" -> request.method) ~ ("params" -> request.params.map {
-          case s: String       => new JString(s)
-          case b: ByteVector32 => new JString(b.toHex)
-          case f: FeeratePerKw => new JLong(f.toLong)
-          case b: Boolean      => new JBool(b)
-          case t: Int          => new JInt(t)
-          case t: Long         => new JLong(t)
-          case t: Double       => new JDouble(t)
-        }) ~ ("id" -> request.id) ~ ("jsonrpc" -> request.jsonrpc)
-      val serialized = JsonMethods.compact(JsonMethods.render(json))
-      out.add(serialized)
-    }
-  }
-
-  class ResponseHandler() extends ChannelInboundHandlerAdapter {
-    override def channelActive(ctx: ChannelHandlerContext): Unit =
-      self.send(ctx)
-
-    override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit =
-      msg match {
-        case Right(json: JsonRPCResponse) => {
-          requests.get(json.id) match {
-            case Some((request, promise)) => {
-              promise.success(parseJsonResponse(self, request, json))
-              requests.remove(json.id)
-            }
-            case None => {}
-          }
-        }
-
-        case Left(response @ HeaderSubscriptionResponse(_, height, tip)) => {
-          headerSubscriptions.foreach(_.send(response))
-        }
-
-        case Left(response @ ScriptHashSubscriptionResponse(scriptHash, _)) => {
-          scriptHashSubscriptions
-            .get(response.scriptHash)
-            .foreach(listeners => listeners.foreach(_.send(response)))
-        }
-      }
-  }
-
-  var scriptHashSubscriptions =
-    Map.empty[ByteVector32, Set[castor.SimpleActor[Any]]]
-  val headerSubscriptions =
-    collection.mutable.HashSet.empty[castor.SimpleActor[Any]]
-  val statusListeners =
-    collection.mutable.HashSet
-      .empty[castor.SimpleActor[Any]]
-  var reqId = 0
-
-  def initialState = Disconnected()
-  def stay = state
-
-  case class Disconnected()
-      extends State({
-        case ctx: ChannelHandlerContext => {
-          request(ServerVersion(CLIENT_NAME, PROTOCOL_VERSION), ctx)
-            .onComplete {
-              case Success(v: ServerVersionResponse) => {
-                headerSubscriptions += self
-                request(HeaderSubscription(), ctx)
-                  .onComplete {
-                    case Success(w: HeaderSubscriptionResponse) => self.send(w)
-                    case _                                      => {}
-                  }
-              }
-              case err => {
-                self.close()
-                stay
-              }
-            }
-          WaitingForHeader(ctx)
-        }
-
-        case _ => stay
-      })
-
-  case class WaitingForHeader(ctx: ChannelHandlerContext)
-      extends State({
-        case HeaderSubscriptionResponse(_, height, tip) => {
-          statusListeners.foreach(
-            _.send(ElectrumReady(self, height, tip, server.address))
-          )
-          Connected(ctx, height, tip)
-        }
-
-        case _ => stay
-      })
-
-  case class Connected(
-      ctx: ChannelHandlerContext,
-      height: Int,
-      tip: BlockHeader
-  ) extends State({
-        case HeaderSubscriptionResponse(_, height, tip) =>
-          Connected(ctx, height, tip)
-
-        case PoisonPill => {
-          self.close()
-          Disconnected()
-        }
-
-        case _ => stay
-      })
-
-  def addStatusListener(listener: castor.SimpleActor[Any]): Unit = {
-    statusListeners += listener
-
-    state match {
-      case d: Connected =>
-        listener.send(ElectrumReady(self, d.height, d.tip, server.address))
-      case _ => {}
-    }
-  }
-
-  def removeStatusListener(listener: castor.SimpleActor[Any]): Unit =
-    statusListeners -= listener
-
-  def subscribeToHeaders(listener: castor.SimpleActor[Any]): Unit = {
-    headerSubscriptions += listener
-    state match {
-      case d: Connected =>
-        listener.send(HeaderSubscriptionResponse(self, d.height, d.tip))
-      case _ => {}
-    }
-  }
-
-  def subscribeToScriptHash(
-      scriptHash: ByteVector32,
-      listener: castor.SimpleActor[Any]
-  ): Unit = {
-    scriptHashSubscriptions = scriptHashSubscriptions.updated(
-      scriptHash,
-      scriptHashSubscriptions.getOrElse(scriptHash, Set()) + listener
-    )
-    request(ScriptHashSubscription(scriptHash))
-  }
-
-  def request(r: Request, ctx: ChannelHandlerContext): Future[Response] = {
-    val promise = Promise[Response]()
-
-    val electrumRequestId = reqId.toString
-    if (ctx.channel.isWritable) {
-      ctx.channel.writeAndFlush(makeRequest(r, electrumRequestId))
-      reqId = reqId + 1
-      requests += (electrumRequestId -> ((r, promise)))
-    } else {
-      self.close()
-      promise.failure(
-        new Exception(
-          s"channel not writable. connection to $address was closed."
-        )
-      )
-    }
-
-    promise.future
-  }
-
-  def request(r: Request): Future[Response] = {
-    state match {
-      case Connected(ctx, _, _) => request(r, ctx)
-      case otherstate =>
-        Future
-          .failed(
-            new Exception(
-              s"failed to make request for $r; client must be Connected, not $otherstate"
-            )
-          )
-    }
-  }
-
-  def close(): Unit = {
-    statusListeners.foreach(_.send(ElectrumDisconnected(self)))
-    cancelPingTrigger()
-    state match {
-      case _: Disconnected       => {}
-      case WaitingForHeader(ctx) => ctx.close()
-      case Connected(ctx, _, _)  => ctx.close()
-    }
-  }
-}
-
 object ElectrumClient {
   val CLIENT_NAME = "3.3.6"
   val PROTOCOL_VERSION = "1.4"
+
+  InternalLoggerFactory.setDefaultFactory(JdkLoggerFactory.INSTANCE)
 
   // this is expensive and shared with all clients
   val workerGroup = new NioEventLoopGroup
@@ -907,6 +581,334 @@ object ElectrumClient {
           }
           case other => IrrelevantResponse
         }
+    }
+  }
+}
+
+class ElectrumClient(
+    connectionPool: ElectrumClientPool,
+    server: ElectrumClientPool.ElectrumServerAddress
+)(implicit
+    ac: castor.Context
+) extends castor.StateMachineActor[Any] { self =>
+  def address = server.address.getHostName()
+  System.err.println(s"[info] connecting to $address")
+
+  var requests =
+    scala.collection.mutable.Map.empty[String, (Request, Promise[Response])]
+
+  // We need to regularly send a ping in order not to get disconnected
+  val cancelPingTrigger = {
+    val t = new java.util.Timer()
+    val task = new java.util.TimerTask { def run() = self.request(Ping) }
+    t.schedule(task, 30000L, 30000L)
+    () => task.cancel()
+  }
+
+  val b = new Bootstrap
+  b channel classOf[NioSocketChannel]
+  b group workerGroup
+
+  b.option[java.lang.Boolean](ChannelOption.TCP_NODELAY, true)
+  b.option[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
+  b.option[java.lang.Integer](ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000)
+  b.option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+
+  b handler new ChannelInitializer[SocketChannel] {
+    override def initChannel(ch: SocketChannel): Unit = {
+      if (server.ssl == SSL.LOOSE || server.address.getPort() == 50002) {
+        val sslCtx = SslContextBuilder.forClient
+          .trustManager(InsecureTrustManagerFactory.INSTANCE)
+          .build
+        ch.pipeline addLast sslCtx.newHandler(
+          ch.alloc,
+          server.address.getHostName(),
+          server.address.getPort()
+        )
+      }
+
+      // Inbound
+      ch.pipeline.addLast(new LineBasedFrameDecoder(Int.MaxValue, true, true))
+      ch.pipeline.addLast(new StringDecoder(CharsetUtil.UTF_8))
+      ch.pipeline.addLast(new ElectrumResponseDecoder)
+      ch.pipeline.addLast(new ResponseHandler())
+
+      // Outbound
+      ch.pipeline.addLast(new LineEncoder)
+      ch.pipeline.addLast(new JsonRPCRequestEncoder)
+
+      // Error handler
+      ch.pipeline.addLast(new ExceptionHandler)
+
+      LNParams.connectionProvider.proxyAddress.foreach { address =>
+        // Optional proxy which must be the first handler
+        val handler = new Socks5ProxyHandler(address)
+        ch.pipeline.addFirst(handler)
+      }
+    }
+  }
+
+  val channelOpenFuture: ChannelFuture =
+    b.connect(server.address.getHostName(), server.address.getPort())
+
+  if (LNParams.connectionProvider.proxyAddress.isDefined)
+    b.resolver(NoopAddressResolverGroup.INSTANCE)
+
+  channelOpenFuture addListeners new ChannelFutureListener {
+    override def operationComplete(future: ChannelFuture): Unit = {
+      if (!future.isSuccess) {
+        // the connection was not open successfully, close this actor
+        System.err.println(s"[info] failed to connect to $address: $future")
+        self.close()
+      } else {
+        // if we are here it means the connection was opened successfully
+        // listen for when the connection is closed
+        future.channel.closeFuture addListener new ChannelFutureListener {
+          override def operationComplete(future: ChannelFuture): Unit =
+            // this just means it was closed
+            self.close()
+        }
+      }
+    }
+  }
+
+  class ExceptionHandler extends ChannelDuplexHandler {
+    override def connect(
+        ctx: ChannelHandlerContext,
+        remoteAddress: SocketAddress,
+        localAddress: SocketAddress,
+        promise: ChannelPromise
+    ): Unit = {
+      val listener = new ChannelFutureListener {
+        override def operationComplete(future: ChannelFuture): Unit =
+          if (!future.isSuccess) self.close()
+      }
+      ctx.connect(remoteAddress, localAddress, promise addListener listener)
+    }
+
+    override def write(
+        ctx: ChannelHandlerContext,
+        msg: scala.Any,
+        promise: ChannelPromise
+    ): Unit = {
+      val listener = new ChannelFutureListener {
+        override def operationComplete(future: ChannelFuture): Unit = {
+          if (!future.isSuccess) {
+            System.err.println(s"[info] failed to write to $address: $future")
+            self.close()
+          }
+        }
+      }
+      ctx.write(msg, promise addListener listener)
+    }
+
+    override def exceptionCaught(
+        ctx: ChannelHandlerContext,
+        cause: Throwable
+    ): Unit = self.close()
+  }
+
+  class ElectrumResponseDecoder extends MessageToMessageDecoder[String] {
+    override def decode(
+        ctx: ChannelHandlerContext,
+        msg: String,
+        out: util.List[AnyRef]
+    ): Unit = {
+      val s = msg.asInstanceOf[String]
+      val r = parseResponse(self, s)
+      out.add(r)
+    }
+  }
+
+  class JsonRPCRequestEncoder extends MessageToMessageEncoder[JsonRPCRequest] {
+    override def encode(
+        ctx: ChannelHandlerContext,
+        request: JsonRPCRequest,
+        out: util.List[AnyRef]
+    ): Unit = {
+      import org.json4s.JsonDSL._
+      import org.json4s._
+
+      val json =
+        ("method" -> request.method) ~ ("params" -> request.params.map {
+          case s: String       => new JString(s)
+          case b: ByteVector32 => new JString(b.toHex)
+          case f: FeeratePerKw => new JLong(f.toLong)
+          case b: Boolean      => new JBool(b)
+          case t: Int          => new JInt(t)
+          case t: Long         => new JLong(t)
+          case t: Double       => new JDouble(t)
+        }) ~ ("id" -> request.id) ~ ("jsonrpc" -> request.jsonrpc)
+      val serialized = JsonMethods.compact(JsonMethods.render(json))
+      out.add(serialized)
+    }
+  }
+
+  class ResponseHandler() extends ChannelInboundHandlerAdapter {
+    override def channelActive(ctx: ChannelHandlerContext): Unit =
+      self.send(ctx)
+
+    override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit =
+      msg match {
+        case Right(json: JsonRPCResponse) => {
+          requests.get(json.id) match {
+            case Some((request, promise)) => {
+              promise.success(parseJsonResponse(self, request, json))
+              requests.remove(json.id)
+            }
+            case None => {}
+          }
+        }
+
+        case Left(response @ HeaderSubscriptionResponse(_, height, tip)) => {
+          headerSubscriptions.foreach(_.send(response))
+        }
+
+        case Left(response @ ScriptHashSubscriptionResponse(scriptHash, _)) => {
+          scriptHashSubscriptions
+            .get(response.scriptHash)
+            .foreach(listeners => listeners.foreach(_.send(response)))
+        }
+      }
+  }
+
+  var scriptHashSubscriptions =
+    Map.empty[ByteVector32, Set[castor.SimpleActor[Any]]]
+  val headerSubscriptions =
+    collection.mutable.HashSet.empty[castor.SimpleActor[Any]]
+  val statusListeners =
+    collection.mutable.HashSet
+      .empty[castor.SimpleActor[Any]]
+  var reqId = 0
+
+  def initialState = Disconnected()
+  def stay = state
+
+  case class Disconnected()
+      extends State({
+        case ctx: ChannelHandlerContext => {
+          request(ServerVersion(CLIENT_NAME, PROTOCOL_VERSION), ctx)
+            .onComplete {
+              case Success(v: ServerVersionResponse) => {
+                headerSubscriptions += self
+                request(HeaderSubscription(), ctx)
+                  .onComplete {
+                    case Success(w: HeaderSubscriptionResponse) => self.send(w)
+                    case _                                      => {}
+                  }
+              }
+              case err => {
+                self.close()
+                stay
+              }
+            }
+          WaitingForHeader(ctx)
+        }
+
+        case _ => stay
+      })
+
+  case class WaitingForHeader(ctx: ChannelHandlerContext)
+      extends State({
+        case HeaderSubscriptionResponse(_, height, tip) => {
+          statusListeners.foreach(
+            _.send(ElectrumReady(self, height, tip, server.address))
+          )
+          Connected(ctx, height, tip)
+        }
+
+        case _ => stay
+      })
+
+  case class Connected(
+      ctx: ChannelHandlerContext,
+      height: Int,
+      tip: BlockHeader
+  ) extends State({
+        case HeaderSubscriptionResponse(_, height, tip) =>
+          Connected(ctx, height, tip)
+
+        case PoisonPill => {
+          self.close()
+          Disconnected()
+        }
+
+        case _ => stay
+      })
+
+  def addStatusListener(listener: castor.SimpleActor[Any]): Unit = {
+    statusListeners += listener
+
+    state match {
+      case d: Connected =>
+        listener.send(ElectrumReady(self, d.height, d.tip, server.address))
+      case _ => {}
+    }
+  }
+
+  def removeStatusListener(listener: castor.SimpleActor[Any]): Unit =
+    statusListeners -= listener
+
+  def subscribeToHeaders(listener: castor.SimpleActor[Any]): Unit = {
+    headerSubscriptions += listener
+    state match {
+      case d: Connected =>
+        listener.send(HeaderSubscriptionResponse(self, d.height, d.tip))
+      case _ => {}
+    }
+  }
+
+  def subscribeToScriptHash(
+      scriptHash: ByteVector32,
+      listener: castor.SimpleActor[Any]
+  ): Unit = {
+    scriptHashSubscriptions = scriptHashSubscriptions.updated(
+      scriptHash,
+      scriptHashSubscriptions.getOrElse(scriptHash, Set()) + listener
+    )
+    request(ScriptHashSubscription(scriptHash))
+  }
+
+  def request(r: Request, ctx: ChannelHandlerContext): Future[Response] = {
+    val promise = Promise[Response]()
+
+    val electrumRequestId = reqId.toString
+    if (ctx.channel.isWritable) {
+      ctx.channel.writeAndFlush(makeRequest(r, electrumRequestId))
+      reqId = reqId + 1
+      requests += (electrumRequestId -> ((r, promise)))
+    } else {
+      self.close()
+      promise.failure(
+        new Exception(
+          s"channel not writable. connection to $address was closed."
+        )
+      )
+    }
+
+    promise.future
+  }
+
+  def request(r: Request): Future[Response] = {
+    state match {
+      case Connected(ctx, _, _) => request(r, ctx)
+      case otherstate =>
+        Future
+          .failed(
+            new Exception(
+              s"failed to make request for $r; client must be Connected, not $otherstate"
+            )
+          )
+    }
+  }
+
+  def close(): Unit = {
+    statusListeners.foreach(_.send(ElectrumDisconnected(self)))
+    cancelPingTrigger()
+    state match {
+      case _: Disconnected       => {}
+      case WaitingForHeader(ctx) => ctx.close()
+      case Connected(ctx, _, _)  => ctx.close()
     }
   }
 }
