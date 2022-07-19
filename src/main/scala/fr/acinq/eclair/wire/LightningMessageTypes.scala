@@ -32,7 +32,10 @@ case class Init(
     tlvs: TlvStream[InitTlv] = TlvStream.empty
 ) extends LightningMessage {
   val networks: Seq[ByteVector32] =
-    tlvs.get[InitTlv.Networks].map(_.chainHashes).getOrElse(Nil)
+    tlvs.records
+      .collectFirst { case v: InitTlv.Networks => v }
+      .map(_.chainHashes)
+      .getOrElse(Nil)
 }
 
 object Fail {
@@ -142,7 +145,9 @@ case class UpdateAddHtlc(
 
   // Important: LNParams.secret must be defined
   private[this] lazy val fullTagOpt: Option[FullPaymentTag] = for {
-    EncryptedPaymentSecret(cipherBytes) <- tlvStream.get[EncryptedPaymentSecret]
+    EncryptedPaymentSecret(cipherBytes) <- tlvStream.records.collectFirst {
+      case v: EncryptedPaymentSecret => v
+    }
     plainBytes <- Tools
       .chaChaDecrypt(LNParams.secret.keys.ourNodePrivateKey.value, cipherBytes)
       .toOption
@@ -434,9 +439,13 @@ case class ReplyChannelRange(
 ) extends LightningMessage {
 
   val timestamps: ReplyChannelRangeTlv.EncodedTimestamps =
-    tlvStream.get[ReplyChannelRangeTlv.EncodedTimestamps].get
+    tlvStream.records.collectFirst {
+      case v: ReplyChannelRangeTlv.EncodedTimestamps => v
+    }.get
   val checksums: ReplyChannelRangeTlv.EncodedChecksums =
-    tlvStream.get[ReplyChannelRangeTlv.EncodedChecksums].get
+    tlvStream.records.collectFirst {
+      case v: ReplyChannelRangeTlv.EncodedChecksums => v
+    }.get
 }
 
 case class GossipTimestampFilter(

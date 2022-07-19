@@ -1238,27 +1238,38 @@ object SphinxSpec extends TestSuite {
         .require
         .value
       assert(
-        tlvs2
-          .get[OnionPaymentPayloadTlv.BlindingPoint]
+        tlvs2.records
+          .collectFirst { case v: OnionPaymentPayloadTlv.BlindingPoint => v }
           .map(_.publicKey) == Some(
           blindingEphemeralKey0
         )
       )
-      assert(tlvs2.get[OnionPaymentPayloadTlv.EncryptedRecipientData].nonEmpty)
+      assert(tlvs2.records.collectFirst {
+        case v: OnionPaymentPayloadTlv.EncryptedRecipientData => v
+      }.nonEmpty)
       val Success((recipientTlvs2, blindingEphemeralKey1)) =
         RouteBlindingEncryptedDataCodecs.decode(
           privKeys(2),
           blindingEphemeralKey0,
-          tlvs2.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data
+          tlvs2.records
+            .collectFirst {
+              case v: OnionPaymentPayloadTlv.EncryptedRecipientData => v
+            }
+            .get
+            .data
         )
       assert(
-        recipientTlvs2
-          .get[RouteBlindingEncryptedDataTlv.OutgoingChannelId]
+        recipientTlvs2.records
+          .collectFirst {
+            case v: RouteBlindingEncryptedDataTlv.OutgoingChannelId => v
+          }
           .map(_.shortChannelId) == Some(1105)
       )
       assert(
-        recipientTlvs2
-          .get[RouteBlindingEncryptedDataTlv.OutgoingNodeId]
+        recipientTlvs2.records
+          .collectFirst {
+            case v: RouteBlindingEncryptedDataTlv.OutgoingNodeId => v
+          }
           .map(_.nodeId) == Some(publicKeys(3))
       )
 
@@ -1274,16 +1285,25 @@ object SphinxSpec extends TestSuite {
         .decode(payload3.bits)
         .require
         .value
-      assert(tlvs3.get[OnionPaymentPayloadTlv.EncryptedRecipientData].nonEmpty)
+      assert(tlvs3.records.collectFirst {
+        case v: OnionPaymentPayloadTlv.EncryptedRecipientData => v
+      }.nonEmpty)
       val Success((recipientTlvs3, blindingEphemeralKey2)) =
         RouteBlindingEncryptedDataCodecs.decode(
           privKeys(3),
           blindingEphemeralKey1,
-          tlvs3.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data
+          tlvs3.records
+            .collectFirst {
+              case v: OnionPaymentPayloadTlv.EncryptedRecipientData => v
+            }
+            .get
+            .data
         )
       assert(
-        recipientTlvs3
-          .get[RouteBlindingEncryptedDataTlv.OutgoingNodeId]
+        recipientTlvs3.records
+          .collectFirst {
+            case v: RouteBlindingEncryptedDataTlv.OutgoingNodeId => v
+          }
           .map(_.nodeId) == Some(publicKeys(4))
       )
 
@@ -1298,16 +1318,23 @@ object SphinxSpec extends TestSuite {
         .decode(payload4.bits)
         .require
         .value
-      assert(tlvs4.get[OnionPaymentPayloadTlv.EncryptedRecipientData].nonEmpty)
+      assert(tlvs4.records.collectFirst {
+        case v: OnionPaymentPayloadTlv.EncryptedRecipientData => v
+      }.nonEmpty)
       val Success((recipientTlvs4, _)) =
         RouteBlindingEncryptedDataCodecs.decode(
           privKeys(4),
           blindingEphemeralKey2,
-          tlvs4.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data
+          tlvs4.records
+            .collectFirst {
+              case v: OnionPaymentPayloadTlv.EncryptedRecipientData => v
+            }
+            .get
+            .data
         )
       assert(
-        recipientTlvs4
-          .get[RouteBlindingEncryptedDataTlv.PathId]
+        recipientTlvs4.records
+          .collectFirst { case v: RouteBlindingEncryptedDataTlv.PathId => v }
           .map(_.data) == associatedData.map(_.bytes)
       )
 

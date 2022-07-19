@@ -3,8 +3,6 @@ package fr.acinq.eclair.wire
 import fr.acinq.eclair.UInt64
 import scodec.bits.ByteVector
 
-import scala.reflect.ClassTag
-
 trait Tlv
 
 /** Generic tlv type we fallback to if we don't understand the incoming tlv.
@@ -30,17 +28,7 @@ case class GenericTlv(tag: UInt64, value: ByteVector) extends Tlv
 case class TlvStream[T <: Tlv](
     records: Iterable[T],
     unknown: Iterable[GenericTlv] = Nil
-) {
-
-  /** @tparam R
-    *   input type parameter, must be a subtype of the main TLV type
-    * @return
-    *   the TLV record of type that matches the input type parameter if any
-    *   (there can be at most one, since BOLTs specify that TLV records are
-    *   supposed to be unique)
-    */
-  def get[R <: T: ClassTag]: Option[R] = records.collectFirst { case r: R => r }
-}
+)
 
 object TlvStream {
   type GenericTlvStream = TlvStream[Tlv]

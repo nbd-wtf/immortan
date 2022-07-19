@@ -281,10 +281,15 @@ object PaymentOnion {
   case class ChannelRelayTlvPayload(records: TlvStream[OnionPaymentPayloadTlv])
       extends ChannelRelayPayload
       with TlvFormat {
-    override val amountToForward = records.get[AmountToForward].get.amount
-    override val outgoingCltv = records.get[OutgoingCltv].get.cltv
+    override val amountToForward =
+      records.records.collectFirst { case v: AmountToForward => v }.get.amount
+    override val outgoingCltv =
+      records.records.collectFirst { case v: OutgoingCltv => v }.get.cltv
     override val outgoingChannelId =
-      records.get[OutgoingChannelId].get.shortChannelId
+      records.records
+        .collectFirst { case v: OutgoingChannelId => v }
+        .get
+        .shortChannelId
   }
 
   object ChannelRelayTlvPayload {
@@ -306,34 +311,49 @@ object PaymentOnion {
       extends RelayPayload
       with TlvFormat
       with TrampolinePacket {
-    val amountToForward = records.get[AmountToForward].get.amount
-    val outgoingCltv = records.get[OutgoingCltv].get.cltv
-    val outgoingNodeId = records.get[OutgoingNodeId].get.nodeId
+    val amountToForward =
+      records.records.collectFirst { case v: AmountToForward => v }.get.amount
+    val outgoingCltv =
+      records.records.collectFirst { case v: OutgoingCltv => v }.get.cltv
+    val outgoingNodeId =
+      records.records.collectFirst { case v: OutgoingNodeId => v }.get.nodeId
     // The following fields are only included in the trampoline-to-legacy case.
-    val totalAmount = records
-      .get[PaymentData]
+    val totalAmount = records.records
+      .collectFirst { case v: PaymentData => v }
       .map(_.totalAmount)
       .filter(_.toLong != 0L)
       .getOrElse(amountToForward)
-    val paymentSecret = records.get[PaymentData].map(_.secret)
-    val paymentMetadata = records.get[PaymentMetadata].map(_.data)
-    val invoiceFeatures = records.get[InvoiceFeatures].map(_.features)
-    val invoiceRoutingInfo = records.get[InvoiceRoutingInfo].map(_.extraHops)
+    val paymentSecret =
+      records.records.collectFirst { case v: PaymentData => v }.map(_.secret)
+    val paymentMetadata =
+      records.records.collectFirst { case v: PaymentMetadata => v }.map(_.data)
+    val invoiceFeatures = records.records
+      .collectFirst { case v: InvoiceFeatures => v }
+      .map(_.features)
+    val invoiceRoutingInfo = records.records
+      .collectFirst { case v: InvoiceRoutingInfo => v }
+      .map(_.extraHops)
   }
 
   case class FinalTlvPayload(records: TlvStream[OnionPaymentPayloadTlv])
       extends FinalPayload
       with TlvFormat {
-    override val amount = records.get[AmountToForward].get.amount
-    override val expiry = records.get[OutgoingCltv].get.cltv
-    override val paymentSecret = records.get[PaymentData].get.secret
-    override val totalAmount = records
-      .get[PaymentData]
+    override val amount =
+      records.records.collectFirst { case v: AmountToForward => v }.get.amount
+    override val expiry =
+      records.records.collectFirst { case v: OutgoingCltv => v }.get.cltv
+    override val paymentSecret =
+      records.records.collectFirst { case v: PaymentData => v }.get.secret
+    override val totalAmount = records.records
+      .collectFirst { case v: PaymentData => v }
       .map(_.totalAmount)
       .filter(_.toLong != 0L)
       .getOrElse(amount)
-    override val paymentPreimage = records.get[KeySend].map(_.paymentPreimage)
-    override val paymentMetadata = records.get[PaymentMetadata].map(_.data)
+    override val paymentPreimage = records.records
+      .collectFirst { case v: KeySend => v }
+      .map(_.paymentPreimage)
+    override val paymentMetadata =
+      records.records.collectFirst { case v: PaymentMetadata => v }.map(_.data)
   }
 
   def createNodeRelayPayload(
@@ -537,11 +557,17 @@ object PaymentOnionCodecs {
   val channelRelayPerHopPayloadCodec: Codec[ChannelRelayPayload] =
     fallback(tlvPerHopPayloadCodec, legacyRelayPerHopPayloadCodec).narrow(
       {
-        case Left(tlvs) if tlvs.get[AmountToForward].isEmpty =>
+        case Left(tlvs) if tlvs.records.collectFirst {
+              case v: AmountToForward => v
+            }.isEmpty =>
           Attempt.failure(MissingRequiredTlv(UInt64(2)))
-        case Left(tlvs) if tlvs.get[OutgoingCltv].isEmpty =>
+        case Left(tlvs) if tlvs.records.collectFirst { case v: OutgoingCltv =>
+              v
+            }.isEmpty =>
           Attempt.failure(MissingRequiredTlv(UInt64(4)))
-        case Left(tlvs) if tlvs.get[OutgoingChannelId].isEmpty =>
+        case Left(tlvs) if tlvs.records.collectFirst {
+              case v: OutgoingChannelId => v
+            }.isEmpty =>
           Attempt.failure(MissingRequiredTlv(UInt64(6)))
         case Left(tlvs)    => Attempt.successful(ChannelRelayTlvPayload(tlvs))
         case Right(legacy) => Attempt.successful(legacy)
@@ -555,11 +581,17 @@ object PaymentOnionCodecs {
   val nodeRelayPerHopPayloadCodec: Codec[NodeRelayPayload] =
     tlvPerHopPayloadCodec.narrow(
       {
-        case tlvs if tlvs.get[AmountToForward].isEmpty =>
+        case tlvs if tlvs.records.collectFirst { case v: AmountToForward =>
+              v
+            }.isEmpty =>
           Attempt.failure(MissingRequiredTlv(UInt64(2)))
-        case tlvs if tlvs.get[OutgoingCltv].isEmpty =>
+        case tlvs if tlvs.records.collectFirst { case v: OutgoingCltv =>
+              v
+            }.isEmpty =>
           Attempt.failure(MissingRequiredTlv(UInt64(4)))
-        case tlvs if tlvs.get[OutgoingNodeId].isEmpty =>
+        case tlvs if tlvs.records.collectFirst { case v: OutgoingNodeId =>
+              v
+            }.isEmpty =>
           Attempt.failure(MissingRequiredTlv(UInt64(66098)))
         case tlvs => Attempt.successful(NodeRelayPayload(tlvs))
       },
@@ -571,11 +603,17 @@ object PaymentOnionCodecs {
   val finalPerHopPayloadCodec: Codec[FinalPayload] =
     tlvPerHopPayloadCodec.narrow(
       {
-        case tlvs if tlvs.get[AmountToForward].isEmpty =>
+        case tlvs if tlvs.records.collectFirst { case v: AmountToForward =>
+              v
+            }.isEmpty =>
           Attempt.failure(MissingRequiredTlv(UInt64(2)))
-        case tlvs if tlvs.get[OutgoingCltv].isEmpty =>
+        case tlvs if tlvs.records.collectFirst { case v: OutgoingCltv =>
+              v
+            }.isEmpty =>
           Attempt.failure(MissingRequiredTlv(UInt64(4)))
-        case tlvs if tlvs.get[PaymentData].isEmpty =>
+        case tlvs if tlvs.records.collectFirst { case v: PaymentData =>
+              v
+            }.isEmpty =>
           Attempt.failure(MissingRequiredTlv(UInt64(8)))
         case tlvs => Attempt.successful(FinalTlvPayload(tlvs))
       },

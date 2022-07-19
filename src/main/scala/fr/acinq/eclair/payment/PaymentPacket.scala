@@ -91,7 +91,9 @@ object IncomingPaymentPacket {
       case Right(
             DecodedOnionPacket(payload: PaymentOnion.FinalTlvPayload, _)
           ) =>
-        payload.records.get[OnionPaymentPayloadTlv.TrampolineOnion] match {
+        payload.records.records.collectFirst {
+          case v: OnionPaymentPayloadTlv.TrampolineOnion => v
+        } match {
           case Some(OnionPaymentPayloadTlv.TrampolineOnion(trampolinePacket)) =>
             decryptOnion(
               add.paymentHash,
