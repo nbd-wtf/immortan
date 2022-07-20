@@ -131,9 +131,13 @@ class ElectrumClientPool(
   }
 
   def initConnect(): Unit = {
-    val connections =
-      Math.min(LNParams.maxChainConnectionsCount, serverAddresses.size)
-    (0 until connections).foreach(_ => self.connect())
+    try {
+      val connections =
+        Math.min(LNParams.maxChainConnectionsCount, serverAddresses.size)
+      (0 until connections).foreach(_ => self.connect())
+    } catch {
+      case _: java.lang.NoClassDefFoundError =>
+    }
   }
 
   def connect(): Unit = {
