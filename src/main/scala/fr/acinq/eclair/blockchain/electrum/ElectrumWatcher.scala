@@ -279,6 +279,9 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
             sent.map(PublishAsap),
             block2tx
           )
+
+        case _: ElectrumClient.ElectrumReady =>
+          stay
       })
 
   def getScriptHashHistory(scriptHash: ByteVector32): Unit = {
