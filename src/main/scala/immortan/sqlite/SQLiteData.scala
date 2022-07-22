@@ -14,7 +14,6 @@ import fr.acinq.eclair.wire.{HostedChannelBranding, SwapInState, TrampolineOn}
 import immortan.sqlite.SQLiteData._
 import immortan.utils.ImplicitJsonFormats._
 import immortan.utils.{FeeRatesInfo, FiatRatesInfo}
-import immortan.wire.ExtCodecs.mnemonicsCodec
 import immortan.{DataBag, SwapInStateExt, WalletSecret}
 import scodec.bits.ByteVector
 import spray.json._
@@ -22,7 +21,6 @@ import spray.json._
 import scala.util.Try
 
 object SQLiteData {
-  final val LABEL_FORMAT = "label-format"
   final val LABEL_FEE_RATES = "label-fee-rates"
   final val LABEL_FIAT_RATES = "label-fiat-rates"
   final val LABLEL_TRAMPOLINE_ON = "label-trampoline-on"
@@ -43,15 +41,6 @@ class SQLiteData(val db: DBInterface) extends HeaderDb with DataBag {
     db.change(DataTable.newSql, Array(label, content))
     db.change(DataTable.updSql, Array(content, label))
   }
-
-  // StorageFormat
-  def putMnemonics(mnemonics: List[String]): Unit =
-    put(LABEL_FORMAT, mnemonicsCodec.encode(mnemonics).require.toByteArray)
-
-  def tryGetMnemonics: Try[List[String]] =
-    tryGet(LABEL_FORMAT).map(raw =>
-      mnemonicsCodec.decode(raw.toBitVector).require.value
-    )
 
   // Fiat rates, fee rates
   def putTrampolineOn(ton: TrampolineOn): Unit =

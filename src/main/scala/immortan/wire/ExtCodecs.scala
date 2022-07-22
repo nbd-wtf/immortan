@@ -25,8 +25,4 @@ object ExtCodecs {
       (publicKey withContext "nodeId2") ::
       (lastCrossSignedStateCodec withContext "lastCrossSignedState")
   }.as[HostedState]
-
-  val mnemonicsCodec = {
-    (listOfN(uint8, text) withContext "mnemonic")
-  }.as[List[String]]
 }

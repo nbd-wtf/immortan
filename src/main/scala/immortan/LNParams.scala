@@ -579,9 +579,6 @@ trait PaymentBag {
 }
 
 trait DataBag {
-  def putMnemonics(secret: List[String]): Unit
-  def tryGetMnemonics: Try[List[String]]
-
   def putFiatRatesInfo(data: FiatRatesInfo): Unit
   def tryGetFiatRatesInfo: Try[FiatRatesInfo]
 
