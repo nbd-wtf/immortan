@@ -23,11 +23,13 @@ class SQLiteChannel(val db: DBInterface, channelTxFeesDb: DBInterface)
       .toByteArray
     db.change(
       ChannelTable.newSql,
-      Array(persistentChannelData.channelId.toHex, rawContent)
+      persistentChannelData.channelId.toHex,
+      rawContent
     )
     db.change(
       ChannelTable.updSql,
-      Array(rawContent, persistentChannelData.channelId.toHex)
+      rawContent,
+      persistentChannelData.channelId.toHex
     )
     persistentChannelData
   }
@@ -40,18 +42,17 @@ class SQLiteChannel(val db: DBInterface, channelTxFeesDb: DBInterface)
       )
 
   override def delete(channelId: ByteVector32): Unit =
-    db.change(ChannelTable.killSql, Array(channelId.toHex))
+    db.change(ChannelTable.killSql, channelId.toHex)
 
   // HTLC infos
   override def htlcInfos(
       commitNumer: Long
   ): Iterable[ChannelBag.Hash160AndCltv] =
-    db.select(HtlcInfoTable.selectAllSql, Array(commitNumer.toString))
-      .iterable { rc =>
-        val cltvExpiry = CltvExpiry(rc int HtlcInfoTable.cltvExpiry)
-        val hash160 = rc byteVec HtlcInfoTable.paymentHash160
-        ChannelBag.Hash160AndCltv(hash160, cltvExpiry)
-      }
+    db.select(HtlcInfoTable.selectAllSql, commitNumer.toString).iterable { rc =>
+      val cltvExpiry = CltvExpiry(rc int HtlcInfoTable.cltvExpiry)
+      val hash160 = rc byteVec HtlcInfoTable.paymentHash160
+      ChannelBag.Hash160AndCltv(hash160, cltvExpiry)
+    }
 
   override def putHtlcInfo(
       sid: Long,
@@ -61,12 +62,10 @@ class SQLiteChannel(val db: DBInterface, channelTxFeesDb: DBInterface)
   ): Unit =
     db.change(
       HtlcInfoTable.newSql,
-      Array(
-        sid: JLong,
-        commitNumber: JLong,
-        Crypto.ripemd160(paymentHash).toArray,
-        cltvExpiry.underlying: JLong
-      )
+      sid: JLong,
+      commitNumber: JLong,
+      Crypto.ripemd160(paymentHash).toArray,
+      cltvExpiry.underlying: JLong
     )
 
   override def putHtlcInfos(
@@ -79,7 +78,7 @@ class SQLiteChannel(val db: DBInterface, channelTxFeesDb: DBInterface)
   }
 
   override def rmHtlcInfos(sid: Long): Unit =
-    db.change(HtlcInfoTable.killSql, Array(sid: JLong))
+    db.change(HtlcInfoTable.killSql, sid: JLong)
 
   // Channel related tx fees
   def channelTxFeesSummary: Try[ChannelTxFeesSummary] =
@@ -90,6 +89,8 @@ class SQLiteChannel(val db: DBInterface, channelTxFeesDb: DBInterface)
   def addChannelTxFee(feePaid: Satoshi, idenitifer: String, tag: String): Unit =
     channelTxFeesDb.change(
       ChannelTxFeesTable.newSql,
-      Array(idenitifer, tag, feePaid.toLong: JLong)
+      idenitifer,
+      tag,
+      feePaid.toLong: JLong
     )
 }

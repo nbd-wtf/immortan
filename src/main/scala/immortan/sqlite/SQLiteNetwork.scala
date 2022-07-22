@@ -23,12 +23,10 @@ class SQLiteNetwork(
       newSqlPQ: PreparedQuery
   ): Unit = db.change(
     newSqlPQ,
-    Array(
-      Array.emptyByteArray,
-      ca.shortChannelId: JLong,
-      ca.nodeId1.value.toArray,
-      ca.nodeId2.value.toArray
-    )
+    Array.emptyByteArray,
+    ca.shortChannelId: JLong,
+    ca.nodeId1.value.toArray,
+    ca.nodeId2.value.toArray
   )
 
   def addExcludedChannel(
@@ -37,21 +35,22 @@ class SQLiteNetwork(
       newSqlPQ: PreparedQuery
   ): Unit = db.change(
     newSqlPQ,
-    Array(shortId: JLong, System.currentTimeMillis + untilStamp: JLong)
+    shortId: JLong,
+    System.currentTimeMillis + untilStamp: JLong
   )
 
   def listExcludedChannels: Set[Long] = db
-    .select(excludedTable.selectSql, Array(System.currentTimeMillis.toString))
+    .select(excludedTable.selectSql, System.currentTimeMillis.toString)
     .set(_ long excludedTable.shortChannelId)
 
   def listChannelsWithOneUpdate: ShortChanIdSet =
     db.select(updateTable.selectHavingOneUpdate).set(_ long updateTable.sid)
 
   def incrementScore(cu: ChannelUpdateExt): Unit =
-    db.change(updateTable.updScoreSql, Array(cu.update.shortChannelId: JLong))
+    db.change(updateTable.updScoreSql, cu.update.shortChannelId: JLong)
 
   def removeChannelUpdate(shortId: Long, killSqlPQ: PreparedQuery): Unit =
-    db.change(killSqlPQ, Array(shortId: JLong))
+    db.change(killSqlPQ, shortId: JLong)
 
   def addChannelUpdateByPosition(
       cu: ChannelUpdate,
@@ -70,36 +69,32 @@ class SQLiteNetwork(
     val crc32: JLong = Sync.getChecksum(cu)
     db.change(
       newSqlPQ,
-      Array(
-        cu.shortChannelId: JLong,
-        timestamp,
-        messageFlags,
-        channelFlags,
-        cltvExpiryDelta,
-        htlcMinimumMsat,
-        feeBaseMsat,
-        feeProportionalMillionths,
-        htlcMaxMsat,
-        cu.position,
-        1L: JLong,
-        crc32
-      )
+      cu.shortChannelId: JLong,
+      timestamp,
+      messageFlags,
+      channelFlags,
+      cltvExpiryDelta,
+      htlcMinimumMsat,
+      feeBaseMsat,
+      feeProportionalMillionths,
+      htlcMaxMsat,
+      cu.position,
+      1L: JLong,
+      crc32
     )
     db.change(
       updSqlPQ,
-      Array(
-        timestamp,
-        messageFlags,
-        channelFlags,
-        cltvExpiryDelta,
-        htlcMinimumMsat,
-        feeBaseMsat,
-        feeProportionalMillionths,
-        htlcMaxMsat,
-        crc32,
-        cu.shortChannelId: JLong,
-        cu.position
-      )
+      timestamp,
+      messageFlags,
+      channelFlags,
+      cltvExpiryDelta,
+      htlcMinimumMsat,
+      feeBaseMsat,
+      feeProportionalMillionths,
+      htlcMaxMsat,
+      crc32,
+      cu.shortChannelId: JLong,
+      cu.position
     )
   }
 
@@ -207,23 +202,16 @@ class SQLiteNetwork(
     addExcludedChannelNewSqlPQ.close()
     removeChannelUpdateNewSqlPQ.close()
 
-    // Remove from excluded if present in channels (minority says it's bad, majority says it's good)
     db.change(
-      excludedTable.killPresentInChans,
-      Array.empty
-    )
-
-    // Remove from announces if not present in channels (announce for excluded channel)
+      excludedTable.killPresentInChans
+    ) // Remove from excluded if present in channels (minority says it's bad, majority says it's good)
     db.change(
-      announceTable.killNotPresentInChans,
-      Array.empty
-    )
-
-    // Give old excluded channels a second chance
+      announceTable.killNotPresentInChans
+    ) // Remove from announces if not present in channels (announce for excluded channel)
     db.change(
       excludedTable.killOldSql,
-      Array(System.currentTimeMillis: JLong)
-    )
+      System.currentTimeMillis: JLong
+    ) // Give old excluded channels a second chance
   }
 
   def processPureData(pure: PureRoutingData): Unit = db txWrap {
@@ -284,11 +272,11 @@ class SQLiteNetwork(
       addChannelUpdateByPositionUpdSqlPQ.close()
 
       // And finally remove announces without any updates
-      db.change(announceTable.killNotPresentInChans, Array.empty)
+      db.change(announceTable.killNotPresentInChans)
     }
 
   def clearDataTables(): Unit = {
-    db.change(announceTable.killAllSql, Array.empty)
-    db.change(updateTable.killAllSql, Array.empty)
+    db.change(announceTable.killAllSql)
+    db.change(updateTable.killAllSql)
   }
 }

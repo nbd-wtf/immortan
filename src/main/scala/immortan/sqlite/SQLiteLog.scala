@@ -10,11 +10,13 @@ class SQLiteLog(db: DBInterface) {
     db.select(LogTable.countSql).headTry(_ long 0)
 
   def recent: Iterable[LogRecord] =
-    db.select(LogTable.recentSql).iterable(toLog(_))
+    db.select(LogTable.recentSql).iterable(toLog)
 
   def put(tag: String, content: String): Unit = db.change(
     LogTable.newSql,
-    Array(System.currentTimeMillis: java.lang.Long, tag, content)
+    System.currentTimeMillis: java.lang.Long,
+    tag,
+    content
   )
 
   def toLog(rc: RichCursor): LogRecord = LogRecord(

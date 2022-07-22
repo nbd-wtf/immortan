@@ -12,58 +12,60 @@ class SQLiteLNUrlPay(db: DBInterface) {
       domain: String,
       pay: String
   ): Unit = db txWrap {
-    db.change(
-      LNUrlPayTable.updateDescriptionSql,
-      Array(description.toJson.compactPrint, pay)
-    )
+    val updateDescriptionSqlPQ =
+      db.makePreparedQuery(LNUrlPayTable.updateDescriptionSql)
+    db.change(updateDescriptionSqlPQ, description.toJson.compactPrint, pay)
     for (label <- description.label) addSearchableLink(label, domain)
     ChannelMaster.next(ChannelMaster.payMarketDbStream)
+    updateDescriptionSqlPQ.close()
   }
 
   def remove(pay: String): Unit = {
-    db.change(LNUrlPayTable.killSql, Array(pay))
+    db.change(LNUrlPayTable.killSql, pay)
     ChannelMaster.next(ChannelMaster.payMarketDbStream)
   }
 
   def saveLink(info: LNUrlPayLink): Unit = db txWrap {
     val descriptionString = info.description.toJson.compactPrint
+    val updInfoSqlPQ = db.makePreparedQuery(LNUrlPayTable.updInfoSql)
+    val newSqlPQ = db.makePreparedQuery(LNUrlPayTable.newSql)
 
     db.change(
-      LNUrlPayTable.newSql,
-      Array(
-        info.domain,
-        info.payString,
-        info.payMetaString,
-        info.updatedAt: JLong,
-        descriptionString,
-        info.lastNodeIdString,
-        info.lastCommentString
-      )
+      newSqlPQ,
+      info.domain,
+      info.payString,
+      info.payMetaString,
+      info.updatedAt: JLong,
+      descriptionString,
+      info.lastNodeIdString,
+      info.lastCommentString
     )
     db.change(
-      LNUrlPayTable.updInfoSql,
-      Array(
-        info.payMetaString,
-        info.updatedAt: JLong,
-        descriptionString,
-        info.lastNodeIdString,
-        info.lastCommentString,
-        info.payString
-      )
+      updInfoSqlPQ,
+      info.payMetaString,
+      info.updatedAt: JLong,
+      descriptionString,
+      info.lastNodeIdString,
+      info.lastCommentString,
+      info.payString
     )
     addSearchableLink(info.payMetaData.get.queryText(info.domain), info.domain)
     ChannelMaster.next(ChannelMaster.payMarketDbStream)
+    updInfoSqlPQ.close()
+    newSqlPQ.close()
   }
 
   def addSearchableLink(search: String, domain: String): Unit = {
-    db.change(LNUrlPayTable.newVirtualSql, Array(search.toLowerCase, domain))
+    val newVirtualSqlPQ = db.makePreparedQuery(LNUrlPayTable.newVirtualSql)
+    db.change(newVirtualSqlPQ, search.toLowerCase, domain)
+    newVirtualSqlPQ.close()
   }
 
   def searchLinks(rawSearchQuery: String): RichCursor =
     db.search(LNUrlPayTable.searchSql, rawSearchQuery.toLowerCase)
 
   def listRecentLinks(limit: Int): RichCursor =
-    db.select(LNUrlPayTable.selectRecentSql, Array(limit.toString))
+    db.select(LNUrlPayTable.selectRecentSql, limit.toString)
 
   def toLinkInfo(rc: RichCursor): LNUrlPayLink =
     LNUrlPayLink(
