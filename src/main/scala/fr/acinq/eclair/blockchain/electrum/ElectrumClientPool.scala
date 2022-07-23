@@ -266,12 +266,7 @@ class ElectrumClientPool(
           tips = d.tips + (connection -> (height, tip))
         )
       }
-      case Some(d) => {
-        System.err.println(
-          s"[debug] received tip $tip from $remoteAddress at $height"
-        )
-        d.copy(tips = d.tips + (connection -> (height, tip)))
-      }
+      case Some(d) => d.copy(tips = d.tips + (connection -> (height, tip)))
     }
   }
 

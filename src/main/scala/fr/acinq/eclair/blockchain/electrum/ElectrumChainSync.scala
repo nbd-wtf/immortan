@@ -108,7 +108,7 @@ class ElectrumChainSync(
             ElectrumClient.HeaderSubscriptionResponse(_, height, header)
           ) => {
         System.err.println(
-          s"[debug] Ignoring header $header at $height while syncing"
+          s"[debug] ignoring header $header at $height while syncing"
         )
         stay
       }
@@ -125,16 +125,13 @@ class ElectrumChainSync(
           case Success(bc) if difficultyOk => {
             val (blockchain2, chunks) = Blockchain.optimize(bc)
             headerDb.addHeaders(chunks.map(_.header), chunks.head.height)
-            System.err.println(
-              s"[info] Got new chain tip ${header.blockId} at $height"
-            )
             EventStream publish blockchain2
             blockchain = blockchain2
             stay
           }
 
           case _ => {
-            System.err.println("[error] Electrum peer sent bad headers")
+            System.err.println("[error] electrum peer sent bad headers")
             source.send(PoisonPill)
             stay
           }
@@ -169,7 +166,7 @@ class ElectrumChainSync(
                   val (obc, chunks) = Blockchain.optimize(bc)
                   headerDb.addHeaders(chunks.map(_.header), chunks.head.height)
                   System.err.println(
-                    s"[info] Got new headers chunk at ${obc.height}, requesting next chunk"
+                    s"[info] got new headers chunk at ${obc.height}, requesting next chunk"
                   )
                   getHeaders(obc.height + 1, RETARGETING_PERIOD)
                   blockchain = obc
@@ -186,7 +183,7 @@ class ElectrumChainSync(
               }
             case Failure(err) => {
               System.err
-                .println(s"[error] Electrum peer sent bad headers: $err")
+                .println(s"[error] electrum peer sent bad headers: $err")
               source.send(PoisonPill)
               state = DISCONNECTED
             }
