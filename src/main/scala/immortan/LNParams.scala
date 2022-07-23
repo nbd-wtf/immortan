@@ -350,13 +350,6 @@ class SyncParams {
     NodeAddress.unresolved(9735, host = 18, 191, 89, 219),
     "Conductor"
   )
-  val jaspion: RemoteNodeInfo = RemoteNodeInfo(
-    PublicKey(
-      hex"03ee58475055820fbfa52e356a8920f62f8316129c39369dbdde3e5d0198a9e315"
-    ),
-    NodeAddress.unresolved(9734, host = 198, 251, 89, 159),
-    "Jaspion"
-  )
   val jiraiya: RemoteNodeInfo = RemoteNodeInfo(
     PublicKey(
       hex"02c16cca44562b590dd279c942200bdccfd4f990c3a69fad620c10ef2f8228eaff"
@@ -396,7 +389,7 @@ class SyncParams {
     acinq
   )
   val phcSyncNodes: Set[RemoteNodeInfo] =
-    Set(satm, motherbase, jaspion, ergveinNet)
+    Set(satm, motherbase, ergveinNet)
 
   val maxPHCCapacity: MilliSatoshi = MilliSatoshi(
     100000000000000L
