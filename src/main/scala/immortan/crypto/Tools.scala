@@ -38,13 +38,6 @@ object Tools {
 
   def runAnd[T](result: T)(action: Any): T = result
 
-  implicit class Any2Some[T](underlying: T) {
-    def asLeft: Left[T, Nothing] = Left(underlying)
-    def asRight: Right[Nothing, T] = Right(underlying)
-    def asSome: Option[T] = Some(underlying)
-    def asList: List[T] = List(underlying)
-  }
-
   implicit class IterableOfTuple2[T, V](underlying: Iterable[(T, V)] = Nil) {
     def secondItems: Iterable[V] = underlying.map { case (_, secondItem) =>
       secondItem

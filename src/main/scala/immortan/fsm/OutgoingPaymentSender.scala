@@ -629,7 +629,7 @@ case class WaitForRouteOrInFlight(
     feesTried.sorted.lastOption.getOrElse(0L.msat)
   def withKnownRoute(cmd: CMD_ADD_HTLC, route: Route): WaitForRouteOrInFlight =
     copy(
-      flight = InFlightInfo(cmd, route).asSome,
+      flight = Some(InFlightInfo(cmd, route)),
       feesTried = route.fee :: feesTried
     )
   def oneMoreRemoteAttempt(cnc: ChanAndCommits): WaitForRouteOrInFlight = copy(

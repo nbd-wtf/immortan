@@ -12,7 +12,7 @@ import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
-import immortan.crypto.Tools.{Any2Some, newFeerate}
+import immortan.crypto.Tools.newFeerate
 import immortan.{ChannelBag, LNParams}
 import scodec.bits.ByteVector
 
@@ -315,20 +315,26 @@ object Helpers {
     def isClosingTypeAlreadyKnown(c: DATA_CLOSING): Option[ClosingType] =
       c match {
         case _ if c.localCommitPublished.exists(_.isCommitConfirmed) =>
-          LocalClose(
-            c.commitments.localCommit,
-            c.localCommitPublished.get
-          ).asSome
+          Some(
+            LocalClose(
+              c.commitments.localCommit,
+              c.localCommitPublished.get
+            )
+          )
         case _ if c.remoteCommitPublished.exists(_.isCommitConfirmed) =>
-          CurrentRemoteClose(
-            c.commitments.remoteCommit,
-            c.remoteCommitPublished.get
-          ).asSome
+          Some(
+            CurrentRemoteClose(
+              c.commitments.remoteCommit,
+              c.remoteCommitPublished.get
+            )
+          )
         case _ if c.nextRemoteCommitPublished.exists(_.isCommitConfirmed) =>
-          NextRemoteClose(
-            c.commitments.remoteNextCommitInfo.swap.toOption.get.nextRemoteCommit,
-            c.nextRemoteCommitPublished.get
-          ).asSome
+          Some(
+            NextRemoteClose(
+              c.commitments.remoteNextCommitInfo.swap.toOption.get.nextRemoteCommit,
+              c.nextRemoteCommitPublished.get
+            )
+          )
         case _ if c.futureRemoteCommitPublished.exists(_.isCommitConfirmed) =>
           c.futureRemoteCommitPublished.map(RecoveryClose)
         case _ =>
@@ -1029,7 +1035,7 @@ object Helpers {
             revokedCommitPublished.copy(claimHtlcDelayedPenaltyTxs =
               claimHtlcDelayedPenaltyTxs1
             )
-          Tuple2(penaltyInfo.tx.asSome, revokedCommitPublished1)
+          (Some(penaltyInfo.tx), revokedCommitPublished1)
         } getOrElse Tuple2(None, revokedCommitPublished)
       } else Tuple2(None, revokedCommitPublished)
     }

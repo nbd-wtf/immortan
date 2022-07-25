@@ -45,8 +45,8 @@ object Channel {
   def chanAndCommitsOpt(chan: Channel): Option[ChanAndCommits] =
     chan.data match {
       case data: HasNormalCommitments =>
-        ChanAndCommits(chan, data.commitments).asSome
-      case data: HostedCommits => ChanAndCommits(chan, data).asSome
+        Some(ChanAndCommits(chan, data.commitments))
+      case data: HostedCommits => Some(ChanAndCommits(chan, data))
       case _                   => None
     }
 

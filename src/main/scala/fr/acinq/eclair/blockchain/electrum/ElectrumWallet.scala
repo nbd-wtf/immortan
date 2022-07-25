@@ -35,7 +35,7 @@ class ElectrumWallet(
     t.schedule(task, 100L)
 
     if (data.lastReadyMessage contains data.currentReadyMessage) return data
-    val newData = data.copy(lastReadyMessage = data.currentReadyMessage.asSome)
+    val newData = data.copy(lastReadyMessage = Some(data.currentReadyMessage))
     params.walletDb.persist(
       newData.toPersistent,
       newData.balance,
@@ -360,13 +360,13 @@ class ElectrumWallet(
   def rbfBump(bump: RBFBump) = Future[RBFResponse] {
     if (bump.tx.txIn.forall(_.sequence <= OPT_IN_FULL_RBF))
       data.rbfBump(bump, params.dustLimit)
-    else RBFResponse(RBF_DISABLED.asLeft)
+    else RBFResponse(Left(RBF_DISABLED))
   }
 
   def rbfReroute(reroute: RBFReroute) = Future[RBFResponse] {
     if (reroute.tx.txIn.forall(_.sequence <= OPT_IN_FULL_RBF))
       data.rbfReroute(reroute, params.dustLimit)
-    else RBFResponse(RBF_DISABLED.asLeft)
+    else RBFResponse(Left(RBF_DISABLED))
   }
 
   def broadcastTransaction(tx: Transaction) = state match {
@@ -645,7 +645,7 @@ object ElectrumWallet {
       sequenceFlag: Long
   ) extends Request
   case class RBFResponse(
-      result: Either[Int, GenerateTxResponse] = GENERATION_FAIL.asLeft
+      result: Either[Int, GenerateTxResponse] = Left(GENERATION_FAIL)
   ) extends Response
 
   case class IsDoubleSpentResponse(
@@ -915,14 +915,16 @@ case class ElectrumData(
     val totalReceived = tx.txOut.map(_.amount).sum
 
     if (ourInputs.size != tx.txIn.size)
-      TransactionDelta(spentUtxos, None, mineReceived, mineSent).asSome
+      Some(TransactionDelta(spentUtxos, None, mineReceived, mineSent))
     else
-      TransactionDelta(
-        spentUtxos,
-        Some(mineSent - totalReceived),
-        mineReceived,
-        mineSent
-      ).asSome
+      Some(
+        TransactionDelta(
+          spentUtxos,
+          Some(mineSent - totalReceived),
+          mineReceived,
+          mineSent
+        )
+      )
   }
 
   def rbfBump(bump: RBFBump, dustLimit: Satoshi): RBFResponse = {
@@ -949,12 +951,12 @@ case class ElectrumData(
           leftUtxos,
           delta.spentUtxos
         ) match {
-          case Success(response) => RBFResponse(response.asRight)
-          case _                 => RBFResponse(GENERATION_FAIL.asLeft)
+          case Success(response) => RBFResponse(Right(response))
+          case _                 => RBFResponse(Left(GENERATION_FAIL))
         }
 
-      case _ => RBFResponse(FOREIGN_INPUTS.asLeft)
-    } getOrElse RBFResponse(PARENTS_MISSING.asLeft)
+      case _ => RBFResponse(Left(FOREIGN_INPUTS))
+    } getOrElse RBFResponse(Left(PARENTS_MISSING))
   }
 
   def rbfReroute(reroute: RBFReroute, dustLimit: Satoshi): RBFResponse =
@@ -966,7 +968,7 @@ case class ElectrumData(
         dustLimit,
         reroute.sequenceFlag
       )
-    } getOrElse RBFResponse(PARENTS_MISSING.asLeft)
+    } getOrElse RBFResponse(Left(PARENTS_MISSING))
 
   def rbfReroute(
       publicKeyScript: ByteVector,
@@ -984,8 +986,8 @@ case class ElectrumData(
       dustLimit,
       sequenceFlag
     ) match {
-      case Success(response) => RBFResponse(response.asRight)
-      case _                 => RBFResponse(GENERATION_FAIL.asLeft)
+      case Success(response) => RBFResponse(Right(response))
+      case _                 => RBFResponse(Left(GENERATION_FAIL))
     }
   }
 
@@ -1035,23 +1037,24 @@ case class ElectrumData(
       case total
           if total - computeFee(
             current,
-            changeTxOut.asSome
+            Some(changeTxOut)
           ) <= amountToSend + dustLimit && remaining.isEmpty =>
         (current, None)
       case total
           if total - computeFee(
             current,
-            changeTxOut.asSome
+            Some(changeTxOut)
           ) <= amountToSend + dustLimit =>
         loop(remaining.head +: current, remaining.tail)
       case total =>
         (
           current,
-          changeTxOut
-            .copy(amount =
-              total - computeFee(current, changeTxOut.asSome) - amountToSend
-            )
-            .asSome
+          Some(
+            changeTxOut
+              .copy(amount =
+                total - computeFee(current, Some(changeTxOut)) - amountToSend
+              )
+          )
         )
     }
 

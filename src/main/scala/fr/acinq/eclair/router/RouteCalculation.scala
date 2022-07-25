@@ -8,7 +8,6 @@ import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.ChannelUpdate
 import immortan.LNParams
-import immortan.crypto.Tools.Any2Some
 
 import scala.collection.LazyZip3._
 import scala.concurrent.duration._
@@ -79,7 +78,7 @@ object RouteCalculation {
       LNParams.minPayment,
       extraHop.feeBase,
       extraHop.feeProportionalMillionths,
-      1000000000000000L.msat.asSome
+      Some(1000000000000000L.msat)
     )
 
     ChannelUpdateExt.fromUpdate(update)

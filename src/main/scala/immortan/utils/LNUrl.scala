@@ -8,7 +8,6 @@ import fr.acinq.bitcoin.{Bech32, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair._
 import fr.acinq.eclair.wire.NodeAddress
 import immortan.crypto.Tools
-import immortan.crypto.Tools.Any2Some
 import immortan.utils.ImplicitJsonFormats._
 import immortan.utils.uri.Uri
 import immortan.{LNParams, PaymentAction, RemoteNodeInfo}
@@ -96,7 +95,7 @@ case class LNUrl(request: String) {
       uri.getQueryParameter("k1"),
       uri.getQueryParameter("maxWithdrawable").toLong,
       uri.getQueryParameter("defaultDescription"),
-      uri.getQueryParameter("minWithdrawable").toLong.asSome
+      Some(uri.getQueryParameter("minWithdrawable").toLong)
     )
   }
 
@@ -326,7 +325,7 @@ case class PayRequest(
         )
         payRequestFinal
           .modify(_.successAction.each.domain)
-          .setTo(this.callbackUri.getHost.asSome)
+          .setTo(Some(this.callbackUri.getHost))
       }
   }
 }

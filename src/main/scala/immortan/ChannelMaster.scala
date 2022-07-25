@@ -161,28 +161,34 @@ class ChannelMaster(
       ReasonableTrampoline(packet, secret)
     case packet: IncomingPaymentPacket.ChannelRelayPacket =>
       CMD_FAIL_HTLC(
-        IncorrectOrUnknownPaymentDetails(
-          packet.add.amountMsat,
-          LNParams.blockCount.get
-        ).asRight,
+        Right(
+          IncorrectOrUnknownPaymentDetails(
+            packet.add.amountMsat,
+            LNParams.blockCount.get
+          )
+        ),
         secret,
         packet.add
       )
     case packet: IncomingPaymentPacket.NodeRelayPacket =>
       CMD_FAIL_HTLC(
-        IncorrectOrUnknownPaymentDetails(
-          packet.add.amountMsat,
-          LNParams.blockCount.get
-        ).asRight,
+        Right(
+          IncorrectOrUnknownPaymentDetails(
+            packet.add.amountMsat,
+            LNParams.blockCount.get
+          )
+        ),
         secret,
         packet.add
       )
     case packet: IncomingPaymentPacket.FinalPacket =>
       CMD_FAIL_HTLC(
-        IncorrectOrUnknownPaymentDetails(
-          packet.add.amountMsat,
-          LNParams.blockCount.get
-        ).asRight,
+        Right(
+          IncorrectOrUnknownPaymentDetails(
+            packet.add.amountMsat,
+            LNParams.blockCount.get
+          )
+        ),
         secret,
         packet.add
       )
@@ -371,7 +377,7 @@ class ChannelMaster(
       for (cs <- withoutSmall.indices map withoutSmall.drop)
         yield cs.head.commits.availableForReceive * cs.size
     if (candidates.isEmpty) None
-    else CommitsAndMax(sorted.takeRight(4), candidates.max).asSome
+    else Some(CommitsAndMax(sorted.takeRight(4), candidates.max))
   }
 
   def maxSendable(chans: Iterable[Channel] = Nil): MilliSatoshi = {

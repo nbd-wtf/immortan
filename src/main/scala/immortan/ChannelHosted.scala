@@ -274,6 +274,11 @@ abstract class ChannelHosted extends Channel { me =>
 
     case (hc: HostedCommits, CMD_SIGN, Channel.Open)
         if (hc.nextLocalUpdates.nonEmpty || hc.resizeProposal.isDefined) && hc.error.isEmpty =>
+      System.err.println(
+        s"we have updates to send: ${hc
+            .nextLocalUnsignedLCSS(LNParams.currentBlockDay)
+            .localUpdates}/${hc.nextLocalUnsignedLCSS(LNParams.currentBlockDay).remoteUpdates}"
+      )
       val nextLocalLCSS = hc.resizeProposal
         .map(hc.withResize)
         .getOrElse(hc)
@@ -377,7 +382,7 @@ abstract class ChannelHosted extends Channel { me =>
         hc.remoteInfo.nodeId.value
       ) == update.shortChannelId
       if (shortIdMatches)
-        StoreBecomeSend(hc.copy(updateOpt = update.asSome), state)
+        StoreBecomeSend(hc.copy(updateOpt = Some(update)), state)
 
     case (
           hc: HostedCommits,
@@ -388,7 +393,7 @@ abstract class ChannelHosted extends Channel { me =>
       val isLocalSigOk: Boolean =
         resize.verifyClientSig(hc.remoteInfo.nodeSpecificPubKey)
       if (isLocalSigOk)
-        StoreBecomeSend(hc.copy(resizeProposal = resize.asSome), state)
+        StoreBecomeSend(hc.copy(resizeProposal = Some(resize)), state)
       else localSuspend(hc, ERR_HOSTED_INVALID_RESIZE)
 
     case (
@@ -396,7 +401,7 @@ abstract class ChannelHosted extends Channel { me =>
           remoteSO: StateOverride,
           Channel.Open | Channel.Sleeping
         ) if hc.error.isDefined && !hc.overrideProposal.contains(remoteSO) =>
-      StoreBecomeSend(hc.copy(overrideProposal = remoteSO.asSome), state)
+      StoreBecomeSend(hc.copy(overrideProposal = Some(remoteSO)), state)
 
     case (
           hc: HostedCommits,
@@ -404,7 +409,7 @@ abstract class ChannelHosted extends Channel { me =>
           Channel.WaitForAccept | Channel.Open
         ) if hc.remoteError.isEmpty =>
       StoreBecomeSend(
-        hc.copy(remoteError = remote.asSome),
+        hc.copy(remoteError = Some(remote)),
         Channel.Open
       )
       throw RemoteErrorException(ErrorExt extractDescription remote)
@@ -483,7 +488,7 @@ abstract class ChannelHosted extends Channel { me =>
         hc.lastCrossSignedState.initHostedChannel.channelCapacityMsat.truncateToSatoshi
       val resize = ResizeChannel(capacitySat + delta)
         .sign(hc.remoteInfo.nodeSpecificPrivKey)
-      StoreBecomeSend(hc.copy(resizeProposal = resize.asSome), state, resize)
+      StoreBecomeSend(hc.copy(resizeProposal = Some(resize)), state, resize)
       process(CMD_SIGN)
 
       Right(())
@@ -504,7 +509,7 @@ abstract class ChannelHosted extends Channel { me =>
 
     if (hc.localError.isEmpty)
       StoreBecomeSend(
-        hc.copy(localError = localError.asSome),
+        hc.copy(localError = Some(localError)),
         state,
         localError
       )
@@ -604,9 +609,13 @@ abstract class ChannelHosted extends Channel { me =>
     } else if (remoteSU.remoteUpdates < lcssNew.localUpdates) {
       // Persist unsigned remote updates to use them on re-sync
       // we do not update runtime data because ours is newer one
+      System.err.println(
+        s"they do not have all our updates: remote=${remoteSU.remoteUpdates}/${remoteSU.localUpdates}, local=${lcssNew.localUpdates}/${lcssNew.remoteUpdates}"
+      )
       process(CMD_SIGN)
       me STORE hc
     } else if (!isRemoteSigOk) {
+      s"their updates are different from ours: remote=${remoteSU.remoteUpdates}/${remoteSU.localUpdates}, local=${lcssNew.localUpdates}/${lcssNew.remoteUpdates}"
       hc.resizeProposal.map(hc.withResize) match {
         case Some(resizedHC) => attemptStateUpdate(remoteSU, resizedHC)
         case None            => localSuspend(hc, ERR_HOSTED_WRONG_REMOTE_SIG)
@@ -643,6 +652,9 @@ abstract class ChannelHosted extends Channel { me =>
   def receiveHtlcFail(hc: HostedCommits, msg: UpdateMessage, id: Long): Unit =
     hc.localSpec.findOutgoingHtlcById(id) match {
       case None if hc.nextLocalSpec.findOutgoingHtlcById(id).isDefined =>
+        System.err.println(
+          s"we don't have a corresponding add for this fail: $msg"
+        )
         disconnectAndBecomeSleeping(hc)
       case _ if hc.postErrorOutgoingResolvedIds.contains(id) =>
         throw ChannelTransitionFail(hc.channelId, msg)

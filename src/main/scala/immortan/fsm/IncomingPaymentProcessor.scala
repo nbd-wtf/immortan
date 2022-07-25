@@ -173,7 +173,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
     case (CMDTimeout, null, IncomingPaymentProcessor.Receiving) =>
       // User is explicitly requesting failing of held payment
       // Or too much time has elapsed since we seen another incoming part
-      becomeAborted(IncomingAborted(PaymentTimeout.asSome, fullTag), adds = Nil)
+      becomeAborted(IncomingAborted(Some(PaymentTimeout), fullTag), adds = Nil)
       // Actually request adds
       cm.notifyResolvers()
 
@@ -183,7 +183,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
           becomeRevealed(info.preimage, info.description.queryText, adds = Nil)
         case None =>
           becomeAborted(
-            IncomingAborted(PaymentTimeout.asSome, fullTag),
+            IncomingAborted(Some(PaymentTimeout), fullTag),
             adds = Nil
           )
       }
@@ -220,10 +220,12 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
         for (local <- adds)
           cm.sendTo(
             CMD_FAIL_HTLC(
-              IncorrectOrUnknownPaymentDetails(
-                local.add.amountMsat,
-                LNParams.blockCount.get
-              ).asRight,
+              Right(
+                IncorrectOrUnknownPaymentDetails(
+                  local.add.amountMsat,
+                  LNParams.blockCount.get
+                )
+              ),
               local.secret,
               local.add
             ),
@@ -232,7 +234,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
       case Some(specificLocalFail) =>
         for (local <- adds)
           cm.sendTo(
-            CMD_FAIL_HTLC(specificLocalFail.asRight, local.secret, local.add),
+            CMD_FAIL_HTLC(Right(specificLocalFail), local.secret, local.add),
             local.add.channelId
           )
     }
@@ -295,7 +297,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
       fulfill: RemoteFulfill
   ): Unit = self doProcess TrampolineRevealed(
     fulfill.theirPreimage,
-    data.asSome,
+    Some(data),
     fullTag
   )
   override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit =
@@ -540,7 +542,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
   def abort(data1: TrampolineAborted, adds: ReasonableTrampolines): Unit =
     for (local <- adds)
       cm.sendTo(
-        CMD_FAIL_HTLC(data1.failure.asRight, local.secret, local.add),
+        CMD_FAIL_HTLC(Right(data1.failure), local.secret, local.add),
         local.add.channelId
       )
 

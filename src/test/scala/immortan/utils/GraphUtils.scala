@@ -69,7 +69,7 @@ object GraphUtils {
       htlcMinimumMsat = minHtlc,
       feeBaseMsat = feeBase,
       feeProportionalMillionths = feeProportionalMillionth,
-      htlcMaximumMsat = maxHtlc.asSome
+      htlcMaximumMsat = Some(maxHtlc)
     )
   }
 

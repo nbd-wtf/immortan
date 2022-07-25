@@ -105,7 +105,7 @@ abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag)
 
     case (calc: GetExpectedPaymentFees, PathFinder.Operational) =>
       calc.sender process calc.cmd.copy(expectedRouteFees =
-        calcExpectedFees(calc.cmd.targetNodeId, calc.interHops).asSome
+        Some(calcExpectedFees(calc.cmd.targetNodeId, calc.interHops))
       )
 
     case (fr: FindRoute, PathFinder.Operational) =>

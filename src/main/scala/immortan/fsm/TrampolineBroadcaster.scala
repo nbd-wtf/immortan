@@ -46,7 +46,7 @@ object TrampolineBroadcaster {
       val last1 = last match {
         case _ if status.minMsat > status.maxMsat => TrampolineUndesired
         case TrampolineUndesired => TrampolineStatusInit(List.empty, status)
-        case _ => TrampolineStatusUpdate(List.empty, Map.empty, status.asSome)
+        case _ => TrampolineStatusUpdate(List.empty, Map.empty, Some(status))
       }
 
       copy(last = last1)
@@ -110,7 +110,7 @@ class TrampolineBroadcaster(cm: ChannelMaster)
         // To save on traffic we only send out a new status if it differs from an old one
         newBroadcast <- broadcasters1.get(nodeId)
         if newBroadcast.last != lastBroadcast.last
-      } doBroadcast(newBroadcast.last.asSome, lastBroadcast.info)
+      } doBroadcast(Some(newBroadcast.last), lastBroadcast.info)
       broadcasters = broadcasters1
 
     case (
@@ -127,7 +127,7 @@ class TrampolineBroadcaster(cm: ChannelMaster)
         for (Tuple2(nodeId, lastBroadcast) <- broadcasters)
           yield nodeId -> lastBroadcast.copy(last = TrampolineUndesired)
       for (lastBroadcast <- broadcasters.values)
-        doBroadcast(TrampolineUndesired.asSome, lastBroadcast.info)
+        doBroadcast(Some(TrampolineUndesired), lastBroadcast.info)
       become(RoutingOff, TrampolineBroadcaster.RoutingEnabled)
 
     case (

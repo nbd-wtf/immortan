@@ -6,7 +6,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
-import immortan.crypto.Tools.{Any2Some, hostedChanId, hostedShortChanId}
+import immortan.crypto.Tools.{hostedChanId, hostedShortChanId}
 import scodec.bits.ByteVector
 
 case class WaitRemoteHostedReply(
@@ -100,10 +100,15 @@ case class HostedCommits(
       remoteSigOfLocal = ByteVector64.Zeroes
     )
 
-  def addLocalProposal(update: UpdateMessage): HostedCommits =
+  def addLocalProposal(update: UpdateMessage): HostedCommits = {
+    System.err.println(s"adding local proposal: $update")
     copy(nextLocalUpdates = nextLocalUpdates :+ update)
-  def addRemoteProposal(update: UpdateMessage): HostedCommits =
+  }
+
+  def addRemoteProposal(update: UpdateMessage): HostedCommits = {
+    System.err.println(s"adding remote proposal: $update")
     copy(nextRemoteUpdates = nextRemoteUpdates :+ update)
+  }
 
   type UpdatedHCAndAdd = (HostedCommits, UpdateAddHtlc)
   def sendAdd(
@@ -115,19 +120,19 @@ case class HostedCommits(
     val commits1 = addLocalProposal(completeAdd)
 
     if (cmd.payload.amount < minSendable)
-      return ChannelNotAbleToSend(cmd.incompleteAdd).asLeft
+      return Left(ChannelNotAbleToSend(cmd.incompleteAdd))
     if (CltvExpiry(blockHeight) >= cmd.cltvExpiry)
-      return InPrincipleNotSendable(cmd.incompleteAdd).asLeft
+      return Left(InPrincipleNotSendable(cmd.incompleteAdd))
     if (LNParams.maxCltvExpiryDelta.toCltvExpiry(blockHeight) < cmd.cltvExpiry)
-      return InPrincipleNotSendable(cmd.incompleteAdd).asLeft
+      return Left(InPrincipleNotSendable(cmd.incompleteAdd))
     if (
       commits1.nextLocalSpec.outgoingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs
-    ) return ChannelNotAbleToSend(cmd.incompleteAdd).asLeft
+    ) return Left(ChannelNotAbleToSend(cmd.incompleteAdd))
     if (
       commits1.allOutgoing.foldLeft(0L.msat)(_ + _.amountMsat) > maxSendInFlight
-    ) return ChannelNotAbleToSend(cmd.incompleteAdd).asLeft
+    ) return Left(ChannelNotAbleToSend(cmd.incompleteAdd))
     if (commits1.nextLocalSpec.toLocal < 0L.msat)
-      return ChannelNotAbleToSend(cmd.incompleteAdd).asLeft
+      return Left(ChannelNotAbleToSend(cmd.incompleteAdd))
     Right(commits1, completeAdd)
   }
 

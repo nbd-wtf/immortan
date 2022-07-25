@@ -85,7 +85,7 @@ abstract class SwapInAddressHandler
         ) =>
       val results1 = data.results.updated(
         worker.info,
-        SwapInResponseExt(msg, worker.info).asSome
+        Some(SwapInResponseExt(msg, worker.info))
       )
       become(
         data.copy(results = results1),
@@ -104,7 +104,7 @@ abstract class SwapInAddressHandler
         ) =>
       val results1 = data.results.updated(
         worker.info,
-        SwapInResponseExt(msg, worker.info).asSome
+        Some(SwapInResponseExt(msg, worker.info))
       )
       become(data.copy(results = results1), state)
       doSearch(force = false)

@@ -9,7 +9,7 @@ import fr.acinq.eclair.channel.{DATA_CLOSING, HasNormalCommitments}
 import fr.acinq.eclair.wire.{FullPaymentTag, PaymentTagTlv}
 import immortan.ChannelMaster.TxConfirmedAtOpt
 import immortan.crypto.Tools
-import immortan.crypto.Tools.{Any2Some, Fiat2Btc, SEPARATOR}
+import immortan.crypto.Tools.{Fiat2Btc, SEPARATOR}
 import immortan.fsm.{IncomingPaymentProcessor, SendMultiPart, SplitInfo}
 import immortan.utils.ImplicitJsonFormats._
 import immortan.utils.{LNUrl, PayRequestMeta, PaymentRequestExt, AES}
@@ -156,7 +156,7 @@ case class PaymentDescription(
   ) + SEPARATOR + meta.getOrElse(new String)
 
   val externalInfo: Option[String] =
-    meta.getOrElse(invoiceText).asSome.find(_.nonEmpty)
+    Some(meta.getOrElse(invoiceText)).find(_.nonEmpty)
 }
 
 case class PaymentInfo(
@@ -183,7 +183,7 @@ case class PaymentInfo(
   lazy val prExt: PaymentRequestExt = PaymentRequestExt.fromUri(prString)
   lazy val action: Option[PaymentAction] =
     if (actionString == PaymentInfo.NO_ACTION) None
-    else to[PaymentAction](actionString).asSome
+    else Some(to[PaymentAction](actionString))
   lazy val fullTag: FullPaymentTag = FullPaymentTag(
     paymentHash,
     paymentSecret,
@@ -337,7 +337,7 @@ case class PlainTxDescription(
   override def withNewLabel(label1: Option[String] = None): TxDescription =
     copy(label = label1)
   override def withNewCPFPBy(txid: ByteVector32): TxDescription =
-    copy(cpfpBy = txid.asSome)
+    copy(cpfpBy = Some(txid))
 }
 
 case class OpReturnTxDescription(
@@ -359,7 +359,7 @@ case class OpReturnTxDescription(
   override def withNewLabel(label1: Option[String] = None): TxDescription =
     copy(label = label1)
   override def withNewCPFPBy(txid: ByteVector32): TxDescription =
-    copy(cpfpBy = txid.asSome)
+    copy(cpfpBy = Some(txid))
   override def canBeCPFPd: Boolean = false
 }
 
@@ -387,7 +387,7 @@ case class ChanFundingTxDescription(
   override def withNewLabel(label1: Option[String] = None): TxDescription =
     copy(label = label1)
   override def withNewCPFPBy(txid: ByteVector32): TxDescription =
-    copy(cpfpBy = txid.asSome)
+    copy(cpfpBy = Some(txid))
   override def canBeCPFPd: Boolean = false
 }
 
@@ -410,7 +410,7 @@ case class ChanRefundingTxDescription(
   override def withNewLabel(label1: Option[String] = None): TxDescription =
     copy(label = label1)
   override def withNewCPFPBy(txid: ByteVector32): TxDescription =
-    copy(cpfpBy = txid.asSome)
+    copy(cpfpBy = Some(txid))
 }
 
 case class HtlcClaimTxDescription(
@@ -433,7 +433,7 @@ case class HtlcClaimTxDescription(
   override def withNewLabel(label1: Option[String] = None): TxDescription =
     copy(label = label1)
   override def withNewCPFPBy(txid: ByteVector32): TxDescription =
-    copy(cpfpBy = txid.asSome)
+    copy(cpfpBy = Some(txid))
 }
 
 case class PenaltyTxDescription(
@@ -455,7 +455,7 @@ case class PenaltyTxDescription(
   override def withNewLabel(label1: Option[String] = None): TxDescription =
     copy(label = label1)
   override def withNewCPFPBy(txid: ByteVector32): TxDescription =
-    copy(cpfpBy = txid.asSome)
+    copy(cpfpBy = Some(txid))
 }
 
 object TxDescription {

@@ -4,7 +4,6 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.DeterministicWallet._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.EclairWallet
-import immortan.crypto.Tools.Any2Some
 import scodec.bits.ByteVector
 
 import scala.util.Try
@@ -32,13 +31,13 @@ object ElectrumWalletType {
       chainHash: ByteVector32
   ): ElectrumWalletType = tag match {
     case EclairWallet.BIP32 =>
-      new ElectrumWallet32(secrets.asSome, publicKey(secrets.xPriv), chainHash)
+      new ElectrumWallet32(Some(secrets), publicKey(secrets.xPriv), chainHash)
     case EclairWallet.BIP44 =>
-      new ElectrumWallet44(secrets.asSome, publicKey(secrets.xPriv), chainHash)
+      new ElectrumWallet44(Some(secrets), publicKey(secrets.xPriv), chainHash)
     case EclairWallet.BIP49 =>
-      new ElectrumWallet49(secrets.asSome, publicKey(secrets.xPriv), chainHash)
+      new ElectrumWallet49(Some(secrets), publicKey(secrets.xPriv), chainHash)
     case EclairWallet.BIP84 =>
-      new ElectrumWallet84(secrets.asSome, publicKey(secrets.xPriv), chainHash)
+      new ElectrumWallet84(Some(secrets), publicKey(secrets.xPriv), chainHash)
     case _ => throw new RuntimeException
   }
 

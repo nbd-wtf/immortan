@@ -263,7 +263,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
         StoreBecomeSend(
           DATA_WAIT_FOR_FUNDING_CONFIRMED(
             commits,
-            wait.fundingTx.asSome,
+            Some(wait.fundingTx),
             System.currentTimeMillis,
             Left(wait.lastSent),
             deferred = None
@@ -405,7 +405,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
             commits,
             None,
             System.currentTimeMillis,
-            fundingSigned.asRight
+            Right(fundingSigned)
           ),
           Channel.WaitFundingDone,
           fundingSigned
@@ -451,7 +451,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
             Channel.WaitFundingDone
           ) =>
         // No need to store their message, they will re-send if we get disconnected
-        BECOME(wait.copy(deferred = locked.asSome), Channel.WaitFundingDone)
+        BECOME(wait.copy(deferred = Some(locked)), Channel.WaitFundingDone)
 
       case (
             wait: DATA_WAIT_FOR_FUNDING_LOCKED,
@@ -461,7 +461,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
         StoreBecomeSend(
           DATA_NORMAL(
             wait.commitments.copy(remoteNextCommitInfo =
-              locked.nextPerCommitmentPoint.asRight
+              Right(locked.nextPerCommitmentPoint)
             ),
             wait.shortChannelId
           ),
@@ -561,7 +561,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
           if update.shortChannelId == norm.shortChannelId && norm.commitments.updateOpt
             .forall(_.core != update.core) =>
         StoreBecomeSend(
-          norm withNewCommits norm.commitments.copy(updateOpt = update.asSome),
+          norm withNewCommits norm.commitments.copy(updateOpt = Some(update)),
           state
         )
 
@@ -634,7 +634,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
           throw CMDException(CMD_CLOSE.CHANNEL_BUSY, cmd)
         else
           StoreBecomeSend(
-            norm.copy(localShutdown = shutdown.asSome),
+            norm.copy(localShutdown = Some(shutdown)),
             state,
             shutdown
           )
@@ -846,7 +846,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
         if (norm.commitments.remoteHasUnsignedOutgoingUpdateFee)
           throw ChannelTransitionFail(norm.commitments.channelId, remote)
         if (norm.commitments.localHasUnsignedOutgoingHtlcs)
-          BECOME(norm.copy(remoteShutdown = remote.asSome), Channel.Open)
+          BECOME(norm.copy(remoteShutdown = Some(remote)), Channel.Open)
         else maybeStartNegotiations(norm, remote)
 
       // NEGOTIATIONS
@@ -872,7 +872,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
             ) || negs.closingTxProposed.flatten.size >= LNParams.maxNegotiationIterations
         ) {
           val newNegotiating =
-            negs.copy(bestUnpublishedClosingTxOpt = signedClosingTx.asSome)
+            negs.copy(bestUnpublishedClosingTxOpt = Some(signedClosingTx))
           handleMutualClose(signedClosingTx, newNegotiating)
         } else {
           val lastLocalClosingFee = negs.closingTxProposed.last.lastOption
@@ -895,7 +895,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
             case prev :+ current => prev :+ (current :+ proposed) map identity
           }
           val newNegotiating = negs.copy(
-            bestUnpublishedClosingTxOpt = signedClosingTx.asSome,
+            bestUnpublishedClosingTxOpt = Some(signedClosingTx),
             closingTxProposed = closingTxProposed
           )
 
@@ -1119,7 +1119,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
         StoreBecomeSend(
           currentData
             .modify(_.closingTxProposed)
-            .using(_ :+ ClosingTxProposed(closingTx.tx, closingSigned).asList),
+            .using(_ :+ List(ClosingTxProposed(closingTx.tx, closingSigned))),
           Channel.Open,
           currentData.localShutdown,
           closingSigned
@@ -1462,7 +1462,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
     if (currentData.commitments.hasPendingHtlcsOrFeeUpdate) {
       StoreBecomeSend(
         currentData
-          .copy(localShutdown = local.asSome, remoteShutdown = remote.asSome),
+          .copy(localShutdown = Some(local), remoteShutdown = Some(remote)),
         Channel.Open,
         local
       )
@@ -1535,14 +1535,14 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
       )
 
       handleChannelForceClosing(currentData) {
-        case some: DATA_CLOSING => some.copy(localCommitPublished = lcp.asSome)
+        case some: DATA_CLOSING => some.copy(localCommitPublished = Some(lcp))
         case some: DATA_NEGOTIATING =>
-          some.toClosed.copy(localCommitPublished = lcp.asSome)
+          some.toClosed.copy(localCommitPublished = Some(lcp))
         case _ =>
           DATA_CLOSING(
             currentData.commitments,
             System.currentTimeMillis,
-            localCommitPublished = lcp.asSome
+            localCommitPublished = Some(lcp)
           )
       }
 
@@ -1561,20 +1561,20 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
     )
 
     handleChannelForceClosing(currentData) {
-      case some: DATA_CLOSING => some.copy(remoteCommitPublished = rcp.asSome)
+      case some: DATA_CLOSING => some.copy(remoteCommitPublished = Some(rcp))
       case some: DATA_NEGOTIATING =>
-        some.toClosed.copy(remoteCommitPublished = rcp.asSome)
+        some.toClosed.copy(remoteCommitPublished = Some(rcp))
       case some: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
         DATA_CLOSING(
           some.commitments,
           System.currentTimeMillis,
-          remoteCommitPublished = rcp.asSome
+          remoteCommitPublished = Some(rcp)
         )
       case _ =>
         DATA_CLOSING(
           currentData.commitments,
           System.currentTimeMillis,
-          remoteCommitPublished = rcp.asSome
+          remoteCommitPublished = Some(rcp)
         )
     }
 
@@ -1596,14 +1596,14 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
 
     handleChannelForceClosing(currentData) {
       case some: DATA_CLOSING =>
-        some.copy(nextRemoteCommitPublished = rcp.asSome)
+        some.copy(nextRemoteCommitPublished = Some(rcp))
       case some: DATA_NEGOTIATING =>
-        some.toClosed.copy(nextRemoteCommitPublished = rcp.asSome)
+        some.toClosed.copy(nextRemoteCommitPublished = Some(rcp))
       case _ =>
         DATA_CLOSING(
           currentData.commitments,
           System.currentTimeMillis,
-          nextRemoteCommitPublished = rcp.asSome
+          nextRemoteCommitPublished = Some(rcp)
         )
     }
 
@@ -1623,7 +1623,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
     val closing = DATA_CLOSING(
       commits,
       System.currentTimeMillis,
-      futureRemoteCommitPublished = remoteCommitPublished.asSome
+      futureRemoteCommitPublished = Some(remoteCommitPublished)
     )
     StoreBecomeSend(closing, Channel.Closing)
   }

@@ -103,7 +103,7 @@ abstract class SwapOutFeeratesHandler
         ) =>
       val results1 = data.results.updated(
         worker.info,
-        SwapOutResponseExt(msg, worker.info).asSome
+        Some(SwapOutResponseExt(msg, worker.info))
       )
       become(
         data.copy(results = results1),
@@ -122,7 +122,7 @@ abstract class SwapOutFeeratesHandler
         ) =>
       val results1 = data.results.updated(
         worker.info,
-        SwapOutResponseExt(msg, worker.info).asSome
+        Some(SwapOutResponseExt(msg, worker.info))
       )
       become(data.copy(results = results1), state)
       doSearch(force = false)

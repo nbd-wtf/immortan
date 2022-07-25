@@ -11,7 +11,7 @@ import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
-import immortan.crypto.Tools.{Any2Some, newFeerate, none}
+import immortan.crypto.Tools.{newFeerate, none}
 import immortan.utils.Rx
 import immortan.{LNParams, RemoteNodeInfo, UpdateAddHtlcExt}
 
@@ -231,11 +231,11 @@ case class NormalCommits(
       blockHeight: Long
   ): Either[LocalReject, UpdatedNCAndAdd] = {
     if (LNParams.maxCltvExpiryDelta.toCltvExpiry(blockHeight) < cmd.cltvExpiry)
-      return InPrincipleNotSendable(cmd.incompleteAdd).asLeft
+      return Left(InPrincipleNotSendable(cmd.incompleteAdd))
     if (CltvExpiry(blockHeight) >= cmd.cltvExpiry)
-      return InPrincipleNotSendable(cmd.incompleteAdd).asLeft
+      return Left(InPrincipleNotSendable(cmd.incompleteAdd))
     if (cmd.firstAmount < minSendable)
-      return ChannelNotAbleToSend(cmd.incompleteAdd).asLeft
+      return Left(ChannelNotAbleToSend(cmd.incompleteAdd))
 
     val completeAdd =
       cmd.incompleteAdd.copy(channelId = channelId, id = localNextHtlcId)
@@ -276,22 +276,26 @@ case class NormalCommits(
       else senderWithReserve
 
     if (missingForSender < 0L.sat)
-      return ChannelNotAbleToSend(cmd.incompleteAdd).asLeft
+      return Left(ChannelNotAbleToSend(cmd.incompleteAdd))
     if (missingForReceiver < 0L.sat && !localParams.isFunder)
-      return ChannelNotAbleToSend(cmd.incompleteAdd).asLeft
+      return Left(ChannelNotAbleToSend(cmd.incompleteAdd))
     if (
       commitments1.allOutgoing.foldLeft(0L.msat)(
         _ + _.amountMsat
       ) > maxSendInFlight
-    ) return ChannelNotAbleToSend(cmd.incompleteAdd).asLeft
+    ) return Left(ChannelNotAbleToSend(cmd.incompleteAdd))
     if (totalOutgoingHtlcs > commitments1.remoteParams.maxAcceptedHtlcs)
-      return ChannelNotAbleToSend(
-        cmd.incompleteAdd
-      ).asLeft // This is from spec and prevents remote force-close
+      return Left(
+        ChannelNotAbleToSend(
+          cmd.incompleteAdd
+        )
+      ) // This is from spec and prevents remote force-close
     if (totalOutgoingHtlcs > commitments1.localParams.maxAcceptedHtlcs)
-      return ChannelNotAbleToSend(
-        cmd.incompleteAdd
-      ).asLeft // This is needed for peer backup and routing to safely work
+      return Left(
+        ChannelNotAbleToSend(
+          cmd.incompleteAdd
+        )
+      ) // This is needed for peer backup and routing to safely work
     Right(commitments1, completeAdd)
   }
 
