@@ -336,6 +336,13 @@ class SyncParams {
     NodeAddress.unresolved(9735, host = 73, 119, 255, 56),
     "bCashIsTrash"
   )
+  val zeroFeeRouting: RemoteNodeInfo = RemoteNodeInfo(
+    PublicKey(
+      hex"038fe1bd966b5cb0545963490c631eaa1924e2c4c0ea4e7dcb5d4582a1e7f2f1a5"
+    ),
+    NodeAddress.unresolved(9735, host = 144, 76, 24, 71),
+    "zero-fee-routing"
+  )
   val ergveinNet: RemoteNodeInfo = RemoteNodeInfo(
     PublicKey(
       hex"034a7b1ac1239ff2ac8438ce0a7ade1048514b77d4322f514e96918e6c13944861"
@@ -382,6 +389,7 @@ class SyncParams {
     satm,
     motherbase,
     bCashIsTrash,
+    zeroFeeRouting,
     ergveinNet,
     conductor,
     silentBob,
