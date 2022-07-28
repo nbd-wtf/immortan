@@ -51,14 +51,7 @@ sealed trait PaymentFailure {
 
 case class LocalFailure(status: String, amount: MilliSatoshi)
     extends PaymentFailure {
-  override def asString: String = {
-    val extra =
-      if (LNParams.cm.pf.isIncompleteGraph)
-        "; the channel graph is not fully synced yet, please wait a little and try again."
-      else ""
-
-    s"- Local failure: $status$extra"
-  }
+  override def asString: String = s"- Local failure: $status"
 }
 
 case class UnreadableRemoteFailure(route: Route) extends PaymentFailure {
