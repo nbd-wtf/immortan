@@ -96,16 +96,16 @@ object FailureMessageCodecs {
       .\(PERM | NODE | 3) { case v if v == RequiredNodeFeatureMissing => v }(
         provide(RequiredNodeFeatureMissing)
       )
-      .\(BADONION | PERM | 4)(_.asInstanceOf[InvalidOnionVersion])(
+      .\(BADONION | PERM | 4) { case v: InvalidOnionVersion => v }(
         sha256.as[InvalidOnionVersion]
       )
-      .\(BADONION | PERM | 5)(_.asInstanceOf[InvalidOnionHmac])(
+      .\(BADONION | PERM | 5) { case v: InvalidOnionHmac => v }(
         sha256.as[InvalidOnionHmac]
       )
-      .\(BADONION | PERM | 6)(_.asInstanceOf[InvalidOnionKey])(
+      .\(BADONION | PERM | 6) { case v: InvalidOnionKey => v }(
         sha256.as[InvalidOnionKey]
       )
-      .\(UPDATE | 7)(_.asInstanceOf[TemporaryChannelFailure])(
+      .\(UPDATE | 7) { case v: TemporaryChannelFailure => v }(
         ("channelUpdate" | channelUpdateWithLengthCodec)
           .as[TemporaryChannelFailure]
       )
@@ -118,26 +118,26 @@ object FailureMessageCodecs {
       .\(PERM | 10) { case v if v == UnknownNextPeer => v }(
         provide(UnknownNextPeer)
       )
-      .\(UPDATE | 11)(_.asInstanceOf[AmountBelowMinimum])(
+      .\(UPDATE | 11) { case v: AmountBelowMinimum => v }(
         (("amountMsat" | millisatoshi) :: ("channelUpdate" | channelUpdateWithLengthCodec))
           .as[AmountBelowMinimum]
       )
-      .\(UPDATE | 12)(_.asInstanceOf[FeeInsufficient])(
+      .\(UPDATE | 12) { case v: FeeInsufficient => v }(
         (("amountMsat" | millisatoshi) :: ("channelUpdate" | channelUpdateWithLengthCodec))
           .as[FeeInsufficient]
       )
-      .\(UPDATE | 13)(_.asInstanceOf[IncorrectCltvExpiry])(
+      .\(UPDATE | 13) { case v: IncorrectCltvExpiry => v }(
         (("expiry" | cltvExpiry) :: ("channelUpdate" | channelUpdateWithLengthCodec))
           .as[IncorrectCltvExpiry]
       )
-      .\(UPDATE | 14)(_.asInstanceOf[ExpiryTooSoon])(
+      .\(UPDATE | 14) { case v: ExpiryTooSoon => v }(
         ("channelUpdate" | channelUpdateWithLengthCodec).as[ExpiryTooSoon]
       )
-      .\(UPDATE | 20)(_.asInstanceOf[ChannelDisabled])(
+      .\(UPDATE | 20) { case v: ChannelDisabled => v }(
         (("messageFlags" | byte) :: ("channelFlags" | byte) :: ("channelUpdate" | channelUpdateWithLengthCodec))
           .as[ChannelDisabled]
       )
-      .\(PERM | 15)(_.asInstanceOf[IncorrectOrUnknownPaymentDetails])(
+      .\(PERM | 15) { case v: IncorrectOrUnknownPaymentDetails => v }(
         (("amountMsat" | withDefaultValue(
           optional(bitsRemaining, millisatoshi),
           MilliSatoshi(0L)
@@ -147,14 +147,14 @@ object FailureMessageCodecs {
       )
       // PERM | 16 (incorrect_payment_amount) has been deprecated because it allowed probing attacks: IncorrectOrUnknownPaymentDetails should be used instead.
       // PERM | 17 (final_expiry_too_soon) has been deprecated because it allowed probing attacks: IncorrectOrUnknownPaymentDetails should be used instead.
-      .\(18)(_.asInstanceOf[FinalIncorrectCltvExpiry])(
+      .\(18) { case v: FinalIncorrectCltvExpiry => v }(
         ("expiry" | cltvExpiry).as[FinalIncorrectCltvExpiry]
       )
-      .\(19)(_.asInstanceOf[FinalIncorrectHtlcAmount])(
+      .\(19) { case v: FinalIncorrectHtlcAmount => v }(
         ("amountMsat" | millisatoshi).as[FinalIncorrectHtlcAmount]
       )
       .\(21) { case v if v == ExpiryTooFar => v }(provide(ExpiryTooFar))
-      .\(PERM | 22)(_.asInstanceOf[InvalidOnionPayload])(
+      .\(PERM | 22) { case v: InvalidOnionPayload => v }(
         (("tag" | varint) :: ("offset" | uint16)).as[InvalidOnionPayload]
       )
       .\(23) { case v if v == PaymentTimeout => v }(provide(PaymentTimeout))
