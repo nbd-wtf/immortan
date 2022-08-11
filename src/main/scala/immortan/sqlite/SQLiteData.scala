@@ -7,14 +7,13 @@ import fr.acinq.bitcoin.{BlockHeader, ByteVector32}
 import fr.acinq.eclair.blockchain.electrum.db.HeaderDb
 import fr.acinq.eclair.wire.LightningMessageCodecs.{
   hostedChannelBrandingCodec,
-  swapInStateCodec,
   trampolineOnCodec
 }
-import fr.acinq.eclair.wire.{HostedChannelBranding, SwapInState, TrampolineOn}
+import fr.acinq.eclair.wire.{HostedChannelBranding, TrampolineOn}
 import immortan.sqlite.SQLiteData._
 import immortan.utils.ImplicitJsonFormats._
 import immortan.utils.{FeeRatesInfo, FiatRatesInfo}
-import immortan.{DataBag, SwapInStateExt, WalletSecret}
+import immortan.{DataBag, WalletSecret}
 import scodec.bits.ByteVector
 import spray.json._
 
@@ -92,23 +91,7 @@ class SQLiteData(val db: DBInterface) extends HeaderDb with DataBag {
           .value
     }
 
-  // SwapInState
-
-  def putSwapInState(nodeId: PublicKey, state: SwapInState): Unit = {
-    val swapInState = swapInStateCodec.encode(state).require.toByteArray
-    put(LABEL_SWAP_IN_STATE_PREFIX + nodeId.toString, swapInState)
-  }
-
-  def tryGetSwapInState(nodeId: PublicKey): Try[SwapInStateExt] =
-    tryGet(LABEL_SWAP_IN_STATE_PREFIX + nodeId.toString) map { rawSwapInState =>
-      SwapInStateExt(
-        swapInStateCodec.decode(rawSwapInState.toBitVector).require.value,
-        nodeId
-      )
-    }
-
   // HeadersDb
-
   override def addHeaders(headers: Seq[BlockHeader], atHeight: Int): Unit = {
     val addHeaderSqlPQ = db.makePreparedQuery(ElectrumHeadersTable.addHeaderSql)
 

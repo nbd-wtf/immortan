@@ -597,7 +597,6 @@ case class ResizeChannel(
 case class AskBrandingInfo(chainHash: ByteVector32) extends HostedChannelMessage
 
 // PHC
-
 case class QueryPublicHostedChannels(chainHash: ByteVector32)
     extends HostedChannelMessage
 
@@ -605,108 +604,13 @@ case class ReplyPublicHostedChannelsEnd(chainHash: ByteVector32)
     extends HostedChannelMessage
 
 // Preimage queries
-
 case class QueryPreimages(hashes: List[ByteVector32] = Nil)
     extends HostedChannelMessage
 
 case class ReplyPreimages(preimages: List[ByteVector32] = Nil)
     extends HostedChannelMessage
 
-// Swap In/Out
-
-sealed trait ChainSwapMessage extends LightningMessage
-
-sealed trait SwapIn // Chain -> LN
-
-case object SwapInRequest
-    extends SwapIn
-    with ChainSwapMessage // (1) User notifies provider it wants to start swap-in
-
-case class SwapInResponse(btcAddress: String, minChainDeposit: Satoshi)
-    extends SwapIn
-    with ChainSwapMessage // (2) Provider replies with chain address
-
-case class SwapInPaymentRequest(paymentRequest: String, id: Long)
-    extends SwapIn
-    with ChainSwapMessage // (4) Once deposit is confirmed user can issue a withdraw invoice
-
-object SwapInPaymentDenied {
-  final val WITHDRAWAL_ALREADY_IN_FLIGHT = 1L
-  final val INVOICE_TX_AMOUNT_MISMATCH = 2L
-  final val NO_WITHDRAWABLE_TX = 3L
-  final val INVALID_INVOICE = 4L
-}
-
-case class SwapInPaymentDenied(id: Long, reason: Long)
-    extends SwapIn
-    with ChainSwapMessage
-
-case class ChainDeposit(
-    id: Long,
-    lnPaymentId: Option[String],
-    lnStatus: Long,
-    btcAddress: String,
-    outIndex: Long,
-    txid: String,
-    amountSat: Long,
-    depth: Long,
-    stamp: Long
-) // (3) Periodic notifications
-
-case class SwapInState(
-    pending: List[ChainDeposit],
-    ready: List[ChainDeposit],
-    processing: List[ChainDeposit] = Nil
-) extends SwapIn
-    with ChainSwapMessage // (3) Periodic notifications
-
-sealed trait SwapOut // LN -> Chain
-
-case object SwapOutRequest extends SwapOut with ChainSwapMessage
-
-case class BlockTargetAndFee(blockTarget: Int, fee: Satoshi)
-
-case class KeyedBlockTargetAndFee(
-    feerates: List[BlockTargetAndFee],
-    feerateKey: ByteVector32
-)
-
-case class SwapOutFeerates(
-    feerates: KeyedBlockTargetAndFee,
-    providerCanHandle: Satoshi,
-    minWithdrawable: Satoshi
-) extends SwapOut
-    with ChainSwapMessage
-
-case class SwapOutTransactionRequest(
-    amount: Satoshi,
-    btcAddress: String,
-    blockTarget: Int,
-    feerateKey: ByteVector32
-) extends SwapOut
-    with ChainSwapMessage
-
-case class SwapOutTransactionResponse(
-    paymentRequest: String,
-    amount: Satoshi,
-    btcAddress: String,
-    fee: Satoshi
-) extends SwapOut
-    with ChainSwapMessage
-
-object SwapOutTransactionDenied {
-  final val INVALID_BITCOIN_ADDRESS = 1L
-  final val UNKNOWN_CHAIN_FEERATES = 2L
-  final val CAN_NOT_HANDLE_AMOUNT = 3L
-  final val AMOUNT_TOO_SMALL = 4L
-}
-
-case class SwapOutTransactionDenied(btcAddress: String, reason: Long)
-    extends SwapOut
-    with ChainSwapMessage
-
 // Trampoline
-
 sealed trait HasRelayFee {
   def relayFee(amount: MilliSatoshi): MilliSatoshi
   def cltvExpiryDelta: CltvExpiryDelta

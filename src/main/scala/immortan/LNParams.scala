@@ -140,7 +140,6 @@ object LNParams {
         (HostedChannels, FeatureSupport.Optional),
         (HostedChannelsLegacy, FeatureSupport.Optional),
         (PaymentSecret, FeatureSupport.Optional),
-        (ChainSwap, FeatureSupport.Optional),
         (Wumbo, FeatureSupport.Optional)
       ),
       tlvStream
@@ -481,7 +480,6 @@ case class WalletSecret(
 }
 
 case class UpdateAddHtlcExt(theirAdd: UpdateAddHtlc, remoteInfo: RemoteNodeInfo)
-case class SwapInStateExt(state: SwapInState, nodeId: PublicKey)
 
 // Interfaces
 trait NetworkBag {
@@ -591,9 +589,6 @@ trait DataBag {
 
   def putBranding(nodeId: PublicKey, branding: HostedChannelBranding): Unit
   def tryGetBranding(nodeId: PublicKey): Try[HostedChannelBranding]
-
-  def putSwapInState(nodeId: PublicKey, state: SwapInState): Unit
-  def tryGetSwapInState(nodeId: PublicKey): Try[SwapInStateExt]
 }
 
 object ChannelBag {

@@ -254,11 +254,6 @@ object Features {
     val mandatory = 50
   }
 
-  case object ChainSwap extends Feature with InitFeature with NodeFeature {
-    val rfcName = "Chain swaps"
-    val mandatory = 32770
-  }
-
   case object HostedChannelsLegacy
       extends Feature
       with InitFeature
@@ -300,7 +295,6 @@ object Features {
     OnionMessages,
     PaymentMetadata,
     TrampolinePayment,
-    ChainSwap,
     HostedChannels,
     HostedChannelsLegacy,
     ResizeableHostedChannels

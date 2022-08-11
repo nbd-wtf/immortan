@@ -123,10 +123,6 @@ object CommsTower {
               LightningMessageCodecs.decode(message) match {
                 case msg: HostedChannelMessage =>
                   for (lst <- ourListeners) lst.onHostedMessage(me, msg)
-                // case msg: SwapOut =>
-                //   for (lst <- ourListeners) lst.onSwapOutMessage(me, msg)
-                // case msg: SwapIn =>
-                //   for (lst <- ourListeners) lst.onSwapInMessage(me, msg)
                 case msg => for (lst <- ourListeners) lst.onMessage(me, msg)
               }
 
@@ -216,7 +212,5 @@ trait ConnectionListener {
       worker: CommsTower.Worker,
       msg: HostedChannelMessage
   ): Unit = none
-  def onSwapOutMessage(worker: CommsTower.Worker, msg: SwapOut): Unit = none
-  def onSwapInMessage(worker: CommsTower.Worker, msg: SwapIn): Unit = none
   def onDisconnect(worker: CommsTower.Worker): Unit = none
 }
