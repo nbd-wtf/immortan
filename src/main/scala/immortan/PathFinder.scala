@@ -217,90 +217,100 @@ abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag)
   }
 
   def startPeriodicResync(): Unit = {
-    if (subscription.isEmpty) {
-      val repeat =
-        Rx.repeat(Rx.ioQueue, Rx.incHour, times = 97 to Int.MaxValue by 97)
-      // Resync every RESYNC_PERIOD hours + 1 hour to trigger a full resync, not just PHC resync
-      val delay = Rx.initDelay(
-        repeat,
-        getLastTotalResyncStamp,
-        RESYNC_PERIOD,
-        preStartMsec = 500
-      )
-      subscription = Some(delay.subscribe(_ => resync()))
-    }
-  }
-
-  def resync(): Unit = state match {
-    case PathFinder.Waiting => {
-      // We need a loaded routing data to sync properly
-      // load that data before proceeding if it's absent
-      context.execute(new Runnable { def run(): Unit = { loadGraph() } })
-      context.execute(new Runnable { def run(): Unit = { resync() } })
-    }
-    case PathFinder.Operational
-        if System.currentTimeMillis - getLastNormalResyncStamp > RESYNC_PERIOD => {
-      val setupData = SyncMasterShortIdData(
-        LNParams.syncParams.syncNodes,
-        getExtraNodes,
-        Set.empty,
-        Map.empty
-      )
-
-      val requestNodeAnnounceForChan = for {
-        info <- getExtraNodes ++ getPHCExtraNodes
-        edges <- data.graph.vertices.get(info.nodeId)
-      } yield shuffle(edges).head.desc.shortChannelId
-
-      val normalSync = new SyncMaster(
-        normalBag.listExcludedChannels,
-        requestNodeAnnounceForChan,
-        data,
-        LNParams.syncParams.maxNodesToSyncFrom
-      ) { self =>
-        override def onNodeAnnouncement(
-            nodeAnnouncement: NodeAnnouncement
-        ): Unit = listeners.foreach(_ process nodeAnnouncement)
-        override def onChunkSyncComplete(
-            pureRoutingData: PureRoutingData
-        ): Unit = me process pureRoutingData
-        override def onTotalSyncComplete(): Unit = me process self
+    context.execute(new Runnable {
+      def run(): Unit = {
+        if (subscription.isEmpty) {
+          val repeat =
+            Rx.repeat(Rx.ioQueue, Rx.incHour, times = 97 to Int.MaxValue by 97)
+          // Resync every RESYNC_PERIOD hours + 1 hour to trigger a full resync, not just PHC resync
+          val delay = Rx.initDelay(
+            repeat,
+            getLastTotalResyncStamp,
+            RESYNC_PERIOD,
+            preStartMsec = 500
+          )
+          subscription = Some(delay.subscribe(_ => resync()))
+        }
       }
-
-      syncMaster = Some(normalSync)
-      listeners.foreach(_ =>
-        context.execute(new Runnable {
-          def run(): Unit = { resync() }
-        })
-      )
-      normalSync.process(setupData)
-    }
-    case PathFinder.Operational
-        if System.currentTimeMillis - getLastTotalResyncStamp > RESYNC_PERIOD =>
-      // Normal resync has happened recently, but PHC resync is outdated
-      //   (PHC failed last time due to running out of attempts)
-      // in this case we skip normal sync and start directly with PHC sync to save time
-      //   and increase PHC sync success chances
-      attemptPHCSync()
-    case PathFinder.Operational =>
+    })
   }
 
-  def loadGraph(): Unit = {
-    if (state == PathFinder.Waiting) {
-      val normalShortIdToPubChan = normalBag.getRoutingData
-      val hostedShortIdToPubChan = hostedBag.getRoutingData
-      become(
-        Data(
-          normalShortIdToPubChan,
-          hostedShortIdToPubChan,
-          DirectedGraph
-            .makeGraph(normalShortIdToPubChan ++ hostedShortIdToPubChan)
-            .addEdges(extraEdges.values)
-        ),
-        PathFinder.Operational
-      )
+  def resync(): Unit = context.execute(new Runnable {
+    def run(): Unit = {
+      state match {
+        case PathFinder.Waiting => {
+          // We need a loaded routing data to sync properly
+          // load that data before proceeding if it's absent
+          context.execute(new Runnable { def run(): Unit = { loadGraph() } })
+          context.execute(new Runnable { def run(): Unit = { resync() } })
+        }
+        case PathFinder.Operational
+            if System.currentTimeMillis - getLastNormalResyncStamp > RESYNC_PERIOD => {
+          val setupData = SyncMasterShortIdData(
+            LNParams.syncParams.syncNodes,
+            getExtraNodes,
+            Set.empty,
+            Map.empty
+          )
+
+          val requestNodeAnnounceForChan = for {
+            info <- getExtraNodes ++ getPHCExtraNodes
+            edges <- data.graph.vertices.get(info.nodeId)
+          } yield shuffle(edges).head.desc.shortChannelId
+
+          val normalSync = new SyncMaster(
+            normalBag.listExcludedChannels,
+            requestNodeAnnounceForChan,
+            data,
+            LNParams.syncParams.maxNodesToSyncFrom
+          ) { self =>
+            override def onNodeAnnouncement(
+                nodeAnnouncement: NodeAnnouncement
+            ): Unit = listeners.foreach(_ process nodeAnnouncement)
+            override def onChunkSyncComplete(
+                pureRoutingData: PureRoutingData
+            ): Unit = me process pureRoutingData
+            override def onTotalSyncComplete(): Unit = me process self
+          }
+
+          syncMaster = Some(normalSync)
+          listeners.foreach(_ =>
+            context.execute(new Runnable {
+              def run(): Unit = { resync() }
+            })
+          )
+          normalSync.process(setupData)
+        }
+        case PathFinder.Operational
+            if System.currentTimeMillis - getLastTotalResyncStamp > RESYNC_PERIOD =>
+          // Normal resync has happened recently, but PHC resync is outdated
+          //   (PHC failed last time due to running out of attempts)
+          // in this case we skip normal sync and start directly with PHC sync to save time
+          //   and increase PHC sync success chances
+          attemptPHCSync()
+        case PathFinder.Operational =>
+      }
     }
-  }
+  })
+
+  def loadGraph(): Unit = context.execute(new Runnable {
+    def run(): Unit = {
+      if (state == PathFinder.Waiting) {
+        val normalShortIdToPubChan = normalBag.getRoutingData
+        val hostedShortIdToPubChan = hostedBag.getRoutingData
+        become(
+          Data(
+            normalShortIdToPubChan,
+            hostedShortIdToPubChan,
+            DirectedGraph
+              .makeGraph(normalShortIdToPubChan ++ hostedShortIdToPubChan)
+              .addEdges(extraEdges.values)
+          ),
+          PathFinder.Operational
+        )
+      }
+    }
+  })
 
   def resolve(
       pubChan: PublicChannel,
