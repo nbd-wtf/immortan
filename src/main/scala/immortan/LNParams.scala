@@ -363,6 +363,13 @@ class SyncParams {
     NodeAddress.unresolved(9735, host = 107, 189, 30, 195),
     "Jiraiya"
   )
+  val zebedee: RemoteNodeInfo = RemoteNodeInfo(
+    PublicKey(
+      hex"02d5562ef0eb09c29b9ebe2393134292aa0cfd8bd0b022eed02dc2dcafd6f7097d"
+    ),
+    NodeAddress.unresolved(9735, host = 54, 175, 219, 75),
+    "ZEBEDEE"
+  )
   val silentBob: RemoteNodeInfo = RemoteNodeInfo(
     PublicKey(
       hex"02e9046555a9665145b0dbd7f135744598418df7d61d3660659641886ef1274844"
