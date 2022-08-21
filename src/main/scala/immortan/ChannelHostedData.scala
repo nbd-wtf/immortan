@@ -100,15 +100,11 @@ case class HostedCommits(
       remoteSigOfLocal = ByteVector64.Zeroes
     )
 
-  def addLocalProposal(update: UpdateMessage): HostedCommits = {
-    System.err.println(s"adding local proposal: $update")
+  def addLocalProposal(update: UpdateMessage): HostedCommits =
     copy(nextLocalUpdates = nextLocalUpdates :+ update)
-  }
 
-  def addRemoteProposal(update: UpdateMessage): HostedCommits = {
-    System.err.println(s"adding remote proposal: $update")
+  def addRemoteProposal(update: UpdateMessage): HostedCommits =
     copy(nextRemoteUpdates = nextRemoteUpdates :+ update)
-  }
 
   type UpdatedHCAndAdd = (HostedCommits, UpdateAddHtlc)
   def sendAdd(

@@ -274,11 +274,6 @@ abstract class ChannelHosted extends Channel { me =>
 
     case (hc: HostedCommits, CMD_SIGN, Channel.Open)
         if (hc.nextLocalUpdates.nonEmpty || hc.resizeProposal.isDefined) && hc.error.isEmpty =>
-      System.err.println(
-        s"we have updates to send: ${hc
-            .nextLocalUnsignedLCSS(LNParams.currentBlockDay)
-            .localUpdates}/${hc.nextLocalUnsignedLCSS(LNParams.currentBlockDay).remoteUpdates}"
-      )
       val nextLocalLCSS = hc.resizeProposal
         .map(hc.withResize)
         .getOrElse(hc)
@@ -609,9 +604,6 @@ abstract class ChannelHosted extends Channel { me =>
     } else if (remoteSU.remoteUpdates < lcssNew.localUpdates) {
       // Persist unsigned remote updates to use them on re-sync
       // we do not update runtime data because ours is newer one
-      System.err.println(
-        s"they do not have all our updates: remote=${remoteSU.remoteUpdates}/${remoteSU.localUpdates}, local=${lcssNew.localUpdates}/${lcssNew.remoteUpdates}"
-      )
       process(CMD_SIGN)
       me STORE hc
     } else if (!isRemoteSigOk) {
@@ -652,9 +644,6 @@ abstract class ChannelHosted extends Channel { me =>
   def receiveHtlcFail(hc: HostedCommits, msg: UpdateMessage, id: Long): Unit =
     hc.localSpec.findOutgoingHtlcById(id) match {
       case None if hc.nextLocalSpec.findOutgoingHtlcById(id).isDefined =>
-        System.err.println(
-          s"we don't have a corresponding add for this fail: $msg"
-        )
         disconnectAndBecomeSleeping(hc)
       case _ if hc.postErrorOutgoingResolvedIds.contains(id) =>
         throw ChannelTransitionFail(hc.channelId, msg)
