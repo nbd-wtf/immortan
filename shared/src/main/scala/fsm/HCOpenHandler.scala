@@ -1,17 +1,15 @@
 package immortan.fsm
 
+import scodec.bits.ByteVector
 import scoin.ByteVector32
-import immortan.channel.{
-  CMD_SOCKET_ONLINE,
-  Commitments,
-  PersistentChannelData
-}
 import scoin.ln._
+import scoin.hc._
+
+import immortan._
+import immortan.channel.{CMD_SOCKET_ONLINE, Commitments, PersistentChannelData}
 import immortan.Channel
 import immortan.ChannelListener.{Malfunction, Transition}
 import immortan.crypto.Tools
-import immortan._
-import scodec.bits.ByteVector
 
 abstract class HCOpenHandler(
     info: RemoteNodeInfo,
@@ -24,7 +22,7 @@ abstract class HCOpenHandler(
 
   private val freshChannel = new ChannelHosted {
     def SEND(msgs: LightningMessage*): Unit = CommsTower.sendMany(
-      msgs.map(LightningMessageCodecs.prepareNormal),
+      msgs,
       info.nodeSpecificPair
     )
     def STORE(hostedData: PersistentChannelData): PersistentChannelData =
@@ -41,20 +39,20 @@ abstract class HCOpenHandler(
     override def onOperational(
         worker: CommsTower.Worker,
         theirInit: Init
-    ): Unit = freshChannel process CMD_SOCKET_ONLINE
+    ): Unit = freshChannel.process(CMD_SOCKET_ONLINE)
 
     override def onHostedMessage(
         worker: CommsTower.Worker,
         message: HostedChannelMessage
-    ): Unit = freshChannel process message
+    ): Unit = freshChannel.process(message)
 
     override def onMessage(
         worker: CommsTower.Worker,
         message: LightningMessage
     ): Unit = message match {
       case msg: HasChannelId if msg.channelId == channelId =>
-        freshChannel process msg
-      case msg: ChannelUpdate => freshChannel process msg
+        freshChannel.process(msg)
+      case msg: ChannelUpdate => freshChannel.process(msg)
       case _                  =>
     }
 
@@ -81,10 +79,12 @@ abstract class HCOpenHandler(
 
   if (cm.hostedFromNode(info.nodeId).isEmpty) {
     freshChannel.listeners = Set(makeChanListener)
-    freshChannel doProcess WaitRemoteHostedReply(
-      info.safeAlias,
-      peerSpecificRefundPubKey,
-      peerSpecificSecret
+    freshChannel.doProcess(
+      WaitRemoteHostedReply(
+        info.safeAlias,
+        peerSpecificRefundPubKey,
+        peerSpecificSecret
+      )
     )
     CommsTower.listenNative(Set(makeChanListener), info)
   } else {

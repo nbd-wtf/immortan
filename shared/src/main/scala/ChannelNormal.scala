@@ -1,29 +1,29 @@
 package immortan
 
+import scala.collection.immutable.Queue
+import scala.concurrent.duration._
+import scala.annotation.nowarn
+import scala.util.Try
 import com.softwaremill.quicklens._
+import scodec.bits.ByteVector
 import scoin.Crypto.PrivateKey
 import scoin.{ByteVector32, Transaction}
 import scoin.ln._
+import scoin.ln.ShaChain
+import scoin.ln.OutgoingPaymentPacket
+import scoin.ln.transactions.Transactions.TxOwner
+import scoin.ln.transactions._
+
+import immortan.Channel._
+import immortan.crypto.Tools._
+import immortan.sqlite.ChannelTxFeesTable
+import immortan.utils.Rx
 import immortan.blockchain._
 import immortan.blockchain.electrum.ElectrumWallet.GenerateTxResponse
 import immortan.blockchain.fee.FeeratePerKw
 import immortan.channel.Helpers.Closing
 import immortan.channel._
-import scoin.ln.crypto.ShaChain
-import scoin.ln.payment.OutgoingPaymentPacket
-import scoin.ln.transactions.Transactions.TxOwner
-import scoin.ln.transactions._
-import scoin.ln._
-import immortan.Channel._
-import immortan.crypto.Tools._
-import immortan.sqlite.ChannelTxFeesTable
-import immortan.utils.Rx
-import scodec.bits.ByteVector
-
-import scala.collection.immutable.Queue
-import scala.concurrent.duration._
-import scala.annotation.nowarn
-import scala.util.Try
+import immortan._
 
 object ChannelNormal {
   def make(
@@ -259,7 +259,8 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
         )
 
         watchConfirmedSpent(commits, watchConfirmed = true, watchSpent = true)
-        // Persist a channel unconditionally, try to re-publish a funding tx on restart unconditionally (don't react to commit=false, we can't trust remote servers on this)
+        // Persist a channel unconditionally, try to re-publish a funding tx on restart unconditionally
+        //   (don't react to commit=false, we can't trust remote servers on this)
         StoreBecomeSend(
           DATA_WAIT_FOR_FUNDING_CONFIRMED(
             commits,
@@ -272,7 +273,6 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
         )
 
       // OPENING PHASE: FUNDEE FLOW
-
       case (null, init: INPUT_INIT_FUNDEE, Channel.Initial) =>
         val ChannelKeys(
           _,
@@ -283,8 +283,9 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
           delayedPaymentKey,
           htlcKey
         ) = init.localParams.keys
+
         val emptyUpfrontShutdown: TlvStream[AcceptChannelTlv] = TlvStream(
-          ChannelTlv UpfrontShutdownScript ByteVector.empty
+          ChannelTlv.UpfrontShutdownScript(ByteVector.empty)
         )
 
         val accept = AcceptChannel(

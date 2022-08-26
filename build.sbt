@@ -18,6 +18,11 @@ lazy val immortan = crossProject(JVMPlatform, JSPlatform)
     name := "immortan",
     description := "A lightweight client-side Lightning and Hosted Channels implementation.",
     libraryDependencies ++= Seq(
+      // electrum client
+      "org.json4s" % "json4s-native_2.13" % "3.6.7",
+      "io.netty" % "netty-all" % "4.1.42.Final",
+      "com.lihaoyi" % "castor_2.13" % "0.2.1",
+
       // must be replaced
       "com.google.guava" % "guava" % "31.1-jre",
       "io.reactivex" % "rxscala_2.13" % "0.27.0",
@@ -32,11 +37,6 @@ lazy val immortan = crossProject(JVMPlatform, JSPlatform)
   .jvmSettings(
     scalaVersion := "2.13.8",
     libraryDependencies ++= Seq(
-      // electrum client
-      "org.json4s" % "json4s-native_2.13" % "3.6.7",
-      "io.netty" % "netty-all" % "4.1.42.Final",
-      "com.lihaoyi" % "castor_2.13" % "0.2.1",
-
       // test
       "com.lihaoyi" % "utest_2.13" % "0.7.11" % Test,
       "com.lihaoyi" % "requests_2.13" % "0.7.0" % Test,

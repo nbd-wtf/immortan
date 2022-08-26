@@ -2,24 +2,26 @@ package immortan
 
 import java.nio.ByteOrder
 import java.util.concurrent.Executors
-
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
+import scodec.bits.ByteVector
 import scoin.Protocol
 import scoin.ln.{LightningMessage, LightningMessageCodecs}
-import immortan.TransportHandler._
+import scoin.hc.HostedChannelCodecs
+
+import immortan._
 import immortan.crypto.Noise._
 import immortan.crypto.StateMachine
-import scodec.bits.ByteVector
-
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
+import immortan.TransportHandler.TransportHandler.CyphertextData
+import immortan.TransportHandler._
 
 // Used to decrypt remote messages -> send to channel as well as encrypt outgoing messages -> send to socket
 abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
-    extends StateMachine[Data, TransportHandler.State] { me =>
+    extends StateMachine[Data, TransportHandler.State] {
   implicit val context: ExecutionContextExecutor =
     ExecutionContext fromExecutor Executors.newSingleThreadExecutor
   def initialState = TransportHandler.Initial
 
-  def process(change: Any): Unit = Future(me doProcess change)
+  def process(change: Any): Unit = Future(doProcess(change))
 
   def handleDecryptedIncomingData(data: ByteVector): Unit
   def handleEncryptedOutgoingData(data: ByteVector): Unit
@@ -43,7 +45,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
           bv: ByteVector,
           TransportHandler.Handshake
         ) =>
-      me UPDATE HandshakeData(reader1, buffer ++ bv)
+      UPDATE(HandshakeData(reader1, buffer ++ bv))
       doProcess(Ping)
 
     case (HandshakeData(reader1, buffer), Ping, TransportHandler.Handshake)
@@ -55,7 +57,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
       val (payload, remainder) =
         buffer.tail.splitAt(expectedLength(reader1) - 1)
 
-      reader1 read payload match {
+      reader1.read(payload) match {
         case (_, (decoder, encoder, ck), _) =>
           val encoder1 = ExtendedCipherState(encoder, ck)
           val decoder1 = ExtendedCipherState(decoder, ck)
@@ -65,7 +67,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
           doProcess(Ping)
 
         case (writer, _, _) =>
-          writer write ByteVector.empty match {
+          writer.write(ByteVector.empty) match {
             case (_, (encoder, decoder, ck), message) =>
               val encoder1 = ExtendedCipherState(encoder, ck)
               val decoder1 = ExtendedCipherState(decoder, ck)
@@ -88,24 +90,10 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
     // Normal operation phase: messages can be sent and received here
     case (
           cd: CyphertextData,
-          msg: LightningMessage,
-          TransportHandler.WaitingCyphertext
-        ) =>
-      val encoded =
-        LightningMessageCodecs.lightningMessageCodecWithFallback.encode(
-          LightningMessageCodecs prepare msg
-        )
-      val (encoder1, ciphertext) =
-        encryptMsg(cd.enc, encoded.require.toByteVector)
-      handleEncryptedOutgoingData(ciphertext)
-      me UPDATE cd.copy(enc = encoder1)
-
-    case (
-          cd: CyphertextData,
           bv: ByteVector,
           TransportHandler.WaitingCyphertext
         ) =>
-      me UPDATE cd.copy(buffer = cd.buffer ++ bv)
+      UPDATE(cd.copy(buffer = cd.buffer ++ bv))
       doProcess(Ping)
 
     case (
@@ -118,7 +106,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
         decoder.decryptWithAd(ByteVector.empty, ciphertext)
       val length =
         Some apply Protocol.uint16(plaintext.toArray, ByteOrder.BIG_ENDIAN)
-      me UPDATE CyphertextData(encoder, decoder1, length, remainder)
+      UPDATE(CyphertextData(encoder, decoder1, length, remainder))
       doProcess(Ping)
 
     case (
@@ -129,12 +117,31 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
       val (ciphertext, remainder) = buffer.splitAt(length + 16)
       val (decoder1, plaintext) =
         decoder.decryptWithAd(ByteVector.empty, ciphertext)
-      me UPDATE CyphertextData(encoder, decoder1, length = None, remainder)
+      UPDATE(CyphertextData(encoder, decoder1, length = None, remainder))
       handleDecryptedIncomingData(plaintext)
       doProcess(Ping)
 
     case _ =>
   }
+
+  def sendMessage(msg: LightningMessage, channelKind: ChannelKind): Unit =
+    if (
+      data.isInstanceOf[CyphertextData] && state
+        .isInstanceOf[TransportHandler.WaitingCyphertext]
+    ) {
+      val cd = data.asInstanceOf[CyphertextData]
+      val encoded = channelKind match {
+        case NormalChannelKind | IrrelevantChannelKind => 
+          LightningMessageCodecs.lightningMessageCodec.encode(msg)
+        case _ if msg.isInstanceOf[Init] || msg.isInstanceOf[Pong] =>
+          LightningMessageCodecs.lightningMessageCodec.encode(msg)
+        case HostedChannelKind => 
+          HostedChannelCodecs.hostedMessageCodec.encode(msg)
+      val (encoder1, ciphertext) =
+        encryptMsg(cd.enc, encoded.require.toByteVector)
+      handleEncryptedOutgoingData(ciphertext)
+      UPDATE(cd.copy(enc = encoder1))
+    }
 }
 
 object TransportHandler {
@@ -191,7 +198,7 @@ object TransportHandler {
 
 // A key is to be rotated after a party sends of decrypts 1000 messages with it
 case class ExtendedCipherState(cs: CipherState, ck: ByteVector)
-    extends CipherState { me =>
+    extends CipherState {
   def encryptWithAd(
       ad: ByteVector,
       plaintext: ByteVector
@@ -207,7 +214,7 @@ case class ExtendedCipherState(cs: CipherState, ck: ByteVector)
         copy(cs = cs1) -> ciphertext
 
       case _: UnitializedCipherState =>
-        me -> plaintext
+        this -> plaintext
     }
 
   def decryptWithAd(
@@ -225,7 +232,7 @@ case class ExtendedCipherState(cs: CipherState, ck: ByteVector)
         copy(cs = cs1) -> plaintext
 
       case _: UnitializedCipherState =>
-        me -> ciphertext
+        this -> ciphertext
     }
 
   def cipher: CipherFunctions = cs.cipher

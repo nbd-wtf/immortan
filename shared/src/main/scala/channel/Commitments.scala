@@ -1,21 +1,19 @@
 package immortan.channel
 
+import scala.collection.LazyZip3._
 import com.softwaremill.quicklens._
 import scoin.Crypto.PublicKey
 import scoin._
 import scoin.ln._
-import immortan.blockchain.fee.FeeratePerKw
-import immortan.channel.Helpers.HashToPreimage
-import scoin.ln.crypto.{Generators, ShaChain}
+import scoin.ln.{Generators, ShaChain}
+import scoin.ln.transactions._
 import scoin.ln.transactions.DirectedHtlc._
 import scoin.ln.transactions.Transactions._
-import scoin.ln.transactions._
-import scoin.ln._
 import immortan.crypto.Tools.{newFeerate, none}
 import immortan.utils.Rx
 import immortan.{LNParams, RemoteNodeInfo, UpdateAddHtlcExt}
-
-import scala.collection.LazyZip3._
+import immortan.blockchain.fee.FeeratePerKw
+import immortan.channel.Helpers.HashToPreimage
 
 case class LocalChanges(
     proposed: List[UpdateMessage],
@@ -126,7 +124,7 @@ case class NormalCommits(
     remoteParams.htlcMinimum.max(localParams.htlcMinimum)
 
   lazy val maxSendInFlight: MilliSatoshi =
-    remoteParams.maxHtlcValueInFlightMsat.toMilliSatoshi
+    MilliSatoshi(remoteParams.maxHtlcValueInFlightMsat.toLong)
 
   lazy val latestReducedRemoteSpec: CommitmentSpec = {
     val latestRemoteCommit = remoteNextCommitInfo.left.toOption
@@ -161,7 +159,7 @@ case class NormalCommits(
       channelFeatures.commitmentFormat
     )
     val oneMoreHtlc = htlcOutputFee(
-      latestReducedRemoteSpec.feeratePerKw,
+      latestReducedRemoteSpec.commitTxFeerate,
       channelFeatures.commitmentFormat
     )
     latestReducedRemoteSpec.toRemote - remoteParams.channelReserve - commitFees - oneMoreHtlc
@@ -181,7 +179,7 @@ case class NormalCommits(
         channelFeatures.commitmentFormat
       )
       val manyMoreHtlc = htlcOutputFee(
-        reduced.feeratePerKw,
+        reduced.commitTxFeerate,
         channelFeatures.commitmentFormat
       ) * localParams.maxAcceptedHtlcs
       reduced.toRemote - localParams.channelReserve - commitFees - manyMoreHtlc
@@ -239,39 +237,39 @@ case class NormalCommits(
 
     val completeAdd =
       cmd.incompleteAdd.copy(channelId = channelId, id = localNextHtlcId)
-    val commitments1 =
+    val commitments =
       addLocalProposal(completeAdd).copy(localNextHtlcId = localNextHtlcId + 1)
     val totalOutgoingHtlcs =
-      commitments1.latestReducedRemoteSpec.htlcs.collect(incoming).size
+      commitments.latestReducedRemoteSpec.htlcs.collect(incoming).size
 
     val feeBuffer = htlcOutputFee(
-      commitments1.latestReducedRemoteSpec.feeratePerKw,
+      commitments.latestReducedRemoteSpec.commitTxFeerate,
       channelFeatures.commitmentFormat
     )
-    val feerate = commitments1.latestReducedRemoteSpec.copy(feeratePerKw =
-      commitments1.latestReducedRemoteSpec.feeratePerKw
+    val feerate = commitments.latestReducedRemoteSpec.copy(commitTxFeerate =
+      commitments.latestReducedRemoteSpec.commitTxFeerate
     )
     val funderFeeBuffer = commitTxFeeMsat(
-      commitments1.remoteParams.dustLimit,
+      commitments.remoteParams.dustLimit,
       feerate,
       channelFeatures.commitmentFormat
     ) + feeBuffer
 
     val receiverWithReserve =
-      commitments1.latestReducedRemoteSpec.toLocal - commitments1.localParams.channelReserve
+      commitments.latestReducedRemoteSpec.toLocal - commitments.localParams.channelReserve
     val senderWithReserve =
-      commitments1.latestReducedRemoteSpec.toRemote - commitments1.remoteParams.channelReserve
+      commitments.latestReducedRemoteSpec.toRemote - commitments.remoteParams.channelReserve
     val fees = commitTxFee(
-      commitments1.remoteParams.dustLimit,
-      commitments1.latestReducedRemoteSpec,
+      commitments.remoteParams.dustLimit,
+      commitments.latestReducedRemoteSpec,
       channelFeatures.commitmentFormat
     )
 
     val missingForReceiver =
-      if (commitments1.localParams.isFunder) receiverWithReserve
+      if (commitments.localParams.isFunder) receiverWithReserve
       else receiverWithReserve - fees
     val missingForSender =
-      if (commitments1.localParams.isFunder)
+      if (commitments.localParams.isFunder)
         senderWithReserve - fees.max(funderFeeBuffer.truncateToSatoshi)
       else senderWithReserve
 
@@ -280,23 +278,23 @@ case class NormalCommits(
     if (missingForReceiver < 0L.sat && !localParams.isFunder)
       return Left(ChannelNotAbleToSend(cmd.incompleteAdd))
     if (
-      commitments1.allOutgoing.foldLeft(0L.msat)(
+      commitments.allOutgoing.foldLeft(0L.msat)(
         _ + _.amountMsat
       ) > maxSendInFlight
     ) return Left(ChannelNotAbleToSend(cmd.incompleteAdd))
-    if (totalOutgoingHtlcs > commitments1.remoteParams.maxAcceptedHtlcs)
+    if (totalOutgoingHtlcs > commitments.remoteParams.maxAcceptedHtlcs)
       return Left(
         ChannelNotAbleToSend(
           cmd.incompleteAdd
         )
       ) // This is from spec and prevents remote force-close
-    if (totalOutgoingHtlcs > commitments1.localParams.maxAcceptedHtlcs)
+    if (totalOutgoingHtlcs > commitments.localParams.maxAcceptedHtlcs)
       return Left(
         ChannelNotAbleToSend(
           cmd.incompleteAdd
         )
       ) // This is needed for peer backup and routing to safely work
-    Right(commitments1, completeAdd)
+    Right(commitments, completeAdd)
   }
 
   def sendFulfill(cmd: CMD_FULFILL_HTLC): (NormalCommits, UpdateFulfillHtlc) = {

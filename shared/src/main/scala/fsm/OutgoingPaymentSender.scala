@@ -6,25 +6,24 @@ import scala.util.{Success, Failure}
 import scodec.bits.ByteVector
 import scoin.ByteVector32
 import scoin.Crypto.PrivateKey
+import scoin._
 import scoin.ln._
-import scoin.ln._
-import immortan.router.{Announcements, ChannelUpdateExt}
-import scoin.ln.crypto.Sphinx
-import scoin.ln.crypto.Sphinx.PacketAndSecrets
+import scoin.ln.Sphinx
+import scoin.ln.Sphinx.PacketAndSecrets
+import scoin.ln.OutgoingPaymentPacket
+
 import immortan.router.Router._
 import immortan.channel.{
   CMD_ADD_HTLC,
   ChannelOffline,
   InPrincipleNotSendable,
-  LocalReject
-}
-import scoin.ln.payment.OutgoingPaymentPacket
-import scoin.ln.transactions.{
+  LocalReject,
   RemoteFulfill,
   RemoteReject,
   RemoteUpdateFail,
   RemoteUpdateMalform
 }
+import immortan.router.{Announcements, ChannelUpdateExt}
 import immortan.{LNParams, InFlightPayments, Channel, ChanAndCommits}
 import immortan.PaymentStatus._
 import immortan.fsm.PaymentFailure._

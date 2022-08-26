@@ -1,21 +1,18 @@
 package immortan
 
 import java.util.concurrent.Executors
-
-import scoin.ByteVector32
-import scoin.ln.MilliSatoshi
-import immortan.blockchain.CurrentBlockCount
-import immortan.blockchain.electrum.EventStream
-import immortan.channel._
-import scoin.ln.transactions.{RemoteFulfill, RemoteReject}
-import scoin.ln.LightningMessage
-import immortan.Channel.channelContext
-import immortan.crypto.Tools._
-import immortan.crypto.{CanBeRepliedTo, StateMachine}
-
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContextExecutor, Future}
 import scala.util.Failure
+import scoin._
+import scoin.ln.LightningMessage
+
+import immortan.blockchain.CurrentBlockCount
+import immortan.blockchain.electrum.EventStream
+import immortan.channel._
+import immortan.Channel.channelContext
+import immortan.crypto.Tools._
+import immortan.crypto.{CanBeRepliedTo, StateMachine}
 
 object Channel {
   sealed trait State
@@ -27,7 +24,8 @@ object Channel {
   case object Closing extends State
   case object Open extends State
 
-  // Single stacking thread for all channels, must be used when asking channels for pending payments to avoid race conditions
+  // Single stacking thread for all channels,
+  //   must be used when asking channels for pending payments to avoid race conditions
   implicit val channelContext: ExecutionContextExecutor =
     scala.concurrent.ExecutionContext fromExecutor Executors.newSingleThreadExecutor
 

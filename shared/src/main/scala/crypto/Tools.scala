@@ -6,26 +6,25 @@ import java.util.concurrent.TimeUnit
 import scala.collection.mutable
 import scala.concurrent.duration._
 import scala.language.implicitConversions
-
+import scodec.bits.ByteVector
+import rx.lang.scala.Observable
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
-import scoin.Crypto.{PrivateKey, PublicKey}
+import scoin.Crypto.{PrivateKey, PublicKey, ChaCha20Poly1305}
 import scoin.Psbt.KeyPathWithMaster
 import scoin._
 import scoin.ln._
+import scoin.ln.Bolt11Invoice.ExtraHop
+import scoin.ln.transactions.CommitmentSpec
+
 import immortan.blockchain.electrum.ElectrumWallet.GenerateTxResponse
 import immortan.blockchain.fee.FeeratePerKw
-import scoin.ln.crypto.ChaCha20Poly1305
-import scoin.ln.payment.Bolt11Invoice.ExtraHop
 import immortan.router.Graph.GraphStructure.GraphEdge
 import immortan.router.RouteCalculation
 import immortan.router.Router.ChannelDesc
-import scoin.ln.transactions.CommitmentSpec
 import immortan.crypto.Noise.KeyPair
-import immortan.crypto.Tools.runAnd
 import immortan.utils.{FeeRatesInfo, ThrottledWork}
 import immortan.Channel
-import rx.lang.scala.Observable
-import scodec.bits.ByteVector
+import immortan._
 
 object Tools {
   type Fiat2Btc = Map[String, Double]
@@ -35,8 +34,6 @@ object Tools {
   def trimmed(inputText: String): String = inputText.trim.take(144)
 
   def none: PartialFunction[Any, Unit] = { case _ => }
-
-  def runAnd[T](result: T)(action: Any): T = result
 
   implicit class IterableOfTuple2[T, V](underlying: Iterable[(T, V)] = Nil) {
     def secondItems: Iterable[V] = underlying.map { case (_, secondItem) =>
@@ -110,10 +107,16 @@ object Tools {
     // Parameters do not matter except that it must point to real peer
 
     val zeroCltvDelta = CltvExpiryDelta(0)
-    val randomShortChannelId = secureRandom.nextLong
-    val fakeDesc = ChannelDesc(randomShortChannelId, from, to = toPeer)
+    val randomScid = Crypto.randomBytes(8).toLong(signed = false)
+    val fakeDesc = ChannelDesc(randomScid, from, to = toPeer)
     val fakeHop =
-      ExtraHop(from, randomShortChannelId, MilliSatoshi(0L), 0L, zeroCltvDelta)
+      ExtraHop(
+        from,
+        ShortChannelId(randomScid),
+        MilliSatoshi(0L),
+        0L,
+        zeroCltvDelta
+      )
     GraphEdge(updExt = RouteCalculation.toFakeUpdate(fakeHop), desc = fakeDesc)
   }
 
@@ -127,7 +130,10 @@ object Tools {
       info1.onChainFeeConf.feeTargets.commitmentBlockTarget
     )
     if (
-      spec.feeratePerKw.max(newFeerate).toLong.toDouble / spec.feeratePerKw
+      spec.commitTxFeerate
+        .max(newFeerate)
+        .toLong
+        .toDouble / spec.commitTxFeerate
         .min(newFeerate)
         .toLong > threshold
     ) Some(newFeerate)
@@ -255,8 +261,10 @@ abstract class StateMachine[T, S] {
 
       def process(cmd: String, tickUpdateInterval: Long): Unit = {
         secondsLeft = TOTAL_INTERVAL_SECONDS - (tickUpdateInterval + 1)
-        if (secondsLeft <= 0L)
-          runAnd(unsubscribeCurrentWork())(doProcess(cmd))
+        if (secondsLeft <= 0L) {
+          doProcess(cmd)
+          unsubscribeCurrentWork()
+        }
       }
     }
 }

@@ -2,28 +2,32 @@ package immortan
 
 import java.net.Socket
 import java.util.concurrent.{ConcurrentHashMap, Executors}
-
-import scoin.ByteVector32
-import scoin.Crypto.PublicKey
-import scoin.ln._
-import scoin.ln.LightningMessageCodecs.lightningMessageCodecWithFallback
-import scoin.ln._
-import immortan.crypto.Noise.KeyPair
-import immortan.crypto.Tools.none
-import rx.lang.scala.{Observable, Subscription}
-import scodec.bits.ByteVector
-
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable
 import scala.concurrent._
 import scala.concurrent.duration._
+import rx.lang.scala.{Observable, Subscription}
+import scodec.bits.ByteVector
+import scodec.Attempt
+import scoin.hc.HostedChannelMessage
+import scoin._
+import scoin.Crypto.PublicKey
+import scoin.ln._
+import scoin.ln.LightningMessageCodecs.lightningMessageCodec
+import scoin.hc.HostedChannelCodecs.hostedMessageCodec
+
+import immortan._
+import immortan.crypto.Noise.KeyPair
+import immortan.crypto.Tools.none
 
 case class KeyPairAndPubKey(keyPair: KeyPair, them: PublicKey)
 
 object CommsTower {
   type Listeners = Set[ConnectionListener]
+
   val workers: mutable.Map[KeyPairAndPubKey, Worker] =
     new ConcurrentHashMap[KeyPairAndPubKey, Worker].asScala
+
   val listeners: mutable.Map[KeyPairAndPubKey, Listeners] =
     new ConcurrentHashMap[
       KeyPairAndPubKey,
@@ -58,13 +62,15 @@ object CommsTower {
 
   def sendMany(
       messages: Iterable[LightningMessage],
-      pair: KeyPairAndPubKey
+      pair: KeyPairAndPubKey,
+      channelKind: ChannelKind
   ): Unit =
     CommsTower.workers
       .get(pair)
       .foreach(worker => messages.foreach(worker.handler.process(_)))
 
-  // Add or remove listeners to a connection where our nodeId is stable, not a randomly generated one (one which makes us seen as a constant peer by remote)
+  // Add or remove listeners to a connection where our nodeId is stable,
+  //   not a randomly generated one (one which makes us seen as a constant peer by remote)
   def listenNative(
       newListeners: Set[ConnectionListener],
       remoteInfo: RemoteNodeInfo
@@ -88,7 +94,7 @@ object CommsTower {
       val info: RemoteNodeInfo,
       buffer: Array[Byte],
       val sock: Socket
-  ) { me =>
+  ) { self =>
     implicit val context: ExecutionContextExecutor =
       ExecutionContext fromExecutor Executors.newSingleThreadExecutor
 
@@ -109,29 +115,35 @@ object CommsTower {
           val ourListeners: Listeners = listeners(pair)
           lastMessage = System.currentTimeMillis
 
-          // UnknownMessage is typically a wrapper for non-standard message
-          // BUT it may wrap standard messages, too, so call `onMessage` on those
-          lightningMessageCodecWithFallback
-            .decode(data.bits)
-            .require
-            .value match {
-            case message: Init =>
-              handleTheirRemoteInitMessage(ourListeners, remoteInit = message)
-            case message: Ping =>
-              handler process Pong(
-                ByteVector fromValidHex "00" * message.pongLength
-              )
-
-            case message: UnknownMessage =>
-              LightningMessageCodecs.decode(message) match {
-                case msg: HostedChannelMessage =>
-                  for (lst <- ourListeners) lst.onHostedMessage(me, msg)
-                case msg => for (lst <- ourListeners) lst.onMessage(me, msg)
+          lightningMessageCodec.decode(data.bits) match {
+            case Attempt.Successful(result) =>
+              // this means this is a normal channel message since it is not using nonstandard types
+              result.value match {
+                case message: Init =>
+                  handleTheirRemoteInitMessage(
+                    ourListeners,
+                    remoteInit = message
+                  )
+                case message: Ping =>
+                  handler.process(
+                    Pong(ByteVector.fromValidHex("00" * message.pongLength))
+                  )
+                case message =>
+                  ourListeners.foreach(_.onMessage(self, message))
               }
+            case Attempt.Failure(_) =>
+              // in this case this is probably a hosted channel message
+              hostedMessageCodec.decode(data.bits) match {
+                case Attempt.Successful(result) =>
+                  result.value match {
+                    case message: HostedChannelMessage =>
+                      ourListeners.foreach(_.onHostedMessage(self, message))
+                    case message: LightningMessage =>
+                      ourListeners.foreach(_.onMessage(self, message))
+                  }
 
-            case message =>
-              // This is always a base protocol message
-              for (lst <- ourListeners) lst.onMessage(me, message)
+                case Attempt.Failure(_) => // ignore, bad message
+              }
           }
         }
 
@@ -144,7 +156,7 @@ object CommsTower {
           }
 
           // Send our node parameters
-          handler process LNParams.ourInit
+          handler.process(LNParams.ourInit)
         }
       }
 
@@ -155,15 +167,15 @@ object CommsTower {
       while (true) {
         val length = sock.getInputStream.read(buffer, 0, buffer.length)
         if (length < 0) throw new RuntimeException("Connection droppped")
-        else handler process ByteVector.view(buffer take length)
+        else handler.process(ByteVector.view(buffer.take(length)))
       }
     }
 
-    thread onComplete { _ =>
+    thread.onComplete { _ =>
       // Will also run after forget
       try pinging.unsubscribe()
       catch none
-      listeners(pair).foreach(_ onDisconnect me)
+      listeners(pair).foreach(_.onDisconnect(self))
       // Once disconnected, worker gets removed
       workers -= pair
     }
@@ -184,26 +196,28 @@ object CommsTower {
         val areFeaturesOK =
           Features.areCompatible(LNParams.ourInit.features, remoteInit.features)
         if (areFeaturesOK)
-          for (lst <- toListeners) lst.onOperational(me, remoteInit)
+          for (lst <- toListeners) lst.onOperational(self, remoteInit)
         else disconnect()
       }
     }
 
     def sendPing(): Unit = {
-      val payloadLength = secureRandom.nextInt(5) + 1
-      val data = randomBytes(length = payloadLength)
-      handler process Ping(payloadLength, data)
+      val payloadLength = (Crypto.randomBytes(1).toInt(signed = true) % 5) + 1
+      val data = Crypto.randomBytes(length = payloadLength)
+      handler.process(Ping(payloadLength, data))
     }
 
     def requestRemoteForceClose(channelId: ByteVector32): Unit = {
-      handler process ChannelReestablish(
-        channelId,
-        0L,
-        0L,
-        randomKey,
-        randomKey.publicKey
+      handler.process(
+        ChannelReestablish(
+          channelId,
+          0L,
+          0L,
+          randomKey,
+          randomKey.publicKey
+        )
       )
-      handler process Fail(channelId, "please publish your local commitment")
+      handler.process(Fail(channelId, "please publish your local commitment"))
     }
   }
 }

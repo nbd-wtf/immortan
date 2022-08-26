@@ -1,12 +1,19 @@
 package immortan
 
 import java.util.concurrent.atomic.AtomicLong
-
+import scala.concurrent.duration._
+import scala.concurrent.{Await, ExecutionContext}
+import scala.util.Try
 import com.softwaremill.quicklens._
+import scodec.bits.{ByteVector, HexStringSyntax}
 import scoin.Crypto.{PrivateKey, PublicKey}
 import scoin._
 import scoin.ln.Features._
 import scoin.ln._
+import scoin.ln.transactions.{DirectedHtlc, RemoteFulfill}
+import scoin.hc._
+import castor.Context.Simple.global
+
 import immortan.blockchain.electrum._
 import immortan.blockchain.electrum.db.{
   CompleteChainWalletInfo,
@@ -16,20 +23,13 @@ import immortan.blockchain.electrum.db.{
 import immortan.channel.{ChannelKeys, LocalParams, PersistentChannelData}
 import immortan.router.ChannelUpdateExt
 import immortan.router.Router.{PublicChannel, RouterConf}
-import scoin.ln.transactions.{DirectedHtlc, RemoteFulfill}
-import scoin.ln._
 import immortan.SyncMaster.ShortChanIdSet
 import immortan.crypto.CanBeShutDown
 import immortan.crypto.Noise.KeyPair
 import immortan.crypto.Tools._
+import immortan.trampoline._
 import immortan.sqlite._
 import immortan.utils._
-import scodec.bits.{ByteVector, HexStringSyntax}
-import castor.Context.Simple.global
-
-import scala.concurrent.duration._
-import scala.concurrent.{Await, ExecutionContext}
-import scala.util.Try
 
 object LNParams {
   val blocksPerDay: Int =
@@ -109,7 +109,7 @@ object LNParams {
 
   var trampoline: TrampolineOn = TrampolineOn(
     minPayment,
-    Long.MaxValue.msat,
+    MilliSatoshi(Long.MaxValue),
     feeProportionalMillionths = 1000L,
     exponent = 0.0,
     logExponent = 0.0,
@@ -126,6 +126,14 @@ object LNParams {
   def createInit: Init = {
     val networks: InitTlv = InitTlv.Networks(chainHash :: Nil)
     val tlvStream: TlvStream[InitTlv] = TlvStream(networks)
+
+    case object PrivateRouting
+        extends Feature
+        with NodeFeature
+        with InitFeature {
+      val rfcName = "Private routing"
+      val mandatory = 33174
+    }
 
     Init(
       Features(

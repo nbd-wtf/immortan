@@ -1,15 +1,13 @@
 package immortan.fsm
 
 import java.util.concurrent.Executors
-
+import scala.concurrent.duration._
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import scoin.{ByteVector32, Crypto}
+import scoin.ln.{HostedChannelMessage, Init, QueryPreimages, ReplyPreimages}
+import scoin.hc._
+
 import immortan.channel.Helpers.HashToPreimage
-import scoin.ln.{
-  HostedChannelMessage,
-  Init,
-  QueryPreimages,
-  ReplyPreimages
-}
 import immortan.crypto.StateMachine
 import immortan.crypto.Tools.randomKeyPair
 import immortan.utils.Rx
@@ -19,9 +17,6 @@ import immortan.{
   KeyPairAndPubKey,
   RemoteNodeInfo
 }
-
-import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 
 object PreimageCheck {
   sealed trait State
@@ -47,7 +42,6 @@ object PreimageCheck {
 
 abstract class PreimageCheck
     extends StateMachine[PreimageCheck.CheckData, PreimageCheck.State] {
-  me =>
   implicit val context: ExecutionContextExecutor =
     ExecutionContext fromExecutor Executors.newSingleThreadExecutor
 
@@ -57,13 +51,13 @@ abstract class PreimageCheck
     info -> KeyPairAndPubKey(randomKeyPair, info.nodeId)
 
   def process(changeMessage: Any): Unit =
-    scala.concurrent.Future(me doProcess changeMessage)
+    scala.concurrent.Future(doProcess(changeMessage))
 
   def onComplete(preimages: HashToPreimage): Unit
 
   private lazy val listener = new ConnectionListener {
     override def onDisconnect(worker: CommsTower.Worker): Unit =
-      me process PreimageCheck.PeerDisconnected(worker)
+      process(PreimageCheck.PeerDisconnected(worker))
     override def onOperational(
         worker: CommsTower.Worker,
         theirInit: Init
@@ -71,13 +65,13 @@ abstract class PreimageCheck
     override def onHostedMessage(
         worker: CommsTower.Worker,
         msg: HostedChannelMessage
-    ): Unit = me process PreimageCheck.PeerResponse(msg, worker)
+    ): Unit = process(PreimageCheck.PeerResponse(msg, worker))
   }
 
   def doProcess(change: Any): Unit = (change, state) match {
     case (msg: PreimageCheck.PeerDisconnected, PreimageCheck.Operational) =>
       // Keep trying to reconnect with delays until final timeout
-      Rx.ioQueue.delay(3.seconds).foreach(_ => me process msg.worker)
+      Rx.ioQueue.delay(3.seconds).foreach(_ => process(msg.worker))
       CommsTower forget msg.worker.pair
 
     case (worker: CommsTower.Worker, PreimageCheck.Operational) =>
@@ -111,7 +105,7 @@ abstract class PreimageCheck
       )
       for ((info, pair) <- data.pairs)
         CommsTower.listen(Set(listener), pair, info)
-      Rx.ioQueue.delay(30.seconds).foreach(_ => me doCheck true)
+      Rx.ioQueue.delay(30.seconds).foreach(_ => doCheck(true))
 
     case _ =>
   }
@@ -125,15 +119,15 @@ abstract class PreimageCheck
 
     if (collected.size == data.hashes.size) {
       // We have collected all of our preimages
-      me doProcess PreimageCheck.CMDCancel
+      doProcess(PreimageCheck.CMDCancel)
       onComplete(collected)
     } else if (data.pending.isEmpty) {
       // Finish with whatever we have collected
-      me doProcess PreimageCheck.CMDCancel
+      doProcess(PreimageCheck.CMDCancel)
       onComplete(collected)
     } else if (force) {
       // Finish with whatever we have collected
-      me doProcess PreimageCheck.CMDCancel
+      doProcess(PreimageCheck.CMDCancel)
       onComplete(collected)
     }
   }
