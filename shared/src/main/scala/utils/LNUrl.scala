@@ -1,25 +1,26 @@
 package immortan.utils
 
-import scala.util.chaining._
 import scala.util.Try
+import scala.util.chaining._
 import com.google.common.base.CharMatcher
-import scoin.Crypto.PublicKey
-import scoin.{Bech32, ByteVector32, ByteVector64, Crypto}
-import scoin.ln._
-import scoin.ln.NodeAddress
-import immortan.crypto.Tools
-import immortan.utils.ImplicitJsonFormats._
-import immortan.utils.uri.Uri
-import immortan.{LNParams, PaymentAction, RemoteNodeInfo}
 import com.softwaremill.quicklens._
 import rx.lang.scala.Observable
 import scodec.bits.ByteVector
 import spray.json._
+import scoin._
+import scoin.Crypto.PublicKey
+import scoin.ln._
+import scoin.ln.NodeAddress
+
+import immortan.{LNParams, PaymentAction, RemoteNodeInfo}
+import immortan.crypto.Tools
+import immortan.utils.ImplicitJsonFormats._
+import immortan.utils.uri.Uri
 
 object LNUrl {
   def fromIdentifier(identifier: String): LNUrl = {
     val (user, domain) = identifier.splitAt(identifier indexOf '@')
-    val isOnionDomain: Boolean = domain.endsWith(NodeAddress.onionSuffix)
+    val isOnionDomain: Boolean = domain.endsWith(".onion")
     if (isOnionDomain) LNUrl(s"http://$domain/.well-known/lnurlp/$user")
     else LNUrl(s"https://$domain/.well-known/lnurlp/$user")
   }
@@ -32,12 +33,9 @@ object LNUrl {
 
   def checkHost(host: String): Uri = Uri.parse(host) match {
     case uri =>
-      val isOnion = host.startsWith("http://") && uri.getHost.endsWith(
-        NodeAddress.onionSuffix
-      )
-      val isSSLPlain = host.startsWith("https://") && !uri.getHost.endsWith(
-        NodeAddress.onionSuffix
-      )
+      val isOnion = host.startsWith("http://") && uri.getHost.endsWith(".onion")
+      val isSSLPlain =
+        host.startsWith("https://") && !uri.getHost.endsWith(".onion")
       require(
         isSSLPlain || isOnion,
         "URI is neither Plain/HTTPS nor Onion/HTTP request"
@@ -144,7 +142,7 @@ case class NormalChannelRequest(uri: String, callback: String, k1: String)
   val InputParser.nodeLink(nodeKey, hostAddress, portNumber) = uri
   val pubKey: PublicKey = PublicKey.fromBin(ByteVector fromValidHex nodeKey)
   val address: NodeAddress =
-    NodeAddress.fromParts(hostAddress, portNumber.toInt)
+    NodeAddress.fromParts(hostAddress, portNumber.toInt).get
   val remoteInfo: RemoteNodeInfo = RemoteNodeInfo(pubKey, address, hostAddress)
 }
 
@@ -156,7 +154,7 @@ case class HostedChannelRequest(uri: String, alias: Option[String], k1: String)
   val InputParser.nodeLink(nodeKey, hostAddress, portNumber) = uri
   val pubKey: PublicKey = PublicKey(ByteVector fromValidHex nodeKey)
   val address: NodeAddress =
-    NodeAddress.fromParts(hostAddress, portNumber.toInt)
+    NodeAddress.fromParts(hostAddress, portNumber.toInt).get
   val remoteInfo: RemoteNodeInfo = RemoteNodeInfo(pubKey, address, hostAddress)
 }
 
@@ -179,7 +177,7 @@ case class WithdrawRequest(
     }
 
   val minCanReceive: MilliSatoshi = minWithdrawable
-    .map(_.msat)
+    .map(MilliSatoshi(_))
     .getOrElse(LNParams.minPayment)
     .max(LNParams.minPayment)
 
@@ -191,7 +189,7 @@ case class WithdrawRequest(
     Some(defaultDescription).map(Tools.trimmed).filter(_.nonEmpty)
 
   require(
-    minCanReceive <= maxWithdrawable.msat,
+    minCanReceive <= MilliSatoshi(maxWithdrawable),
     s"$maxWithdrawable is less than min $minCanReceive"
   )
 }
@@ -320,8 +318,8 @@ case class PayRequest(
           s"Metadata hash mismatch, expected=${expectedHash}, provided in invoice=$descriptionHashOpt"
         )
         require(
-          payRequestFinal.prExt.pr.amountOpt == Some(amount),
-          s"Payment amount mismatch, requested by wallet=$amount, provided in invoice=${payRequestFinal.prExt.pr.amountOpt}"
+          payRequestFinal.prExt.pr.amount_opt == Some(amount),
+          s"Payment amount mismatch, requested by wallet=$amount, provided in invoice=${payRequestFinal.prExt.pr.amount_opt}"
         )
         payRequestFinal
           .modify(_.successAction.each.domain)

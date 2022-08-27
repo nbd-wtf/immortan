@@ -8,8 +8,8 @@ import com.softwaremill.quicklens._
 import scodec.bits.{ByteVector, HexStringSyntax}
 import scoin.Crypto.{PrivateKey, PublicKey}
 import scoin._
-import scoin.ln.Features._
 import scoin.ln._
+import scoin.ln.Features._
 import scoin.ln.transactions.{DirectedHtlc, RemoteFulfill}
 import scoin.hc._
 import castor.Context.Simple.global
@@ -20,29 +20,41 @@ import immortan.blockchain.electrum.db.{
   SigningWallet,
   WatchingWallet
 }
-import immortan.channel.{ChannelKeys, LocalParams, PersistentChannelData}
+import immortan.channel._
 import immortan.router.ChannelUpdateExt
 import immortan.router.Router.{PublicChannel, RouterConf}
 import immortan.SyncMaster.ShortChanIdSet
 import immortan.crypto.CanBeShutDown
 import immortan.crypto.Noise.KeyPair
 import immortan.crypto.Tools._
-import immortan.trampoline._
+import immortan.router._
 import immortan.sqlite._
 import immortan.utils._
 
 object LNParams {
-  val blocksPerDay: Int =
-    144 // On average we can expect this many blocks per day
-  val ncFulfillSafetyBlocks: Int =
-    36 // Force-close and redeem revealed incoming payment on chain if NC peer stalls state update and this many blocks are left until expiration
-  val hcFulfillSafetyBlocks: Int =
-    72 // Offer to publish revealed incoming payment preimage on chain if HC peer stalls state update and this many blocks are left until expiration
+  // On average we can expect this many blocks per day
+  val blocksPerDay: Int = 144
+
+  // Force-close and redeem revealed incoming payment on chain if NC peer stalls state update and this many blocks are left until expiration
+  val ncFulfillSafetyBlocks: Int = 36
+
+  // Offer to publish revealed incoming payment preimage on chain if HC peer stalls state update and this many blocks are left until expiration
+  val hcFulfillSafetyBlocks: Int = 72
+
+  // Reject incoming payment right away if CLTV expiry is closer than this to current chain tip when HTLC arrives
   val cltvRejectThreshold: Int =
-    hcFulfillSafetyBlocks + 36 // Reject incoming payment right away if CLTV expiry is closer than this to current chain tip when HTLC arrives
+    hcFulfillSafetyBlocks + 36
+
+  // Ask payer to set final CLTV expiry to current chain tip + this many blocks
   val incomingFinalCltvExpiry: CltvExpiryDelta = CltvExpiryDelta(
     hcFulfillSafetyBlocks + 72
-  ) // Ask payer to set final CLTV expiry to current chain tip + this many blocks
+  )
+
+  // if provided invoice does not have an expiry then we assume it's this much seconds from timestamp
+  val defaultExpirySeconds = 3600
+
+  // Invoices issued by us always expire in two weeks
+  val ourInvoiceExpirySeconds = defaultExpirySeconds * 24 * 7 * 2
 
   val failedChanRecoveryMsec: Double =
     600000d // Failed-at-amount channels are fully recovered and their original capacity can be tried again after this much time
@@ -229,7 +241,7 @@ object LNParams {
   }
 
   def addressToPubKeyScript(address: String): ByteVector =
-    Script write addressToPublicKeyScript(address, chainHash)
+    Script.write(addressToPublicKeyScript(address, chainHash))
 
   def isMainnet: Boolean = chainHash == Block.LivenetGenesisBlock.hash
 }
@@ -324,77 +336,99 @@ case class WalletExt(
 class SyncParams {
   val satm: RemoteNodeInfo = RemoteNodeInfo(
     PublicKey(
-      hex"02cd1b7bc418fac2dc99f0ba350d60fa6c45fde5ab6017ee14df6425df485fb1dd"
+      ByteVector.fromValidHex(
+        "02cd1b7bc418fac2dc99f0ba350d60fa6c45fde5ab6017ee14df6425df485fb1dd"
+      )
     ),
     NodeAddress.unresolved(80, host = 134, 209, 228, 207),
     "SATM"
   )
   val motherbase: RemoteNodeInfo = RemoteNodeInfo(
     PublicKey(
-      hex"021e7ea08e31a576b4fd242761d701452a8ac98113eac3074c153db85d2dcc7d27"
+      ByteVector.fromValidHex(
+        "021e7ea08e31a576b4fd242761d701452a8ac98113eac3074c153db85d2dcc7d27"
+      )
     ),
     NodeAddress.unresolved(9001, host = 5, 9, 83, 143),
     "Motherbase"
   )
   val bCashIsTrash: RemoteNodeInfo = RemoteNodeInfo(
     PublicKey(
-      hex"0298f6074a454a1f5345cb2a7c6f9fce206cd0bf675d177cdbf0ca7508dd28852f"
+      ByteVector.fromValidHex(
+        "0298f6074a454a1f5345cb2a7c6f9fce206cd0bf675d177cdbf0ca7508dd28852f"
+      )
     ),
     NodeAddress.unresolved(9735, host = 73, 119, 255, 56),
     "bCashIsTrash"
   )
   val zeroFeeRouting: RemoteNodeInfo = RemoteNodeInfo(
     PublicKey(
-      hex"038fe1bd966b5cb0545963490c631eaa1924e2c4c0ea4e7dcb5d4582a1e7f2f1a5"
+      ByteVector.fromValidHex(
+        "038fe1bd966b5cb0545963490c631eaa1924e2c4c0ea4e7dcb5d4582a1e7f2f1a5"
+      )
     ),
     NodeAddress.unresolved(9735, host = 144, 76, 24, 71),
     "zero-fee-routing"
   )
   val ergveinNet: RemoteNodeInfo = RemoteNodeInfo(
     PublicKey(
-      hex"034a7b1ac1239ff2ac8438ce0a7ade1048514b77d4322f514e96918e6c13944861"
+      ByteVector.fromValidHex(
+        "034a7b1ac1239ff2ac8438ce0a7ade1048514b77d4322f514e96918e6c13944861"
+      )
     ),
     NodeAddress.unresolved(9735, host = 188, 244, 4, 78),
     "ergvein.net"
   )
   val conductor: RemoteNodeInfo = RemoteNodeInfo(
     PublicKey(
-      hex"03c436af41160a355fc1ed230a64f6a64bcbd2ae50f12171d1318f9782602be601"
+      ByteVector.fromValidHex(
+        "03c436af41160a355fc1ed230a64f6a64bcbd2ae50f12171d1318f9782602be601"
+      )
     ),
     NodeAddress.unresolved(9735, host = 18, 191, 89, 219),
     "Conductor"
   )
   val jiraiya: RemoteNodeInfo = RemoteNodeInfo(
     PublicKey(
-      hex"02c16cca44562b590dd279c942200bdccfd4f990c3a69fad620c10ef2f8228eaff"
+      ByteVector.fromValidHex(
+        "02c16cca44562b590dd279c942200bdccfd4f990c3a69fad620c10ef2f8228eaff"
+      )
     ),
     NodeAddress.unresolved(9735, host = 107, 189, 30, 195),
     "Jiraiya"
   )
   val zebedee: RemoteNodeInfo = RemoteNodeInfo(
     PublicKey(
-      hex"02d5562ef0eb09c29b9ebe2393134292aa0cfd8bd0b022eed02dc2dcafd6f7097d"
+      ByteVector.fromValidHex(
+        "02d5562ef0eb09c29b9ebe2393134292aa0cfd8bd0b022eed02dc2dcafd6f7097d"
+      )
     ),
     NodeAddress.unresolved(9735, host = 54, 175, 219, 75),
     "ZEBEDEE"
   )
   val silentBob: RemoteNodeInfo = RemoteNodeInfo(
     PublicKey(
-      hex"02e9046555a9665145b0dbd7f135744598418df7d61d3660659641886ef1274844"
+      ByteVector.fromValidHex(
+        "02e9046555a9665145b0dbd7f135744598418df7d61d3660659641886ef1274844"
+      )
     ),
     NodeAddress.unresolved(9735, host = 31, 16, 52, 37),
     "SilentBob"
   )
   val lightning: RemoteNodeInfo = RemoteNodeInfo(
     PublicKey(
-      hex"03baa70886d9200af0ffbd3f9e18d96008331c858456b16e3a9b41e735c6208fef"
+      ByteVector.fromValidHex(
+        "03baa70886d9200af0ffbd3f9e18d96008331c858456b16e3a9b41e735c6208fef"
+      )
     ),
     NodeAddress.unresolved(9735, host = 45, 20, 67, 1),
     "LIGHTNING"
   )
   val acinq: RemoteNodeInfo = RemoteNodeInfo(
     PublicKey(
-      hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"
+      ByteVector.fromValidHex(
+        "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"
+      )
     ),
     NodeAddress.unresolved(9735, host = 34, 239, 230, 56),
     "ACINQ"
@@ -436,21 +470,27 @@ class SyncParams {
 class TestNetSyncParams extends SyncParams {
   val sbw: RemoteNodeInfo = RemoteNodeInfo(
     PublicKey(
-      hex"03b8534f2d84de39a68d1359f6833fde819b731e188ddf633a666f7bf8c1d7650a"
+      ByteVector.fromValidHex(
+        "03b8534f2d84de39a68d1359f6833fde819b731e188ddf633a666f7bf8c1d7650a"
+      )
     ),
     NodeAddress.unresolved(9735, host = 45, 61, 187, 156),
     "SBW"
   )
   val endurance: RemoteNodeInfo = RemoteNodeInfo(
     PublicKey(
-      hex"03933884aaf1d6b108397e5efe5c86bcf2d8ca8d2f700eda99db9214fc2712b134"
+      ByteVector.fromValidHex(
+        "03933884aaf1d6b108397e5efe5c86bcf2d8ca8d2f700eda99db9214fc2712b134"
+      )
     ),
     NodeAddress.unresolved(9735, host = 76, 223, 71, 211),
     "Endurance"
   )
   val localhost: RemoteNodeInfo = RemoteNodeInfo(
     PublicKey(
-      hex"038d5cdea665f68e597da00ae0612238bd30a06bdf08d34fa9af783b1f1b3ba9b7"
+      ByteVector.fromValidHex(
+        "038d5cdea665f68e597da00ae0612238bd30a06bdf08d34fa9af783b1f1b3ba9b7"
+      )
     ),
     NodeAddress.unresolved(9735, host = 10, 0, 2, 2),
     "localhost"
@@ -482,7 +522,7 @@ case class RemoteNodeInfo(
 
 object WalletSecret {
   def random(): WalletSecret = WalletSecret(
-    MnemonicCode.toMnemonics(randomBytes(16))
+    MnemonicCode.toMnemonics(Crypto.randomBytes(16))
   )
 }
 

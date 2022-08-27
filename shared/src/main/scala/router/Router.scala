@@ -2,7 +2,10 @@ package immortan.router
 
 import scodec.bits.ByteVector
 import scoin.Crypto.PublicKey
+import scoin._
 import scoin.ln._
+
+import immortan.FullPaymentTag
 import immortan.crypto.Tools._
 import immortan.utils.Statistics
 import immortan.router.Graph.GraphStructure._
@@ -25,14 +28,14 @@ case class ChannelUpdateExt(
 ) {
   def withNewUpdate(cu: ChannelUpdate): ChannelUpdateExt =
     copy(crc32 = Sync.getChecksum(cu), update = cu)
-  lazy val capacity: MilliSatoshi = update.htlcMaximumMsat.get
+  lazy val capacity: MilliSatoshi = update.htlcMaximumMsat
 }
 
 object Router {
   val defAvgHopParams = AvgHopParams(
     CltvExpiryDelta(144),
     feeProportionalMillionths = 500L,
-    feeBaseMsat = 1000L.msat,
+    feeBaseMsat = MilliSatoshi(1000L),
     sampleSize = 1
   )
 
@@ -83,7 +86,7 @@ object Router {
       val base = edge.updExt.update.feeBaseMsat
       val ppm = edge.updExt.update.feeProportionalMillionths
       val sid = ShortChannelId.asString(edge.desc.shortChannelId)
-      s"node: ${nodeId}, base: $base, ppm: $ppm, cltv: ${cltvExpiryDelta.underlying}, sid: $sid, next node: ${nextNodeId}"
+      s"node: ${nodeId}, base: $base, ppm: $ppm, cltv: ${cltvExpiryDelta.toLong}, sid: $sid, next node: ${nextNodeId}"
     }
   }
 
@@ -94,7 +97,7 @@ object Router {
       fee: MilliSatoshi
   ) extends Hop {
     override def toString: String =
-      s"Trampoline, node: ${nodeId}, fee reserve: $fee, cltv reserve: ${cltvExpiryDelta.underlying}, next node: ${nextNodeId}"
+      s"Trampoline, node: ${nodeId}, fee reserve: $fee, cltv reserve: ${cltvExpiryDelta.toLong}, next node: ${nextNodeId}"
     override def fee(amount: MilliSatoshi): MilliSatoshi = fee
   }
 
@@ -163,20 +166,20 @@ object Router {
   }
 
   def getDesc(cu: ChannelUpdate, ann: ChannelAnnouncement): ChannelDesc = {
-    if (Announcements isNode1 cu.channelFlags)
+    if (Announcements.isNode1(cu.channelFlags))
       ChannelDesc(cu.shortChannelId, ann.nodeId1, ann.nodeId2)
     else ChannelDesc(cu.shortChannelId, ann.nodeId2, ann.nodeId1)
   }
 
   def getAvgHopParams(sample: Seq[ChannelUpdateExt] = Nil): AvgHopParams = {
     val feeBaseMedian =
-      Statistics.medianBy(sample, skew = 0.6d)(_.update.feeBaseMsat.underlying)
+      Statistics.medianBy(sample, skew = 0.6d)(_.update.feeBaseMsat.toLong)
     val feeProportionalMedian = Statistics.medianBy(sample, skew = 0.75d)(
       _.update.feeProportionalMillionths
     )
     val cltvMedian = CltvExpiryDelta(
       Statistics
-        .medianBy(sample)(_.update.cltvExpiryDelta.underlying)
+        .medianBy(sample)(_.update.cltvExpiryDelta.toLong)
         .toInt max 144
     )
     AvgHopParams(

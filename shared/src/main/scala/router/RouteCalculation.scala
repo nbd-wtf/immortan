@@ -3,9 +3,9 @@ package immortan.router
 import scala.collection.LazyZip3._
 import scala.concurrent.duration._
 import scoin.Crypto.PublicKey
-import scoin.{ByteVector32, ByteVector64}
+import scoin._
 import scoin.ln._
-import scoin.ln.Bolt11Invoice.{ExtraHop, ExtraHops}
+import scoin.ln.Bolt11Invoice.ExtraHop
 import immortan.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import immortan.router.Router._
 import immortan.LNParams
@@ -27,7 +27,7 @@ object RouteCalculation {
     ) match {
       case Some(searchResult) => {
         RouteFound(
-          Route(searchResult.path.map(ChannelHop), searchResult.weight),
+          Route(searchResult.path.map(ChannelHop(_)), searchResult.weight),
           r.fullTag,
           r.partId
         )
@@ -39,15 +39,15 @@ object RouteCalculation {
   }
 
   def makeExtraEdges(
-      assistedRoutes: List[ExtraHops],
+      assistedRoutes: List[List[ExtraHop]],
       target: PublicKey
   ): Set[GraphEdge] = {
-    val converter = routeToEdges(_: ExtraHops, target)
+    val converter = routeToEdges(_: List[ExtraHop], target)
     assistedRoutes.flatMap(converter).toSet
   }
 
   def routeToEdges(
-      extraHops: ExtraHops,
+      extraHops: List[ExtraHop],
       targetNodeId: PublicKey
   ): Graph.GraphStructure.GraphEdges = {
     // BOLT 11: "For each entry, the pubkey is the node ID of the start of the channel", and the last node is the destination
@@ -76,7 +76,7 @@ object RouteCalculation {
       LNParams.minPayment,
       extraHop.feeBase,
       extraHop.feeProportionalMillionths,
-      Some(1000000000000000L.msat)
+      Some(MilliSatoshi(1000000000000000L))
     )
 
     ChannelUpdateExt.fromUpdate(update)

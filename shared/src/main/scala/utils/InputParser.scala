@@ -1,21 +1,20 @@
 package immortan.utils
 
+import scala.util.matching.{Regex, UnanchoredRegex}
+import scala.util.parsing.combinator.RegexParsers
+import scala.util.{Failure, Success, Try}
+import scodec.bits.ByteVector
 import scoin.Crypto.PublicKey
-import scoin.{BtcAmount, Satoshi, SatoshiLong}
+import scoin._
 import scoin.ln._
-import scoin.ln.payment.Bolt11Invoice
+import scoin.ln.NodeAddress
+
 import immortan.router.Graph.GraphStructure
 import immortan.router.RouteCalculation
-import scoin.ln.NodeAddress
 import immortan.crypto.Tools.trimmed
 import immortan.utils.InputParser._
 import immortan.utils.uri.Uri
 import immortan.{LNParams, RemoteNodeInfo}
-import scodec.bits.ByteVector
-
-import scala.util.matching.{Regex, UnanchoredRegex}
-import scala.util.parsing.combinator.RegexParsers
-import scala.util.{Failure, Success, Try}
 
 object InputParser {
   var value: Any = new String
@@ -56,18 +55,18 @@ object InputParser {
     case nodeLink(key, host, port) =>
       RemoteNodeInfo(
         PublicKey.fromBin(ByteVector fromValidHex key),
-        NodeAddress.fromParts(host, port.toInt),
+        NodeAddress.fromParts(host, port.toInt).get,
         host
       )
     case shortNodeLink(key, host) =>
       RemoteNodeInfo(
         PublicKey.fromBin(ByteVector fromValidHex key),
-        NodeAddress.fromParts(host, port = 9735),
+        NodeAddress.fromParts(host, port = 9735).get,
         host
       )
     case lud17(prefix, rest) => {
       val actualPrefix =
-        if (rest.endsWith(NodeAddress.onionSuffix)) "http" else "https"
+        if (rest.endsWith(".onion")) "http" else "https"
 
       prefix match {
         case "lnurlw"  => LNUrl(s"$actualPrefix://$rest")
@@ -107,7 +106,7 @@ object PaymentRequestExt {
 
   def fromUri(invoiceWithoutSlashes: String): PaymentRequestExt = {
     val lnPayReq(invoicePrefix, invoiceData) = invoiceWithoutSlashes
-    val pr = Bolt11Invoice.fromString(s"$invoicePrefix$invoiceData")
+    val pr = Bolt11Invoice.fromString(s"$invoicePrefix$invoiceData").get
     val uri = Try(Uri parse s"$lightning//$invoiceWithoutSlashes")
     PaymentRequestExt(uri, pr, s"$invoicePrefix$invoiceData")
   }
@@ -120,7 +119,7 @@ object PaymentRequestExt {
 
 case class PaymentRequestExt(uri: Try[Uri], pr: Bolt11Invoice, raw: String) {
   def isEnough(collected: MilliSatoshi): Boolean =
-    pr.amountOpt.exists(requested => collected >= requested)
+    pr.amount_opt.exists(requested => collected >= requested)
   def withNewSplit(anotherPart: MilliSatoshi): String =
     s"$lightning$raw?splits=" + (anotherPart :: splits)
       .map(_.toLong)
@@ -136,11 +135,11 @@ case class PaymentRequestExt(uri: Try[Uri], pr: Bolt11Invoice, raw: String) {
         .map(_.toLong) map MilliSatoshi.apply
     )
     .getOrElse(Nil)
-  val hasSplitIssue: Boolean = pr.amountOpt.exists(
+  val hasSplitIssue: Boolean = pr.amount_opt.exists(
     splits.sum + LNParams.minPayment > _
-  ) || (pr.amountOpt.isEmpty && splits.nonEmpty)
+  ) || (pr.amount_opt.isEmpty && splits.nonEmpty)
   val splitLeftover: MilliSatoshi =
-    pr.amountOpt.map(_ - splits.sum).getOrElse(0L.msat)
+    pr.amount_opt.map(_ - splits.sum).getOrElse(MilliSatoshi(0L))
 
   val descriptionOpt: Option[String] =
     pr.description.left.toOption.map(trimmed).filter(_.nonEmpty)
@@ -197,5 +196,5 @@ object MultiAddressParser extends RegexParsers {
   private[this] val separator = opt(";")
 
   val parse: Parser[AddressToAmount] =
-    repsep(item, separator).map(AddressToAmount)
+    repsep(item, separator).map(AddressToAmount(_))
 }

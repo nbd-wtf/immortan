@@ -1,26 +1,25 @@
 package immortan.fsm
 
+import scala.util.Success
 import scoin.ByteVector32
 import scoin.Crypto.PublicKey
+import scoin._
 import scoin.ln._
-import immortan.channel.{
-  CMD_FAIL_HTLC,
-  CMD_FULFILL_HTLC,
-  ReasonableLocal,
-  ReasonableTrampoline
-}
-import scoin.ln.payment.IncomingPaymentPacket
-import immortan.router.RouteCalculation
-import scoin.ln.transactions.RemoteFulfill
-import scoin.ln._
+
+import immortan.router._
 import immortan.ChannelMaster.{ReasonableLocals, ReasonableTrampolines}
 import immortan._
 import immortan.crypto.Tools._
 import immortan.crypto.{CanBeShutDown, StateMachine}
 import immortan.fsm.IncomingPaymentProcessor._
 import immortan.fsm.PaymentFailure.Failures
-
-import scala.util.Success
+import immortan.channel.{
+  CMD_FAIL_HTLC,
+  CMD_FULFILL_HTLC,
+  ReasonableLocal,
+  ReasonableTrampoline,
+  RemoteFulfill
+}
 
 object IncomingPaymentProcessor {
   final val CMDTimeout = "cmd-timeout"
@@ -86,7 +85,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
       // Important: when creating new invoice we SPECIFICALLY DO NOT put a preimage into preimage storage
       // we only do that once we reveal a preimage, thus letting us know that we have already revealed it on restart
       // having PaymentStatus.SUCCEEDED in payment db is not enough because that table does not get included in backup
-      lastAmountIn = adds.foldLeft(0L.msat)(_ + _.add.amountMsat)
+      lastAmountIn = adds.foldLeft(MilliSatoshi(0L))(_ + _.add.amountMsat)
 
       paymentInfoOpt match {
         case None =>
@@ -122,7 +121,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
               ) // Already revealed, but not finalized
             case _
                 if adds.exists(
-                  _.add.cltvExpiry.underlying < LNParams.blockCount.get + LNParams.cltvRejectThreshold
+                  _.add.cltvExpiry.toLong < LNParams.blockCount.get + LNParams.cltvRejectThreshold
                 ) =>
               becomeAborted(
                 IncomingAborted(None, fullTag),
@@ -223,7 +222,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
               Right(
                 IncorrectOrUnknownPaymentDetails(
                   local.add.amountMsat,
-                  LNParams.blockCount.get
+                  BlockHeight(LNParams.blockCount.get)
                 )
               ),
               local.secret,
@@ -310,7 +309,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
   ): Option[IncomingPaymentPacket.NodeRelayPacket] =
     adds.headOption.map(_.packet)
   def expiryIn(adds: ReasonableTrampolines): CltvExpiry =
-    adds.map(_.add.cltvExpiry).minBy(_.underlying)
+    adds.map(_.add.cltvExpiry).minBy(_.toLong)
 
   def validateRelay(
       params: TrampolineOn,
@@ -329,12 +328,12 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
         if adds.map(_.packet.innerPayload.amountToForward).toSet.size != 1 =>
       IncorrectOrUnknownPaymentDetails(
         pkt.add.amountMsat,
-        LNParams.blockCount.get
+        BlockHeight(LNParams.blockCount.get)
       ) // amountToForward divergence
     case pkt if adds.map(_.packet.outerPayload.totalAmount).toSet.size != 1 =>
       IncorrectOrUnknownPaymentDetails(
         pkt.add.amountMsat,
-        LNParams.blockCount.get
+        BlockHeight(LNParams.blockCount.get)
       ) // totalAmount divergence
     case pkt
         if params.cltvExpiryDelta > expiryIn(
@@ -477,7 +476,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
         .getOrElse(fullTag, default = Nil)
         .asInstanceOf[ReasonableTrampolines]
       // We have either just got another incoming notification or restored an app with some parts present
-      lastAmountIn = ins.foldLeft(0L.msat)(_ + _.add.amountMsat)
+      lastAmountIn = ins.foldLeft(MilliSatoshi(0L))(_ + _.add.amountMsat)
 
       cm.getPreimageMemo.get(fullTag.paymentHash) match {
         case Success(preimage) => becomeFinalRevealed(preimage, ins)
@@ -609,7 +608,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
             onionTlvs = OnionPaymentPayloadTlv.TrampolineOnion(
               adds.head.packet.nextPacket
             ) :: Nil,
-            outerPaymentSecret = randomBytes32
+            outerPaymentSecret = randomBytes32()
           )
     }
   }

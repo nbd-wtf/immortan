@@ -9,6 +9,7 @@ import scoin.ln._
 import scoin.hc._
 import scoin._
 
+import immortan._
 import immortan.Channel._
 import immortan.ErrorCodes._
 import immortan.crypto.Tools._
@@ -25,8 +26,9 @@ object ChannelHosted {
       bag: ChannelBag
   ): ChannelHosted = new ChannelHosted {
     def SEND(msgs: LightningMessage*): Unit = CommsTower.sendMany(
-      msgs.map(LightningMessageCodecs.prepareNormal),
-      hostedData.remoteInfo.nodeSpecificPair
+      msgs,
+      hostedData.remoteInfo.nodeSpecificPair,
+      HostedChannelKind
     )
     def STORE(hostedData: PersistentChannelData): PersistentChannelData =
       bag.put(hostedData)
@@ -43,10 +45,10 @@ object ChannelHosted {
     HostedCommits(
       remoteInfo.safeAlias,
       CommitmentSpec(
-        feeratePerKw = FeeratePerKw(0L.sat),
+        htlcs = inFlightHtlcs.toSet,
+        commitTxFeerate = FeeratePerKw(Satoshi(0L)),
         localLCSS.localBalanceMsat,
-        localLCSS.remoteBalanceMsat,
-        inFlightHtlcs.toSet
+        localLCSS.remoteBalanceMsat
       ),
       localLCSS,
       nextLocalUpdates = Nil,
@@ -186,10 +188,10 @@ abstract class ChannelHosted extends Channel { me =>
         ) =>
       // Keep in mind that we may have many outgoing HTLCs which have the same preimage
       val sentExpired = hc.allOutgoing
-        .filter(tip > _.cltvExpiry.underlying)
+        .filter(tip > _.cltvExpiry.toLong)
         .groupBy(_.paymentHash)
       val hasReceivedRevealedExpired =
-        hc.revealedFulfills.exists(tip > _.theirAdd.cltvExpiry.underlying)
+        hc.revealedFulfills.exists(tip > _.theirAdd.cltvExpiry.toLong)
 
       if (hasReceivedRevealedExpired) {
         // We have incoming payments for which we have revealed a preimage but they are still unresolved and completely expired
@@ -400,7 +402,7 @@ abstract class ChannelHosted extends Channel { me =>
 
     case (
           hc: HostedCommits,
-          remote: Fail,
+          remote: Error,
           Channel.WaitForAccept | Channel.Open
         ) if hc.remoteError.isEmpty =>
       StoreBecomeSend(
@@ -409,7 +411,7 @@ abstract class ChannelHosted extends Channel { me =>
       )
       throw RemoteErrorException(ErrorExt extractDescription remote)
 
-    case (_, remote: Fail, _) =>
+    case (_, remote: Error, _) =>
       // Convert remote error to local exception, it will be dealt with upstream
       throw RemoteErrorException(ErrorExt extractDescription remote)
 
@@ -445,7 +447,7 @@ abstract class ChannelHosted extends Channel { me =>
         val newHCState =
           ChannelHosted.restoreCommits(completeLocalLCSS, hc.remoteInfo)
 
-        if (completeLocalLCSS.localBalanceMsat < 0L.msat)
+        if (completeLocalLCSS.localBalanceMsat < MilliSatoshi(0L))
           return Left(
             "Override impossible: new local balance is larger than capacity"
           )
@@ -500,7 +502,7 @@ abstract class ChannelHosted extends Channel { me =>
 
   def localSuspend(hc: HostedCommits, errCode: String): Unit = {
     val localError =
-      Fail(data = ByteVector.fromValidHex(errCode), channelId = hc.channelId)
+      Error(data = ByteVector.fromValidHex(errCode), channelId = hc.channelId)
 
     if (hc.localError.isEmpty)
       StoreBecomeSend(

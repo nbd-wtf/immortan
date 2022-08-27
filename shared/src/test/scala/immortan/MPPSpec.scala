@@ -209,7 +209,7 @@ object MPPSpec extends TestSuite {
         10,
         cltvDelta = CltvExpiryDelta(144),
         minHtlc = MilliSatoshi(10L),
-        maxHtlc = Long.MaxValue.msat
+        maxHtlc = MilliSatoshi(Long.MaxValue)
       )
       val send = SendMultiPart(
         tag,
@@ -295,7 +295,7 @@ object MPPSpec extends TestSuite {
         10,
         cltvDelta = CltvExpiryDelta(144),
         minHtlc = MilliSatoshi(10L),
-        maxHtlc = Long.MaxValue.msat
+        maxHtlc = MilliSatoshi(Long.MaxValue)
       )
       val send = SendMultiPart(
         tag,
@@ -358,7 +358,7 @@ object MPPSpec extends TestSuite {
         10,
         cltvDelta = CltvExpiryDelta(144),
         minHtlc = MilliSatoshi(10L),
-        maxHtlc = Long.MaxValue.msat
+        maxHtlc = MilliSatoshi(Long.MaxValue)
       )
       val send = SendMultiPart(
         tag,
@@ -377,7 +377,10 @@ object MPPSpec extends TestSuite {
       // B -> D channel is now unable to handle the first split, but still usable for second split
       cm.opm.data = cm.opm.data.copy(chanFailedAtAmount =
         Map(
-          DescAndCapacity(desc, Long.MaxValue.msat) -> StampedChannelFailed(
+          DescAndCapacity(
+            desc,
+            MilliSatoshi(Long.MaxValue)
+          ) -> StampedChannelFailed(
             MilliSatoshi(200000L),
             System.currentTimeMillis
           )
@@ -456,7 +459,7 @@ object MPPSpec extends TestSuite {
         10,
         cltvDelta = CltvExpiryDelta(144),
         minHtlc = MilliSatoshi(10L),
-        maxHtlc = Long.MaxValue.msat
+        maxHtlc = MilliSatoshi(Long.MaxValue)
       )
       val send = SendMultiPart(
         tag,
@@ -475,7 +478,10 @@ object MPPSpec extends TestSuite {
       // B -> D channel is now unable to handle the first split, but still usable for second split
       cm.opm.data = cm.opm.data.copy(chanFailedAtAmount =
         Map(
-          DescAndCapacity(desc, Long.MaxValue.msat) -> StampedChannelFailed(
+          DescAndCapacity(
+            desc,
+            MilliSatoshi(Long.MaxValue)
+          ) -> StampedChannelFailed(
             MilliSatoshi(200000L),
             System.currentTimeMillis
           )
@@ -583,7 +589,7 @@ object MPPSpec extends TestSuite {
         10,
         cltvDelta = CltvExpiryDelta(144),
         minHtlc = MilliSatoshi(10L),
-        maxHtlc = Long.MaxValue.msat
+        maxHtlc = MilliSatoshi(Long.MaxValue)
       )
 
       import scodec.bits._
@@ -706,7 +712,7 @@ object MPPSpec extends TestSuite {
         10,
         cltvDelta = CltvExpiryDelta(144),
         minHtlc = MilliSatoshi(10L),
-        maxHtlc = Long.MaxValue.msat
+        maxHtlc = MilliSatoshi(Long.MaxValue)
       )
       val send = SendMultiPart(
         tag,
@@ -781,7 +787,7 @@ object MPPSpec extends TestSuite {
         10,
         cltvDelta = CltvExpiryDelta(144),
         minHtlc = MilliSatoshi(10L),
-        maxHtlc = Long.MaxValue.msat
+        maxHtlc = MilliSatoshi(Long.MaxValue)
       )
       val send = SendMultiPart(
         tag,

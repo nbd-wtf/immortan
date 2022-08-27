@@ -177,84 +177,84 @@ object GraphUtils {
       1L,
       a,
       b,
-      1.msat,
+      MilliSatoshi(1),
       10,
       cltvDelta = CltvExpiryDelta(144),
-      minHtlc = 10L.msat,
-      maxHtlc = 500000.msat
+      minHtlc = MilliSatoshi(10L),
+      maxHtlc = MilliSatoshi(500000)
     )
     val updateABFromB: ChannelUpdate = makeUpdate(
       1L,
       b,
       a,
-      1.msat,
+      MilliSatoshi(1),
       10,
       cltvDelta = CltvExpiryDelta(144),
-      minHtlc = 10L.msat,
-      maxHtlc = 500000.msat
+      minHtlc = MilliSatoshi(10L),
+      maxHtlc = MilliSatoshi(500000)
     )
 
     val updateACFromA: ChannelUpdate = makeUpdate(
       2L,
       a,
       c,
-      1.msat,
+      MilliSatoshi(1),
       10,
       cltvDelta = CltvExpiryDelta(134),
-      minHtlc = 10L.msat,
-      maxHtlc = 500000.msat
+      minHtlc = MilliSatoshi(10L),
+      maxHtlc = MilliSatoshi(500000)
     )
     val updateACFromC: ChannelUpdate = makeUpdate(
       2L,
       c,
       a,
-      1.msat,
+      MilliSatoshi(1),
       10,
       cltvDelta = CltvExpiryDelta(134),
-      minHtlc = 10L.msat,
-      maxHtlc = 500000.msat
+      minHtlc = MilliSatoshi(10L),
+      maxHtlc = MilliSatoshi(500000)
     )
 
     val updateBDFromB: ChannelUpdate = makeUpdate(
       3L,
       b,
       d,
-      1.msat,
+      MilliSatoshi(1),
       10,
       cltvDelta = CltvExpiryDelta(144),
-      minHtlc = 10L.msat,
-      maxHtlc = 500000.msat
+      minHtlc = MilliSatoshi(10L),
+      maxHtlc = MilliSatoshi(500000)
     )
     val updateBDFromD: ChannelUpdate = makeUpdate(
       3L,
       d,
       b,
-      1.msat,
+      MilliSatoshi(1),
       10,
       cltvDelta = CltvExpiryDelta(144),
-      minHtlc = 10L.msat,
-      maxHtlc = 500000.msat
+      minHtlc = MilliSatoshi(10L),
+      maxHtlc = MilliSatoshi(500000)
     )
 
     val updateCDFromC: ChannelUpdate = makeUpdate(
       4L,
       c,
       d,
-      1.msat,
+      MilliSatoshi(1),
       10,
       cltvDelta = CltvExpiryDelta(144),
-      minHtlc = 10L.msat,
-      maxHtlc = 500000.msat
+      minHtlc = MilliSatoshi(10L),
+      maxHtlc = MilliSatoshi(500000)
     )
     val updateCDFromD: ChannelUpdate = makeUpdate(
       4L,
       d,
       c,
-      1.msat,
+      MilliSatoshi(1),
       10,
       cltvDelta = CltvExpiryDelta(144),
-      minHtlc = 10L.msat,
-      maxHtlc = 500000.msat
+      minHtlc = MilliSatoshi(10L),
+      maxHtlc = MilliSatoshi(500000)
     )
 
     val addChannelAnnouncementNewSqlPQ =
@@ -292,42 +292,42 @@ object GraphUtils {
       1L,
       a,
       d,
-      1.msat,
+      MilliSatoshi(1),
       10,
       cltvDelta = CltvExpiryDelta(144),
-      minHtlc = 10L.msat,
-      maxHtlc = 500000.msat
+      minHtlc = MilliSatoshi(10L),
+      maxHtlc = MilliSatoshi(500000)
     )
     val updateAD1FromD: ChannelUpdate = makeUpdate(
       1L,
       d,
       a,
-      1.msat,
+      MilliSatoshi(1),
       10,
       cltvDelta = CltvExpiryDelta(144),
-      minHtlc = 10L.msat,
-      maxHtlc = 500000.msat
+      minHtlc = MilliSatoshi(10L),
+      maxHtlc = MilliSatoshi(500000)
     )
 
     val updateAD2FromA: ChannelUpdate = makeUpdate(
       2L,
       a,
       d,
-      1.msat,
+      MilliSatoshi(1),
       10,
       cltvDelta = CltvExpiryDelta(134),
-      minHtlc = 10L.msat,
-      maxHtlc = 500000.msat
+      minHtlc = MilliSatoshi(10L),
+      maxHtlc = MilliSatoshi(500000)
     )
     val updateAD2FromD: ChannelUpdate = makeUpdate(
       2L,
       d,
       a,
-      1.msat,
+      MilliSatoshi(1),
       10,
       cltvDelta = CltvExpiryDelta(134),
-      minHtlc = 10L.msat,
-      maxHtlc = 500000.msat
+      minHtlc = MilliSatoshi(10L),
+      maxHtlc = MilliSatoshi(500000)
     )
 
     val addChannelAnnouncementNewSqlPQ =

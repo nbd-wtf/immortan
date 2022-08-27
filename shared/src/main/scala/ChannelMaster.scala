@@ -6,14 +6,15 @@ import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Try
 import com.google.common.cache.LoadingCache
-import scoin.ByteVector32
+import rx.lang.scala.Subject
+import scoin._
 import scoin.Crypto.{PrivateKey, PublicKey}
 import scoin.ln._
+import scoin.ln.{IncomingPaymentPacket, Bolt11Invoice}
+import scoin.hc._
+
 import immortan.blockchain.TxConfirmedAt
 import immortan.channel._
-import scoin.ln.payment.{IncomingPaymentPacket, Bolt11Invoice}
-import scoin.ln.transactions.{LocalFulfill, RemoteFulfill, RemoteReject}
-import scoin.ln._
 import immortan.Channel._
 import immortan.ChannelListener.{Malfunction, Transition}
 import immortan.ChannelMaster._
@@ -22,7 +23,6 @@ import immortan.crypto.Tools._
 import immortan.fsm.OutgoingPaymentMaster.CMDChanGotOnline
 import immortan.fsm._
 import immortan.utils.{PaymentRequestExt, Rx}
-import rx.lang.scala.Subject
 
 object ChannelMaster {
   type PreimageTry = Try[ByteVector32]
@@ -61,9 +61,9 @@ object ChannelMaster {
     allRevealed
       .getOrElse(hash, Iterable.empty)
       .filter(
-        tip >= _.theirAdd.cltvExpiry.underlying - LNParams.hcFulfillSafetyBlocks
+        tip >= _.theirAdd.cltvExpiry.toLong - LNParams.hcFulfillSafetyBlocks
       )
-      .filter(tip <= _.theirAdd.cltvExpiry.underlying - 3)
+      .filter(tip <= _.theirAdd.cltvExpiry.toLong - 3)
   }
 }
 
@@ -164,7 +164,7 @@ class ChannelMaster(
         Right(
           IncorrectOrUnknownPaymentDetails(
             packet.add.amountMsat,
-            LNParams.blockCount.get
+            BlockHeight(LNParams.blockCount.get)
           )
         ),
         secret,
@@ -175,7 +175,7 @@ class ChannelMaster(
         Right(
           IncorrectOrUnknownPaymentDetails(
             packet.add.amountMsat,
-            LNParams.blockCount.get
+            BlockHeight(LNParams.blockCount.get)
           )
         ),
         secret,
@@ -186,7 +186,7 @@ class ChannelMaster(
         Right(
           IncorrectOrUnknownPaymentDetails(
             packet.add.amountMsat,
-            LNParams.blockCount.get
+            BlockHeight(LNParams.blockCount.get)
           )
         ),
         secret,
@@ -383,11 +383,14 @@ class ChannelMaster(
   def maxSendable(chans: Iterable[Channel] = Nil): MilliSatoshi = {
     val inPrincipleUsableChans = chans.filter(Channel.isOperational)
     val sendableNoFee =
-      opm.getSendable(inPrincipleUsableChans, maxFee = 0L.msat).values.sum
+      opm
+        .getSendable(inPrincipleUsableChans, maxFee = MilliSatoshi(0L))
+        .values
+        .sum
     val fee = LNParams.maxOffChainFeeAboveRatio.max(
       sendableNoFee * LNParams.maxOffChainFeeRatio
     )
-    0L.msat.max(sendableNoFee - fee)
+    MilliSatoshi(0L).max(sendableNoFee - fee)
   }
 
   def feeReserve(amount: MilliSatoshi): MilliSatoshi = {
@@ -412,7 +415,7 @@ class ChannelMaster(
     val chainExpiry = Right(
       prExt.pr.minFinalCltvExpiryDelta getOrElse LNParams.minInvoiceExpiryDelta
     )
-    val splitInfo = SplitInfo(totalSum = 0L.msat, myPart = toSend)
+    val splitInfo = SplitInfo(totalSum = MilliSatoshi(0L), myPart = toSend)
 
     SendMultiPart(
       fullTag,

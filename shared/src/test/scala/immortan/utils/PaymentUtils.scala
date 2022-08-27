@@ -1,22 +1,14 @@
 package immortan.utils
 
 import scala.util.{Failure, Try}
-
 import scoin.Crypto.PublicKey
-import scoin.{Block, ByteVector32, Crypto}
+import scoin._
 import scoin.ln._
+
 import immortan.channel.{IncomingResolution, ReasonableLocal}
-import scoin.ln.crypto.Sphinx
-import scoin.ln.payment.{OutgoingPaymentPacket, Bolt11Invoice}
 import immortan.router.ChannelUpdateExt
 import immortan.router.Graph.GraphStructure.GraphEdge
 import immortan.router.Router.{ChannelDesc, ChannelHop, NodeHop}
-import scoin.ln.{
-  GenericTlv,
-  OnionPaymentPayloadTlv,
-  PaymentOnion,
-  UpdateAddHtlc
-}
 import immortan.ChannelMaster.{OutgoingAdds, ReasonableResolutions}
 import immortan._
 import immortan.utils.GraphUtils._
@@ -36,11 +28,11 @@ object PaymentUtils {
       ShortChannelId.produce("100x100x100"),
       from,
       to,
-      1.msat,
+      MilliSatoshi(1),
       10,
       cltvDelta = CltvExpiryDelta(cltvDelta),
-      minHtlc = 10L.msat,
-      maxHtlc = 50000000.msat
+      minHtlc = MilliSatoshi(10L),
+      maxHtlc = MilliSatoshi(50000000)
     )
     val finalHop = ChannelHop(
       GraphEdge(
@@ -99,7 +91,7 @@ object PaymentUtils {
       prExt,
       preimage,
       desc,
-      balanceSnap = 1000L.msat,
+      balanceSnap = MilliSatoshi(1000L),
       fiatRateSnap = Map("USD" -> 12d)
     )
     invoice
@@ -152,7 +144,7 @@ object PaymentUtils {
         from,
         toTrampoline,
         CltvExpiryDelta(0),
-        0.msat
+        MilliSatoshi(0)
       ), // a hop from us to our peer, only needed because of our NodeId
       NodeHop(
         toTrampoline,
@@ -164,7 +156,7 @@ object PaymentUtils {
 
     // We send to a receiver who does not support trampoline, so relay node will send a basic MPP with inner payment secret provided and revealed
     val finalInnerPayload = PaymentOnion.createSinglePartPayload(
-      pr.amountOpt.get,
+      pr.amount_opt.get,
       CltvExpiry(18),
       pr.paymentSecret.get,
       None
@@ -195,7 +187,7 @@ object PaymentUtils {
         from,
         toTrampoline,
         CltvExpiryDelta(0),
-        0.msat
+        MilliSatoshi(0)
       ), // a hop from us to our peer, only needed because of our NodeId
       NodeHop(
         toTrampoline,
@@ -208,7 +200,7 @@ object PaymentUtils {
     // We send to a receiver who does not support trampoline, so relay node will send a basic MPP with inner payment secret provided and revealed
     val finalInnerPayload = PaymentOnion.createMultiPartPayload(
       partAmount,
-      pr.amountOpt.get,
+      pr.amount_opt.get,
       CltvExpiry(18),
       pr.paymentSecret.get,
       None
@@ -239,11 +231,11 @@ object PaymentUtils {
       ShortChannelId.produce("100x100x100"),
       from,
       toTrampoline,
-      1.msat,
+      MilliSatoshi(1),
       10,
       cltvDelta = CltvExpiryDelta(144),
-      minHtlc = 10L.msat,
-      maxHtlc = 50000000.msat
+      minHtlc = MilliSatoshi(10L),
+      maxHtlc = MilliSatoshi(50000000)
     )
     val finalHop = ChannelHop(
       GraphEdge(

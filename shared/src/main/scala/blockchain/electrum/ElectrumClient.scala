@@ -2,17 +2,10 @@ package immortan.blockchain.electrum
 
 import java.net.{InetSocketAddress, SocketAddress}
 import java.util
-
-import scoin._
-import immortan.blockchain.bitcoind.rpc.{
-  Error,
-  JsonRPCRequest,
-  JsonRPCResponse
-}
-import immortan.blockchain.electrum.ElectrumClient._
-import immortan.blockchain.electrum.ElectrumChainSync
-import immortan.blockchain.fee.FeeratePerKw
-import immortan.LNParams
+import scala.annotation.{tailrec, nowarn}
+import scala.concurrent.{ExecutionContext, Promise, Future}
+import scala.concurrent.duration._
+import scala.util.{Failure, Success, Try}
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.PooledByteBufAllocator
 import io.netty.channel._
@@ -34,11 +27,15 @@ import io.netty.util.internal.logging.{InternalLoggerFactory, JdkLoggerFactory}
 import org.json4s.JsonAST._
 import org.json4s.native.JsonMethods
 import org.json4s.{JInt, JLong, JString}
+import org.json4s._
 import scodec.bits.ByteVector
-import scala.annotation.{tailrec, nowarn}
-import scala.concurrent.{ExecutionContext, Promise, Future}
-import scala.concurrent.duration._
-import scala.util.{Failure, Success, Try}
+import scoin._
+
+import immortan.blockchain.bitcoind.rpc.{Error, JsonRPCRequest, JsonRPCResponse}
+import immortan.blockchain.electrum.ElectrumClient._
+import immortan.blockchain.electrum.ElectrumChainSync
+import immortan.blockchain.fee.FeeratePerKw
+import immortan.LNParams
 
 object ElectrumClient {
   val CLIENT_NAME = "3.3.6"

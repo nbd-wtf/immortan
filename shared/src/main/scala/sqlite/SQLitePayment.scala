@@ -1,19 +1,17 @@
 package immortan.sqlite
 
 import java.lang.{Integer => JInt, Long => JLong}
-
-import scoin.ByteVector32
+import scala.util.Try
+import spray.json._
+import scoin._
 import scoin.ln._
-import scoin.ln.payment.Bolt11Invoice
-import scoin.ln.transactions.RemoteFulfill
 import scoin.ln.FullPaymentTag
+
 import immortan._
+import immortan.channel._
 import immortan.crypto.Tools.Fiat2Btc
 import immortan.utils.ImplicitJsonFormats._
 import immortan.utils.PaymentRequestExt
-import spray.json._
-
-import scala.util.Try
 
 case class RelaySummary(
     relayed: MilliSatoshi,
@@ -51,17 +49,21 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
 
   def listPendingSecrets: Iterable[ByteVector32] = {
     val incomingThreshold =
-      System.currentTimeMillis - Bolt11Invoice.OUR_EXPIRY_SECONDS * 1000L // Skip incoming payments which are expired by now
+      System.currentTimeMillis - LNParams.ourInvoiceExpirySeconds * 1000L // Skip incoming payments which are expired by now
     db.select(PaymentTable.selectPendingSql, incomingThreshold.toString)
       .iterable(_ string PaymentTable.secret)
       .map(ByteVector32.fromValidHex)
   }
 
   def listRecentPayments(limit: Int): RichCursor = {
+    // Skip outgoing payments which have been failed more than a day ago
     val outgoingThreshold =
-      System.currentTimeMillis - 60 * 60 * 24 * 1000L // Skip outgoing payments which have been failed more than a day ago
+      System.currentTimeMillis - 60 * 60 * 24 * 1000L
+
+    // Skip incoming payments which are expired by now
     val incomingThreshold =
-      System.currentTimeMillis - Bolt11Invoice.OUR_EXPIRY_SECONDS * 1000L // Skip incoming payments which are expired by now
+      System.currentTimeMillis - LNParams.ourInvoiceExpirySeconds * 1000L
+
     db.select(
       PaymentTable.selectRecentSql,
       outgoingThreshold.toString,
@@ -182,8 +184,8 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
         PaymentInfo.NO_ACTION,
         prex.pr.paymentHash.toHex,
         prex.pr.paymentSecret.get.toHex,
-        prex.pr.amountOpt
-          .getOrElse(0L.msat)
+        prex.pr.amount_opt
+          .getOrElse(MilliSatoshi(0L))
           .toLong: JLong /* 0 WHEN UNDEFINED */,
         0L: JLong /* SENT = 0 MSAT, NOTHING TO SEND */,
         0L: JLong /* NO FEE FOR INCOMING PAYMENT */,

@@ -12,6 +12,13 @@ import scoin.ln.Sphinx
 import scoin.ln.Sphinx.PacketAndSecrets
 import scoin.ln.OutgoingPaymentPacket
 
+import immortan.{
+  FullPaymentTag,
+  LNParams,
+  InFlightPayments,
+  Channel,
+  ChanAndCommits
+}
 import immortan.router.Router._
 import immortan.channel.{
   CMD_ADD_HTLC,
@@ -24,7 +31,6 @@ import immortan.channel.{
   RemoteUpdateMalform
 }
 import immortan.router.{Announcements, ChannelUpdateExt}
-import immortan.{LNParams, InFlightPayments, Channel, ChanAndCommits}
 import immortan.PaymentStatus._
 import immortan.fsm.PaymentFailure._
 import immortan.fsm.OutgoingPaymentMaster._
@@ -60,12 +66,12 @@ case class UnreadableRemoteFailure(route: Route) extends PaymentFailure {
 
 case class RemoteFailure(packet: Sphinx.DecryptedFailurePacket, route: Route)
     extends PaymentFailure {
-  lazy val originShortChanId: Option[Long] = route
+  lazy val originShortChanId: Option[ShortChannelId] = route
     .getEdgeForNode(packet.originNode)
     .map(_.updExt.update.shortChannelId)
 
   def chanString = originShortChanId
-    .map(ShortChannelId.asString(_))
+    .map(_.toString)
     .getOrElse("first hop")
 
   override def asString: String = {
@@ -115,7 +121,7 @@ class OutgoingPaymentSender(
       SendMultiPart(
         fullTag,
         Right(LNParams.minInvoiceExpiryDelta),
-        SplitInfo(0L.msat, 0L.msat),
+        SplitInfo(MilliSatoshi(0L), 0L.msat),
         LNParams.routerConf,
         invalidPubKey,
         None,
@@ -497,7 +503,8 @@ class OutgoingPaymentSender(
     // This method always sets a new partId to assigned parts so old payment statuses in data must be cleared before calling it
 
     directChansFirst.foldLeft(Map.empty[ByteVector, PartStatus] -> amount) {
-      case (accumulator ~ leftover, cnc ~ chanSendable) if leftover > 0L.msat =>
+      case (accumulator ~ leftover, cnc ~ chanSendable)
+          if leftover > MilliSatoshi(0L) =>
         // If leftover becomes less than sendable minimum then we must bump it upwards
         // Example: channel leftover=500, chanSendable=200 -> sending 200
         // Example: channel leftover=300, chanSendable=400 -> sending 300
@@ -512,7 +519,7 @@ class OutgoingPaymentSender(
         collected
 
     } match {
-      case (newParts, rest) if rest <= 0L.msat =>
+      case (newParts, rest) if rest <= MilliSatoshi(0L) =>
         // A whole amount has been fully split across our local channels
         // leftover may be slightly negative due to min sendable corrections
         become(senderData.copy(parts = senderData.parts ++ newParts), PENDING)
@@ -618,7 +625,7 @@ case class WaitForRouteOrInFlight(
 ) extends PartStatus {
 
   def maxAttemptedFee: MilliSatoshi =
-    feesTried.sorted.lastOption.getOrElse(0L.msat)
+    feesTried.sorted.lastOption.getOrElse(MilliSatoshi(0L))
   def withKnownRoute(cmd: CMD_ADD_HTLC, route: Route): WaitForRouteOrInFlight =
     copy(
       flight = Some(InFlightInfo(cmd, route)),

@@ -1,6 +1,5 @@
 package immortan
 
-import java.net.Socket
 import java.util.concurrent.{ConcurrentHashMap, Executors}
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable
@@ -105,7 +104,7 @@ object CommsTower {
     val handler: TransportHandler =
       new TransportHandler(pair.keyPair, info.nodeId.value) {
         def handleEncryptedOutgoingData(data: ByteVector): Unit =
-          try sock.getOutputStream.write(data.toArray)
+          try sock.write(data.toArray)
           catch {
             case _: Throwable => disconnect()
           }
@@ -161,11 +160,11 @@ object CommsTower {
       }
 
     private[this] val thread = Future {
-      sock.connect(info.address.socketAddress, 7500)
+      sock.connect(info.address, 7500)
       handler.init()
 
       while (true) {
-        val length = sock.getInputStream.read(buffer, 0, buffer.length)
+        val length = sock.read(buffer, 0, buffer.length)
         if (length < 0) throw new RuntimeException("Connection droppped")
         else handler.process(ByteVector.view(buffer.take(length)))
       }
@@ -180,7 +179,7 @@ object CommsTower {
       workers -= pair
     }
 
-    def disconnect(): Unit = try sock.close
+    def disconnect(): Unit = try sock.close()
     catch none
 
     def handleTheirRemoteInitMessage(
@@ -213,11 +212,11 @@ object CommsTower {
           channelId,
           0L,
           0L,
-          randomKey,
-          randomKey.publicKey
+          randomKey(),
+          randomKey().publicKey
         )
       )
-      handler.process(Fail(channelId, "please publish your local commitment"))
+      handler.process(Error(channelId, "please publish your local commitment"))
     }
   }
 }

@@ -1,13 +1,15 @@
 package immortan
 
-import com.softwaremill.quicklens._
-import scoin.{ByteVector32, ByteVector64}
-import scoin.ln._
-import immortan.channel._
-import scoin.ln.transactions._
-import scoin.ln._
-import immortan.crypto.Tools.{hostedChanId, hostedShortChanId}
 import scodec.bits.ByteVector
+import com.softwaremill.quicklens._
+import scoin._
+import scoin.ln._
+import scoin.ln.transactions._
+import scoin.hc._
+import scoin.hc.HostedChannelCodecs._
+
+import immortan.crypto.Tools.{hostedChanId, hostedShortChanId}
+import immortan.channel._
 
 case class WaitRemoteHostedReply(
     remoteInfo: RemoteNodeInfo,
@@ -28,8 +30,8 @@ case class HostedCommits(
     nextRemoteUpdates: List[UpdateMessage],
     updateOpt: Option[ChannelUpdate],
     postErrorOutgoingResolvedIds: Set[Long],
-    localError: Option[Fail],
-    remoteError: Option[Fail],
+    localError: Option[Error],
+    remoteError: Option[Error],
     resizeProposal: Option[ResizeChannel] = None,
     overrideProposal: Option[StateOverride] = None,
     extParams: List[ExtParams] = Nil,
@@ -37,7 +39,7 @@ case class HostedCommits(
 ) extends PersistentChannelData
     with Commitments { me =>
 
-  lazy val error: Option[Fail] = localError.orElse(remoteError)
+  lazy val error: Option[Error] = localError.orElse(remoteError)
 
   lazy val nextTotalLocal: Long =
     lastCrossSignedState.localUpdates + nextLocalUpdates.size
@@ -73,7 +75,9 @@ case class HostedCommits(
   )
 
   lazy val maxSendInFlight: MilliSatoshi =
-    lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat.toMilliSatoshi
+    MilliSatoshi(
+      lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat.toLong
+    )
 
   lazy val minSendable: MilliSatoshi =
     lastCrossSignedState.initHostedChannel.htlcMinimumMsat
@@ -125,9 +129,11 @@ case class HostedCommits(
       commits1.nextLocalSpec.outgoingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs
     ) return Left(ChannelNotAbleToSend(cmd.incompleteAdd))
     if (
-      commits1.allOutgoing.foldLeft(0L.msat)(_ + _.amountMsat) > maxSendInFlight
+      commits1.allOutgoing.foldLeft(MilliSatoshi(0L))(
+        _ + _.amountMsat
+      ) > maxSendInFlight
     ) return Left(ChannelNotAbleToSend(cmd.incompleteAdd))
-    if (commits1.nextLocalSpec.toLocal < 0L.msat)
+    if (commits1.nextLocalSpec.toLocal < MilliSatoshi(0L))
       return Left(ChannelNotAbleToSend(cmd.incompleteAdd))
     Right(commits1, completeAdd)
   }
@@ -138,7 +144,7 @@ case class HostedCommits(
     if (
       commits1.nextLocalSpec.incomingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs
     ) throw ChannelTransitionFail(channelId, add)
-    if (commits1.nextLocalSpec.toRemote < 0L.msat)
+    if (commits1.nextLocalSpec.toRemote < MilliSatoshi(0L))
       throw ChannelTransitionFail(channelId, add)
     if (add.id != nextTotalRemote + 1)
       throw ChannelTransitionFail(channelId, add)
@@ -158,7 +164,7 @@ case class HostedCommits(
 
   def withResize(resize: ResizeChannel): HostedCommits =
     me.modify(_.lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat)
-      .setTo(resize.newCapacityMsatU64)
+      .setTo(UInt64(resize.newCapacity.toMilliSatoshi.toLong))
       .modify(_.lastCrossSignedState.initHostedChannel.channelCapacityMsat)
       .setTo(resize.newCapacity.toMilliSatoshi)
       .modify(_.localSpec.toRemote)

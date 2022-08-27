@@ -25,11 +25,7 @@ import scoin.ln._
 import immortan.blockchain.fee.FeeratePerKw
 import immortan.channel.Helpers.Funding
 import scoin.ln.transactions.CommitmentOutput.{InHtlc, OutHtlc}
-import scoin.ln.transactions.Scripts.{
-  htlcOffered,
-  htlcReceived,
-  toLocalDelayed
-}
+import scoin.ln.transactions.Scripts.{htlcOffered, htlcReceived, toLocalDelayed}
 import scoin.ln.transactions.Transactions._
 import scoin.ln.UpdateAddHtlc
 import utest._
@@ -115,7 +111,7 @@ object TransactionsSpec extends TestSuite {
           UpdateAddHtlc(
             ByteVector32.Zeroes,
             0,
-            5000000.msat,
+            MilliSatoshi(5000000),
             ByteVector32.Zeroes,
             CltvExpiry(552),
             emptyOnionPacket
@@ -125,7 +121,7 @@ object TransactionsSpec extends TestSuite {
           UpdateAddHtlc(
             ByteVector32.Zeroes,
             0,
-            1000000.msat,
+            MilliSatoshi(1000000),
             ByteVector32.Zeroes,
             CltvExpiry(553),
             emptyOnionPacket
@@ -135,7 +131,7 @@ object TransactionsSpec extends TestSuite {
           UpdateAddHtlc(
             ByteVector32.Zeroes,
             0,
-            7000000.msat,
+            MilliSatoshi(7000000),
             ByteVector32.Zeroes,
             CltvExpiry(550),
             emptyOnionPacket
@@ -145,7 +141,7 @@ object TransactionsSpec extends TestSuite {
           UpdateAddHtlc(
             ByteVector32.Zeroes,
             0,
-            800000.msat,
+            MilliSatoshi(800000),
             ByteVector32.Zeroes,
             CltvExpiry(551),
             emptyOnionPacket
@@ -154,8 +150,8 @@ object TransactionsSpec extends TestSuite {
       )
       val spec = CommitmentSpec(
         feeratePerKw = FeeratePerKw(5000.sat),
-        toLocal = 0.msat,
-        toRemote = 0.msat,
+        toLocal = MilliSatoshi(0),
+        toRemote = MilliSatoshi(0),
         htlcs
       )
       val fee = Transactions.commitTxFee(546.sat, spec, DefaultCommitmentFormat)
@@ -271,7 +267,7 @@ object TransactionsSpec extends TestSuite {
         val htlc = UpdateAddHtlc(
           ByteVector32.Zeroes,
           0,
-          (20000 * 1000).msat,
+          MilliSatoshi(20000 * 1000),
           sha256(paymentPreimage),
           CltvExpiryDelta(144).toCltvExpiry(blockHeight),
           emptyOnionPacket
@@ -317,15 +313,15 @@ object TransactionsSpec extends TestSuite {
         val htlc = UpdateAddHtlc(
           ByteVector32.Zeroes,
           0,
-          (20000 * 1000).msat,
+          MilliSatoshi(20000 * 1000),
           sha256(paymentPreimage),
           CltvExpiryDelta(144).toCltvExpiry(blockHeight),
           emptyOnionPacket
         )
         val spec = CommitmentSpec(
           feeratePerKw,
-          toLocal = 0.msat,
-          toRemote = 0.msat,
+          toLocal = MilliSatoshi(0),
+          toRemote = MilliSatoshi(0),
           Set(OutgoingHtlc(htlc))
         )
         val outputs = makeCommitTxOutputs(
@@ -385,15 +381,15 @@ object TransactionsSpec extends TestSuite {
         val htlc = UpdateAddHtlc(
           ByteVector32.Zeroes,
           0,
-          (20000 * 1000).msat,
+          MilliSatoshi(20000 * 1000),
           sha256(paymentPreimage),
           toLocalDelay.toCltvExpiry(blockHeight),
           emptyOnionPacket
         )
         val spec = CommitmentSpec(
           feeratePerKw,
-          toLocal = 0.msat,
-          toRemote = 0.msat,
+          toLocal = MilliSatoshi(0),
+          toRemote = MilliSatoshi(0),
           Set(IncomingHtlc(htlc))
         )
         val outputs = makeCommitTxOutputs(

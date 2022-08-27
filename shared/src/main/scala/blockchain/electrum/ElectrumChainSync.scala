@@ -1,11 +1,11 @@
 package immortan.blockchain.electrum
 
+import scala.util.{Failure, Success, Try}
 import scoin.{Block, ByteVector32}
+
 import immortan.blockchain.electrum.Blockchain.RETARGETING_PERIOD
 import immortan.blockchain.electrum.ElectrumClient
 import immortan.blockchain.electrum.db.HeaderDb
-
-import scala.util.{Failure, Success, Try}
 
 object ElectrumChainSync {
   case class ChainSyncStarted(localTip: Long, remoteTip: Long)

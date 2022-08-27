@@ -5,11 +5,11 @@ import scodec.bits.ByteVector
 import scoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
 import scoin.Script._
 import scoin._
-import scoin.ln.crypto.Generators
-import scoin.ln.transactions.DirectedHtlc._
-import scoin.ln.transactions.Scripts._
-import scoin.ln.transactions.Transactions._
+import scoin.ln.Generators
 import scoin.ln.transactions._
+import scoin.ln.transactions.Scripts._
+import scoin.ln.transactions.DirectedHtlc._
+import scoin.ln.transactions.Transactions._
 import scoin.ln._
 import immortan.crypto.Tools.newFeerate
 import immortan.{ChannelBag, LNParams}
@@ -201,12 +201,14 @@ object Helpers {
         else fundingAmount.toMilliSatoshi - pushMsat
 
       val localSpec = CommitmentSpec(
-        feeratePerKw = initialFeeratePerKw,
+        htlcs = Set.empty,
+        commitTxFeerate = initialFeeratePerKw,
         toLocal = toLocalMsat,
         toRemote = toRemoteMsat
       )
       val remoteSpec = CommitmentSpec(
-        feeratePerKw = initialFeeratePerKw,
+        htlcs = Set.empty,
+        commitTxFeerate = initialFeeratePerKw,
         toLocal = toRemoteMsat,
         toRemote = toLocalMsat
       )
@@ -334,9 +336,11 @@ object Helpers {
             )
           )
         case _ if c.futureRemoteCommitPublished.exists(_.isCommitConfirmed) =>
-          c.futureRemoteCommitPublished.map(RecoveryClose)
+          c.futureRemoteCommitPublished.map(RecoveryClose(_))
         case _ =>
-          c.revokedCommitPublished.find(_.isCommitConfirmed).map(RevokedClose)
+          c.revokedCommitPublished
+            .find(_.isCommitConfirmed)
+            .map(RevokedClose(_))
       }
 
     def isValidFinalScriptPubkey(scriptPubKey: ByteVector): Boolean =
@@ -625,30 +629,31 @@ object Helpers {
           None
       }
 
-      val htlcDelayedTxes = htlcTxes.flatMap { info: TransactionWithInputInfo =>
-        generateTx {
-          val delayedToSig = cs.localParams.keys.sign(
-            _: ClaimLocalDelayedOutputTx,
-            cs.localParams.keys.delayedPaymentKey.privateKey,
-            localPerCommitmentPoint,
-            TxOwner.Local,
-            cs.channelFeatures.commitmentFormat
-          )
-          val tx1 = Transactions.makeClaimLocalDelayedOutputTx(
-            info.tx,
-            cs.localParams.dustLimit,
-            localRevPubkey,
-            cs.remoteParams.toSelfDelay,
-            localDelayPubkey,
-            cs.localParams.defaultFinalScriptPubKey,
-            feeratePerKwDelayed
-          )
-          for (claimDelayed <- tx1)
-            yield Transactions.addSigs(
-              localSig = delayedToSig(claimDelayed),
-              claimDelayedOutputTx = claimDelayed
+      val htlcDelayedTxes = htlcTxes.flatMap {
+        (info: TransactionWithInputInfo) =>
+          generateTx {
+            val delayedToSig = cs.localParams.keys.sign(
+              _: ClaimLocalDelayedOutputTx,
+              cs.localParams.keys.delayedPaymentKey.privateKey,
+              localPerCommitmentPoint,
+              TxOwner.Local,
+              cs.channelFeatures.commitmentFormat
             )
-        }
+            val tx1 = Transactions.makeClaimLocalDelayedOutputTx(
+              info.tx,
+              cs.localParams.dustLimit,
+              localRevPubkey,
+              cs.remoteParams.toSelfDelay,
+              localDelayPubkey,
+              cs.localParams.defaultFinalScriptPubKey,
+              feeratePerKwDelayed
+            )
+            for (claimDelayed <- tx1)
+              yield Transactions.addSigs(
+                localSig = delayedToSig(claimDelayed),
+                claimDelayedOutputTx = claimDelayed
+              )
+          }
       }
 
       val mainDelayedTxOpt = for (info <- mainDelayedTx) yield info.tx
@@ -1072,7 +1077,7 @@ object Helpers {
         .sortBy(tx => tx.txOut.map(_.amount.toLong).sum -> tx.txid.toHex)
       val matchingHtlcs = htlcs
         .filter(add =>
-          add.cltvExpiry.underlying == tx.lockTime && ripemd160(
+          add.cltvExpiry.toLong == tx.lockTime && ripemd160(
             add.paymentHash
           ) == hash160
         )

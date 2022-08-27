@@ -1,6 +1,14 @@
 package immortan
 
-import java.net.{InetSocketAddress, Socket}
+import java.net.InetSocketAddress
+import scoin.ln.NodeAddress
+
+trait Socket {
+  def connect(address: NodeAddress, timeout: Int): Unit
+  def write(data: Array[Byte]): Unit
+  def read(buffer: Array[Byte], offset: Int, len: Int): Int
+  def close(): Unit
+}
 
 trait ConnectionProvider {
   val proxyAddress: Option[InetSocketAddress]
