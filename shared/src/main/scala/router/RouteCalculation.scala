@@ -39,7 +39,7 @@ object RouteCalculation {
   }
 
   def makeExtraEdges(
-      assistedRoutes: List[List[ExtraHop]],
+      assistedRoutes: Seq[Seq[ExtraHop]],
       target: PublicKey
   ): Set[GraphEdge] = {
     val converter = routeToEdges(_: List[ExtraHop], target)
@@ -47,7 +47,7 @@ object RouteCalculation {
   }
 
   def routeToEdges(
-      extraHops: List[ExtraHop],
+      extraHops: Seq[ExtraHop],
       targetNodeId: PublicKey
   ): Graph.GraphStructure.GraphEdges = {
     // BOLT 11: "For each entry, the pubkey is the node ID of the start of the channel", and the last node is the destination
@@ -70,13 +70,13 @@ object RouteCalculation {
       chainHash = ByteVector32.Zeroes,
       extraHop.shortChannelId,
       System.currentTimeMillis.milliseconds.toSeconds,
-      messageFlags = 1,
-      channelFlags = 0,
+      // messageFlags = 1,
+      channelFlags = ChannelUpdate.ChannelFlags(false, false),
       extraHop.cltvExpiryDelta,
       LNParams.minPayment,
       extraHop.feeBase,
       extraHop.feeProportionalMillionths,
-      Some(MilliSatoshi(1000000000000000L))
+      MilliSatoshi(1000000000000000L)
     )
 
     ChannelUpdateExt.fromUpdate(update)

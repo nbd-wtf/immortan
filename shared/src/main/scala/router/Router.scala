@@ -5,11 +5,12 @@ import scoin.Crypto.PublicKey
 import scoin._
 import scoin.ln._
 
+import immortan._
 import immortan.FullPaymentTag
-import immortan.crypto.Tools._
 import immortan.utils.Statistics
 import immortan.router.Graph.GraphStructure._
 import immortan.router.Graph.RichWeight
+import scodec.codecs.ShortCodec.apply
 
 object ChannelUpdateExt {
   def fromUpdate(update: ChannelUpdate): ChannelUpdateExt = ChannelUpdateExt(
@@ -41,7 +42,11 @@ object Router {
 
   case class NodeDirectionDesc(from: PublicKey, to: PublicKey)
 
-  case class ChannelDesc(shortChannelId: Long, from: PublicKey, to: PublicKey) {
+  case class ChannelDesc(
+      shortChannelId: ShortChannelId,
+      from: PublicKey,
+      to: PublicKey
+  ) {
     def toDirection: NodeDirectionDesc = NodeDirectionDesc(from, to)
   }
 
@@ -61,7 +66,7 @@ object Router {
     def getChannelUpdateSameSideAs(
         cu: ChannelUpdate
     ): Option[ChannelUpdateExt] =
-      if (cu.position == ChannelUpdate.POSITION1NODE) update1Opt else update2Opt
+      if (cu.position == 1) update1Opt else update2Opt
   }
 
   trait Hop {
@@ -85,8 +90,8 @@ object Router {
     override def toString: String = {
       val base = edge.updExt.update.feeBaseMsat
       val ppm = edge.updExt.update.feeProportionalMillionths
-      val sid = ShortChannelId.asString(edge.desc.shortChannelId)
-      s"node: ${nodeId}, base: $base, ppm: $ppm, cltv: ${cltvExpiryDelta.toLong}, sid: $sid, next node: ${nextNodeId}"
+      val sid = edge.desc.shortChannelId.toString
+      s"node: ${nodeId}, base: $base, ppm: $ppm, cltv: ${cltvExpiryDelta.toInt}, sid: $sid, next node: ${nextNodeId}"
     }
   }
 
@@ -97,7 +102,7 @@ object Router {
       fee: MilliSatoshi
   ) extends Hop {
     override def toString: String =
-      s"Trampoline, node: ${nodeId}, fee reserve: $fee, cltv reserve: ${cltvExpiryDelta.toLong}, next node: ${nextNodeId}"
+      s"Trampoline, node: ${nodeId}, fee reserve: $fee, cltv reserve: ${cltvExpiryDelta.toInt}, next node: ${nextNodeId}"
     override def fee(amount: MilliSatoshi): MilliSatoshi = fee
   }
 
@@ -153,12 +158,11 @@ object Router {
   ) extends RouteResponse
 
   case class Data(
-      channels: Map[Long, PublicChannel],
-      hostedChannels: Map[Long, PublicChannel],
+      channels: Map[ShortChannelId, PublicChannel],
+      hostedChannels: Map[ShortChannelId, PublicChannel],
       graph: DirectedGraph
   ) {
     // This is a costly computation so keep it lazy and only calculate it once on first request
-
     lazy val avgHopParams: AvgHopParams = if (channels.nonEmpty) {
       val sample = channels.values.flatMap(pc => pc.update1Opt ++ pc.update2Opt)
       getAvgHopParams(sample.toVector)
@@ -166,7 +170,7 @@ object Router {
   }
 
   def getDesc(cu: ChannelUpdate, ann: ChannelAnnouncement): ChannelDesc = {
-    if (Announcements.isNode1(cu.channelFlags))
+    if (cu.channelFlags.isNode1)
       ChannelDesc(cu.shortChannelId, ann.nodeId1, ann.nodeId2)
     else ChannelDesc(cu.shortChannelId, ann.nodeId2, ann.nodeId1)
   }
@@ -179,13 +183,13 @@ object Router {
     )
     val cltvMedian = CltvExpiryDelta(
       Statistics
-        .medianBy(sample)(_.update.cltvExpiryDelta.toLong)
+        .medianBy(sample)(_.update.cltvExpiryDelta.toInt)
         .toInt max 144
     )
     AvgHopParams(
       cltvMedian,
       feeProportionalMedian max 1,
-      feeBaseMedian.msat max MilliSatoshi(1000L),
+      MilliSatoshi(feeBaseMedian) max MilliSatoshi(1000L),
       sample.size
     )
   }

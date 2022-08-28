@@ -4,15 +4,14 @@ import java.nio.ByteOrder
 import java.util.concurrent.Executors
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
 import scodec.bits.ByteVector
+import scoin._
 import scoin.Protocol
-import scoin.ln.{LightningMessage, LightningMessageCodecs}
+import scoin.ln.{LightningMessage, LightningMessageCodecs, Pong, Init}
 import scoin.hc.HostedChannelCodecs
 
 import immortan._
-import immortan.crypto.Noise._
-import immortan.crypto.StateMachine
-import immortan.TransportHandler.TransportHandler.CyphertextData
 import immortan.TransportHandler._
+import immortan.crypto.Noise._
 
 // Used to decrypt remote messages -> send to channel as well as encrypt outgoing messages -> send to socket
 abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
@@ -105,7 +104,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
       val (decoder1, plaintext) =
         decoder.decryptWithAd(ByteVector.empty, ciphertext)
       val length =
-        Some apply Protocol.uint16(plaintext.toArray, ByteOrder.BIG_ENDIAN)
+        Some(Protocol.uint16(plaintext.toArray, ByteOrder.BIG_ENDIAN))
       UPDATE(CyphertextData(encoder, decoder1, length, remainder))
       doProcess(Ping)
 
@@ -126,17 +125,19 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
 
   def sendMessage(msg: LightningMessage, channelKind: ChannelKind): Unit =
     if (
-      data.isInstanceOf[CyphertextData] && state
-        .isInstanceOf[TransportHandler.WaitingCyphertext]
+      data.isInstanceOf[CyphertextData] &&
+      state == TransportHandler.WaitingCyphertext
     ) {
       val cd = data.asInstanceOf[CyphertextData]
       val encoded = channelKind match {
-        case NormalChannelKind | IrrelevantChannelKind => 
+        case NormalChannelKind | IrrelevantChannelKind =>
           LightningMessageCodecs.lightningMessageCodec.encode(msg)
         case _ if msg.isInstanceOf[Init] || msg.isInstanceOf[Pong] =>
           LightningMessageCodecs.lightningMessageCodec.encode(msg)
-        case HostedChannelKind => 
+        case HostedChannelKind =>
           HostedChannelCodecs.hostedMessageCodec.encode(msg)
+      }
+
       val (encoder1, ciphertext) =
         encryptMsg(cd.enc, encoded.require.toByteVector)
       handleEncryptedOutgoingData(ciphertext)

@@ -6,11 +6,9 @@ import scoin.Crypto.PublicKey
 import scoin._
 import scoin.ln._
 
+import immortan._
 import immortan.router._
 import immortan.ChannelMaster.{ReasonableLocals, ReasonableTrampolines}
-import immortan._
-import immortan.crypto.Tools._
-import immortan.crypto.{CanBeShutDown, StateMachine}
 import immortan.fsm.IncomingPaymentProcessor._
 import immortan.fsm.PaymentFailure.Failures
 import immortan.channel.{
@@ -35,10 +33,10 @@ object IncomingPaymentProcessor {
 
 sealed trait IncomingPaymentProcessor
     extends StateMachine[IncomingProcessorData, IncomingPaymentProcessor.State]
-    with CanBeShutDown { me =>
+    with CanBeShutDown {
   def initialState = IncomingPaymentProcessor.Initial
 
-  lazy val tuple: (FullPaymentTag, IncomingPaymentProcessor) = (fullTag, me)
+  lazy val tuple: (FullPaymentTag, IncomingPaymentProcessor) = (fullTag, this)
   var lastAmountIn: MilliSatoshi = MilliSatoshi(0L)
   var isHolding: Boolean = false
   val fullTag: FullPaymentTag

@@ -2,7 +2,7 @@ package immortan.router
 
 import scala.collection.mutable.{HashMap, ArrayBuffer, PriorityQueue}
 import scoin.Crypto.PublicKey
-import scoin.Satoshi
+import scoin._
 import scoin.ln._
 
 import immortan.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
@@ -139,7 +139,7 @@ object Graph {
                 .getOrElse(
                   neighbor,
                   RichWeight(
-                    List(Long.MaxValue.msat),
+                    List(MilliSatoshi(Long.MaxValue)),
                     Int.MaxValue,
                     CltvExpiryDelta(Int.MaxValue),
                     Double.MaxValue
@@ -224,9 +224,10 @@ object Graph {
         1 - normalize(edge.updExt.score.toDouble, SCORE_LOW, SCORE_HIGH)
 
       val factor = if (edge.updExt.useHeuristics) {
-        val blockNum = ShortChannelId.blockHeight(edge.desc.shortChannelId)
+        val blockNum =
+          ShortChannelId.blockHeight(edge.desc.shortChannelId)
         val ageFactor = normalize(
-          BLOCK_300K_STAMP_MSEC.toDouble + (blockNum - BLOCK_300K) * AVG_BLOCK_INTERVAL_MSEC,
+          BLOCK_300K_STAMP_MSEC.toDouble + (blockNum.toLong - BLOCK_300K) * AVG_BLOCK_INTERVAL_MSEC,
           BLOCK_300K_STAMP_MSEC.toDouble,
           latestBlockExpectedStampMsecs.toDouble
         )
@@ -236,7 +237,7 @@ object Graph {
           CAPACITY_CHANNEL_HIGH.toLong.toDouble
         )
         val cltvFactor = normalize(
-          edge.updExt.update.cltvExpiryDelta.underlying,
+          edge.updExt.update.cltvExpiryDelta.toInt,
           CLTV_LOW,
           CLTV_HIGH
         )
@@ -335,11 +336,9 @@ object Graph {
 
     object DirectedGraph {
       def empty: DirectedGraph = new DirectedGraph(Map.empty)
-
       def apply(edges: GraphEdges): DirectedGraph = empty.addEdges(edges)
-
       def makeGraph(
-          channels: Map[Long, PublicChannel] = Map.empty
+          channels: Map[ShortChannelId, PublicChannel] = Map.empty
       ): DirectedGraph = {
         val mutableMap = HashMap.empty[PublicKey, GraphEdges]
 

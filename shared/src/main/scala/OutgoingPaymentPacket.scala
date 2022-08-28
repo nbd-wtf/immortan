@@ -1,11 +1,25 @@
 package immortan
 
+import scala.util.Try
 import scodec.Attempt
 import scodec.bits.ByteVector
 import scoin._
+import scoin.Crypto.{PublicKey, PrivateKey}
 import scoin.ln._
 
-import immortan.router._
+import immortan.router.Router._
+import immortan.channel._
+
+class ChannelException(val channelId: ByteVector32, message: String)
+    extends RuntimeException(message)
+
+case class CannotExtractSharedSecret(
+    override val channelId: ByteVector32,
+    htlc: UpdateAddHtlc
+) extends ChannelException(
+      channelId,
+      s"can't extract shared secret: paymentHash=${htlc.paymentHash} onion=${htlc.onionRoutingPacket}"
+    )
 
 /** Helpers to create outgoing payment packets. */
 object OutgoingPaymentPacket {
@@ -69,9 +83,9 @@ object OutgoingPaymentPacket {
       val payload = hop match {
         case hop: ChannelHop =>
           PaymentOnion.ChannelRelayTlvPayload(
-            hop.shortChannelId,
-            amount,
-            expiry
+            outgoingChannelId = hop.edge.desc.shortChannelId,
+            amountToForward = amount,
+            outgoingCltv = expiry
           )
         case hop: NodeHop =>
           PaymentOnion.createNodeRelayPayload(amount, expiry, hop.nextNodeId)
@@ -205,46 +219,6 @@ object OutgoingPaymentPacket {
     ).map(onion => (firstAmount, firstExpiry, onion))
   }
 
-  // @formatter:off
-  sealed trait Upstream
-  object Upstream {
-    case class Local(id: UUID) extends Upstream
-    case class Trampoline(adds: Seq[UpdateAddHtlc]) extends Upstream {
-      val amountIn: MilliSatoshi = adds.map(_.amountMsat).sum
-      val expiryIn: CltvExpiry = adds.map(_.cltvExpiry).min
-    }
-  }
-  // @formatter:on
-
-  /** Build the command to add an HTLC with the given final payload and using
-    * the provided hops.
-    *
-    * @return
-    *   the command and the onion shared secrets (used to decrypt the error in
-    *   case of payment failure)
-    */
-  def buildCommand(
-      replyTo: ActorRef,
-      upstream: Upstream,
-      paymentHash: ByteVector32,
-      hops: Seq[ChannelHop],
-      finalPayload: PaymentOnion.FinalTlvPayload
-  ): Try[(CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)])] = {
-    buildPaymentPacket(paymentHash, hops, finalPayload).map {
-      case (firstAmount, firstExpiry, onion) =>
-        CMD_ADD_HTLC(
-          replyTo,
-          firstAmount,
-          paymentHash,
-          firstExpiry,
-          onion.packet,
-          None,
-          Origin.Hot(replyTo, upstream),
-          commit = true
-        ) -> onion.sharedSecrets
-    }
-  }
-
   def buildHtlcFailure(
       nodeSecret: PrivateKey,
       reason: Either[ByteVector, FailureMessage],
@@ -268,12 +242,11 @@ object OutgoingPaymentPacket {
   }
 
   def buildHtlcFailure(
-      nodeSecret: PrivateKey,
-      cmd: CMD_FAIL_HTLC,
-      add: UpdateAddHtlc
+      cmd: CMD_FAIL_HTLC
   ): Either[CannotExtractSharedSecret, UpdateFailHtlc] = {
-    buildHtlcFailure(nodeSecret, cmd.reason, add) map { encryptedReason =>
-      UpdateFailHtlc(add.channelId, cmd.id, encryptedReason)
+    buildHtlcFailure(cmd.nodeSecret, cmd.reason, cmd.theirAdd).map {
+      encryptedReason =>
+        UpdateFailHtlc(cmd.theirAdd.channelId, cmd.theirAdd.id, encryptedReason)
     }
   }
 }

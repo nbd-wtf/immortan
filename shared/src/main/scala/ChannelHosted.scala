@@ -1,10 +1,9 @@
 package immortan
 
 import com.softwaremill.quicklens._
-import scoin.{ByteVector64, SatoshiLong}
+import scoin.{FeeratePerKw, ByteVector64, SatoshiLong}
 import scodec.bits.ByteVector
 import scoin.ln.transactions._
-import scoin.ln._
 import scoin.ln._
 import scoin.hc._
 import scoin._
@@ -12,10 +11,8 @@ import scoin._
 import immortan._
 import immortan.Channel._
 import immortan.ErrorCodes._
-import immortan.crypto.Tools._
 import immortan.fsm.PreimageCheck
 import immortan.blockchain.CurrentBlockCount
-import immortan.blockchain.fee.FeeratePerKw
 import immortan.channel.Helpers.HashToPreimage
 import immortan.channel._
 
@@ -61,20 +58,22 @@ object ChannelHosted {
   }
 }
 
-abstract class ChannelHosted extends Channel { me =>
+abstract class ChannelHosted extends Channel {
   def isOutOfSync(blockDay: Long): Boolean =
     math.abs(blockDay - LNParams.currentBlockDay) > 1
 
-  def doProcess(change: Any): Unit = (data, change, state) match {
+  def doProcess(change: Any): Unit = (this.data, change, this.state) match {
     case (
           wait: WaitRemoteHostedReply,
           CMD_SOCKET_ONLINE,
           Channel.WaitForInit
         ) =>
-      me SEND InvokeHostedChannel(
-        LNParams.chainHash,
-        wait.refundScriptPubKey,
-        wait.secret
+      SEND(
+        InvokeHostedChannel(
+          LNParams.chainHash,
+          wait.refundScriptPubKey,
+          wait.secret
+        )
       )
       BECOME(wait, Channel.WaitForAccept)
 
@@ -298,11 +297,11 @@ abstract class ChannelHosted extends Channel { me =>
         ) =>
       hc.sendAdd(cmd, blockHeight = LNParams.blockCount.get) match {
         case _ if hc.error.isDefined =>
-          events addRejectedLocally ChannelNotAbleToSend(cmd.incompleteAdd)
+          events.addRejectedLocally(ChannelNotAbleToSend(cmd.incompleteAdd))
         case _ if state == Channel.Sleeping =>
-          events addRejectedLocally ChannelOffline(cmd.incompleteAdd)
+          events.addRejectedLocally(ChannelOffline(cmd.incompleteAdd))
         case Left(reason) => events addRejectedLocally reason
-        case Right(newHCState ~ updateAddHtlcMsg) => {
+        case Right((newHCState, updateAddHtlcMsg)) => {
           StoreBecomeSend(newHCState, Channel.Open, updateAddHtlcMsg)
           process(CMD_SIGN)
         }
@@ -326,8 +325,7 @@ abstract class ChannelHosted extends Channel { me =>
         if hc.nextLocalSpec
           .findIncomingHtlcById(cmd.theirAdd.id)
           .isDefined && hc.error.isEmpty =>
-      val msg =
-        OutgoingPaymentPacket.buildHtlcFailure(cmd, theirAdd = cmd.theirAdd)
+      val msg = OutgoingPaymentPacket.buildHtlcFailure(cmd)
       StoreBecomeSend(hc.addLocalProposal(msg), Channel.Open, msg)
 
     // CMD_SIGN will be sent from ChannelMaster strictly after outgoing FSM sends this command
@@ -374,7 +372,7 @@ abstract class ChannelHosted extends Channel { me =>
           update: ChannelUpdate,
           Channel.Open | Channel.Sleeping
         ) if hc.updateOpt.forall(_.core != update.core) && hc.error.isEmpty =>
-      val shortIdMatches = hostedShortChanId(
+      val shortIdMatches = hostedShortChannelId(
         hc.remoteInfo.nodeSpecificPubKey.value,
         hc.remoteInfo.nodeId.value
       ) == update.shortChannelId
@@ -607,7 +605,7 @@ abstract class ChannelHosted extends Channel { me =>
       // Persist unsigned remote updates to use them on re-sync
       // we do not update runtime data because ours is newer one
       process(CMD_SIGN)
-      me STORE hc
+      STORE(hc)
     } else if (!isRemoteSigOk) {
       s"their updates are different from ours: remote=${remoteSU.remoteUpdates}/${remoteSU.localUpdates}, local=${lcssNew.localUpdates}/${lcssNew.remoteUpdates}"
       hc.resizeProposal.map(hc.withResize) match {

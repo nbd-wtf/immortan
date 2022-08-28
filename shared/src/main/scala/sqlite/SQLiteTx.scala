@@ -1,16 +1,15 @@
 package immortan.sqlite
 
 import java.lang.{Long => JLong}
-
-import scoin.DeterministicWallet.ExtendedPublicKey
-import scoin.{ByteVector32, Satoshi, Transaction}
-import scoin.ln.MilliSatoshi
-import immortan.crypto.Tools.Fiat2Btc
-import immortan.utils.ImplicitJsonFormats._
-import immortan.{ChannelMaster, TxDescription, TxInfo}
+import scala.util.Try
 import spray.json._
 
-import scala.util.Try
+import scoin._
+import scoin.DeterministicWallet.ExtendedPublicKey
+import scoin.ln.MilliSatoshi
+
+import immortan.{Fiat2Btc, ChannelMaster, TxDescription, TxInfo}
+import immortan.utils.ImplicitJsonFormats._
 
 case class TxSummary(
     fees: Satoshi,

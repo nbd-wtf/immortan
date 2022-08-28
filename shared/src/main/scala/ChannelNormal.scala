@@ -7,23 +7,21 @@ import scala.util.Try
 import com.softwaremill.quicklens._
 import scodec.bits.ByteVector
 import scoin.Crypto.PrivateKey
-import scoin.{ByteVector32, Transaction}
+import scoin.{FeeratePerKw, ByteVector32, Transaction}
 import scoin.ln._
 import scoin.ln.ShaChain
 import scoin.ln.OutgoingPaymentPacket
 import scoin.ln.transactions.Transactions.TxOwner
 import scoin.ln.transactions._
 
+import immortan._
 import immortan.Channel._
-import immortan.crypto.Tools._
 import immortan.sqlite.ChannelTxFeesTable
 import immortan.utils.Rx
 import immortan.blockchain._
 import immortan.blockchain.electrum.ElectrumWallet.GenerateTxResponse
-import immortan.blockchain.fee.FeeratePerKw
 import immortan.channel.Helpers.Closing
 import immortan.channel._
-import immortan._
 
 object ChannelNormal {
   def make(
@@ -33,7 +31,8 @@ object ChannelNormal {
   ): ChannelNormal = new ChannelNormal(bag) {
     def SEND(messages: LightningMessage*): Unit = CommsTower.sendMany(
       messages,
-      normalData.commitments.remoteInfo.nodeSpecificPair
+      normalData.commitments.remoteInfo.nodeSpecificPair,
+      NormalChannelKind
     )
     def STORE(dataToStore: PersistentChannelData): PersistentChannelData =
       bag.put(dataToStore)
@@ -698,8 +697,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
           if norm.commitments.latestReducedRemoteSpec
             .findOutgoingHtlcById(cmd.theirAdd.id)
             .isDefined =>
-        val msg =
-          OutgoingPaymentPacket.buildHtlcFailure(cmd, theirAdd = cmd.theirAdd)
+        val msg = OutgoingPaymentPacket.buildHtlcFailure(cmd)
         BECOME(
           norm.copy(commitments = norm.commitments.addLocalProposal(msg)),
           Channel.Open

@@ -1,23 +1,23 @@
 package immortan.sqlite
 
 import java.lang.{Integer => JInt}
-
+import scala.util.Try
+import spray.json._
+import scodec.bits.ByteVector
 import scoin.Crypto.PublicKey
 import scoin.{BlockHeader, ByteVector32}
-import immortan.blockchain.electrum.db.HeaderDb
 import scoin.ln.LightningMessageCodecs.{
   hostedChannelBrandingCodec,
   trampolineOnCodec
 }
-import scoin.ln.{HostedChannelBranding, TrampolineOn}
+import scoin.ln.HostedChannelBranding
+
+import immortan.router._
+import immortan.blockchain.electrum.db.HeaderDb
 import immortan.sqlite.SQLiteData._
 import immortan.utils.ImplicitJsonFormats._
 import immortan.utils.{FeeRatesInfo, FiatRatesInfo}
 import immortan.{DataBag, WalletSecret}
-import scodec.bits.ByteVector
-import spray.json._
-
-import scala.util.Try
 
 object SQLiteData {
   final val LABEL_FEE_RATES = "label-fee-rates"

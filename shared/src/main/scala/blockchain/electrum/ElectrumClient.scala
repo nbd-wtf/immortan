@@ -34,7 +34,6 @@ import scoin._
 import immortan.blockchain.bitcoind.rpc.{Error, JsonRPCRequest, JsonRPCResponse}
 import immortan.blockchain.electrum.ElectrumClient._
 import immortan.blockchain.electrum.ElectrumChainSync
-import immortan.blockchain.fee.FeeratePerKw
 import immortan.LNParams
 
 object ElectrumClient {

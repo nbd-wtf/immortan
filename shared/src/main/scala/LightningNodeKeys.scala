@@ -2,16 +2,14 @@ package immortan
 
 import java.io.ByteArrayInputStream
 import java.nio.ByteOrder
-
-import scoin.Crypto.{PrivateKey, PublicKey}
+import scodec.bits.ByteVector
+import scoin.Crypto.{hmac256, PrivateKey, PublicKey}
 import scoin.DeterministicWallet._
 import scoin.{ByteVector32, Protocol}
-import scoin.ln.crypto.Mac32
-import scodec.bits.ByteVector
 
 object LightningNodeKeys {
   def makeFromSeed(seed: Array[Byte]): LightningNodeKeys = {
-    val master: ExtendedPrivateKey = generate(ByteVector view seed)
+    val master: ExtendedPrivateKey = generate(ByteVector.view(seed))
     val extendedNodeKey: ExtendedPrivateKey =
       derivePrivateKey(master, hardened(46L) :: hardened(0L) :: Nil)
     val hashingKey: PrivateKey =
@@ -30,7 +28,7 @@ case class LightningNodeKeys(
   def makeLinkingKey(domain: String): PrivateKey = {
     val domainBytes = ByteVector(domain getBytes "UTF-8")
     val wifHashingKeyBytes = hashingKey.value.bytes :+ 1.toByte
-    val pathMaterial = Mac32.hmac256(wifHashingKeyBytes, domainBytes)
+    val pathMaterial = hmac256(wifHashingKeyBytes, domainBytes)
     val chain = hardened(138) :: makeKeyPath(pathMaterial.bytes)
     // use master here to be compatible with old BLW
     derivePrivateKey(master, chain).privateKey

@@ -1,19 +1,3 @@
-/*
- * Copyright 2019 ACINQ SAS
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package immortan.blockchain.electrum
 
 import java.util.concurrent.atomic.AtomicLong
@@ -21,10 +5,7 @@ import java.util.concurrent.atomic.AtomicLong
 import scoin.{BlockHeader, ByteVector32, Transaction}
 import immortan.blockchain._
 import immortan.blockchain.electrum.ElectrumClient.computeScriptHash
-import immortan.channel.{
-  BITCOIN_FUNDING_DEPTHOK,
-  BITCOIN_PARENT_TX_CONFIRMED
-}
+import immortan.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_PARENT_TX_CONFIRMED}
 import scoin.ln.transactions.Scripts
 
 import scala.collection.immutable.{Queue, SortedMap}
@@ -32,9 +13,7 @@ import scala.util.Success
 
 class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
     ac: castor.Context
-) extends CastorStateMachineActorWithSetState[Any] {
-  val self = this
-
+) extends CastorStateMachineActorWithSetState[Any] { self =>
   pool.addStatusListener(self)
 
   def stay = state
@@ -276,7 +255,7 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
           // we also re-send the txes that we previously sent but hadn't yet received the confirmation
           Disconnected(
             watches,
-            sent.map(PublishAsap),
+            sent.map(PublishAsap(_)),
             block2tx
           )
 

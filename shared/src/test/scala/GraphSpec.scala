@@ -12,8 +12,8 @@ object GraphSpec extends TestSuite {
   val tests = Tests {
     test("Calculate the best possible route") {
       val routeRequest: RouteRequest = makeRouteRequest(
-        100000.msat,
-        getParams(routerConf, 100000.msat, offChainFeeRatio),
+        MilliSatoshi(100000),
+        getParams(routerConf, MilliSatoshi(100000), offChainFeeRatio),
         fromNode = a,
         fromLocalEdge = null
       )
@@ -23,41 +23,41 @@ object GraphSpec extends TestSuite {
           1L,
           a,
           b,
-          1.msat,
+          MilliSatoshi(1),
           10,
           cltvDelta = CltvExpiryDelta(1),
-          minHtlc = 10000.msat,
-          maxHtlc = 500000.msat
+          minHtlc = MilliSatoshi(10000),
+          maxHtlc = MilliSatoshi(500000)
         ) ::
           makeEdge(
             2L,
             a,
             c,
-            1.msat,
+            MilliSatoshi(1),
             10,
             cltvDelta = CltvExpiryDelta(1),
-            minHtlc = 10000.msat,
-            maxHtlc = 500000.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(500000)
           ) ::
           makeEdge(
             3L,
             b,
             d,
-            40.msat,
+            MilliSatoshi(40),
             10,
             cltvDelta = CltvExpiryDelta(1),
-            minHtlc = 10000.msat,
-            maxHtlc = 500000.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(500000)
           ) :: // Expensive
           makeEdge(
             4L,
             c,
             d,
-            1.msat,
+            MilliSatoshi(1),
             10,
             cltvDelta = CltvExpiryDelta(1),
-            minHtlc = 10000.msat,
-            maxHtlc = 600000.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(600000)
           ) ::
           Nil
       )
@@ -67,7 +67,11 @@ object GraphSpec extends TestSuite {
 
       assert(route.hops.map(_.nodeId) == a :: c :: Nil)
       assert(route.hops.map(_.nextNodeId) == c :: d :: Nil)
-      assert(route.weight.costs == 100002.msat :: 100000.msat :: Nil)
+      assert(
+        route.weight.costs == MilliSatoshi(100002) :: MilliSatoshi(
+          100000
+        ) :: Nil
+      )
 
       val routeRequest1 = routeRequest.copy(ignoreChannels =
         Set(ChannelDesc(2L, a, c))
@@ -77,7 +81,11 @@ object GraphSpec extends TestSuite {
 
       assert(route1.hops.map(_.nodeId) == a :: b :: Nil)
       assert(route1.hops.map(_.nextNodeId) == b :: d :: Nil)
-      assert(route1.weight.costs == 100041.msat :: 100000.msat :: Nil)
+      assert(
+        route1.weight.costs == MilliSatoshi(100041) :: MilliSatoshi(
+          100000
+        ) :: Nil
+      )
 
       val routeRequest2 = routeRequest.copy(ignoreNodes = Set(c))
       val RouteFound(route2, _, _) = RouteCalculation.handleRouteRequest(
@@ -87,14 +95,18 @@ object GraphSpec extends TestSuite {
 
       assert(route2.hops.map(_.nodeId) == a :: b :: Nil)
       assert(route2.hops.map(_.nextNodeId) == b :: d :: Nil)
-      assert(route2.weight.costs == 100041.msat :: 100000.msat :: Nil)
+      assert(
+        route2.weight.costs == MilliSatoshi(100041) :: MilliSatoshi(
+          100000
+        ) :: Nil
+      )
 
       val routeRequest3 = makeRouteRequest(
-        400000.msat,
-        getParams(routerConf, 400000.msat, offChainFeeRatio / 2000),
+        MilliSatoshi(400000),
+        getParams(routerConf, MilliSatoshi(400000), offChainFeeRatio / 2000),
         fromNode = a,
         fromLocalEdge = null
-      ) // 2 msat max fee reserve
+      ) // MilliSatoshi(2) max fee reserve
       val NoRouteAvailable(_, _) = RouteCalculation.handleRouteRequest(
         graph,
         routeRequest3
@@ -102,12 +114,12 @@ object GraphSpec extends TestSuite {
 
       val NoRouteAvailable(_, _) = RouteCalculation.handleRouteRequest(
         graph,
-        routeRequest.copy(amount = 500000L.msat)
+        routeRequest.copy(amount = MilliSatoshi(500000L))
       ) // Can't handle amount
 
       val NoRouteAvailable(_, _) = RouteCalculation.handleRouteRequest(
         graph,
-        routeRequest.copy(amount = 50L.msat)
+        routeRequest.copy(amount = MilliSatoshi(50L))
       ) // Amount is too small
     }
 
@@ -117,61 +129,61 @@ object GraphSpec extends TestSuite {
           1L,
           a,
           b,
-          1.msat,
+          MilliSatoshi(1),
           10,
           cltvDelta = CltvExpiryDelta(1),
-          minHtlc = 10000.msat,
-          maxHtlc = 500000.msat
+          minHtlc = MilliSatoshi(10000),
+          maxHtlc = MilliSatoshi(500000)
         ) ::
           makeEdge(
             2L,
             a,
             c,
-            1.msat,
+            MilliSatoshi(1),
             10,
             cltvDelta = CltvExpiryDelta(1),
-            minHtlc = 10000.msat,
-            maxHtlc = 500000.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(500000)
           ) ::
           makeEdge(
             3L,
             b,
             d,
-            40.msat,
+            MilliSatoshi(40),
             10,
             cltvDelta = CltvExpiryDelta(1),
-            minHtlc = 10000.msat,
-            maxHtlc = 500000.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(500000)
           ) :: // Expensive
           makeEdge(
             4L,
             c,
             d,
-            1.msat,
+            MilliSatoshi(1),
             10,
             cltvDelta = CltvExpiryDelta(1),
-            minHtlc = 10000.msat,
-            maxHtlc = 600000.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(600000)
           ) ::
           makeEdge(
             5L,
             c,
             d,
-            1.msat,
+            MilliSatoshi(1),
             10,
             cltvDelta = CltvExpiryDelta(1),
-            minHtlc = 10000.msat,
-            maxHtlc = 600000.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(600000)
           ) ::
           makeEdge(
             6L,
             c,
             d,
-            1.msat,
+            MilliSatoshi(1),
             10,
             cltvDelta = CltvExpiryDelta(1),
-            minHtlc = 10000.msat,
-            maxHtlc = 600000.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(600000)
           ) ::
           Nil
       )
@@ -181,8 +193,8 @@ object GraphSpec extends TestSuite {
       //     \ c ///, excluded
 
       val routeRequest1: RouteRequest = makeRouteRequest(
-        100000.msat,
-        getParams(routerConf, 100000.msat, offChainFeeRatio),
+        MilliSatoshi(100000),
+        getParams(routerConf, MilliSatoshi(100000), offChainFeeRatio),
         fromNode = a,
         fromLocalEdge = null
       )
@@ -200,8 +212,8 @@ object GraphSpec extends TestSuite {
 
     test("Always prefer a direct path") {
       val routeRequest: RouteRequest = makeRouteRequest(
-        100000.msat,
-        getParams(routerConf, 100000.msat, offChainFeeRatio),
+        MilliSatoshi(100000),
+        getParams(routerConf, MilliSatoshi(100000), offChainFeeRatio),
         fromNode = a,
         fromLocalEdge = null
       ).copy(target = b)
@@ -211,31 +223,31 @@ object GraphSpec extends TestSuite {
           1L,
           a,
           b,
-          100.msat,
+          MilliSatoshi(100),
           100,
           cltvDelta = CltvExpiryDelta(1),
-          minHtlc = 10000.msat,
-          maxHtlc = 500000.msat
+          minHtlc = MilliSatoshi(10000),
+          maxHtlc = MilliSatoshi(500000)
         ) :: // Expensive, but direct route does not charge
           makeEdge(
             2L,
             a,
             c,
-            1.msat,
+            MilliSatoshi(1),
             10,
             cltvDelta = CltvExpiryDelta(1),
-            minHtlc = 10000.msat,
-            maxHtlc = 500000.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(500000)
           ) ::
           makeEdge(
             3L,
             c,
             b,
-            2.msat,
+            MilliSatoshi(2),
             10,
             cltvDelta = CltvExpiryDelta(1),
-            minHtlc = 10000.msat,
-            maxHtlc = 500000.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(500000)
           ) ::
           Nil
       )
@@ -249,8 +261,8 @@ object GraphSpec extends TestSuite {
 
     test("CLTV delta affects result") {
       val routeRequest: RouteRequest = makeRouteRequest(
-        500000000L.msat,
-        getParams(routerConf, 500000000L.msat, offChainFeeRatio),
+        MilliSatoshi(500000000L),
+        getParams(routerConf, MilliSatoshi(500000000L), offChainFeeRatio),
         fromNode = s,
         fromLocalEdge = null
       )
@@ -260,51 +272,51 @@ object GraphSpec extends TestSuite {
           1L,
           s,
           a,
-          1000.msat,
+          MilliSatoshi(1000),
           100,
           cltvDelta = CltvExpiryDelta(576),
-          minHtlc = 10000.msat,
-          maxHtlc = 5000000000L.msat
+          minHtlc = MilliSatoshi(10000),
+          maxHtlc = MilliSatoshi(5000000000L)
         ) ::
           makeEdge(
             2L,
             a,
             b,
-            1000.msat,
+            MilliSatoshi(1000),
             100,
             cltvDelta = CltvExpiryDelta(576),
-            minHtlc = 10000.msat,
-            maxHtlc = 5000000000L.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(5000000000L)
           ) ::
           makeEdge(
             3L,
             a,
             c,
-            1000.msat,
+            MilliSatoshi(1000),
             150,
             cltvDelta = CltvExpiryDelta(70),
-            minHtlc = 10000.msat,
-            maxHtlc = 5000000000L.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(5000000000L)
           ) :: // Used despite higher fee because of much lower cltv
           makeEdge(
             4L,
             b,
             d,
-            1000.msat,
+            MilliSatoshi(1000),
             100,
             cltvDelta = CltvExpiryDelta(576),
-            minHtlc = 10000.msat,
-            maxHtlc = 5000000000L.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(5000000000L)
           ) ::
           makeEdge(
             5L,
             c,
             d,
-            1000.msat,
+            MilliSatoshi(1000),
             100,
             cltvDelta = CltvExpiryDelta(576),
-            minHtlc = 10000.msat,
-            maxHtlc = 6000000000L.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(6000000000L)
           ) ::
           Nil
       )
@@ -316,8 +328,8 @@ object GraphSpec extends TestSuite {
 
     test("Capacity affects result") {
       val routeRequest: RouteRequest = makeRouteRequest(
-        500000000L.msat,
-        getParams(routerConf, 500000000L.msat, offChainFeeRatio),
+        MilliSatoshi(500000000L),
+        getParams(routerConf, MilliSatoshi(500000000L), offChainFeeRatio),
         fromNode = s,
         fromLocalEdge = null
       )
@@ -327,51 +339,51 @@ object GraphSpec extends TestSuite {
           1L,
           s,
           a,
-          1000.msat,
+          MilliSatoshi(1000),
           100,
           cltvDelta = CltvExpiryDelta(144),
-          minHtlc = 10000.msat,
-          maxHtlc = 5000000000L.msat
+          minHtlc = MilliSatoshi(10000),
+          maxHtlc = MilliSatoshi(5000000000L)
         ) ::
           makeEdge(
             2L,
             a,
             b,
-            1000.msat,
+            MilliSatoshi(1000),
             100,
             cltvDelta = CltvExpiryDelta(144),
-            minHtlc = 10000.msat,
-            maxHtlc = 5000000000L.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(5000000000L)
           ) ::
           makeEdge(
             3L,
             a,
             c,
-            1000.msat,
+            MilliSatoshi(1000),
             150,
             cltvDelta = CltvExpiryDelta(144),
-            minHtlc = 10000.msat,
-            maxHtlc = 500000000000L.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(500000000000L)
           ) :: // Used despite higher fee because of much larger channel size
           makeEdge(
             4L,
             b,
             d,
-            1000.msat,
+            MilliSatoshi(1000),
             100,
             cltvDelta = CltvExpiryDelta(144),
-            minHtlc = 10000.msat,
-            maxHtlc = 5000000000L.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(5000000000L)
           ) ::
           makeEdge(
             5L,
             c,
             d,
-            1000.msat,
+            MilliSatoshi(1000),
             100,
             cltvDelta = CltvExpiryDelta(144),
-            minHtlc = 10000.msat,
-            maxHtlc = 6000000000L.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(6000000000L)
           ) ::
           Nil
       )
@@ -383,8 +395,8 @@ object GraphSpec extends TestSuite {
 
     test("Score affects result") {
       val routeRequest: RouteRequest = makeRouteRequest(
-        500000000L.msat,
-        getParams(routerConf, 500000000L.msat, offChainFeeRatio),
+        MilliSatoshi(500000000L),
+        getParams(routerConf, MilliSatoshi(500000000L), offChainFeeRatio),
         fromNode = s,
         fromLocalEdge = null
       )
@@ -394,52 +406,52 @@ object GraphSpec extends TestSuite {
           1L,
           s,
           a,
-          1000.msat,
+          MilliSatoshi(1000),
           100,
           cltvDelta = CltvExpiryDelta(144),
-          minHtlc = 10000.msat,
-          maxHtlc = 5000000000L.msat
+          minHtlc = MilliSatoshi(10000),
+          maxHtlc = MilliSatoshi(5000000000L)
         ) ::
           makeEdge(
             2L,
             a,
             b,
-            1000.msat,
+            MilliSatoshi(1000),
             100,
             cltvDelta = CltvExpiryDelta(144),
-            minHtlc = 10000.msat,
-            maxHtlc = 5000000000L.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(5000000000L)
           ) ::
           makeEdge(
             3L,
             a,
             c,
-            1000.msat,
+            MilliSatoshi(1000),
             150,
             cltvDelta = CltvExpiryDelta(144),
-            minHtlc = 10000.msat,
-            maxHtlc = 5000000000L.msat,
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(5000000000L),
             score = 260
           ) :: // Used despite higher fee because of much better score
           makeEdge(
             4L,
             b,
             d,
-            1000.msat,
+            MilliSatoshi(1000),
             100,
             cltvDelta = CltvExpiryDelta(144),
-            minHtlc = 10000.msat,
-            maxHtlc = 5000000000L.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(5000000000L)
           ) ::
           makeEdge(
             5L,
             c,
             d,
-            1000.msat,
+            MilliSatoshi(1000),
             100,
             cltvDelta = CltvExpiryDelta(144),
-            minHtlc = 10000.msat,
-            maxHtlc = 6000000000L.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(6000000000L)
           ) ::
           Nil
       )
@@ -452,8 +464,8 @@ object GraphSpec extends TestSuite {
     // (fiatjaf: this was already failing in anton's code so I'll comment out because I don't fully get these graph things)
     // test("Age affects result") {
     //   val routeRequest: RouteRequest = makeRouteRequest(
-    //     500000000L.msat,
-    //     getParams(routerConf, 500000000L.msat, offChainFeeRatio),
+    //     MilliSatoshi(500000000L),
+    //     getParams(routerConf, MilliSatoshi(500000000L), offChainFeeRatio),
     //     fromNode = s,
     //     fromLocalEdge = null
     //   )
@@ -463,51 +475,51 @@ object GraphSpec extends TestSuite {
     //       ShortChannelId.produce("600000x1x1"),
     //       s,
     //       a,
-    //       1000.msat,
+    //       MilliSatoshi(1000),
     //       100,
     //       cltvDelta = CltvExpiryDelta(144),
-    //       minHtlc = 10000.msat,
-    //       maxHtlc = 5000000000L.msat
+    //       minHtlc = MilliSatoshi(10000),
+    //       maxHtlc = MilliSatoshi(5000000000L)
     //     ) ::
     //       makeEdge(
     //         ShortChannelId.produce("600000x1x1"),
     //         a,
     //         b,
-    //         1000.msat,
+    //         MilliSatoshi(1000),
     //         100,
     //         cltvDelta = CltvExpiryDelta(144),
-    //         minHtlc = 10000.msat,
-    //         maxHtlc = 5000000000L.msat
+    //         minHtlc = MilliSatoshi(10000),
+    //         maxHtlc = MilliSatoshi(5000000000L)
     //       ) ::
     //       makeEdge(
     //         ShortChannelId.produce("500000x1x1"),
     //         a,
     //         c,
-    //         1000.msat,
+    //         MilliSatoshi(1000),
     //         150,
     //         cltvDelta = CltvExpiryDelta(144),
-    //         minHtlc = 10000.msat,
-    //         maxHtlc = 5000000000L.msat
+    //         minHtlc = MilliSatoshi(10000),
+    //         maxHtlc = MilliSatoshi(5000000000L)
     //       ) :: // Used despite higher fee because it's very old
     //       makeEdge(
     //         ShortChannelId.produce("600000x1x1"),
     //         b,
     //         d,
-    //         1000.msat,
+    //         MilliSatoshi(1000),
     //         100,
     //         cltvDelta = CltvExpiryDelta(144),
-    //         minHtlc = 10000.msat,
-    //         maxHtlc = 5000000000L.msat
+    //         minHtlc = MilliSatoshi(10000),
+    //         maxHtlc = MilliSatoshi(5000000000L)
     //       ) ::
     //       makeEdge(
     //         ShortChannelId.produce("600000x1x1"),
     //         c,
     //         d,
-    //         1000.msat,
+    //         MilliSatoshi(1000),
     //         100,
     //         cltvDelta = CltvExpiryDelta(144),
-    //         minHtlc = 10000.msat,
-    //         maxHtlc = 6000000000L.msat
+    //         minHtlc = MilliSatoshi(10000),
+    //         maxHtlc = MilliSatoshi(6000000000L)
     //       ) ::
     //       Nil
     //   )
@@ -519,8 +531,8 @@ object GraphSpec extends TestSuite {
 
     test("Hosted channel parameters do not matter") {
       val routeRequest: RouteRequest = makeRouteRequest(
-        1000000000L.msat,
-        getParams(routerConf, 1000000000L.msat, offChainFeeRatio),
+        MilliSatoshi(1000000000L),
+        getParams(routerConf, MilliSatoshi(1000000000L), offChainFeeRatio),
         fromNode = s,
         fromLocalEdge = null
       )
@@ -530,51 +542,51 @@ object GraphSpec extends TestSuite {
           1L,
           s,
           a,
-          1000.msat,
+          MilliSatoshi(1000),
           100,
           cltvDelta = CltvExpiryDelta(576),
-          minHtlc = 10000.msat,
-          maxHtlc = 50000000000L.msat
+          minHtlc = MilliSatoshi(10000),
+          maxHtlc = MilliSatoshi(50000000000L)
         ) ::
           makeEdge(
             2L,
             a,
             b,
-            1000.msat,
+            MilliSatoshi(1000),
             100,
             cltvDelta = CltvExpiryDelta(576),
-            minHtlc = 10000.msat,
-            maxHtlc = 50000000000L.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(50000000000L)
           ) ::
           makeEdge(
             3L,
             a,
             c,
-            1000.msat,
+            MilliSatoshi(1000),
             200,
             cltvDelta = CltvExpiryDelta(1000),
-            minHtlc = 10000.msat,
-            maxHtlc = 5000000000L.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(5000000000L)
           ).modify(_.updExt.useHeuristics).setTo(false) ::
           makeEdge(
             4L,
             b,
             d,
-            1000.msat,
+            MilliSatoshi(1000),
             100,
             cltvDelta = CltvExpiryDelta(576),
-            minHtlc = 10000.msat,
-            maxHtlc = 50000000000L.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(50000000000L)
           ) ::
           makeEdge(
             5L,
             c,
             d,
-            1000.msat,
+            MilliSatoshi(1000),
             100,
             cltvDelta = CltvExpiryDelta(576),
-            minHtlc = 10000.msat,
-            maxHtlc = 50000000000L.msat
+            minHtlc = MilliSatoshi(10000),
+            maxHtlc = MilliSatoshi(50000000000L)
           ) ::
           Nil
       )

@@ -2,20 +2,18 @@ package immortan
 
 import java.util.Date
 import scala.util.{Success, Failure, Try}
-import scoin.Crypto.PublicKey
-import scoin.{ByteVector32, Satoshi, Transaction}
-import scoin.ln._
-import immortan.channel.{DATA_CLOSING, HasNormalCommitments}
-import scoin.ln.{FullPaymentTag, PaymentTagTlv}
-import immortan.ChannelMaster.TxConfirmedAtOpt
-import immortan.crypto.Tools
-import immortan.crypto.Tools.{Fiat2Btc, SEPARATOR}
-import immortan.fsm.{IncomingPaymentProcessor, SendMultiPart, SplitInfo}
-import immortan.utils.ImplicitJsonFormats._
-import immortan.utils.{LNUrl, PayRequestMeta, PaymentRequestExt, AES}
 import org.bouncycastle.util.encoders.Base64
 import scodec.bits.ByteVector
 import spray.json._
+import scoin.Crypto.PublicKey
+import scoin._
+import scoin.ln._
+
+import immortan.ChannelMaster.TxConfirmedAtOpt
+import immortan.channel.{DATA_CLOSING, HasNormalCommitments}
+import immortan.fsm.{IncomingPaymentProcessor, SendMultiPart, SplitInfo}
+import immortan.utils.ImplicitJsonFormats._
+import immortan.utils.{LNUrl, PayRequestMeta, PaymentRequestExt, AES}
 
 object PaymentInfo {
   final val NO_ACTION = "no-action"
@@ -121,7 +119,7 @@ case class LNUrlPayLink(
   lazy val payLink: Option[LNUrl] = Try(payString).map(LNUrl.apply).toOption
   lazy val payMetaData: Try[PayRequestMeta] =
     Try(payMetaString.parseJson.asInstanceOf[JsArray].elements)
-      .map(PayRequestMeta)
+      .map(PayRequestMeta(_))
   lazy val imageBytes: Option[Array[Byte]] =
     payMetaData.toOption.flatMap(_.imageBase64).map(Base64.decode)
   lazy val lastComment: Option[String] =
@@ -194,7 +192,7 @@ case class PaymentInfo(
       fsm.lastAmountIn
     ) && fsm.isHolding
   def ratio(fsm: IncomingPaymentProcessor): Long =
-    Tools.ratio(received, fsm.lastAmountIn).toLong
+    ratio(received, fsm.lastAmountIn).toLong
 }
 
 // Payment actions

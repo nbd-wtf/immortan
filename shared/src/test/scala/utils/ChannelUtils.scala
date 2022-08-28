@@ -1,28 +1,22 @@
 package immortan.utils
 
 import scoin.Crypto.PublicKey
-import scoin.{ByteVector32, ByteVector64, SatoshiLong}
+import scoin.{FeeratePerKw, ByteVector32, ByteVector64, SatoshiLong}
 import scoin.ln._
-import immortan.blockchain.fee.FeeratePerKw
 import scoin.ln.transactions.{CommitmentSpec, RemoteFulfill}
-import scoin.ln.{
-  InitHostedChannel,
-  LastCrossSignedState,
-  NodeAddress
-}
-import immortan.crypto.Tools
+
+import immortan.{none, ChannelMaster, HostedCommits, PathFinder, RemoteNodeInfo}
 import immortan.fsm.{OutgoingPaymentListener, OutgoingPaymentSenderData}
 import immortan.sqlite._
-import immortan.{ChannelMaster, HostedCommits, PathFinder, RemoteNodeInfo}
 
 object ChannelUtils {
   val noopListener: OutgoingPaymentListener = new OutgoingPaymentListener {
     override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit =
-      Tools.none
+      none
     override def gotFirstPreimage(
         data: OutgoingPaymentSenderData,
         fulfill: RemoteFulfill
-    ): Unit = Tools.none
+    ): Unit = none
   }
 
   def makePathFinder(
@@ -34,8 +28,8 @@ object ChannelUtils {
         System.currentTimeMillis // Won't resync
       def getLastNormalResyncStamp: Long =
         System.currentTimeMillis // Won't resync
-      def updateLastTotalResyncStamp(stamp: Long): Unit = Tools.none
-      def updateLastNormalResyncStamp(stamp: Long): Unit = Tools.none
+      def updateLastTotalResyncStamp(stamp: Long): Unit = none
+      def updateLastNormalResyncStamp(stamp: Long): Unit = none
       def getPHCExtraNodes: Set[RemoteNodeInfo] = Set.empty
       def getExtraNodes: Set[RemoteNodeInfo] = Set.empty
     }
@@ -43,7 +37,7 @@ object ChannelUtils {
   def makeHostedCommits(
       nodeId: PublicKey,
       alias: String,
-      toLocal: MilliSatoshi = 100000000L.msat
+      toLocal: MilliSatoshi = MilliSatoshi(100000000L)
   ): HostedCommits = {
     val features = List(
       Features.HostedChannels.mandatory,
@@ -51,10 +45,10 @@ object ChannelUtils {
     )
     val initMessage = InitHostedChannel(
       UInt64(toLocal.underlying + 100000000L),
-      10.msat,
+      MilliSatoshi(10),
       20,
-      200000000L.msat,
-      0.msat,
+      MilliSatoshi(200000000L),
+      MilliSatoshi(0),
       features
     )
     val remoteBalance = initMessage.channelCapacityMsat - toLocal
@@ -81,7 +75,7 @@ object ChannelUtils {
         alias
       ),
       CommitmentSpec(
-        feeratePerKw = FeeratePerKw(0.sat),
+        feeratePerKw = FeeratePerKw(Satoshi(0)),
         toLocal = toLocal,
         toRemote = remoteBalance
       ),

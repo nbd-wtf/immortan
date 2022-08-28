@@ -12,8 +12,7 @@ import scoin.Crypto.PublicKey
 import scoin.ln._
 import scoin.ln.NodeAddress
 
-import immortan.{LNParams, PaymentAction, RemoteNodeInfo}
-import immortan.crypto.Tools
+import immortan._
 import immortan.utils.ImplicitJsonFormats._
 import immortan.utils.uri.Uri
 
@@ -111,7 +110,7 @@ sealed trait CallbackLNUrlData extends LNUrlData {
 // LNURL-CHANNEL
 sealed trait HasRemoteInfo {
   val remoteInfo: RemoteNodeInfo
-  def cancel(): Unit = Tools.none
+  def cancel(): Unit = none
 }
 
 case class HasRemoteInfoWrap(remoteInfo: RemoteNodeInfo) extends HasRemoteInfo
@@ -137,7 +136,7 @@ case class NormalChannelRequest(uri: String, callback: String, k1: String)
           remoteInfo.nodeSpecificPubKey.toString
         )
     }
-    .foreach(Tools.none, Tools.none)
+    .foreach(none, none)
 
   val InputParser.nodeLink(nodeKey, hostAddress, portNumber) = uri
   val pubKey: PublicKey = PublicKey.fromBin(ByteVector fromValidHex nodeKey)
@@ -186,7 +185,7 @@ case class WithdrawRequest(
   val relatedPayLinkOpt: Option[LNUrl] = payLink.map(LNUrl.apply)
 
   val descriptionOpt: Option[String] =
-    Some(defaultDescription).map(Tools.trimmed).filter(_.nonEmpty)
+    Some(defaultDescription).map(trimmed).filter(_.nonEmpty)
 
   require(
     minCanReceive <= MilliSatoshi(maxWithdrawable),
@@ -214,7 +213,7 @@ case class PayRequestMeta(records: PayRequest.TagAndContent) {
       identifier
   }
   val textFull: Option[String] = longDesc.orElse(text)
-  val textShort: Option[String] = text.map(Tools.trimmed(_))
+  val textShort: Option[String] = text.map(trimmed(_))
   val imageBase64: Option[String] = records.collectFirst {
     case JsArray(
           JsString("image/png;base64" | "image/jpeg;base64") +: JsString(

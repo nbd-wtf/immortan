@@ -1,8 +1,11 @@
 package immortan.utils
 
+import scodec.bits.ByteVector
 import scoin.Crypto.PublicKey
 import scoin.{Block, ByteVector32, ByteVector64}
 import scoin.ln._
+
+import immortan._
 import immortan.router.Graph.GraphStructure.GraphEdge
 import immortan.router.Router.{
   ChannelDesc,
@@ -11,15 +14,7 @@ import immortan.router.Router.{
   RouterConf
 }
 import immortan.router.{Announcements, ChannelUpdateExt, Sync}
-import scoin.ln.{
-  ChannelAnnouncement,
-  ChannelUpdate,
-  FullPaymentTag,
-  PaymentTagTlv
-}
-import immortan.crypto.Tools._
 import immortan.sqlite.SQLiteNetwork
-import scodec.bits.ByteVector
 
 object GraphUtils {
   val PlaceHolderSig: ByteVector64 = ByteVector64(ByteVector.fill(64)(0xaa))
@@ -84,7 +79,6 @@ object GraphUtils {
       cltvDelta: CltvExpiryDelta = CltvExpiryDelta(0),
       score: Int = 1
   ): GraphEdge = {
-
     val update = makeUpdate(
       shortChannelId,
       nodeId1,

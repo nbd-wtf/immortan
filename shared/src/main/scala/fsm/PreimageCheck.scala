@@ -7,16 +7,16 @@ import scoin.{ByteVector32, Crypto}
 import scoin.ln.{HostedChannelMessage, Init, QueryPreimages, ReplyPreimages}
 import scoin.hc._
 
-import immortan.channel.Helpers.HashToPreimage
-import immortan.crypto.StateMachine
-import immortan.crypto.Tools.randomKeyPair
-import immortan.utils.Rx
 import immortan.{
+  randomKeyPair,
+  StateMachine,
   CommsTower,
   ConnectionListener,
   KeyPairAndPubKey,
   RemoteNodeInfo
 }
+import immortan.channel.Helpers.HashToPreimage
+import immortan.utils.Rx
 
 object PreimageCheck {
   sealed trait State

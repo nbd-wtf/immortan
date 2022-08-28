@@ -1,11 +1,11 @@
 package immortan.utils
 
 import scoin._
-import immortan.blockchain.fee._
-import immortan.crypto.CanBeShutDown
+
+import immortan.{CanBeShutDown, DataBag, LNParams}
 import immortan.utils.FeeRates._
 import immortan.utils.ImplicitJsonFormats._
-import immortan.{DataBag, LNParams}
+import immortan.blockchain.fee._
 
 object FeeRates {
   val minPerKw: FeeratePerKw = FeeratePerKw(1000L.sat)
@@ -48,15 +48,18 @@ object FeeRates {
 class FeeRates(bag: DataBag) extends CanBeShutDown {
   override def becomeShutDown(): Unit = listeners = Set.empty
 
-  def reloadData: FeeratesPerKB = scoin.ln.secureRandom nextInt 3 match {
-    case 0 =>
-      new EsploraFeeProvider(
-        "https://blockstream.info/api/fee-estimates"
-      ).provide
-    case 1 =>
-      new EsploraFeeProvider("https://mempool.space/api/fee-estimates").provide
-    case _ => BitgoFeeProvider.provide
-  }
+  def reloadData: FeeratesPerKB =
+    Crypto.randomBytes(4).toInt(signed = true) % 3 match {
+      case 0 =>
+        new EsploraFeeProvider(
+          "https://blockstream.info/api/fee-estimates"
+        ).provide
+      case 1 =>
+        new EsploraFeeProvider(
+          "https://mempool.space/api/fee-estimates"
+        ).provide
+      case _ => BitgoFeeProvider.provide
+    }
 
   def updateInfo(newPerKB: FeeratesPerKB): Unit = {
     val history1 =

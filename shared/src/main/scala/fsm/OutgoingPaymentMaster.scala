@@ -4,11 +4,15 @@ import scala.collection.mutable
 import scala.concurrent.Future
 import com.softwaremill.quicklens._
 import scodec.bits.ByteVector
-import scoin.ByteVector32
+import scoin._
 import scoin.Crypto.PublicKey
 import scoin.ln._
-import immortan.channel.LocalReject
-import scoin.ln.payment.OutgoingPaymentPacket
+
+import immortan._
+import immortan.fsm.OutgoingPaymentMaster._
+import immortan.channel._
+import immortan.router._
+import immortan.router.Graph.GraphStructure.{DescAndCapacity, GraphEdge}
 import immortan.router.Router.{
   ChannelDesc,
   RouterConf,
@@ -16,13 +20,6 @@ import immortan.router.Router.{
   RouteRequest,
   RouteResponse
 }
-import immortan.router.Graph.GraphStructure.{DescAndCapacity, GraphEdge}
-import scoin.ln.transactions.{RemoteFulfill, RemoteReject}
-import scoin.ln._
-import immortan._
-import immortan.crypto.Tools._
-import immortan.crypto.{CanBeRepliedTo, StateMachine}
-import immortan.fsm.OutgoingPaymentMaster._
 
 // Master commands and data
 case class CutIntoHalves(amount: MilliSatoshi)
@@ -168,7 +165,7 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
         mapKeys[DescAndCapacity, MilliSatoshi, ChannelDesc](
           currentUsedCapacities,
           _.desc,
-          defVal = 0L.msat
+          defVal = MilliSatoshi(0L)
         )
       val ignoreChansCanNotHandle = currentUsedCapacities.collect {
         case (dac, used)
@@ -220,7 +217,7 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
               data.chanFailedAtAmount
                 .get(descAndCapacity)
                 .map(_.amount)
-                .getOrElse(Long.MaxValue.msat)
+                .getOrElse(MilliSatoshi(Long.MaxValue))
                 .min(
                   usedCapacities(
                     descAndCapacity
@@ -335,7 +332,9 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
     val waitParts =
       mutable.Map.empty[ByteVector32, PartIdToAmount] withDefaultValue Map.empty
     val finals =
-      mutable.Map.empty[ChanAndCommits, MilliSatoshi] withDefaultValue 0L.msat
+      mutable.Map
+        .empty[ChanAndCommits, MilliSatoshi]
+        .withDefaultValue(MilliSatoshi(0L))
 
     // Wait part may have no route yet (but we expect a route to arrive) or it could be sent to channel but not processed by channel yet
     def waitPartsNotYetInChannel(cnc: ChanAndCommits): PartIdToAmount =
@@ -349,7 +348,8 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
       .foreach(cnc =>
         finals(cnc) = cnc.commits.maxSendInFlight.min(
           cnc.commits.availableForSend
-        ) - maxFee - waitPartsNotYetInChannel(cnc).values.sum
+        ) - maxFee - waitPartsNotYetInChannel(cnc).values
+          .fold(MilliSatoshi(0))(_ + _)
       )
     finals.filter { case (cnc, sendable) =>
       sendable >= cnc.commits.minSendable
@@ -360,7 +360,8 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
     // This gets supposedly used capacities of external channels in a routing graph
     // we need this to exclude channels which definitely can't route a given amount right now
     val accumulator =
-      mutable.Map.empty[DescAndCapacity, MilliSatoshi] withDefaultValue 0L.msat
+      mutable.Map
+        .empty[DescAndCapacity, MilliSatoshi] withDefaultValue MilliSatoshi(0L)
     // This is not always accurate since on restart FSMs will be empty while leftovers may still be in chans
     val descsAndCaps = data.paymentSenders.values
       .flatMap(_.data.inFlightParts)

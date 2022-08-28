@@ -1,14 +1,13 @@
 package immortan
 
+import utest._
 import scoin._
 import scoin.ln._
-import scoin.ln.crypto.Sphinx._
-import immortan.channel.CMD_ADD_HTLC
-import scoin.ln.crypto.SphinxTestHelpers._
+import scoin.ln.Sphinx._
+import scoin.ln.SphinxTestHelpers._
 import scoin.ln.LightningMessageCodecs._
-import scoin.ln._
-import immortan.crypto.Tools
-import utest._
+
+import immortan.channel.CMD_ADD_HTLC
 
 object WireSpec extends TestSuite {
   val tests = Tests {
@@ -22,7 +21,7 @@ object WireSpec extends TestSuite {
       val add = UpdateAddHtlc(
         randomBytes32,
         id = 100L,
-        amountMsat = 1000000L.msat,
+        amountMsat = MilliSatoshi(1000000L),
         paymentHash = randomBytes32,
         cltvExpiry = CltvExpiry(288),
         onionRoutingPacket = packet
@@ -73,7 +72,7 @@ object WireSpec extends TestSuite {
       val add = UpdateAddHtlc(
         randomBytes32,
         id = 100L,
-        amountMsat = 1000000L.msat,
+        amountMsat = MilliSatoshi(1000000L),
         paymentHash = randomBytes32,
         cltvExpiry = CltvExpiry(288),
         onionRoutingPacket = packet
@@ -92,7 +91,7 @@ object WireSpec extends TestSuite {
       LNParams.secret = WalletSecret.random()
 
       val payload = PaymentOnion.createSinglePartPayload(
-        1000000L.msat,
+        MilliSatoshi(1000000L),
         CltvExpiry(144),
         randomBytes32,
         None
@@ -111,7 +110,7 @@ object WireSpec extends TestSuite {
       )
       val cmd = CMD_ADD_HTLC(
         fullTag,
-        firstAmount = 1000000L.msat,
+        firstAmount = MilliSatoshi(1000000L),
         CltvExpiry(144),
         packetAndSecrets,
         payload
@@ -124,7 +123,7 @@ object WireSpec extends TestSuite {
       LNParams.secret = WalletSecret.random()
 
       val payload = PaymentOnion.createSinglePartPayload(
-        1000000L.msat,
+        MilliSatoshi(1000000L),
         CltvExpiry(144),
         randomBytes32,
         None
@@ -143,7 +142,7 @@ object WireSpec extends TestSuite {
       )
       val cmd = CMD_ADD_HTLC(
         fullTag,
-        firstAmount = 1000000L.msat,
+        firstAmount = MilliSatoshi(1000000L),
         CltvExpiry(144),
         packetAndSecrets,
         payload
@@ -173,10 +172,10 @@ object WireSpec extends TestSuite {
       )
       val init = InitHostedChannel(
         UInt64(1000000000L),
-        htlcMinimumMsat = 100.msat,
+        htlcMinimumMsat = MilliSatoshi(100),
         maxAcceptedHtlcs = 12,
-        channelCapacityMsat = 10000000000L.msat,
-        100000L.msat,
+        channelCapacityMsat = MilliSatoshi(10000000000L),
+        MilliSatoshi(100000L),
         features
       )
 
@@ -185,8 +184,8 @@ object WireSpec extends TestSuite {
         refundScriptPubKey = randomBytes(78),
         init,
         blockDay = 12594,
-        localBalanceMsat = 100000L.msat,
-        remoteBalanceMsat = 100000L.msat,
+        localBalanceMsat = MilliSatoshi(100000L),
+        remoteBalanceMsat = MilliSatoshi(100000L),
         localUpdates = 123,
         remoteUpdates = 294,
         List(add1, add2, add1),
@@ -206,7 +205,7 @@ object WireSpec extends TestSuite {
     test("Trampoline status") {
       val trampolineOn = TrampolineOn(
         LNParams.minPayment,
-        Long.MaxValue.msat,
+        MilliSatoshi(Long.MaxValue),
         feeProportionalMillionths = 1000L,
         exponent = 0.0,
         logExponent = 0.0,
@@ -247,7 +246,7 @@ object WireSpec extends TestSuite {
       val iterations = 1000000
       val sids =
         List.fill(iterations)(
-          Tools.hostedShortChanId(randomBytes32, hostNodeId)
+          hostedShortChannelId(randomBytes32, hostNodeId)
         )
       assert(sids.size == sids.toSet.size)
     }

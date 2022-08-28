@@ -1,16 +1,17 @@
 package immortan
 
+import utest._
 import scoin.ln._
+import scoin.ln._
+
+import immortan._
+import immortan.PathFinder.ExpectedRouteFees
 import immortan.router.Announcements
 import immortan.router.Router.{ChannelDesc, NoRouteAvailable, RouteFound}
-import scoin.ln._
-import immortan.PathFinder.ExpectedRouteFees
-import immortan.crypto.{CanBeRepliedTo, Tools}
 import immortan.utils.ChannelUtils._
 import immortan.utils.GraphUtils._
 import immortan.utils.SQLiteUtils._
 import immortan.utils.TestUtils._
-import utest._
 
 object PathfinderSpec extends TestSuite {
   val (normalStore, hostedStore) = getSQLiteNetworkStores
@@ -18,7 +19,7 @@ object PathfinderSpec extends TestSuite {
 
   val tests = Tests {
     test("Compute expected fees") {
-      val amountToSend = 100000000L.msat
+      val amountToSend = MilliSatoshi(100000000L)
       val finalExpectedHop = AvgHopParams(
         CltvExpiryDelta(100),
         100,
@@ -36,8 +37,8 @@ object PathfinderSpec extends TestSuite {
       ).totalWithFeeReserve(amountToSend)
 
       val trampolineFee1 = TrampolineOn(
-        minMsat = 1000L.msat,
-        maxMsat = Long.MaxValue.msat,
+        minMsat = MilliSatoshi(1000L),
+        maxMsat = MilliSatoshi(Long.MaxValue),
         1000,
         exponent = 0.79,
         logExponent = 2.1,
@@ -52,8 +53,8 @@ object PathfinderSpec extends TestSuite {
       )
 
       val trampolineFee2 = TrampolineOn(
-        minMsat = 1000L.msat,
-        maxMsat = Long.MaxValue.msat,
+        minMsat = MilliSatoshi(1000L),
+        maxMsat = MilliSatoshi(Long.MaxValue),
         1000,
         exponent = 0.89,
         logExponent = 3.1,
@@ -73,7 +74,7 @@ object PathfinderSpec extends TestSuite {
       assert(
         payeeWithPeerEdge.totalWithFeeReserve(
           amountToSend
-        ) - amountToSend == 92243L.msat
+        ) - amountToSend == MilliSatoshi(92243L)
       )
     }
 
@@ -95,32 +96,32 @@ object PathfinderSpec extends TestSuite {
         5L,
         a,
         s,
-        1.msat,
+        MilliSatoshi(1),
         10,
         cltvDelta = CltvExpiryDelta(144),
-        minHtlc = 10L.msat,
-        maxHtlc = 500000.msat
+        minHtlc = MilliSatoshi(10L),
+        maxHtlc = MilliSatoshi(500000)
       )
       val update1ASFromS: ChannelUpdate = makeUpdate(
         5L,
         s,
         a,
-        1.msat,
+        MilliSatoshi(1),
         10,
         cltvDelta = CltvExpiryDelta(144),
-        minHtlc = 10L.msat,
-        maxHtlc = 500000.msat
+        minHtlc = MilliSatoshi(10L),
+        maxHtlc = MilliSatoshi(500000)
       )
 
       val update2ASFromSOneSide: ChannelUpdate = makeUpdate(
         6L,
         s,
         a,
-        1.msat,
+        MilliSatoshi(1),
         10,
         cltvDelta = CltvExpiryDelta(144),
-        minHtlc = 10L.msat,
-        maxHtlc = 500000.msat
+        minHtlc = MilliSatoshi(10L),
+        maxHtlc = MilliSatoshi(500000)
       )
 
       val addChannelAnnouncementNewSqlPQ =
@@ -161,7 +162,7 @@ object PathfinderSpec extends TestSuite {
 
       val routingMap = normalStore.getRoutingData
       assert(
-        normalStore.listExcludedChannels.contains(6L)
+        normalStore.listExcludedChannels.contains(ShortChannelId(6L))
       ) // One-sided channel got banned, ghost channel has been removed
       assert(
         !normalStore.listChannelAnnouncements
@@ -191,10 +192,10 @@ object PathfinderSpec extends TestSuite {
       pf.listeners += sender // Will get operational notification as a listener
 
       val fromKey = randomKey.publicKey
-      val fakeLocalEdge = Tools.mkFakeLocalEdge(from = fromKey, toPeer = a)
+      val fakeLocalEdge = mkFakeLocalEdge(from = fromKey, toPeer = a)
       val routeRequest = makeRouteRequest(
-        100000.msat,
-        getParams(routerConf, 100000.msat, offChainFeeRatio),
+        MilliSatoshi(100000),
+        getParams(routerConf, MilliSatoshi(100000), offChainFeeRatio),
         fromKey,
         fakeLocalEdge
       )
@@ -220,31 +221,31 @@ object PathfinderSpec extends TestSuite {
         7L,
         b,
         s,
-        1.msat,
+        MilliSatoshi(1),
         10,
         cltvDelta = CltvExpiryDelta(100),
-        minHtlc = 10L.msat,
-        maxHtlc = 500000.msat
+        minHtlc = MilliSatoshi(10L),
+        maxHtlc = MilliSatoshi(500000)
       )
       val edgeDSFromD = makeEdge(
         8L,
         d,
         s,
-        2.msat,
+        MilliSatoshi(2),
         20,
         cltvDelta = CltvExpiryDelta(300),
-        minHtlc = 10L.msat,
-        maxHtlc = 500000.msat
+        minHtlc = MilliSatoshi(10L),
+        maxHtlc = MilliSatoshi(500000)
       )
       val edgeCSFromC = makeEdge(
         9L,
         c,
         s,
-        30.msat,
+        MilliSatoshi(30),
         300,
         cltvDelta = CltvExpiryDelta(300),
-        minHtlc = 10L.msat,
-        maxHtlc = 500000.msat
+        minHtlc = MilliSatoshi(10L),
+        maxHtlc = MilliSatoshi(500000)
       )
 
       pf process edgeBSFromB
@@ -309,20 +310,20 @@ object PathfinderSpec extends TestSuite {
       }
 
       val fromKey = randomKey.publicKey
-      val fakeLocalEdge = Tools.mkFakeLocalEdge(from = fromKey, toPeer = a)
+      val fakeLocalEdge = mkFakeLocalEdge(from = fromKey, toPeer = a)
       val edgeDSFromD = makeEdge(
         6L,
         d,
         s,
-        1.msat,
+        MilliSatoshi(1),
         10,
         cltvDelta = CltvExpiryDelta(144),
-        minHtlc = 10L.msat,
-        maxHtlc = 500000.msat
+        minHtlc = MilliSatoshi(10L),
+        maxHtlc = MilliSatoshi(500000)
       )
       val routeRequest = makeRouteRequest(
-        100000.msat,
-        getParams(routerConf, 100000.msat, offChainFeeRatio),
+        MilliSatoshi(100000),
+        getParams(routerConf, MilliSatoshi(100000), offChainFeeRatio),
         fromKey,
         fakeLocalEdge
       ).copy(target = s)
@@ -344,11 +345,11 @@ object PathfinderSpec extends TestSuite {
         6L,
         d,
         s,
-        4.msat,
+        MilliSatoshi(4),
         100,
         cltvDelta = CltvExpiryDelta(144),
-        minHtlc = 10L.msat,
-        maxHtlc = 500000.msat
+        minHtlc = MilliSatoshi(10L),
+        maxHtlc = MilliSatoshi(500000)
       )
       pf process updateDSFromD
       pf process PathFinder.FindRoute(sender, routeRequest)
@@ -369,7 +370,7 @@ object PathfinderSpec extends TestSuite {
           .edge
           .updExt
           .update
-          .feeBaseMsat == 4.msat
+          .feeBaseMsat == MilliSatoshi(4)
       )
 
       // Public channel has been updated, CLTV got worse so another channel has been selected
@@ -377,11 +378,11 @@ object PathfinderSpec extends TestSuite {
         2L,
         a,
         c,
-        1.msat,
+        MilliSatoshi(1),
         10,
         cltvDelta = CltvExpiryDelta(154),
-        minHtlc = 10L.msat,
-        maxHtlc = 500000.msat
+        minHtlc = MilliSatoshi(10L),
+        maxHtlc = MilliSatoshi(500000)
       )
       pf process updateACFromA1
       pf process PathFinder.FindRoute(sender, routeRequest)
@@ -402,11 +403,11 @@ object PathfinderSpec extends TestSuite {
         1L,
         a,
         b,
-        1.msat,
+        MilliSatoshi(1),
         10,
         cltvDelta = CltvExpiryDelta(14),
-        minHtlc = 10L.msat,
-        maxHtlc = 500000.msat
+        minHtlc = MilliSatoshi(10L),
+        maxHtlc = MilliSatoshi(500000)
       ).copy(channelFlags = disabled)
       pf process updateABFromA1
       // Disabled channel is updated and still present in graph, but outgoing FSM instructs pathfinder to omit it
@@ -433,11 +434,11 @@ object PathfinderSpec extends TestSuite {
         6L,
         d,
         s,
-        2.msat,
+        MilliSatoshi(2),
         100,
         cltvDelta = CltvExpiryDelta(144),
-        minHtlc = 10L.msat,
-        maxHtlc = 500000.msat
+        minHtlc = MilliSatoshi(10L),
+        maxHtlc = MilliSatoshi(500000)
       ).copy(channelFlags = disabled1)
       pf process updateDSFromD1
       // Disabled channel is updated and still present in graph, but outgoing FSM instructs pathfinder to omit it

@@ -1,14 +1,12 @@
 package immortan.crypto
 
-import java.math.BigInteger
 import java.nio.ByteOrder.LITTLE_ENDIAN
-
-import scoin.Crypto
-import scoin.Crypto.PrivateKey
-import scoin.Protocol.writeUInt64
-import scoin.ln.crypto.{ChaCha20Poly1305, Mac32}
-import scoin.ln.randomBytes
 import scodec.bits.ByteVector
+import scoin.Crypto
+import scoin.Crypto.{PublicKey, PrivateKey}
+import scoin.Protocol.writeUInt64
+import scoin.Crypto.ChaCha20Poly1305
+import scoin.ln.randomBytes
 
 object Noise {
   sealed trait MessagePattern
@@ -49,11 +47,8 @@ object Noise {
 
   object Secp256k1DHFunctions extends DHFunctions {
     def dh(keyPair: KeyPair, pubKey: ByteVector): ByteVector = {
-      val pointGBigInteger = new BigInteger(1, keyPair.priv.take(32).toArray)
-      val ecPoint = Crypto.curve.getCurve
-        .decodePoint(pubKey.toArray)
-        .multiply(pointGBigInteger)
-      Crypto sha256 ByteVector.view(ecPoint.normalize getEncoded true)
+      val result = PublicKey(pubKey).multiply(PrivateKey(keyPair.priv))
+      Crypto.sha256(result.value)
     }
 
     def generateKeyPair(priv: ByteVector): KeyPair = {
@@ -88,22 +83,16 @@ object Noise {
         n: Long,
         ad: ByteVector,
         plaintext: ByteVector
-    ): ByteVector = {
-      val (ciphertext, mac) =
-        ChaCha20Poly1305.encrypt(k, nonce(n), plaintext, ad)
-      ciphertext ++ mac
-    }
+    ): ByteVector =
+      ChaCha20Poly1305.encrypt(plaintext, k, nonce(n), ad)
 
     def decrypt(
         k: ByteVector,
         n: Long,
         ad: ByteVector,
         ciphertextAndMac: ByteVector
-    ): ByteVector = {
-      val (ciphertext, mac) =
-        (ciphertextAndMac dropRight 16, ciphertextAndMac takeRight 16)
-      ChaCha20Poly1305.decrypt(k, nonce(n), ciphertext, ad, mac)
-    }
+    ): ByteVector =
+      ChaCha20Poly1305.decrypt(ciphertextAndMac, k, nonce(n), ad)
 
     def nonce(n: Long): ByteVector =
       baseBin ++ writeUInt64(n, LITTLE_ENDIAN)
@@ -134,7 +123,7 @@ object Noise {
 
   object SHA256HashFunctions extends HashFunctions {
     def hmacHash(key: ByteVector, data: ByteVector): ByteVector =
-      Mac32.hmac256(key, data).bytes
+      Crypto.hmac256(key, data).bytes
     def hash(hashingSource: ByteVector): ByteVector =
       Crypto.sha256(hashingSource)
 
@@ -280,7 +269,7 @@ object Noise {
       pts.foldLeft(me -> ByteVector.empty) {
 
         case Tuple2(Tuple2(writer, buffer), E) =>
-          val e1 = dh generateKeyPair randomBytes(dh.dhLen)
+          val e1 = dh.generateKeyPair(Crypto.randomBytes(dh.dhLen))
           (
             writer.copy(state = writer.state mixHash e1.pub, e = e1),
             buffer ++ e1.pub

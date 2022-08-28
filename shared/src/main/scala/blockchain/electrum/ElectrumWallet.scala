@@ -1,7 +1,16 @@
 package immortan.blockchain.electrum
 
+import scala.annotation.tailrec
+import scala.collection.immutable
+import scala.concurrent.duration._
+import scala.concurrent.Future
+import scala.util.{Success, Try}
+import scodec.bits.ByteVector
 import scoin.DeterministicWallet._
 import scoin._
+import scoin.ln.transactions.Transactions
+
+import immortan._
 import immortan.blockchain.EclairWallet._
 import immortan.blockchain.bitcoind.rpc.Error
 import immortan.blockchain.electrum.Blockchain.RETARGETING_PERIOD
@@ -9,17 +18,7 @@ import immortan.blockchain.electrum.ElectrumClient._
 import immortan.blockchain.electrum.ElectrumWallet._
 import immortan.blockchain.electrum.db.sqlite.SqliteWalletDb.persistentDataCodec
 import immortan.blockchain.electrum.db.{HeaderDb, WalletDb}
-import immortan.blockchain.fee.FeeratePerKw
-import scoin.ln.transactions.Transactions
-import immortan.crypto.Tools._
 import immortan.sqlite.SQLiteTx
-import scodec.bits.ByteVector
-
-import scala.annotation.tailrec
-import scala.collection.immutable
-import scala.concurrent.duration._
-import scala.concurrent.Future
-import scala.util.{Success, Try}
 
 class ElectrumWallet(
     pool: ElectrumClientPool,

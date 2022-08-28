@@ -1,17 +1,17 @@
 package immortan.fsm
 
-import scoin.Crypto.PublicKey
-import scoin.ln.Features.PrivateRouting
-import scoin.ln._
-import immortan._
-import immortan.crypto.Tools._
-import immortan.crypto.{CanBeShutDown, StateMachine}
-import immortan.fsm.TrampolineBroadcaster._
-import rx.lang.scala.Observable
-
 import java.util.concurrent.Executors
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
+import rx.lang.scala.Observable
+import scoin.Crypto.PublicKey
+import scoin.MilliSatoshi
+import scoin.ln.Features.PrivateRouting
+import scoin.ln._
+
+import immortan._
+import immortan.router._
+import immortan.fsm.TrampolineBroadcaster._
 
 object TrampolineBroadcaster {
   sealed trait State
@@ -37,19 +37,21 @@ object TrampolineBroadcaster {
         usableChannels.partition(_.commits.remoteInfo.nodeId == info.nodeId)
 
       val canReceiveFromPeer =
-        peerChannels.map(_.commits.availableForReceive).sum
+        peerChannels
+          .map(_.commits.availableForReceive)
+          .fold(MilliSatoshi(0))(_ + _)
       val canSendOut =
-        otherChannels.map(_.commits.availableForSend * maxRoutableRatio).sum
+        otherChannels
+          .map(_.commits.availableForSend * maxRoutableRatio)
+          .fold(MilliSatoshi(0))(_ + _)
       val status =
         templateTrampolineOn.copy(maxMsat = canSendOut min canReceiveFromPeer)
 
-      val last1 = last match {
+      copy(last = last match {
         case _ if status.minMsat > status.maxMsat => TrampolineUndesired
         case TrampolineUndesired => TrampolineStatusInit(List.empty, status)
         case _ => TrampolineStatusUpdate(List.empty, Map.empty, Some(status))
-      }
-
-      copy(last = last1)
+      })
     }
   }
 }
@@ -69,7 +71,7 @@ class TrampolineBroadcaster(cm: ChannelMaster)
   var broadcasters: Map[PublicKey, LastBroadcast] = Map.empty
 
   def doBroadcast(msg: Option[TrampolineStatus], info: RemoteNodeInfo): Unit =
-    CommsTower.sendMany(msg, info.nodeSpecificPair)
+    CommsTower.sendMany(msg, info.nodeSpecificPair, IrrelevantChannelKind)
   def process(message: Any): Unit =
     scala.concurrent.Future(me doProcess message)
   override def becomeShutDown(): Unit = subscription.unsubscribe()

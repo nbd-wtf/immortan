@@ -7,12 +7,11 @@ import scala.util.Failure
 import scoin._
 import scoin.ln.LightningMessage
 
+import immortan._
 import immortan.blockchain.CurrentBlockCount
 import immortan.blockchain.electrum.EventStream
 import immortan.channel._
 import immortan.Channel.channelContext
-import immortan.crypto.Tools._
-import immortan.crypto.{CanBeRepliedTo, StateMachine}
 
 object Channel {
   sealed trait State

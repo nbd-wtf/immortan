@@ -1,8 +1,7 @@
 package immortan.utils
 
-import immortan.crypto.{CanBeShutDown, Tools}
+import immortan._
 import immortan.utils.ImplicitJsonFormats._
-import immortan.{DataBag, LNParams}
 
 object FiatRates {
   type BlockchainInfoItemMap = Map[String, BlockchainInfoItem]
@@ -95,7 +94,7 @@ case class Bitpay(data: FiatRates.BitpayItemList)
 case class CoinGecko(rates: FiatRates.CoinGeckoItemMap)
 
 case class FiatRatesInfo(
-    rates: Tools.Fiat2Btc,
-    oldRates: Tools.Fiat2Btc,
+    rates: Fiat2Btc,
+    oldRates: Fiat2Btc,
     stamp: Long
 )

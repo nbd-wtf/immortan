@@ -1,14 +1,13 @@
 package immortan.fsm
 
-import scoin.{ByteVector32, Satoshi}
+import scoin.{ByteVector32, MilliSatoshi, Satoshi, FeeratePerKw}
+import scoin.ln._
 import scoin.ln.Features.StaticRemoteKey
-import scoin.ln._
-import immortan.blockchain.fee.FeeratePerKw
+
+import immortan._
 import immortan.channel._
-import scoin.ln._
 import immortan.Channel
 import immortan.ChannelListener.{Malfunction, Transition}
-import immortan._
 
 abstract class NCFunderOpenHandler(
     info: RemoteNodeInfo,
@@ -23,12 +22,12 @@ abstract class NCFunderOpenHandler(
   def onAwaitFunding(data: DATA_WAIT_FOR_FUNDING_INTERNAL): Unit
   def onFailure(err: Throwable): Unit
 
-  private val tempChannelId: ByteVector32 = randomBytes32
+  private val tempChannelId: ByteVector32 = randomBytes32()
   private var assignedChanId = Option.empty[ByteVector32]
 
   val freshChannel: ChannelNormal = new ChannelNormal(cm.chanBag) {
     def SEND(messages: LightningMessage*): Unit =
-      CommsTower.sendMany(messages, info.nodeSpecificPair)
+      CommsTower.sendMany(messages, info.nodeSpecificPair, NormalChannelKind)
     def STORE(normalData: PersistentChannelData): PersistentChannelData =
       cm.chanBag.put(normalData)
   }
@@ -68,7 +67,7 @@ abstract class NCFunderOpenHandler(
           info.safeAlias,
           tempChannelId,
           fundingAmount,
-          0L.msat,
+          MilliSatoshi(0L),
           fundingFeeratePerKw,
           initialFeeratePerKw,
           localFunderParams,

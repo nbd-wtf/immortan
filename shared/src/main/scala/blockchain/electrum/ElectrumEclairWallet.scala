@@ -1,5 +1,9 @@
 package immortan.blockchain.electrum
 
+import scala.concurrent.Future
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.util.Try
+import scodec.bits.ByteVector
 import scoin.{
   ByteVector32,
   OP_PUSHDATA,
@@ -9,19 +13,15 @@ import scoin.{
   Script,
   Transaction,
   TxIn,
-  TxOut
+  TxOut,
+  FeeratePerKw
 }
+
 import immortan.blockchain.EclairWallet
 import immortan.blockchain.EclairWallet._
 import immortan.blockchain.electrum.ElectrumClient.BroadcastTransaction
 import immortan.blockchain.electrum.ElectrumWallet._
 import immortan.blockchain.electrum.db.CompleteChainWalletInfo
-import immortan.blockchain.fee.FeeratePerKw
-import scodec.bits.ByteVector
-
-import scala.concurrent.Future
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.util.Try
 
 case class ElectrumEclairWallet(
     wallet: ElectrumWallet,

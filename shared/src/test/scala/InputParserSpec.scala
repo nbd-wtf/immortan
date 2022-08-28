@@ -26,12 +26,16 @@ object InputParserSpec extends TestSuite {
           .isEmpty
       )
       assert(
-        List(100.msat, 2000.msat, 300000.msat) == PaymentRequestExt
+        List(
+          MilliSatoshi(100),
+          MilliSatoshi(2000),
+          MilliSatoshi(300000)
+        ) == PaymentRequestExt
           .fromUri(PaymentRequestExt.removePrefix(uri1))
           .splits
       )
       assert(
-        List(2000.msat, 6000.msat) == PaymentRequestExt
+        List(MilliSatoshi(2000), MilliSatoshi(6000)) == PaymentRequestExt
           .fromUri(PaymentRequestExt.removePrefix(uri2))
           .splits
       )
@@ -57,14 +61,14 @@ object InputParserSpec extends TestSuite {
       assert(uri1.address == "mjSk1Ny9spzU2fouzYgLqGUD8U41iR35QN")
       assert(uri1.message contains "Order of flowers & chocolates")
       assert(uri1.label contains "Example Merchant")
-      assert(uri1.amount contains 1000000000L.msat)
+      assert(uri1.amount contains MilliSatoshi(1000000000L))
       assert(uri1.prExt.isEmpty)
 
       val raw2 =
         "bitcoin:bc1qssm5quvrc6v7a9zy97yqxzm5v7s32an2ma9fh2?amount=0.02&label=  "
       val uri2 = BitcoinUri.fromRaw(raw2)
       assert(uri2.address == "bc1qssm5quvrc6v7a9zy97yqxzm5v7s32an2ma9fh2")
-      assert(uri2.amount contains 2000000000L.msat)
+      assert(uri2.amount contains MilliSatoshi(2000000000L))
       assert(uri2.label.isEmpty)
 
       val raw3 =
@@ -113,9 +117,9 @@ object InputParserSpec extends TestSuite {
 
     test("Multi-address parser") {
       val expected = Seq(
-        "bc1qssm5quvrc6v7a9zy97yqxzm5v7s32an2ma9fh2" -> 150000000.sat,
-        "181KcAjdvesSkfFQfPmoKm9W4UHFXAcxkj" -> 400000.sat,
-        "3LShakamn25Bk6Mgjh8G4CKCBsXCynE2Yx" -> 19000000.sat
+        "bc1qssm5quvrc6v7a9zy97yqxzm5v7s32an2ma9fh2" -> Satoshi(150000000),
+        "181KcAjdvesSkfFQfPmoKm9W4UHFXAcxkj" -> Satoshi(400000),
+        "3LShakamn25Bk6Mgjh8G4CKCBsXCynE2Yx" -> Satoshi(19000000)
       )
 
       val valid1 =

@@ -12,13 +12,7 @@ import scoin.ln.Sphinx
 import scoin.ln.Sphinx.PacketAndSecrets
 import scoin.ln.OutgoingPaymentPacket
 
-import immortan.{
-  FullPaymentTag,
-  LNParams,
-  InFlightPayments,
-  Channel,
-  ChanAndCommits
-}
+import immortan._
 import immortan.router.Router._
 import immortan.channel.{
   CMD_ADD_HTLC,
@@ -34,8 +28,6 @@ import immortan.router.{Announcements, ChannelUpdateExt}
 import immortan.PaymentStatus._
 import immortan.fsm.PaymentFailure._
 import immortan.fsm.OutgoingPaymentMaster._
-import immortan.crypto.Tools._
-import immortan.crypto.StateMachine
 
 object PaymentFailure {
   type Failures = List[PaymentFailure]
@@ -121,7 +113,7 @@ class OutgoingPaymentSender(
       SendMultiPart(
         fullTag,
         Right(LNParams.minInvoiceExpiryDelta),
-        SplitInfo(MilliSatoshi(0L), 0L.msat),
+        SplitInfo(MilliSatoshi(0L), MilliSatoshi(0L)),
         LNParams.routerConf,
         invalidPubKey,
         None,

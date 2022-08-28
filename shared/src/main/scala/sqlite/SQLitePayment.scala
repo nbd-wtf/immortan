@@ -9,7 +9,6 @@ import scoin.ln.FullPaymentTag
 
 import immortan._
 import immortan.channel._
-import immortan.crypto.Tools.Fiat2Btc
 import immortan.utils.ImplicitJsonFormats._
 import immortan.utils.PaymentRequestExt
 

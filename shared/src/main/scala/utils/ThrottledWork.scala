@@ -1,7 +1,8 @@
 package immortan.utils
 
-import immortan.crypto.Tools.none
 import rx.lang.scala.Subscription
+
+import immortan.none
 
 abstract class ThrottledWork[T, V] {
   private var lastWork: Option[T] = None

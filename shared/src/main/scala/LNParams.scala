@@ -14,6 +14,7 @@ import scoin.ln.transactions.{DirectedHtlc, RemoteFulfill}
 import scoin.hc._
 import castor.Context.Simple.global
 
+import immortan._
 import immortan.blockchain.electrum._
 import immortan.blockchain.electrum.db.{
   CompleteChainWalletInfo,
@@ -23,10 +24,7 @@ import immortan.blockchain.electrum.db.{
 import immortan.channel._
 import immortan.router.ChannelUpdateExt
 import immortan.router.Router.{PublicChannel, RouterConf}
-import immortan.SyncMaster.ShortChanIdSet
-import immortan.crypto.CanBeShutDown
 import immortan.crypto.Noise.KeyPair
-import immortan.crypto.Tools._
 import immortan.router._
 import immortan.sqlite._
 import immortan.utils._
@@ -560,14 +558,14 @@ trait NetworkBag {
 
   def listChannelAnnouncements: Iterable[ChannelAnnouncement]
   def listChannelUpdates: Iterable[ChannelUpdateExt]
-  def listChannelsWithOneUpdate: ShortChanIdSet
-  def listExcludedChannels: Set[Long]
+  def listChannelsWithOneUpdate: Set[ShortChannelId]
+  def listExcludedChannels: Set[ShortChannelId]
 
   def incrementScore(cu: ChannelUpdateExt): Unit
-  def getRoutingData: Map[Long, PublicChannel]
+  def getRoutingData: Map[ShortChannelId, PublicChannel]
   def removeGhostChannels(
-      ghostIds: ShortChanIdSet,
-      oneSideIds: ShortChanIdSet
+      ghostIds: Set[ShortChannelId],
+      oneSideIds: Set[ShortChannelId]
   ): Unit
   def processCompleteHostedData(pure: CompleteHostedRoutingData): Unit
   def processPureData(data: PureRoutingData): Unit

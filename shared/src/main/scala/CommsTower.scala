@@ -15,9 +15,7 @@ import scoin.ln._
 import scoin.ln.LightningMessageCodecs.lightningMessageCodec
 import scoin.hc.HostedChannelCodecs.hostedMessageCodec
 
-import immortan._
 import immortan.crypto.Noise.KeyPair
-import immortan.crypto.Tools.none
 
 case class KeyPairAndPubKey(keyPair: KeyPair, them: PublicKey)
 

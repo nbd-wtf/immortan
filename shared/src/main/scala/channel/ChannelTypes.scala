@@ -5,17 +5,13 @@ import scoin.Crypto.{PrivateKey, PublicKey}
 import scoin.DeterministicWallet._
 import scoin._
 import scoin.ln._
-import scoin.ln.Generators
 import scoin.ln.Sphinx.PacketAndSecrets
-import scoin.ln.IncomingPaymentPacket
 import scoin.ln.transactions.Transactions._
 import scoin.ln.transactions.{CommitmentSpec, Transactions}
 import scoin.ln.PaymentOnion.FinalPayload
 
+import immortan._
 import immortan.blockchain.TxConfirmedAt
-import immortan.blockchain.fee.FeeratePerKw
-import immortan.crypto.Tools
-import immortan.{LNParams, RemoteNodeInfo}
 
 sealed trait HtlcResult
 object HtlcResult {
@@ -159,9 +155,9 @@ case class CMD_ADD_HTLC(
     val shortTag = ShortPaymentTag(fullTag.paymentSecret, fullTag.tag)
     val plainBytes =
       PaymentTagTlv.shortPaymentTagCodec.encode(shortTag).require.toByteVector
-    val cipherbytes = Tools.chaChaEncrypt(
+    val cipherbytes = chaChaEncrypt(
       LNParams.secret.keys.ourNodePrivateKey.value,
-      randomBytes(12),
+      Crypto.randomBytes(12),
       plainBytes
     )
     TlvStream(EncryptedPaymentSecret(cipherbytes) :: Nil)
@@ -183,7 +179,7 @@ case object CMD_CHECK_FEERATE extends Command
 case object CMD_SIGN extends Command
 
 trait ChannelData {
-  def ourBalance: MilliSatoshi = 0L.msat
+  def ourBalance: MilliSatoshi = MilliSatoshi(0L)
 }
 
 trait PersistentChannelData extends ChannelData {
@@ -449,7 +445,7 @@ object ChannelKeys {
   }
 
   def newKeyPath(isFunder: Boolean): KeyPath = {
-    def nextHop: Long = secureRandom.nextInt & 0xffffffffL
+    def nextHop: Long = Crypto.randomBytes(4).toInt(signed = true) & 0xffffffffL
     val lastHop = if (isFunder) hardened(1) else hardened(0)
     val path = Seq(
       nextHop,

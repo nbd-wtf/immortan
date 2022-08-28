@@ -5,14 +5,12 @@ import com.softwaremill.quicklens._
 import scoin.Crypto.PublicKey
 import scoin._
 import scoin.ln._
-import scoin.ln.{Generators, ShaChain}
 import scoin.ln.transactions._
 import scoin.ln.transactions.DirectedHtlc._
 import scoin.ln.transactions.Transactions._
-import immortan.crypto.Tools.{newFeerate, none}
+
+import immortan._
 import immortan.utils.Rx
-import immortan.{LNParams, RemoteNodeInfo, UpdateAddHtlcExt}
-import immortan.blockchain.fee.FeeratePerKw
 import immortan.channel.Helpers.HashToPreimage
 
 case class LocalChanges(
@@ -259,11 +257,11 @@ case class NormalCommits(
       commitments.latestReducedRemoteSpec.toLocal - commitments.localParams.channelReserve
     val senderWithReserve =
       commitments.latestReducedRemoteSpec.toRemote - commitments.remoteParams.channelReserve
-    val fees = commitTxFee(
+    val fees = commitTxFeeMsat(
       commitments.remoteParams.dustLimit,
       commitments.latestReducedRemoteSpec,
       channelFeatures.commitmentFormat
-    )
+    ).truncateToSatoshi
 
     val missingForReceiver =
       if (commitments.localParams.isFunder) receiverWithReserve
@@ -273,12 +271,12 @@ case class NormalCommits(
         senderWithReserve - fees.max(funderFeeBuffer.truncateToSatoshi)
       else senderWithReserve
 
-    if (missingForSender < 0L.sat)
+    if (missingForSender < Satoshi(0L))
       return Left(ChannelNotAbleToSend(cmd.incompleteAdd))
-    if (missingForReceiver < 0L.sat && !localParams.isFunder)
+    if (missingForReceiver < Satoshi(0L) && !localParams.isFunder)
       return Left(ChannelNotAbleToSend(cmd.incompleteAdd))
     if (
-      commitments.allOutgoing.foldLeft(0L.msat)(
+      commitments.allOutgoing.foldLeft(MilliSatoshi(0L))(
         _ + _.amountMsat
       ) > maxSendInFlight
     ) return Left(ChannelNotAbleToSend(cmd.incompleteAdd))
@@ -303,7 +301,7 @@ case class NormalCommits(
   }
 
   def receiveAdd(add: UpdateAddHtlc): NormalCommits = {
-    if (localParams.htlcMinimum.max(1L.msat) > add.amountMsat)
+    if (localParams.htlcMinimum.max(MilliSatoshi(1L)) > add.amountMsat)
       throw ChannelTransitionFail(channelId, add)
     if (add.id != remoteNextHtlcId) throw ChannelTransitionFail(channelId, add)
 
@@ -320,11 +318,11 @@ case class NormalCommits(
       reduced.toRemote - currentCommitments.localParams.channelReserve
     val receiverWithReserve =
       reduced.toLocal - currentCommitments.remoteParams.channelReserve
-    val fees = commitTxFee(
+    val fees = commitTxFeeMsat(
       currentCommitments.remoteParams.dustLimit,
       reduced,
       channelFeatures.commitmentFormat
-    )
+    ).truncateToSatoshi
     val missingForSender =
       if (currentCommitments.localParams.isFunder) senderWithReserve
       else senderWithReserve - fees
@@ -332,8 +330,9 @@ case class NormalCommits(
       if (currentCommitments.localParams.isFunder) receiverWithReserve - fees
       else receiverWithReserve
 
-    if (missingForSender < 0L.sat) throw ChannelTransitionFail(channelId, add)
-    else if (missingForReceiver < 0L.sat && localParams.isFunder)
+    if (missingForSender < Satoshi(0L))
+      throw ChannelTransitionFail(channelId, add)
+    else if (missingForReceiver < Satoshi(0L) && localParams.isFunder)
       throw ChannelTransitionFail(channelId, add)
 
     // We do not check whether total incoming payments amount exceeds our local
@@ -381,11 +380,11 @@ case class NormalCommits(
           case _            => true
         } :+ msg
       )
-    val fees = commitTxFee(
+    val fees = commitTxFeeMsat(
       currentCommitments.remoteParams.dustLimit,
       currentCommitments.latestReducedRemoteSpec,
       channelFeatures.commitmentFormat
-    )
+    ).truncateToSatoshi
     val reserve =
       currentCommitments.latestReducedRemoteSpec.toRemote.truncateToSatoshi - currentCommitments.remoteParams.channelReserve - fees
     (currentCommitments, reserve, msg)
@@ -421,7 +420,7 @@ case class NormalCommits(
       LNParams.feeRates.info,
       reduced,
       LNParams.shouldForceClosePaymentFeerateDiff
-    ).isDefined && fee.feeratePerKw < currentCommitments.localCommit.spec.feeratePerKw
+    ).isDefined && fee.feeratePerKw < currentCommitments.localCommit.spec.commitTxFeerate
 
     if (dangerousState) {
       // We force feerate update and block this thread while it's being executed, will have an updated info once done
@@ -441,14 +440,14 @@ case class NormalCommits(
       if (stillDangerousState) throw ChannelTransitionFail(channelId, fee)
     }
 
-    val fees = commitTxFee(
+    val fees = commitTxFeeMsat(
       currentCommitments.remoteParams.dustLimit,
       reduced,
       channelFeatures.commitmentFormat
-    )
+    ).truncateToSatoshi
     val missing =
       reduced.toRemote.truncateToSatoshi - currentCommitments.localParams.channelReserve - fees
-    if (missing < 0L.sat) throw ChannelTransitionFail(channelId, fee)
+    if (missing < Satoshi(0L)) throw ChannelTransitionFail(channelId, fee)
     currentCommitments
   }
 
@@ -707,7 +706,7 @@ object NormalCommits {
       localRevocation,
       remoteParams.toSelfDelay,
       localDelayedPayment,
-      spec.feeratePerKw,
+      spec.commitTxFeeMsat,
       outputs,
       channelFeatures.commitmentFormat
     )

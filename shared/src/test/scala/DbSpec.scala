@@ -34,7 +34,7 @@ object DbSpec extends TestSuite {
             UpdateAddHtlc(
               null,
               n,
-              100L.msat,
+              MilliSatoshi(100L),
               randomBytes32,
               CltvExpiry(n),
               onion

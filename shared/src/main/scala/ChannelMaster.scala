@@ -13,15 +13,15 @@ import scoin.ln._
 import scoin.ln.{IncomingPaymentPacket, Bolt11Invoice}
 import scoin.hc._
 
+import immortan._
 import immortan.blockchain.TxConfirmedAt
+import immortan.router._
 import immortan.channel._
 import immortan.Channel._
 import immortan.ChannelListener.{Malfunction, Transition}
 import immortan.ChannelMaster._
-import immortan.crypto.CanBeShutDown
-import immortan.crypto.Tools._
-import immortan.fsm.OutgoingPaymentMaster.CMDChanGotOnline
 import immortan.fsm._
+import immortan.fsm.OutgoingPaymentMaster.CMDChanGotOnline
 import immortan.utils.{PaymentRequestExt, Rx}
 
 object ChannelMaster {
@@ -386,7 +386,7 @@ class ChannelMaster(
       opm
         .getSendable(inPrincipleUsableChans, maxFee = MilliSatoshi(0L))
         .values
-        .sum
+        .fold(MilliSatoshi(0))(_ + _)
     val fee = LNParams.maxOffChainFeeAboveRatio.max(
       sendableNoFee * LNParams.maxOffChainFeeRatio
     )
@@ -412,9 +412,7 @@ class ChannelMaster(
       prExt.pr.paymentSecret.get,
       PaymentTagTlv.LOCALLY_SENT
     )
-    val chainExpiry = Right(
-      prExt.pr.minFinalCltvExpiryDelta getOrElse LNParams.minInvoiceExpiryDelta
-    )
+    val chainExpiry = Right(prExt.pr.minFinalCltvExpiryDelta)
     val splitInfo = SplitInfo(totalSum = MilliSatoshi(0L), myPart = toSend)
 
     SendMultiPart(
@@ -444,14 +442,14 @@ class ChannelMaster(
         usableUpdate.extraHop(commits.remoteInfo.nodeId) :: Nil
     }
     val pr = Bolt11Invoice(
-      LNParams.chainHash,
-      Some(toReceive),
-      hash,
-      secret,
-      LNParams.secret.keys.fakeInvoiceKey(secret),
-      description.invoiceText,
-      LNParams.incomingFinalCltvExpiry,
-      hops.toList
+      chainHash = LNParams.chainHash,
+      amount = Some(toReceive),
+      paymentHash = hash,
+      paymentSecret = secret,
+      privateKey = LNParams.secret.keys.fakeInvoiceKey(secret),
+      description = Left(description.invoiceText),
+      minFinalCltvExpiryDelta = LNParams.incomingFinalCltvExpiry,
+      extraHops = hops.toList
     )
     PaymentRequestExt.from(pr)
   }

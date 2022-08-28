@@ -3,7 +3,6 @@ package immortan
 import java.net.{InetSocketAddress, Socket}
 import scoin.Block
 import scoin.ln.{Init, LightningMessage, Pong}
-import immortan.crypto.Tools
 import immortan.utils.TestUtils._
 import utest._
 
@@ -27,7 +26,7 @@ object CommsTowerSpec extends TestSuite {
       }
 
       val remoteInfo = (new SyncParams).acinq
-      val kpap1 = KeyPairAndPubKey(Tools.randomKeyPair, remoteInfo.nodeId)
+      val kpap1 = KeyPairAndPubKey(randomKeyPair, remoteInfo.nodeId)
       CommsTower.listen(Set(listener1), kpap1, remoteInfo)
 
       // We have connected, sent Ping, got Pong
@@ -68,7 +67,7 @@ object CommsTowerSpec extends TestSuite {
       }
 
       // We connect as another local node to the same remote node (two socket connections)
-      val kpap2 = KeyPairAndPubKey(Tools.randomKeyPair, remoteInfo.nodeId)
+      val kpap2 = KeyPairAndPubKey(randomKeyPair, remoteInfo.nodeId)
       CommsTower.listen(Set(listener3), kpap2, remoteInfo)
 
       // Only listener3.onOperational was called

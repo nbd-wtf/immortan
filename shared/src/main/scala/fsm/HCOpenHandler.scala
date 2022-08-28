@@ -9,7 +9,6 @@ import immortan._
 import immortan.channel.{CMD_SOCKET_ONLINE, Commitments, PersistentChannelData}
 import immortan.Channel
 import immortan.ChannelListener.{Malfunction, Transition}
-import immortan.crypto.Tools
 
 abstract class HCOpenHandler(
     info: RemoteNodeInfo,
@@ -18,12 +17,13 @@ abstract class HCOpenHandler(
     cm: ChannelMaster
 ) {
   val channelId: ByteVector32 =
-    Tools.hostedChanId(info.nodeSpecificPubKey.value, info.nodeId.value)
+    hostedChannelId(info.nodeSpecificPubKey.value, info.nodeId.value)
 
   private val freshChannel = new ChannelHosted {
     def SEND(msgs: LightningMessage*): Unit = CommsTower.sendMany(
       msgs,
-      info.nodeSpecificPair
+      info.nodeSpecificPair,
+      HostedChannelKind
     )
     def STORE(hostedData: PersistentChannelData): PersistentChannelData =
       cm.chanBag.put(hostedData)

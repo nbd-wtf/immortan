@@ -8,7 +8,6 @@ import scoin.ln.transactions._
 import scoin.hc._
 import scoin.hc.HostedChannelCodecs._
 
-import immortan.crypto.Tools.{hostedChanId, hostedShortChanId}
 import immortan.channel._
 
 case class WaitRemoteHostedReply(
@@ -51,10 +50,13 @@ case class HostedCommits(
     CommitmentSpec.reduce(localSpec, nextLocalUpdates, nextRemoteUpdates)
 
   lazy val channelId: ByteVector32 =
-    hostedChanId(remoteInfo.nodeSpecificPubKey.value, remoteInfo.nodeId.value)
+    hostedChannelId(
+      remoteInfo.nodeSpecificPubKey.value,
+      remoteInfo.nodeId.value
+    )
 
-  lazy val shortChannelId: Long =
-    hostedShortChanId(
+  lazy val shortChannelId: ShortChannelId =
+    hostedShortChannelId(
       remoteInfo.nodeSpecificPubKey.value,
       remoteInfo.nodeId.value
     )

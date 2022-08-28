@@ -11,8 +11,8 @@ import scoin.ln.transactions.Scripts._
 import scoin.ln.transactions.DirectedHtlc._
 import scoin.ln.transactions.Transactions._
 import scoin.ln._
-import immortan.crypto.Tools.newFeerate
-import immortan.{ChannelBag, LNParams}
+
+import immortan.{newFeerate, ChannelBag, LNParams}
 import immortan.blockchain.TxConfirmedAt
 import immortan.blockchain.fee._
 

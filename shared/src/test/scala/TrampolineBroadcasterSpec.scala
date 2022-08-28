@@ -1,12 +1,7 @@
 package immortan
 
 import scoin.ln._
-import scoin.ln.{
-  MilliSatoshi,
-  MilliSatoshiLong,
-  randomBytes,
-  randomBytes32
-}
+import scoin.ln.{MilliSatoshi, MilliSatoshiLong, randomBytes, randomBytes32}
 import immortan.fsm.TrampolineBroadcaster
 import immortan.fsm.TrampolineBroadcaster.RoutingOn
 import immortan.utils.ChannelUtils.{makeChannelMaster, makeHostedCommits}
@@ -22,7 +17,7 @@ object TrampolineBroadcasterSpec extends TestSuite {
       LNParams.secret = WalletSecret.random()
       LNParams.trampoline = TrampolineOn(
         LNParams.minPayment,
-        Long.MaxValue.msat,
+        MilliSatoshi(Long.MaxValue),
         feeProportionalMillionths = 1000L,
         exponent = 0.0,
         logExponent = 0.0,
@@ -33,10 +28,14 @@ object TrampolineBroadcasterSpec extends TestSuite {
         makeHostedCommits(
           nodeId = a,
           alias = "peer1",
-          toLocal = 100000000L.msat
+          toLocal = MilliSatoshi(100000000L)
         )
       val hcs2 =
-        makeHostedCommits(nodeId = c, alias = "peer2", toLocal = 50000000L.msat)
+        makeHostedCommits(
+          nodeId = c,
+          alias = "peer2",
+          toLocal = MilliSatoshi(50000000L)
+        )
       cm.chanBag.put(hcs1)
       cm.chanBag.put(hcs2)
       cm.all = Channel.load(Set(cm), cm.chanBag)
@@ -187,7 +186,7 @@ object TrampolineBroadcasterSpec extends TestSuite {
       // We are getting an initial update from node S
       val on1 = TrampolineOn(
         LNParams.minPayment,
-        Long.MaxValue.msat,
+        MilliSatoshi(Long.MaxValue),
         feeProportionalMillionths = 1000L,
         exponent = 0.0,
         logExponent = 0.0,
@@ -195,7 +194,7 @@ object TrampolineBroadcasterSpec extends TestSuite {
       )
       val on2 = TrampolineOn(
         LNParams.minPayment,
-        Long.MaxValue.msat,
+        MilliSatoshi(Long.MaxValue),
         feeProportionalMillionths = 2000L,
         exponent = 1.0,
         logExponent = 1.0,
@@ -230,7 +229,7 @@ object TrampolineBroadcasterSpec extends TestSuite {
       // A has changed parameters, B got removed, new route added
       val on3 = TrampolineOn(
         LNParams.minPayment,
-        Long.MaxValue.msat,
+        MilliSatoshi(Long.MaxValue),
         feeProportionalMillionths = 2000L,
         exponent = 2.0,
         logExponent = 2.0,
@@ -261,7 +260,7 @@ object TrampolineBroadcasterSpec extends TestSuite {
       // Update from another node
       val on4 = TrampolineOn(
         LNParams.minPayment,
-        Long.MaxValue.msat,
+        MilliSatoshi(Long.MaxValue),
         feeProportionalMillionths = 4000L,
         exponent = 2.0,
         logExponent = 2.0,

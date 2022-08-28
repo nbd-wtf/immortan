@@ -1,16 +1,16 @@
 package immortan.sqlite
 
 import java.lang.{Integer => JInt, Long => JLong}
-
-import scoin.ByteVector64
+import scodec.bits.{ByteVector, BitVector}
+import scoin._
 import scoin.Crypto.PublicKey
 import scoin.ln._
+import scoin.ln.LightningMessageCodecs.channelFlagsCodec
+import scoin.ln.{ChannelAnnouncement, ChannelUpdate}
+
 import immortan.router.Router.PublicChannel
 import immortan.router.{ChannelUpdateExt, Sync}
-import scoin.ln.{ChannelAnnouncement, ChannelUpdate}
-import immortan.SyncMaster.ShortChanIdSet
 import immortan._
-import scodec.bits.ByteVector
 
 class SQLiteNetwork(
     val db: DBInterface,
@@ -24,33 +24,37 @@ class SQLiteNetwork(
   ): Unit = db.change(
     newSqlPQ,
     Array.emptyByteArray,
-    ca.shortChannelId: JLong,
+    ca.shortChannelId.toLong: JLong,
     ca.nodeId1.value.toArray,
     ca.nodeId2.value.toArray
   )
 
   def addExcludedChannel(
-      shortId: Long,
+      scid: ShortChannelId,
       untilStamp: Long,
       newSqlPQ: PreparedQuery
   ): Unit = db.change(
     newSqlPQ,
-    shortId: JLong,
+    scid.toLong: JLong,
     System.currentTimeMillis + untilStamp: JLong
   )
 
-  def listExcludedChannels: Set[Long] = db
+  def listExcludedChannels: Set[ShortChannelId] = db
     .select(excludedTable.selectSql, System.currentTimeMillis.toString)
-    .set(_ long excludedTable.shortChannelId)
+    .set(rc => ShortChannelId(rc.long(excludedTable.shortChannelId)))
 
-  def listChannelsWithOneUpdate: ShortChanIdSet =
-    db.select(updateTable.selectHavingOneUpdate).set(_ long updateTable.sid)
+  def listChannelsWithOneUpdate: Set[ShortChannelId] =
+    db.select(updateTable.selectHavingOneUpdate)
+      .set(rc => ShortChannelId(rc.long(updateTable.sid)))
 
   def incrementScore(cu: ChannelUpdateExt): Unit =
-    db.change(updateTable.updScoreSql, cu.update.shortChannelId: JLong)
+    db.change(updateTable.updScoreSql, cu.update.shortChannelId.toLong: JLong)
 
-  def removeChannelUpdate(shortId: Long, killSqlPQ: PreparedQuery): Unit =
-    db.change(killSqlPQ, shortId: JLong)
+  def removeChannelUpdate(
+      scid: ShortChannelId,
+      killSqlPQ: PreparedQuery
+  ): Unit =
+    db.change(killSqlPQ, scid.toLong: JLong)
 
   def addChannelUpdateByPosition(
       cu: ChannelUpdate,
@@ -58,18 +62,19 @@ class SQLiteNetwork(
       updSqlPQ: PreparedQuery
   ): Unit = {
     val feeProportionalMillionths: JLong = cu.feeProportionalMillionths
-    val cltvExpiryDelta: JInt = cu.cltvExpiryDelta.underlying
+    val cltvExpiryDelta: JInt = cu.cltvExpiryDelta.toInt
     val htlcMinimumMsat: JLong = cu.htlcMinimumMsat.toLong
-    val htlcMaxMsat: JLong = cu.htlcMaximumMsat.get.toLong
-    val messageFlags: JInt = cu.messageFlags.toInt
-    val channelFlags: JInt = cu.channelFlags.toInt
+    val htlcMaxMsat: JLong = cu.htlcMaximumMsat.toLong
+    val messageFlags: JInt = 1 // ByteVector.fromHex("01").toByte.toInt
+    val channelFlags: JInt =
+      channelFlagsCodec.encode(cu.channelFlags).require.bytes.head.toInt
     val feeBaseMsat: JLong = cu.feeBaseMsat.toLong
-    val timestamp: JLong = cu.timestamp
+    val timestamp: JLong = cu.timestamp.toLong
 
     val crc32: JLong = Sync.getChecksum(cu)
     db.change(
       newSqlPQ,
-      cu.shortChannelId: JLong,
+      cu.shortChannelId.toLong: JLong,
       timestamp,
       messageFlags,
       channelFlags,
@@ -93,14 +98,14 @@ class SQLiteNetwork(
       feeProportionalMillionths,
       htlcMaxMsat,
       crc32,
-      cu.shortChannelId: JLong,
+      cu.shortChannelId.toLong: JLong,
       cu.position
     )
   }
 
-  def removeChannelUpdate(shortId: Long): Unit = {
+  def removeChannelUpdate(scid: Long): Unit = {
     val removeChannelUpdateNewSqlPQ = db.makePreparedQuery(updateTable.killSql)
-    removeChannelUpdate(shortId, removeChannelUpdateNewSqlPQ)
+    removeChannelUpdate(scid, removeChannelUpdateNewSqlPQ)
     removeChannelUpdateNewSqlPQ.close()
   }
 
@@ -127,7 +132,7 @@ class SQLiteNetwork(
         bitcoinSignature2 = ByteVector64.Zeroes,
         features = Features.empty,
         chainHash = LNParams.chainHash,
-        shortChannelId = rc long announceTable.shortChannelId,
+        shortChannelId = ShortChannelId(rc long announceTable.shortChannelId),
         nodeId1 = PublicKey(rc byteVec announceTable.nodeId1),
         nodeId2 = PublicKey(rc byteVec announceTable.nodeId2),
         bitcoinKey1 = invalidPubKey,
@@ -142,16 +147,18 @@ class SQLiteNetwork(
         ChannelUpdate(
           signature = ByteVector64.Zeroes,
           chainHash = LNParams.chainHash,
-          shortChannelId = rc long 1,
-          timestamp = rc long 2,
-          messageFlags = (rc int 3).toByte,
-          channelFlags = (rc int 4).toByte,
+          shortChannelId = ShortChannelId(rc long 1),
+          timestamp = TimestampSecond(rc long 2),
+          // messageFlags = (rc int 3).toByte,
+          channelFlags = channelFlagsCodec
+            .decode(BitVector(Array((rc int 4).toByte)))
+            .require
+            .value,
           cltvExpiryDelta = CltvExpiryDelta(rc int 5),
           htlcMinimumMsat = MilliSatoshi(rc long 6),
           feeBaseMsat = MilliSatoshi(rc long 7),
           feeProportionalMillionths = rc long 8,
-          htlcMaximumMsat = Some(htlcMaximumMsat),
-          unknownFields = ByteVector.empty
+          htlcMaximumMsat = htlcMaximumMsat
         ),
         crc32 = rc long 12,
         score = rc long 11,
@@ -159,20 +166,18 @@ class SQLiteNetwork(
       )
     }
 
-  def getRoutingData: Map[Long, PublicChannel] = {
-    val shortId2Updates = listChannelUpdates.groupBy(_.update.shortChannelId)
+  def getRoutingData: Map[ShortChannelId, PublicChannel] = {
+    val updatesByScid = listChannelUpdates.groupBy(_.update.shortChannelId)
 
     val tuples = listChannelAnnouncements.flatMap { ann =>
-      shortId2Updates.get(ann.shortChannelId) collectFirst {
-        case List(u1, u2)
-            if ChannelUpdate.POSITION1NODE == u1.update.position =>
+      updatesByScid.get(ann.shortChannelId).collectFirst {
+        case List(u1, u2) if 1 == u1.update.position =>
           ann.shortChannelId -> PublicChannel(Some(u1), Some(u2), ann)
-        case List(u2, u1)
-            if ChannelUpdate.POSITION2NODE == u2.update.position =>
+        case List(u2, u1) if 2 == u2.update.position =>
           ann.shortChannelId -> PublicChannel(Some(u1), Some(u2), ann)
-        case List(u1) if ChannelUpdate.POSITION1NODE == u1.update.position =>
+        case List(u1) if 1 == u1.update.position =>
           ann.shortChannelId -> PublicChannel(Some(u1), None, ann)
-        case List(u2) if ChannelUpdate.POSITION2NODE == u2.update.position =>
+        case List(u2) if 2 == u2.update.position =>
           ann.shortChannelId -> PublicChannel(None, Some(u2), ann)
       }
     }
@@ -181,21 +186,21 @@ class SQLiteNetwork(
   }
 
   def removeGhostChannels(
-      ghostIds: ShortChanIdSet,
-      oneSideIds: ShortChanIdSet
+      ghostScids: Set[ShortChannelId],
+      oneSideScids: Set[ShortChannelId]
   ): Unit = db txWrap {
     val addExcludedChannelNewSqlPQ = db.makePreparedQuery(excludedTable.newSql)
     val removeChannelUpdateNewSqlPQ = db.makePreparedQuery(updateTable.killSql)
 
-    for (shortId <- oneSideIds)
+    for (scid <- oneSideScids)
       addExcludedChannel(
-        shortId,
+        scid,
         1000L * 3600 * 24 * 14,
         addExcludedChannelNewSqlPQ
       ) // Exclude for two weeks, maybe second update will show up later
-    for (shortId <- ghostIds ++ oneSideIds)
+    for (scid <- ghostScids ++ oneSideScids)
       removeChannelUpdate(
-        shortId,
+        scid,
         removeChannelUpdateNewSqlPQ
       ) // Make sure we only have known channels with both updates
 

@@ -1,9 +1,10 @@
 package immortan
 
-import immortan.crypto.StateMachine
+import utest._
+
+import immortan.StateMachine
 import immortan.utils.Rx
 import immortan.utils.TestUtils._
-import utest._
 
 object StateMachineSpec extends TestSuite {
   val tests = Tests {

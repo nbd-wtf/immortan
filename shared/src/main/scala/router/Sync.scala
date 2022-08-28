@@ -3,7 +3,9 @@ package immortan.router
 import java.util.zip.CRC32
 import scodec.bits.ByteVector
 import shapeless.HNil
+import scoin._
 import scoin.ln._
+
 import immortan.router.Router._
 
 object Sync {
@@ -24,12 +26,14 @@ object Sync {
     theirsIsMoreRecent && (areDifferent || oursIsAlmostStale) && !theirsIsStale
   }
 
-  def getChannelDigestInfo(channels: Map[Long, PublicChannel])(
-      shortChannelId: Long
+  def getChannelDigestInfo(channels: Map[ShortChannelId, PublicChannel])(
+      scid: ShortChannelId
   ): (ReplyChannelRangeTlv.Timestamps, ReplyChannelRangeTlv.Checksums) = {
-    val c = channels(shortChannelId)
-    val timestamp1 = c.update1Opt.map(_.update.timestamp).getOrElse(0L)
-    val timestamp2 = c.update2Opt.map(_.update.timestamp).getOrElse(0L)
+    val c = channels(scid)
+    val timestamp1 =
+      c.update1Opt.map(_.update.timestamp).getOrElse(TimestampSecond(0L))
+    val timestamp2 =
+      c.update2Opt.map(_.update.timestamp).getOrElse(TimestampSecond(0L))
     val checksum1 = c.update1Opt.map(_.crc32).getOrElse(0L)
     val checksum2 = c.update2Opt.map(_.crc32).getOrElse(0L)
     (

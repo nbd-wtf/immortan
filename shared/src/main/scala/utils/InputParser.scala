@@ -7,14 +7,12 @@ import scodec.bits.ByteVector
 import scoin.Crypto.PublicKey
 import scoin._
 import scoin.ln._
-import scoin.ln.NodeAddress
 
+import immortan.{LNParams, RemoteNodeInfo, trimmed}
 import immortan.router.Graph.GraphStructure
 import immortan.router.RouteCalculation
-import immortan.crypto.Tools.trimmed
 import immortan.utils.InputParser._
 import immortan.utils.uri.Uri
-import immortan.{LNParams, RemoteNodeInfo}
 
 object InputParser {
   var value: Any = new String
@@ -136,10 +134,12 @@ case class PaymentRequestExt(uri: Try[Uri], pr: Bolt11Invoice, raw: String) {
     )
     .getOrElse(Nil)
   val hasSplitIssue: Boolean = pr.amount_opt.exists(
-    splits.sum + LNParams.minPayment > _
+    _ < (splits.fold(MilliSatoshi(0))(_ + _) + LNParams.minPayment)
   ) || (pr.amount_opt.isEmpty && splits.nonEmpty)
   val splitLeftover: MilliSatoshi =
-    pr.amount_opt.map(_ - splits.sum).getOrElse(MilliSatoshi(0L))
+    pr.amount_opt
+      .map(amt => amt - splits.fold(MilliSatoshi(0))(_ + _))
+      .getOrElse(MilliSatoshi(0L))
 
   val descriptionOpt: Option[String] =
     pr.description.left.toOption.map(trimmed).filter(_.nonEmpty)

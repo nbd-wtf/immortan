@@ -1,6 +1,7 @@
 package immortan.utils
 
 import java.text._
+import scoin._
 import scoin.ln._
 
 object Denomination {
@@ -13,7 +14,7 @@ object Denomination {
   formatFiatShort setDecimalFormatSymbols symbols
 
   def btcBigDecimal2MSat(btc: BigDecimal): MilliSatoshi =
-    (btc * BtcDenomination.factor).toLong.msat
+    MilliSatoshi((btc * BtcDenomination.factor).toLong)
 
   def msat2BtcBigDecimal(msat: MilliSatoshi): BigDecimal =
     BigDecimal(msat.toLong) / BtcDenomination.factor
@@ -39,11 +40,12 @@ trait Denomination {
       outColor: String = "",
       zeroColor: String = ""
   ): String = {
-    if (isIncoming && incoming == 0L.msat)
+    if (isIncoming && incoming == MilliSatoshi(0L))
       parsedWithSign(incoming, inColor, zeroColor)
     else if (isIncoming)
       "+&#160;" + parsedWithSign(incoming, inColor, zeroColor)
-    else if (outgoing == 0L.msat) parsedWithSign(outgoing, outColor, zeroColor)
+    else if (outgoing == MilliSatoshi(0L))
+      parsedWithSign(outgoing, outColor, zeroColor)
     else "-&#160;" + parsedWithSign(outgoing, outColor, zeroColor)
   }
 
