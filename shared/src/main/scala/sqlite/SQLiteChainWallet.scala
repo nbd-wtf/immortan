@@ -2,9 +2,9 @@ package immortan.sqlite
 
 import scoin.Crypto.PublicKey
 import scoin.Satoshi
-import immortan.blockchain.electrum.PersistentData
-import immortan.blockchain.electrum.db.sqlite.SqliteWalletDb.persistentDataCodec
-import immortan.blockchain.electrum.db.{
+import immortan.electrum.PersistentData
+import immortan.electrum.db.sqlite.SqliteWalletDb.persistentDataCodec
+import immortan.electrum.db.{
   ChainWalletInfo,
   CompleteChainWalletInfo,
   WalletDb

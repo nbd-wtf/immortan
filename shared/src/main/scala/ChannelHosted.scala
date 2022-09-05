@@ -3,7 +3,6 @@ package immortan
 import com.softwaremill.quicklens._
 import scoin.{FeeratePerKw, ByteVector64, SatoshiLong}
 import scodec.bits.ByteVector
-import scoin.ln.transactions._
 import scoin.ln._
 import scoin.hc._
 import scoin._
@@ -43,9 +42,9 @@ object ChannelHosted {
       remoteInfo.safeAlias,
       CommitmentSpec(
         htlcs = inFlightHtlcs.toSet,
-        commitTxFeerate = FeeratePerKw(Satoshi(0L)),
-        localLCSS.localBalanceMsat,
-        localLCSS.remoteBalanceMsat
+        toLocal = localLCSS.localBalanceMsat,
+        toRemote = localLCSS.remoteBalanceMsat,
+        commitTxFeerate = FeeratePerKw(Satoshi(0L))
       ),
       localLCSS,
       nextLocalUpdates = Nil,
@@ -325,7 +324,7 @@ abstract class ChannelHosted extends Channel {
         if hc.nextLocalSpec
           .findIncomingHtlcById(cmd.theirAdd.id)
           .isDefined && hc.error.isEmpty =>
-      val msg = OutgoingPaymentPacket.buildHtlcFailure(cmd)
+      val msg = OutgoingPaymentPacket.buildHtlcFailure(cmd).toOption.get
       StoreBecomeSend(hc.addLocalProposal(msg), Channel.Open, msg)
 
     // CMD_SIGN will be sent from ChannelMaster strictly after outgoing FSM sends this command

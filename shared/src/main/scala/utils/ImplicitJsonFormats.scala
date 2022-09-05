@@ -5,7 +5,6 @@ import spray.json._
 import scoin.Crypto.PublicKey
 import scoin.DeterministicWallet.ExtendedPublicKey
 import scoin._
-import scoin.ln.MilliSatoshi
 import scoin.ln.ChannelUpdate
 import scoin.ln.CommonCodecs._
 import scoin.ln.LightningMessageCodecs._
@@ -13,11 +12,8 @@ import scoin.ln.LightningMessageCodecs._
 import immortan._
 import immortan.fsm.SplitInfo
 import immortan.utils.FiatRates.{BitpayItemList, CoinGeckoItemMap}
-import immortan.blockchain.electrum.db.{
-  ChainWalletInfo,
-  SigningWallet,
-  WatchingWallet
-}
+import immortan.channel.Codecs.extendedPublicKeyCodec
+import immortan.electrum.db.{ChainWalletInfo, SigningWallet, WatchingWallet}
 import immortan.blockchain.fee._
 
 object ImplicitJsonFormats extends DefaultJsonProtocol {
@@ -66,7 +62,7 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
     jsonFormat[Long, Satoshi](Satoshi.apply, "underlying")
 
   implicit val extendedPublicKeyFmt: JsonFormat[ExtendedPublicKey] =
-    sCodecJsonFmt(ExtCodecs.extendedPublicKeyCodec)
+    sCodecJsonFmt(extendedPublicKeyCodec)
 
   // Chain wallet types
   implicit object ChainWalletInfoFmt extends JsonFormat[ChainWalletInfo] {

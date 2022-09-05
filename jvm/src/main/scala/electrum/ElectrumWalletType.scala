@@ -1,4 +1,4 @@
-package immortan.blockchain.electrum
+package immortan.electrum
 
 import scoin.Crypto.PublicKey
 import scoin.DeterministicWallet._

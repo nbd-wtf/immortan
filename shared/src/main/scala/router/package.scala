@@ -24,8 +24,8 @@ package object router {
       exponent: Double,
       logExponent: Double
   ): MilliSatoshi = {
-    val nonLinearFeeMsat = math.pow(proportional, exponent) + math.pow(
-      math.log(proportional),
+    val nonLinearFeeMsat = math.pow(proportional.toDouble, exponent) + math.pow(
+      math.log(proportional.toDouble),
       logExponent
     )
     MilliSatoshi(nonLinearFeeMsat.ceil.toLong)

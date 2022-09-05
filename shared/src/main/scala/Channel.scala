@@ -9,7 +9,7 @@ import scoin.ln.LightningMessage
 
 import immortan._
 import immortan.blockchain.CurrentBlockCount
-import immortan.blockchain.electrum.EventStream
+import immortan.electrum.EventStream
 import immortan.channel._
 import immortan.Channel.channelContext
 
@@ -75,7 +75,10 @@ object Channel {
     isOperational(chan) && chan.state == Sleeping
 
   def totalBalance(chans: Iterable[Channel] = Nil): MilliSatoshi =
-    chans.filter(isOperationalOrWaiting).map(_.data.ourBalance).sum
+    chans
+      .filter(isOperationalOrWaiting)
+      .map(_.data.ourBalance)
+      .fold(MilliSatoshi(0))(_ + _)
 }
 
 trait Channel

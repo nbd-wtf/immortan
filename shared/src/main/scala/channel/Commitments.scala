@@ -5,12 +5,12 @@ import com.softwaremill.quicklens._
 import scoin.Crypto.PublicKey
 import scoin._
 import scoin.ln._
-import scoin.ln.transactions._
-import scoin.ln.transactions.DirectedHtlc._
-import scoin.ln.transactions.Transactions._
 
 import immortan._
 import immortan.utils.Rx
+import immortan.channel._
+import immortan.channel.DirectedHtlc._
+import immortan.channel.Transactions._
 import immortan.channel.Helpers.HashToPreimage
 
 case class LocalChanges(
@@ -774,7 +774,7 @@ object NormalCommits {
         remoteRevocation,
         localParams.toSelfDelay,
         remoteDelayedPayment,
-        spec.feeratePerKw,
+        spec.commitTxFeerate,
         outputs,
         channelFeatures.commitmentFormat
       )

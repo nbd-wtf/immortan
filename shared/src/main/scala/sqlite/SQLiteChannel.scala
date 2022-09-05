@@ -1,14 +1,13 @@
 package immortan.sqlite
 
-import scoin.{ByteVector32, Crypto, Satoshi}
-import scoin.ln.CltvExpiry
-import immortan.channel.PersistentChannelData
-import scoin.ln.transactions.DirectedHtlc
-import scoin.ln.ChannelCodecs
-import immortan.ChannelBag
-
 import java.lang.{Long => JLong}
 import scala.util.Try
+import scoin.{ByteVector32, Crypto, Satoshi, ShortChannelId}
+import scoin.CltvExpiry
+
+import immortan.ChannelBag
+import immortan.channel.{DirectedHtlc, PersistentChannelData}
+import immortan.channel.Codecs.persistentChannelDataCodec
 
 case class ChannelTxFeesSummary(fees: Satoshi, count: Long)
 
@@ -16,8 +15,8 @@ class SQLiteChannel(val db: DBInterface, channelTxFeesDb: DBInterface)
     extends ChannelBag {
   override def put(
       persistentChannelData: PersistentChannelData
-  ): PersistentChannelData = db txWrap {
-    val rawContent = ChannelCodecs.persistentDataCodec
+  ): PersistentChannelData = db.txWrap {
+    val rawContent = persistentChannelDataCodec
       .encode(persistentChannelData)
       .require
       .toByteArray
@@ -38,7 +37,7 @@ class SQLiteChannel(val db: DBInterface, channelTxFeesDb: DBInterface)
     db.select(ChannelTable.selectAllSql)
       .iterable(_ byteVec ChannelTable.data)
       .map(bits =>
-        ChannelCodecs.persistentDataCodec.decode(bits.toBitVector).require.value
+        persistentChannelDataCodec.decode(bits.toBitVector).require.value
       )
 
   override def delete(channelId: ByteVector32): Unit =
@@ -65,7 +64,7 @@ class SQLiteChannel(val db: DBInterface, channelTxFeesDb: DBInterface)
       sid: JLong,
       commitNumber: JLong,
       Crypto.ripemd160(paymentHash).toArray,
-      cltvExpiry.underlying: JLong
+      cltvExpiry.toLong: JLong
     )
 
   override def putHtlcInfos(
@@ -77,8 +76,8 @@ class SQLiteChannel(val db: DBInterface, channelTxFeesDb: DBInterface)
       putHtlcInfo(sid, commitNumber, htlc.add.paymentHash, htlc.add.cltvExpiry)
   }
 
-  override def rmHtlcInfos(sid: Long): Unit =
-    db.change(HtlcInfoTable.killSql, sid: JLong)
+  override def rmHtlcInfos(scid: ShortChannelId): Unit =
+    db.change(HtlcInfoTable.killSql, scid.toLong: JLong)
 
   // Channel related tx fees
   def channelTxFeesSummary: Try[ChannelTxFeesSummary] =

@@ -1,15 +1,17 @@
-package immortan.blockchain.electrum
+package immortan.electrum
 
 import java.util.concurrent.atomic.AtomicLong
-
-import scoin.{BlockHeader, ByteVector32, Transaction}
-import immortan.blockchain._
-import immortan.blockchain.electrum.ElectrumClient.computeScriptHash
-import immortan.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_PARENT_TX_CONFIRMED}
-import scoin.ln.transactions.Scripts
-
 import scala.collection.immutable.{Queue, SortedMap}
 import scala.util.Success
+import scoin.{BlockHeight, BlockHeader, ByteVector32, Transaction}
+
+import immortan.blockchain._
+import immortan.electrum.ElectrumClient.computeScriptHash
+import immortan.channel.{
+  Scripts,
+  BITCOIN_FUNDING_DEPTHOK,
+  BITCOIN_PARENT_TX_CONFIRMED
+}
 
 class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
     ac: castor.Context
@@ -161,7 +163,7 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
         }
 
         case PublishAsap(tx) => {
-          val blockCount = this.blockCount.get()
+          val blockCount = BlockHeight(this.blockCount.get())
           val cltvTimeout = Scripts.cltvTimeout(tx)
           val csvTimeouts = Scripts.csvTimeouts(tx)
           if (csvTimeouts.nonEmpty) {
@@ -169,8 +171,7 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
             // time a parent's relative delays are satisfied, so we will eventually succeed.
             csvTimeouts.foreach { case (parentTxId, csvTimeout) =>
               System.err.println(
-                s"[info] txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parentTxId=$parentTxId tx={}",
-                tx
+                s"[info] txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parentTxId=$parentTxId tx=$tx"
               )
               val parentPublicKeyScript = WatchConfirmed.extractPublicKeyScript(
                 tx.txIn.find(_.outPoint.txid == parentTxId).get.witness
@@ -186,13 +187,14 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
               )
             }
             stay
-          } else if (cltvTimeout > blockCount) {
+          } else if (cltvTimeout > blockCount.toLong) {
             System.err.println(
               s"[info] delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)"
             )
             val block2tx1 = block2tx.updated(
-              cltvTimeout,
-              block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]) :+ tx
+              cltvTimeout.toLong,
+              block2tx
+                .getOrElse(cltvTimeout.toLong, Seq.empty[Transaction]) :+ tx
             )
             Running(
               height,
@@ -219,15 +221,15 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
           System.err.println(
             s"[info] parent tx of txid=${tx.txid} has been confirmed"
           )
-          val blockCount = this.blockCount.get()
+          val blockCount = BlockHeight(this.blockCount.get())
           val cltvTimeout = Scripts.cltvTimeout(tx)
-          if (cltvTimeout > blockCount) {
+          if (cltvTimeout > blockCount.toLong) {
             System.err.println(
               s"[info] delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)"
             )
             val block2tx1 = block2tx.updated(
-              cltvTimeout,
-              block2tx.getOrElse(cltvTimeout, Seq.empty) :+ tx
+              cltvTimeout.toLong,
+              block2tx.getOrElse(cltvTimeout.toLong, Seq.empty) :+ tx
             )
             Running(
               height,
@@ -407,15 +409,13 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
             error_opt match {
               case None =>
                 System.err.println(
-                  s"[info] broadcast succeeded for txid=${tx.txid} tx={}",
-                  tx
+                  s"[info] broadcast succeeded for txid=${tx.txid} tx=$tx"
                 )
               case Some(error)
                   if error.message
                     .contains("transaction already in block chain") =>
                 System.err.println(
-                  s"[info] broadcast ignored for txid=${tx.txid} tx={} (tx was already in blockchain)",
-                  tx
+                  s"[info] broadcast ignored for txid=${tx.txid} tx=$tx (tx was already in blockchain)"
                 )
               case Some(error) =>
                 System.err.println(

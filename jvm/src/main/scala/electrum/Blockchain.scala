@@ -1,11 +1,10 @@
-package immortan.blockchain.electrum
+package immortan.electrum
 
 import java.math.BigInteger
-
-import scoin.{Block, BlockHeader, ByteVector32, decodeCompact}
-import immortan.blockchain.electrum.db.HeaderDb
-
 import scala.annotation.tailrec
+import scoin.{Block, BlockHeader, ByteVector32, decodeCompact}
+
+import immortan.electrum.db.HeaderDb
 
 case class Blockchain(
     chainHash: ByteVector32,

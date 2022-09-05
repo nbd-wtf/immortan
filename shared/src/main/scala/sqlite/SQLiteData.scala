@@ -6,14 +6,11 @@ import spray.json._
 import scodec.bits.ByteVector
 import scoin.Crypto.PublicKey
 import scoin.{BlockHeader, ByteVector32}
-import scoin.ln.LightningMessageCodecs.{
-  hostedChannelBrandingCodec,
-  trampolineOnCodec
-}
-import scoin.ln.HostedChannelBranding
+import scoin.hc.HostedMessageCodecs.hostedChannelBrandingCodec
+import scoin.hc.HostedChannelBranding
 
 import immortan.router._
-import immortan.blockchain.electrum.db.HeaderDb
+import immortan.electrum.db.HeaderDb
 import immortan.sqlite.SQLiteData._
 import immortan.utils.ImplicitJsonFormats._
 import immortan.utils.{FeeRatesInfo, FiatRatesInfo}

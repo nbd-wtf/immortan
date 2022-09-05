@@ -1,11 +1,11 @@
-package immortan.blockchain.electrum
+package immortan.electrum
 
 import java.io.InputStream
-
-import scoin.{Block, ByteVector32, encodeCompact}
-import immortan.blockchain.electrum.db.HeaderDb
 import org.json4s.JsonAST.{JArray, JInt, JString}
 import org.json4s.native.JsonMethods
+import scoin.{Block, ByteVector32, encodeCompact}
+
+import immortan.electrum.db.HeaderDb
 
 case class CheckPoint(hash: ByteVector32, nextBits: Long)
 

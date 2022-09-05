@@ -10,13 +10,12 @@ import scoin.Crypto.{PrivateKey, PublicKey}
 import scoin._
 import scoin.ln._
 import scoin.ln.Features._
-import scoin.ln.transactions.{DirectedHtlc, RemoteFulfill}
 import scoin.hc._
 import castor.Context.Simple.global
 
 import immortan._
-import immortan.blockchain.electrum._
-import immortan.blockchain.electrum.db.{
+import immortan.electrum._
+import immortan.electrum.db.{
   CompleteChainWalletInfo,
   SigningWallet,
   WatchingWallet
@@ -666,7 +665,7 @@ trait ChannelBag {
       sid: Long,
       commitNumber: Long
   ): Unit
-  def rmHtlcInfos(sid: Long): Unit
+  def rmHtlcInfos(scid: ShortChannelId): Unit
 
   def channelTxFeesSummary: Try[ChannelTxFeesSummary]
   def addChannelTxFee(feePaid: Satoshi, idenitifer: String, tag: String): Unit

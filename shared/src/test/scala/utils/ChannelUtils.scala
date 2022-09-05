@@ -3,11 +3,11 @@ package immortan.utils
 import scoin.Crypto.PublicKey
 import scoin.{FeeratePerKw, ByteVector32, ByteVector64, SatoshiLong}
 import scoin.ln._
-import scoin.ln.transactions.{CommitmentSpec, RemoteFulfill}
 
 import immortan.{none, ChannelMaster, HostedCommits, PathFinder, RemoteNodeInfo}
 import immortan.fsm.{OutgoingPaymentListener, OutgoingPaymentSenderData}
 import immortan.sqlite._
+import immortan.channel.{CommitmentSpec, RemoteFulfill}
 
 object ChannelUtils {
   val noopListener: OutgoingPaymentListener = new OutgoingPaymentListener {
@@ -75,7 +75,8 @@ object ChannelUtils {
         alias
       ),
       CommitmentSpec(
-        feeratePerKw = FeeratePerKw(Satoshi(0)),
+        htlcs = Set.empty,
+        commitTxFeerate = FeeratePerKw(Satoshi(0)),
         toLocal = toLocal,
         toRemote = remoteBalance
       ),

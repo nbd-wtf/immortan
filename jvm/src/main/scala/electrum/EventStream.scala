@@ -1,4 +1,4 @@
-package immortan.blockchain.electrum
+package immortan.electrum
 
 import scala.collection.mutable.HashSet
 

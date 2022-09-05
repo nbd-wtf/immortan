@@ -4,7 +4,7 @@ import scala.concurrent.Future
 import scodec.bits.ByteVector
 import scoin.{FeeratePerKw, ByteVector32, OutPoint, Satoshi, Transaction, TxIn}
 
-import immortan.blockchain.electrum.ElectrumWallet._
+import immortan.electrum.ElectrumWallet._
 
 object EclairWallet {
   final val OPT_IN_FULL_RBF = TxIn.SEQUENCE_FINAL - 2

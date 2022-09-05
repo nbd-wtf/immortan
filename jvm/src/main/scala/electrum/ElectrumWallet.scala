@@ -1,4 +1,4 @@
-package immortan.blockchain.electrum
+package immortan.electrum
 
 import scala.annotation.tailrec
 import scala.collection.immutable
@@ -8,16 +8,16 @@ import scala.util.{Success, Try}
 import scodec.bits.ByteVector
 import scoin.DeterministicWallet._
 import scoin._
-import scoin.ln.transactions.Transactions
 
 import immortan._
+import immortan.channel.Transactions
 import immortan.blockchain.EclairWallet._
 import immortan.blockchain.bitcoind.rpc.Error
-import immortan.blockchain.electrum.Blockchain.RETARGETING_PERIOD
-import immortan.blockchain.electrum.ElectrumClient._
-import immortan.blockchain.electrum.ElectrumWallet._
-import immortan.blockchain.electrum.db.sqlite.SqliteWalletDb.persistentDataCodec
-import immortan.blockchain.electrum.db.{HeaderDb, WalletDb}
+import immortan.electrum.Blockchain.RETARGETING_PERIOD
+import immortan.electrum.ElectrumClient._
+import immortan.electrum.ElectrumWallet._
+import immortan.electrum.db.sqlite.SqliteWalletDb.persistentDataCodec
+import immortan.electrum.db.{HeaderDb, WalletDb}
 import immortan.sqlite.SQLiteTx
 
 class ElectrumWallet(

@@ -1,11 +1,12 @@
 package immortan
 
 import scoin.ln._
-import scoin.ln.transactions.IncomingHtlc
 import scoin.ln.{OnionRoutingPacket, UpdateAddHtlc}
+import utest._
+
 import immortan.sqlite._
 import immortan.utils.SQLiteUtils
-import utest._
+import immortan.channel.IncomingHtlc
 
 object DbSpec extends TestSuite {
   val tests = Tests {

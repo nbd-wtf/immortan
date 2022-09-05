@@ -4,10 +4,10 @@ import java.net.InetSocketAddress
 
 import immortan.none
 import immortan.blockchain.CurrentBlockCount
-import immortan.blockchain.electrum.ElectrumChainSync
-import immortan.blockchain.electrum.EventStream
-import immortan.blockchain.electrum.ElectrumClient._
-import immortan.blockchain.electrum.ElectrumWallet._
+import immortan.electrum.ElectrumChainSync
+import immortan.electrum.EventStream
+import immortan.electrum.ElectrumClient._
+import immortan.electrum.ElectrumWallet._
 
 class WalletEventsCatcher {
   // Not using a set to ensure insertion order

@@ -1,4 +1,4 @@
-package immortan.blockchain.electrum.db.sqlite
+package immortan.electrum.db.sqlite
 
 import scodec.Codec
 import scodec.bits.BitVector
@@ -6,16 +6,12 @@ import scodec.codecs._
 import scoin._
 import scoin.ln.CommonCodecs._
 
-import immortan.ExtCodecs._
-import immortan.blockchain.electrum.ElectrumClient.{
+import immortan.channel.Codecs._
+import immortan.electrum.ElectrumClient.{
   GetMerkleResponse,
   TransactionHistoryItem
 }
-import immortan.blockchain.electrum.{
-  ElectrumClient,
-  ElectrumWallet,
-  PersistentData
-}
+import immortan.electrum.{ElectrumClient, ElectrumWallet, PersistentData}
 
 object SqliteWalletDb {
   private val anyOpt = Option.empty[Any]
@@ -25,12 +21,12 @@ object SqliteWalletDb {
   }.as[Option[ElectrumClient]]
 
   val proofCodec = {
-    (ignoreElectrumClientCodec withContext "source") ::
-      (bytes32 withContext "txid") ::
-      (listOfN(uint16, bytes32) withContext "merkle") ::
-      (uint24 withContext "blockHeight") ::
-      (uint24 withContext "pos") ::
-      (provide(anyOpt) withContext "contextOpt")
+    ("source" | ignoreElectrumClientCodec) ::
+      ("txid" | bytes32) ::
+      ("merkle" | listOfN(uint16, bytes32)) ::
+      ("blockHeight" | uint24) ::
+      ("pos" | uint24) ::
+      ("contextOpt" | provide(anyOpt))
   }.as[GetMerkleResponse]
 
   val overrideCodec: Codec[Map[ByteVector32, ByteVector32]] =
@@ -58,8 +54,8 @@ object SqliteWalletDb {
     )
 
   val transactionHistoryItemCodec = {
-    (int32 withContext "height") ::
-      (bytes32 withContext "txHash")
+    ("height" | int32) ::
+      ("txHash" | bytes32)
   }.as[ElectrumClient.TransactionHistoryItem]
 
   val seqOfTransactionHistoryItemCodec =
@@ -85,14 +81,14 @@ object SqliteWalletDb {
     )
 
   val persistentDataCodec: Codec[PersistentData] = {
-    (int32 withContext "accountKeysCount") ::
-      (int32 withContext "changeKeysCount") ::
-      (statusCodec withContext "status") ::
-      (transactionsCodec withContext "transactions") ::
-      (overrideCodec withContext "overriddenPendingTxids") ::
-      (historyCodec withContext "history") ::
-      (proofsCodec withContext "proofs") ::
-      (listOfN(uint16, txCodec) withContext "pendingTransactions") ::
-      (listOfN(uint16, outPointCodec) withContext "excludedOutpoints")
+    ("accountKeysCount" | int32) ::
+      ("changeKeysCount" | int32) ::
+      ("status" | statusCodec) ::
+      ("transactions" | transactionsCodec) ::
+      ("overriddenPendingTxids" | overrideCodec) ::
+      ("history" | historyCodec) ::
+      ("proofs" | proofsCodec) ::
+      ("pendingTransactions" | listOfN(uint16, txCodec)) ::
+      ("excludedOutpoints" | listOfN(uint16, outPointCodec))
   }.as[PersistentData]
 }

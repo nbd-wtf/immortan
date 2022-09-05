@@ -6,15 +6,15 @@ import scoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
 import scoin.Script._
 import scoin._
 import scoin.ln.Generators
-import scoin.ln.transactions._
-import scoin.ln.transactions.Scripts._
-import scoin.ln.transactions.DirectedHtlc._
-import scoin.ln.transactions.Transactions._
 import scoin.ln._
 
 import immortan.{newFeerate, ChannelBag, LNParams}
 import immortan.blockchain.TxConfirmedAt
 import immortan.blockchain.fee._
+import immortan.channel.Scripts._
+import immortan.channel.DirectedHtlc._
+import immortan.channel.Transactions._
+import immortan.channel.Codecs._
 
 object Helpers {
   def validateParamsFundee(open: OpenChannel, commits: NormalCommits): Unit = {

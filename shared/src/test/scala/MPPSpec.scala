@@ -4,15 +4,15 @@ import scala.language.existentials
 import com.softwaremill.quicklens._
 import scoin.{ByteVector32, Crypto}
 import scoin.ln._
+import utest._
+
 import immortan.router.Graph.GraphStructure.DescAndCapacity
 import immortan.router.Router.ChannelDesc
-import scoin.ln.transactions.{RemoteFulfill, RemoteUpdateFail}
-import scoin.ln._
 import immortan.fsm._
+import immortan.channel.{RemoteFulfill, RemoteUpdateFail}
 import immortan.utils.ChannelUtils._
 import immortan.utils.GraphUtils._
 import immortan.utils.TestUtils._
-import utest._
 
 object MPPSpec extends TestSuite {
   val tests = Tests {

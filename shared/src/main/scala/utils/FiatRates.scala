@@ -1,5 +1,7 @@
 package immortan.utils
 
+import scoin.Crypto
+
 import immortan._
 import immortan.utils.ImplicitJsonFormats._
 
@@ -51,8 +53,8 @@ class FiatRates(bag: DataBag) extends CanBeShutDown {
     "huf" -> "Hungarian forint"
   )
 
-  def reloadData: Tools.Fiat2Btc =
-    scoin.ln.secureRandom nextInt 3 match {
+  def reloadData: Fiat2Btc =
+    (Crypto.randomBytes(1).toInt(signed = true) % 3) match {
       case 0 =>
         to[CoinGecko](
           LNParams.connectionProvider.get(
@@ -71,7 +73,7 @@ class FiatRates(bag: DataBag) extends CanBeShutDown {
         }.toMap
     }
 
-  def updateInfo(newRates: Tools.Fiat2Btc): Unit = {
+  def updateInfo(newRates: Fiat2Btc): Unit = {
     info = FiatRatesInfo(newRates, info.rates, System.currentTimeMillis)
     for (lst <- listeners) lst.onFiatRates(info)
   }

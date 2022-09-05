@@ -6,11 +6,10 @@ import scoin.DeterministicWallet._
 import scoin._
 import scoin.ln._
 import scoin.ln.Sphinx.PacketAndSecrets
-import scoin.ln.transactions.Transactions._
-import scoin.ln.transactions.{CommitmentSpec, Transactions}
 import scoin.ln.PaymentOnion.FinalPayload
 
 import immortan._
+import immortan.channel.Transactions._
 import immortan.blockchain.TxConfirmedAt
 
 sealed trait HtlcResult
@@ -33,17 +32,6 @@ object HtlcResult {
     )
   }
 }
-
-trait RemoteReject { val ourAdd: UpdateAddHtlc }
-case class RemoteUpdateFail(fail: UpdateFailHtlc, ourAdd: UpdateAddHtlc)
-    extends RemoteReject
-case class RemoteUpdateMalform(
-    malform: UpdateFailMalformedHtlc,
-    ourAdd: UpdateAddHtlc
-) extends RemoteReject
-
-case class RemoteFulfill(ourAdd: UpdateAddHtlc, theirPreimage: ByteVector32)
-case class LocalFulfill(theirAdd: UpdateAddHtlc, ourPreimage: ByteVector32)
 
 sealed trait LocalReject {
   val localAdd: UpdateAddHtlc
@@ -69,7 +57,7 @@ case class INPUT_INIT_FUNDER(
     initialFeeratePerKw: FeeratePerKw,
     localParams: LocalParams,
     remoteInit: Init,
-    channelFlags: Byte,
+    channelFlags: OpenChannel.ChannelFlags,
     channelFeatures: ChannelFeatures
 )
 
@@ -148,7 +136,7 @@ case class CMD_ADD_HTLC(
     fullTag.paymentHash,
     cltvExpiry,
     packetAndSecrets.packet,
-    encryptedTag
+    TlvStream(encryptedTag)
   )
 
   lazy val encryptedTag: PaymentTagTlv.EncryptedSecretStream = {
@@ -282,7 +270,7 @@ final case class DATA_WAIT_FOR_FUNDING_SIGNED(
     localSpec: CommitmentSpec,
     localCommitTx: CommitTx,
     remoteCommit: RemoteCommit,
-    channelFlags: Byte,
+    channelFlags: OpenChannel.ChannelFlags,
     channelFeatures: ChannelFeatures,
     lastSent: FundingCreated
 ) extends ChannelData

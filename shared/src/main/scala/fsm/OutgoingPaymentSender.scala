@@ -98,7 +98,8 @@ case class OutgoingPaymentSenderData(
   }
   lazy val successfulUpdates: Iterable[ChannelUpdateExt] =
     inFlightParts.flatMap(_.route.routedPerHop).secondItems.map(_.edge.updExt)
-  lazy val usedFee: MilliSatoshi = inFlightParts.map(_.route.fee).sum
+  lazy val usedFee: MilliSatoshi =
+    inFlightParts.map(_.route.fee).fold(MilliSatoshi(0))(_ + _)
 }
 
 class OutgoingPaymentSender(
@@ -266,7 +267,7 @@ class OutgoingPaymentSender(
           )
 
           OutgoingPaymentPacket.buildPaymentPacket(
-            wait.onionKey,
+            // wait.onionKey, FIXME I've commented this out but must check later what are the implications
             fullTag.paymentHash,
             found.route.hops,
             finalPayload
@@ -502,7 +503,7 @@ class OutgoingPaymentSender(
         // Example: channel leftover=300, chanSendable=400 -> sending 300
 
         val noFeeAmount = leftover.min(chanSendable)
-        val wait = WaitForRouteOrInFlight(randomKey, noFeeAmount, cnc)
+        val wait = WaitForRouteOrInFlight(randomKey(), noFeeAmount, cnc)
         (accumulator + wait.tuple, leftover - wait.amount)
 
       case (collected, _) =>
@@ -528,7 +529,7 @@ class OutgoingPaymentSender(
         // Amount has not been fully split, but it is possible to further successfully split it once some SLEEPING channel becomes OPEN
         become(
           senderData.copy(parts =
-            senderData.parts + WaitForChanOnline(randomKey, amount).tuple
+            senderData.parts + WaitForChanOnline(randomKey(), amount).tuple
           ),
           PENDING
         )
@@ -624,7 +625,7 @@ case class WaitForRouteOrInFlight(
       feesTried = route.fee :: feesTried
     )
   def oneMoreRemoteAttempt(cnc: ChanAndCommits): WaitForRouteOrInFlight = copy(
-    onionKey = randomKey,
+    onionKey = randomKey(),
     flight = None,
     remoteAttempts = remoteAttempts + 1,
     cnc = cnc

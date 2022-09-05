@@ -1,10 +1,11 @@
-package immortan.blockchain.electrum.db
+package immortan.electrum.db
 
+import scodec.bits.ByteVector
 import scoin.Crypto.PublicKey
 import scoin.DeterministicWallet.ExtendedPublicKey
 import scoin.{BlockHeader, ByteVector32, Satoshi}
-import immortan.blockchain.electrum.PersistentData
-import scodec.bits.ByteVector
+
+import immortan.electrum.PersistentData
 
 trait HeaderDb {
   type HeightAndHeader = (Int, BlockHeader)

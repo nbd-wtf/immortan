@@ -1,14 +1,13 @@
-package immortan
+package immortan.channel
 
 import scodec.bits.ByteVector
 import com.softwaremill.quicklens._
 import scoin._
 import scoin.ln._
-import scoin.ln.transactions._
 import scoin.hc._
 import scoin.hc.HostedChannelCodecs._
 
-import immortan.channel._
+import immortan._
 
 case class WaitRemoteHostedReply(
     remoteInfo: RemoteNodeInfo,

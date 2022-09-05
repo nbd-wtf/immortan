@@ -2,8 +2,6 @@ package immortan
 
 import scala.language.existentials
 import scoin.{Block, Crypto}
-import scoin.ln._
-import immortan.channel._
 import scoin.ln.payment.IncomingPaymentPacket.{
   FinalPacket,
   NodeRelayPacket,
@@ -14,19 +12,17 @@ import scoin.ln.payment.{
   OutgoingPaymentPacket,
   Bolt11Invoice
 }
-import immortan.router.Router.NodeHop
-import scoin.ln.transactions.{
-  RemoteFulfill,
-  RemoteUpdateFail,
-  RemoteUpdateMalform
-}
 import scoin.ln._
+import utest._
+
+import immortan.channel._
+import immortan.router.Router.NodeHop
+import immortan.channel.{RemoteFulfill, RemoteUpdateFail, RemoteUpdateMalform}
 import immortan.fsm._
 import immortan.utils.ChannelUtils._
 import immortan.utils.GraphUtils._
 import immortan.utils.PaymentUtils._
 import immortan.utils.TestUtils._
-import utest._
 
 object PaymentTrampolineRoutingSpec extends TestSuite {
   val tests = Tests {

@@ -72,7 +72,7 @@ abstract class NCFunderOpenHandler(
           initialFeeratePerKw,
           localFunderParams,
           theirInit,
-          0.toByte,
+          OpenChannel.ChannelFlags(announceChannel = false),
           channelFeatures
         )
         freshChannel process cmd

@@ -1,4 +1,4 @@
-package immortan.blockchain.electrum
+package immortan.electrum
 
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -19,9 +19,9 @@ import scoin.{
 
 import immortan.blockchain.EclairWallet
 import immortan.blockchain.EclairWallet._
-import immortan.blockchain.electrum.ElectrumClient.BroadcastTransaction
-import immortan.blockchain.electrum.ElectrumWallet._
-import immortan.blockchain.electrum.db.CompleteChainWalletInfo
+import immortan.electrum.ElectrumClient.BroadcastTransaction
+import immortan.electrum.ElectrumWallet._
+import immortan.electrum.db.CompleteChainWalletInfo
 
 case class ElectrumEclairWallet(
     wallet: ElectrumWallet,

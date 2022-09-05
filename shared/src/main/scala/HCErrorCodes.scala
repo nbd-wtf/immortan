@@ -1,6 +1,6 @@
 package immortan
 
-import scoin.ln.Fail
+import scoin.ln.Error
 
 object ErrorCodes {
   final val ERR_HOSTED_WRONG_BLOCKDAY = "0001"
@@ -29,7 +29,7 @@ object ErrorCodes {
 }
 
 object ErrorExt {
-  def extractDescription(error: Fail): String = {
+  def extractDescription(error: Error): String = {
     val postTagData = error.data.drop(4)
     val tag = error.toAscii.take(4)
 

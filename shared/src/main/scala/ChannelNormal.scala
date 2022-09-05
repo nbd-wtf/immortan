@@ -7,21 +7,18 @@ import scala.util.Try
 import com.softwaremill.quicklens._
 import scodec.bits.ByteVector
 import scoin.Crypto.PrivateKey
-import scoin.{FeeratePerKw, ByteVector32, Transaction}
+import scoin._
 import scoin.ln._
-import scoin.ln.ShaChain
-import scoin.ln.OutgoingPaymentPacket
-import scoin.ln.transactions.Transactions.TxOwner
-import scoin.ln.transactions._
 
 import immortan._
 import immortan.Channel._
 import immortan.sqlite.ChannelTxFeesTable
 import immortan.utils.Rx
 import immortan.blockchain._
-import immortan.blockchain.electrum.ElectrumWallet.GenerateTxResponse
+import immortan.electrum.ElectrumWallet.GenerateTxResponse
 import immortan.channel.Helpers.Closing
 import immortan.channel._
+import immortan.channel.Transactions
 
 object ChannelNormal {
   def make(
@@ -84,9 +81,6 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
           delayedPaymentKey,
           htlcKey
         ) = init.localParams.keys
-        val emptyUpfrontShutdown: TlvStream[OpenChannelTlv] = TlvStream(
-          ChannelTlv UpfrontShutdownScript ByteVector.empty
-        )
 
         val open = OpenChannel(
           LNParams.chainHash,
@@ -107,7 +101,9 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
           htlcBasepoint = htlcKey.publicKey,
           init.localParams.keys.commitmentPoint(index = 0L),
           init.channelFlags,
-          emptyUpfrontShutdown
+          TlvStream(
+            ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty)
+          )
         )
 
         BECOME(DATA_WAIT_FOR_ACCEPT_CHANNEL(init, open), Channel.WaitForAccept)
@@ -179,7 +175,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
         val localSigOfRemoteTx = Transactions.sign(
           remoteCommitTx,
           wait.initFunder.localParams.keys.fundingKey.privateKey,
-          TxOwner.Remote,
+          Transactions.TxOwner.Remote,
           wait.initFunder.channelFeatures.commitmentFormat
         )
         val fundingCreated = FundingCreated(
@@ -222,7 +218,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
         val localSigOfLocalTx = Transactions.sign(
           wait.localCommitTx,
           wait.localParams.keys.fundingKey.privateKey,
-          TxOwner.Local,
+          Transactions.TxOwner.Local,
           wait.channelFeatures.commitmentFormat
         )
         val signedLocalCommitTx = Transactions.addSigs(
@@ -238,7 +234,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
 
         val publishableTxs = PublishableTxs(signedLocalCommitTx, Nil)
         val commits = NormalCommits(
-          wait.channelFlags,
+          if (wait.channelFlags.announceChannel) 1.toByte else 2.toByte,
           wait.channelId,
           wait.channelFeatures,
           Right(randomKey.publicKey),
@@ -283,10 +279,6 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
           htlcKey
         ) = init.localParams.keys
 
-        val emptyUpfrontShutdown: TlvStream[AcceptChannelTlv] = TlvStream(
-          ChannelTlv.UpfrontShutdownScript(ByteVector.empty)
-        )
-
         val accept = AcceptChannel(
           init.theirOpen.temporaryChannelId,
           init.localParams.dustLimit,
@@ -302,7 +294,9 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
           delayedPaymentBasepoint = delayedPaymentKey.publicKey,
           htlcBasepoint = htlcKey.publicKey,
           init.localParams.keys.commitmentPoint(index = 0L),
-          emptyUpfrontShutdown
+          TlvStream(
+            ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty)
+          )
         )
 
         BECOME(
@@ -348,7 +342,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
         val localSigOfLocalTx = Transactions.sign(
           localCommitTx,
           wait.initFundee.localParams.keys.fundingKey.privateKey,
-          TxOwner.Local,
+          Transactions.TxOwner.Local,
           wait.initFundee.channelFeatures.commitmentFormat
         )
         val signedLocalCommitTx = Transactions.addSigs(
@@ -361,7 +355,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
         val localSigOfRemoteTx = Transactions.sign(
           remoteCommitTx,
           wait.initFundee.localParams.keys.fundingKey.privateKey,
-          TxOwner.Remote,
+          Transactions.TxOwner.Remote,
           wait.initFundee.channelFeatures.commitmentFormat
         )
         val fundingSigned = FundingSigned(
@@ -371,7 +365,8 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
 
         val publishableTxs = PublishableTxs(signedLocalCommitTx, Nil)
         val commits = NormalCommits(
-          wait.initFundee.theirOpen.channelFlags,
+          if (wait.initFundee.theirOpen.channelFlags.announceChannel) 1.toByte
+          else 0.toByte,
           fundingSigned.channelId,
           wait.initFundee.channelFeatures,
           Right(randomKey.publicKey),
@@ -429,14 +424,14 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
             channelId = wait.channelId
           )
           val shortChannelId = ShortChannelId(
-            event.txConfirmedAt.blockHeight,
+            BlockHeight(event.txConfirmedAt.blockHeight),
             event.txIndex,
             wait.commitments.commitInput.outPoint.index.toInt
           )
           StoreBecomeSend(
             DATA_WAIT_FOR_FUNDING_LOCKED(
               wait.commitments,
-              shortChannelId,
+              shortChannelId.toLong,
               fundingLocked
             ),
             state,
@@ -524,7 +519,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
             Channel.Open | Channel.Sleeping
           ) =>
         val sentExpiredRouted = norm.commitments.allOutgoing.exists(add =>
-          tip > add.cltvExpiry.underlying && add.fullTag.tag == PaymentTagTlv.TRAMPLOINE_ROUTED
+          tip > add.cltvExpiry.toLong && add.fullTag.tag == PaymentTagTlv.TRAMPLOINE_ROUTED
         )
         val threshold = Transactions.receivedHtlcTrimThreshold(
           norm.commitments.remoteParams.dustLimit,
@@ -536,7 +531,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
         )
         val expiredReceivedRevealed =
           largeReceivedRevealed.exists(localFulfill =>
-            tip > localFulfill.theirAdd.cltvExpiry.underlying - LNParams.ncFulfillSafetyBlocks
+            tip > localFulfill.theirAdd.cltvExpiry.toLong - LNParams.ncFulfillSafetyBlocks
           )
         if (sentExpiredRouted || expiredReceivedRevealed)
           throw ExpiredHtlcInNormalChannel(
@@ -697,7 +692,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
           if norm.commitments.latestReducedRemoteSpec
             .findOutgoingHtlcById(cmd.theirAdd.id)
             .isDefined =>
-        val msg = OutgoingPaymentPacket.buildHtlcFailure(cmd)
+        val msg = OutgoingPaymentPacket.buildHtlcFailure(cmd).toOption.get
         BECOME(
           norm.copy(commitments = norm.commitments.addLocalProposal(msg)),
           Channel.Open
@@ -1146,7 +1141,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
             _: ChannelReestablish,
             Channel.Closing
           ) =>
-        val error = Fail(currentData.channelId, s"funding tx has been spent")
+        val error = Error(currentData.channelId, s"funding tx has been spent")
         SEND(error)
 
       case (
@@ -1398,9 +1393,9 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
         )
         BECOME(currentData, Channel.Sleeping)
 
-      case (_, remote: Fail, _) =>
+      case (_, remote: Error, _) =>
         // Convert remote error to local exception, it will be dealt with upstream
-        throw RemoteErrorException(ErrorExt extractDescription remote)
+        throw RemoteErrorException(ErrorExt.extractDescription(remote))
 
       case _ =>
     }

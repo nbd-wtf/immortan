@@ -13,9 +13,9 @@ import scoin._
 import scoin.ln._
 import scoin.ln.CommonCodecs._
 import scoin.ln.Bolt11Invoice.ExtraHop
-import scoin.ln.transactions.CommitmentSpec
 
-import immortan.blockchain.electrum.ElectrumWallet.GenerateTxResponse
+import immortan.electrum.ElectrumWallet.GenerateTxResponse
+import immortan.channel.CommitmentSpec
 import immortan.router.Graph.GraphStructure.GraphEdge
 import immortan.router.RouteCalculation
 import immortan.router.Router.ChannelDesc
@@ -103,7 +103,7 @@ package object immortan {
   }
 
   implicit class ChannelUpdateOps(cu: ChannelUpdate) {
-    lazy val position = if (cu.channelFlags.isNode1) 1 else 2
+    def position: Int = if (cu.channelFlags.isNode1) 1 else 2
 
     lazy val core: UpdateCore = UpdateCore(
       position,

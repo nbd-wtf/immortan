@@ -1,4 +1,4 @@
-package immortan.blockchain.electrum
+package immortan.electrum
 
 import java.net.{InetSocketAddress, SocketAddress}
 import java.util
@@ -32,8 +32,8 @@ import scodec.bits.ByteVector
 import scoin._
 
 import immortan.blockchain.bitcoind.rpc.{Error, JsonRPCRequest, JsonRPCResponse}
-import immortan.blockchain.electrum.ElectrumClient._
-import immortan.blockchain.electrum.ElectrumChainSync
+import immortan.electrum.ElectrumClient._
+import immortan.electrum.ElectrumChainSync
 import immortan.LNParams
 
 object ElectrumClient {

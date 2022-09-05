@@ -1,4 +1,4 @@
-package immortan.blockchain.electrum
+package immortan.electrum
 
 import java.io.InputStream
 import java.net.InetSocketAddress
@@ -6,8 +6,8 @@ import java.util.concurrent.atomic.AtomicLong
 
 import scoin.{Block, BlockHeader, ByteVector32}
 import immortan.blockchain.CurrentBlockCount
-import immortan.blockchain.electrum.ElectrumClient.SSL
-import immortan.blockchain.electrum.ElectrumClientPool._
+import immortan.electrum.ElectrumClient.SSL
+import immortan.electrum.ElectrumClientPool._
 import immortan.LNParams
 import org.json4s.JsonAST.{JObject, JString}
 import org.json4s.native.JsonMethods

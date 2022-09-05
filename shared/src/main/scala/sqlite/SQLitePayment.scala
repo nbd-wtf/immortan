@@ -5,7 +5,6 @@ import scala.util.Try
 import spray.json._
 import scoin._
 import scoin.ln._
-import scoin.ln.FullPaymentTag
 
 import immortan._
 import immortan.channel._
