@@ -6,12 +6,12 @@ import scala.concurrent.{Await, ExecutionContext}
 import scala.util.Try
 import com.softwaremill.quicklens._
 import scodec.bits.{ByteVector, HexStringSyntax}
+import castor.Context.Simple.global
 import scoin.Crypto.{PrivateKey, PublicKey}
 import scoin._
 import scoin.ln._
 import scoin.ln.Features._
 import scoin.hc._
-import castor.Context.Simple.global
 
 import immortan._
 import immortan.electrum._
@@ -135,14 +135,6 @@ object LNParams {
   def createInit: Init = {
     val networks: InitTlv = InitTlv.Networks(chainHash :: Nil)
     val tlvStream: TlvStream[InitTlv] = TlvStream(networks)
-
-    case object PrivateRouting
-        extends Feature
-        with NodeFeature
-        with InitFeature {
-      val rfcName = "Private routing"
-      val mandatory = 33174
-    }
 
     Init(
       Features(
@@ -546,14 +538,14 @@ trait NetworkBag {
   ): Unit
   // When adding an excluded channel we disregard an update position: channel as a whole is always excluded
   def addExcludedChannel(
-      shortId: Long,
+      scid: ShortChannelId,
       untilStamp: Long,
       newSqlPQ: PreparedQuery
   ): Unit
-  def removeChannelUpdate(shortId: Long, killSqlPQ: PreparedQuery): Unit
+  def removeChannelUpdate(scid: ShortChannelId, killSqlPQ: PreparedQuery): Unit
 
   def addChannelUpdateByPosition(cu: ChannelUpdate): Unit
-  def removeChannelUpdate(shortId: Long): Unit
+  def removeChannelUpdate(scid: ShortChannelId): Unit
 
   def listChannelAnnouncements: Iterable[ChannelAnnouncement]
   def listChannelUpdates: Iterable[ChannelUpdateExt]

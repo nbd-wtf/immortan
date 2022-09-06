@@ -4,8 +4,8 @@ import java.util.concurrent.Executors
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import scoin.{ByteVector32, Crypto}
-import scoin.ln.{HostedChannelMessage, Init, QueryPreimages, ReplyPreimages}
-import scoin.hc._
+import scoin.ln.Init
+import scoin.hc.{HostedChannelMessage, QueryPreimages, ReplyPreimages}
 
 import immortan.{
   randomKeyPair,
@@ -43,7 +43,7 @@ object PreimageCheck {
 abstract class PreimageCheck
     extends StateMachine[PreimageCheck.CheckData, PreimageCheck.State] {
   implicit val context: ExecutionContextExecutor =
-    ExecutionContext fromExecutor Executors.newSingleThreadExecutor
+    ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor)
 
   def initialState = PreimageCheck.Initial
 
@@ -138,7 +138,7 @@ abstract class PreimageCheck
   ): PreimageCheck.CheckData = {
     currentData.copy(hashToPreimage =
       currentData.hashToPreimage ++ msg.preimages
-        .map(Crypto sha256 _)
+        .map(Crypto.sha256(_))
         .zip(msg.preimages)
     )
   }

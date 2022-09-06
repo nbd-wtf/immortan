@@ -1,10 +1,9 @@
 package immortan.router
 
-import java.util.zip.CRC32
-import scodec.bits.ByteVector
-import shapeless.HNil
+import scodec.bits.{crc, ByteVector}
 import scoin._
 import scoin.ln._
+import scoin.ln.LightningMessageCodecs.channelUpdateChecksumCodec
 
 import immortan.router.Router._
 
@@ -48,19 +47,23 @@ object Sync {
     )
   }
 
-  def crc32c(data: ByteVector): Long = {
-    val digest = new CRC32
-    digest.update(data.toArray)
-    digest.getValue() & 0xffffffffL
-  }
-
-  def getChecksum(u: ChannelUpdate): Long = {
-    val data = serializationResult(
-      LightningMessageCodecs.channelUpdateChecksumCodec.encode(
-        u.chainHash :: u.shortChannelId :: u.messageFlags :: u.channelFlags ::
-          u.cltvExpiryDelta :: u.htlcMinimumMsat :: u.feeBaseMsat :: u.feeProportionalMillionths :: u.htlcMaximumMsat :: HNil
+  def getChecksum(u: ChannelUpdate): Long =
+    crc
+      .crc32c(
+        channelUpdateChecksumCodec
+          .encode(
+            ChannelUpdate.Checksum(
+              u.chainHash,
+              u.shortChannelId,
+              u.channelFlags,
+              u.cltvExpiryDelta,
+              u.htlcMinimumMsat,
+              u.feeBaseMsat,
+              u.feeProportionalMillionths,
+              u.htlcMaximumMsat
+            )
+          )
+          .require
       )
-    )
-    crc32c(data)
-  }
+      .toLong()
 }

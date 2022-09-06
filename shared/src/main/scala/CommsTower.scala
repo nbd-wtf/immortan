@@ -199,7 +199,7 @@ object CommsTower {
     }
 
     def sendPing(): Unit = {
-      val payloadLength = (Crypto.randomBytes(1).toInt(signed = true) % 5) + 1
+      val payloadLength = (Crypto.randomBytes(1).toInt(signed = false) % 5) + 1
       val data = Crypto.randomBytes(length = payloadLength)
       handler.process(Ping(payloadLength, data))
     }

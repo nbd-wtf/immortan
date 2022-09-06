@@ -6,7 +6,6 @@ import spray.json._
 
 import scoin._
 import scoin.DeterministicWallet.ExtendedPublicKey
-import scoin.ln.MilliSatoshi
 
 import immortan.{Fiat2Btc, ChannelMaster, TxDescription, TxInfo}
 import immortan.utils.ImplicitJsonFormats._

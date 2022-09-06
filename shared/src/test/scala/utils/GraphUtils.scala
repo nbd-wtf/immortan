@@ -51,7 +51,6 @@ object GraphUtils {
       minHtlc: MilliSatoshi,
       maxHtlc: MilliSatoshi
   ): ChannelUpdate = {
-
     val isNode1 = Announcements.isNode1(nodeId1, nodeId2)
     ChannelUpdate(
       signature = PlaceHolderSig,

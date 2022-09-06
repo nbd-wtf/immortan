@@ -706,7 +706,7 @@ object NormalCommits {
       localRevocation,
       remoteParams.toSelfDelay,
       localDelayedPayment,
-      spec.commitTxFeeMsat,
+      spec.commitTxFeerate,
       outputs,
       channelFeatures.commitmentFormat
     )

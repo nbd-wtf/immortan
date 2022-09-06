@@ -6,7 +6,6 @@ import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import rx.lang.scala.Observable
 import scoin.Crypto.PublicKey
 import scoin.MilliSatoshi
-import scoin.ln.Features.PrivateRouting
 import scoin.ln._
 
 import immortan._

@@ -10,7 +10,6 @@ import immortan.FullPaymentTag
 import immortan.utils.Statistics
 import immortan.router.Graph.GraphStructure._
 import immortan.router.Graph.RichWeight
-import scodec.codecs.ShortCodec.apply
 
 object ChannelUpdateExt {
   def fromUpdate(update: ChannelUpdate): ChannelUpdateExt = ChannelUpdateExt(

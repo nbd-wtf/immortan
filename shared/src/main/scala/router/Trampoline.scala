@@ -1,8 +1,11 @@
 package immortan.router
 
+import scodec.codecs.{double, uint32}
+
 import scoin._
 import scoin.Crypto.PublicKey
 import scoin.ln._
+import scoin.ln.CommonCodecs._
 
 sealed trait HasRelayFee {
   def relayFee(amount: MilliSatoshi): MilliSatoshi
@@ -22,6 +25,17 @@ case class TrampolineOn(
     exponent,
     logExponent
   )
+}
+
+object TrampolineOn {
+  val codec = (
+    (millisatoshi withContext "minMsat") ::
+      (millisatoshi withContext "maxMsat") ::
+      (uint32 withContext "feeProportionalMillionths") ::
+      (double withContext "exponent") ::
+      (double withContext "logExponent") ::
+      (cltvExpiryDelta withContext "cltvExpiryDelta")
+  ).as[TrampolineOn]
 }
 
 case class AvgHopParams(

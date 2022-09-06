@@ -405,7 +405,7 @@ object Helpers {
     ): Satoshi = {
       val feeratePerKw = conf.feeEstimator
         .getFeeratePerKw(conf.feeTargets.mutualCloseBlockTarget)
-        .min(commitments.localCommit.spec.feeratePerKw)
+        .min(commitments.localCommit.spec.commitTxFeerate)
       firstClosingFee(
         commitments,
         localScriptPubkey,

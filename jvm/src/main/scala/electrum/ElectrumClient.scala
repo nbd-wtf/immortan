@@ -27,7 +27,6 @@ import io.netty.util.internal.logging.{InternalLoggerFactory, JdkLoggerFactory}
 import org.json4s.JsonAST._
 import org.json4s.native.JsonMethods
 import org.json4s.{JInt, JLong, JString}
-import org.json4s._
 import scodec.bits.ByteVector
 import scoin._
 

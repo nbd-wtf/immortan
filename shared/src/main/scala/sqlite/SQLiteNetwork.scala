@@ -83,7 +83,7 @@ class SQLiteNetwork(
       feeBaseMsat,
       feeProportionalMillionths,
       htlcMaxMsat,
-      cu.position,
+      cu.position: JInt,
       1L: JLong,
       crc32
     )
@@ -99,11 +99,11 @@ class SQLiteNetwork(
       htlcMaxMsat,
       crc32,
       cu.shortChannelId.toLong: JLong,
-      cu.position
+      cu.position: JInt
     )
   }
 
-  def removeChannelUpdate(scid: Long): Unit = {
+  def removeChannelUpdate(scid: ShortChannelId): Unit = {
     val removeChannelUpdateNewSqlPQ = db.makePreparedQuery(updateTable.killSql)
     removeChannelUpdate(scid, removeChannelUpdateNewSqlPQ)
     removeChannelUpdateNewSqlPQ.close()

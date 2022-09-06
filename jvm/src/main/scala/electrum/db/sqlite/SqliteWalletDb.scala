@@ -12,6 +12,7 @@ import immortan.electrum.ElectrumClient.{
   TransactionHistoryItem
 }
 import immortan.electrum.{ElectrumClient, ElectrumWallet, PersistentData}
+import immortan.electrum.ElectrumWallet.TxHistoryItemList
 
 object SqliteWalletDb {
   private val anyOpt = Option.empty[Any]
@@ -29,29 +30,50 @@ object SqliteWalletDb {
       ("contextOpt" | provide(anyOpt))
   }.as[GetMerkleResponse]
 
-  val overrideCodec: Codec[Map[ByteVector32, ByteVector32]] =
+  val overrideCodec: Codec[Map[ByteVector32, ByteVector32]] = {
+    case class DoubleBytes32(k: ByteVector32, v: ByteVector32)
+    val doubleBytes32 = (bytes32 :: bytes32).as[DoubleBytes32]
+    val subCodec = listOfN(uint16, doubleBytes32)
+
     Codec[Map[ByteVector32, ByteVector32]](
-      (runtimeMap: Map[ByteVector32, ByteVector32]) =>
-        listOfN(uint16, bytes32 :: bytes32).encode(runtimeMap.toList),
-      (wire: BitVector) =>
-        listOfN(uint16, bytes32 :: bytes32).decode(wire).map(_.map(_.toMap))
+      (values: Map[ByteVector32, ByteVector32]) =>
+        subCodec.encode(values.map((k, v) => DoubleBytes32(k, v)).toList),
+      (bits: BitVector) =>
+        subCodec
+          .decode(bits)
+          .map(_.map(_.map { case DoubleBytes32(k, v) => (k, v) }.toMap))
     )
+  }
 
-  val statusCodec: Codec[Map[ByteVector32, String]] =
+  val statusCodec: Codec[Map[ByteVector32, String]] = {
+    case class Bytes32String(k: ByteVector32, v: String)
+    val bytes32string = (bytes32 :: cstring).as[Bytes32String]
+    val subCodec = listOfN(uint16, bytes32string)
+
     Codec[Map[ByteVector32, String]](
-      (runtimeMap: Map[ByteVector32, String]) =>
-        listOfN(uint16, bytes32 :: cstring).encode(runtimeMap.toList),
-      (wire: BitVector) =>
-        listOfN(uint16, bytes32 :: cstring).decode(wire).map(_.map(_.toMap))
+      (values: Map[ByteVector32, String]) =>
+        subCodec.encode(values.map((k, v) => Bytes32String(k, v)).toList),
+      (bits: BitVector) =>
+        subCodec
+          .decode(bits)
+          .map(_.map(_.map { case Bytes32String(k, v) => (k, v) }.toMap))
     )
+  }
 
-  val transactionsCodec: Codec[Map[ByteVector32, Transaction]] =
+  val transactionsCodec: Codec[Map[ByteVector32, Transaction]] = {
+    case class Bytes32Transaction(k: ByteVector32, v: Transaction)
+    val bytes32transaction = (bytes32 :: txCodec).as[Bytes32Transaction]
+    val subCodec = listOfN(uint16, bytes32transaction)
+
     Codec[Map[ByteVector32, Transaction]](
-      (runtimeMap: Map[ByteVector32, Transaction]) =>
-        listOfN(uint16, bytes32 :: txCodec).encode(runtimeMap.toList),
-      (wire: BitVector) =>
-        listOfN(uint16, bytes32 :: txCodec).decode(wire).map(_.map(_.toMap))
+      (values: Map[ByteVector32, Transaction]) =>
+        subCodec.encode(values.map((k, v) => Bytes32Transaction(k, v)).toList),
+      (bits: BitVector) =>
+        subCodec
+          .decode(bits)
+          .map(_.map(_.map { case Bytes32Transaction(k, v) => (k, v) }.toMap))
     )
+  }
 
   val transactionHistoryItemCodec = {
     ("height" | int32) ::
@@ -61,24 +83,40 @@ object SqliteWalletDb {
   val seqOfTransactionHistoryItemCodec =
     listOfN[TransactionHistoryItem](uint16, transactionHistoryItemCodec)
 
-  val historyCodec: Codec[Map[ByteVector32, ElectrumWallet.TxHistoryItemList]] =
-    Codec[Map[ByteVector32, ElectrumWallet.TxHistoryItemList]](
-      (runtimeMap: Map[ByteVector32, ElectrumWallet.TxHistoryItemList]) =>
-        listOfN(uint16, bytes32 :: seqOfTransactionHistoryItemCodec)
-          .encode(runtimeMap.toList),
-      (wire: BitVector) =>
-        listOfN(uint16, bytes32 :: seqOfTransactionHistoryItemCodec)
-          .decode(wire)
-          .map(_.map(_.toMap))
-    )
+  val historyCodec: Codec[Map[ByteVector32, TxHistoryItemList]] = {
+    case class Bytes32TxHistoryItemList(k: ByteVector32, v: TxHistoryItemList)
+    val bytes32txHistoryItemList =
+      (bytes32 :: seqOfTransactionHistoryItemCodec).as[Bytes32TxHistoryItemList]
+    val subCodec = listOfN(uint16, bytes32txHistoryItemList)
 
-  val proofsCodec: Codec[Map[ByteVector32, GetMerkleResponse]] =
-    Codec[Map[ByteVector32, GetMerkleResponse]](
-      (runtimeMap: Map[ByteVector32, GetMerkleResponse]) =>
-        listOfN(uint16, bytes32 :: proofCodec).encode(runtimeMap.toList),
-      (wire: BitVector) =>
-        listOfN(uint16, bytes32 :: proofCodec).decode(wire).map(_.map(_.toMap))
+    Codec[Map[ByteVector32, TxHistoryItemList]](
+      (values: Map[ByteVector32, TxHistoryItemList]) =>
+        subCodec.encode(
+          values.map((k, v) => Bytes32TxHistoryItemList(k, v)).toList
+        ),
+      (bits: BitVector) =>
+        subCodec
+          .decode(bits)
+          .map(_.map(_.map { case Bytes32TxHistoryItemList(k, v) =>
+            (k, v)
+          }.toMap))
     )
+  }
+
+  val proofsCodec: Codec[Map[ByteVector32, GetMerkleResponse]] = {
+    case class Bytes32Merkle(k: ByteVector32, v: GetMerkleResponse)
+    val bytes32merkle = (bytes32 :: proofCodec).as[Bytes32Merkle]
+    val subCodec = listOfN(uint16, bytes32merkle)
+
+    Codec[Map[ByteVector32, GetMerkleResponse]](
+      (values: Map[ByteVector32, GetMerkleResponse]) =>
+        subCodec.encode(values.map((k, v) => Bytes32Merkle(k, v)).toList),
+      (bits: BitVector) =>
+        subCodec
+          .decode(bits)
+          .map(_.map(_.map { case Bytes32Merkle(k, v) => (k, v) }.toMap))
+    )
+  }
 
   val persistentDataCodec: Codec[PersistentData] = {
     ("accountKeysCount" | int32) ::

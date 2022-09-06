@@ -1,11 +1,12 @@
 package immortan.fsm
 
-import scoin.ln.Features.StaticRemoteKey
-import immortan.channel._
 import scoin.ln._
+import scoin.ln.Features.StaticRemoteKey
+
+import immortan._
 import immortan.Channel
 import immortan.ChannelListener.{Malfunction, Transition}
-import immortan._
+import immortan.channel._
 
 abstract class NCFundeeOpenHandler(
     info: RemoteNodeInfo,
@@ -18,7 +19,7 @@ abstract class NCFundeeOpenHandler(
 
   private val freshChannel = new ChannelNormal(cm.chanBag) {
     def SEND(messages: LightningMessage*): Unit =
-      CommsTower.sendMany(messages, info.nodeSpecificPair)
+      CommsTower.sendMany(messages, info.nodeSpecificPair, NormalChannelKind)
     def STORE(normalData: PersistentChannelData): PersistentChannelData =
       cm.chanBag.put(normalData)
   }

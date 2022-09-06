@@ -1,12 +1,13 @@
 package immortan.electrum
 
+import scala.util.Try
+import scodec.bits.ByteVector
 import scoin.Crypto.PublicKey
 import scoin.DeterministicWallet._
 import scoin._
-import immortan.blockchain.EclairWallet
-import scodec.bits.ByteVector
 
-import scala.util.Try
+import immortan.blockchain.EclairWallet
+import immortan.dummyExtPrivKey
 
 object ElectrumWalletType {
   def makeSigningType(
@@ -229,7 +230,7 @@ class ElectrumWallet44(
       utxo <- usableUtxos.find(_.item.outPoint == txIn.outPoint)
       previousOutputScript = Script.pay2pkh(pubKey = utxo.key.publicKey)
       privateKey = derivePrivateKey(
-        secrets.map(_.master).getOrElse(scoin.ln.dummyExtPrivKey),
+        secrets.map(_.master).getOrElse(dummyExtPrivKey),
         utxo.key.path
       ).privateKey
       sig = Transaction.signInput(
@@ -315,7 +316,7 @@ class ElectrumWallet49(
       utxo <- usableUtxos.find(_.item.outPoint == txIn.outPoint)
       pubKeyScript = Script.write(Script pay2wpkh utxo.key.publicKey)
       privateKey = derivePrivateKey(
-        secrets.map(_.master).getOrElse(scoin.ln.dummyExtPrivKey),
+        secrets.map(_.master).getOrElse(dummyExtPrivKey),
         utxo.key.path
       ).privateKey
       sig = Transaction.signInput(
@@ -377,7 +378,7 @@ class ElectrumWallet84(
       (txIn, idx) <- tx.txIn.zipWithIndex
       utxo <- usableUtxos.find(_.item.outPoint == txIn.outPoint)
       privateKey = derivePrivateKey(
-        secrets.map(_.master).getOrElse(scoin.ln.dummyExtPrivKey),
+        secrets.map(_.master).getOrElse(dummyExtPrivKey),
         utxo.key.path
       ).privateKey
       sig = Transaction.signInput(

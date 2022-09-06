@@ -10,6 +10,7 @@ import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import scoin.Crypto.{PrivateKey, PublicKey, ChaCha20Poly1305}
 import scoin.Psbt.KeyPathWithMaster
 import scoin._
+import scoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import scoin.ln._
 import scoin.ln.CommonCodecs._
 import scoin.ln.Bolt11Invoice.ExtraHop
@@ -45,34 +46,31 @@ package object immortan {
     final val TRAMPLOINE_ROUTED = 1
     final val FINAL_INCOMING = 2
 
+    final val TLV_TAG = UInt64(4127926135L)
+
     type EncryptedSecretStream = TlvStream[EncryptedPaymentSecret]
 
     val shortPaymentTagCodec =
       (("paymentSecret" | bytes32) ::
         ("tag" | int32)).as[ShortPaymentTag]
-
-    private val encryptedPaymentSecretCodec =
-      variableSizeBytesLong(varintoverflow, bytes).as[EncryptedPaymentSecret]
-
-    private val discriminator = discriminated[EncryptedPaymentSecret]
-      .by(varint)
-      .typecase(UInt64(4127926135L), encryptedPaymentSecretCodec)
-
-    val codec: Codec[EncryptedSecretStream] = TlvCodecs.tlvStream(discriminator)
   }
 
   implicit class UpdateAddHtlcOps(add: UpdateAddHtlc) {
     // Important: LNParams.secret must be defined
     def fullTagOpt: Option[FullPaymentTag] = for {
-      EncryptedPaymentSecret(cipherBytes) <- add.tlvStream.records
-        .collectFirst { case v: EncryptedPaymentSecret => v }
+      cipherBytes <- add.tlvStream.unknown
+        .find(_.tag == PaymentTagTlv.TLV_TAG)
+        .map(_.value)
+
       plainBytes <- chaChaDecrypt(
         LNParams.secret.keys.ourNodePrivateKey.value,
         cipherBytes
       ).toOption
+
       DecodeResult(shortTag, _) <- PaymentTagTlv.shortPaymentTagCodec
         .decode(plainBytes.toBitVector)
         .toOption
+
     } yield FullPaymentTag(
       add.paymentHash,
       shortTag.paymentSecret,
@@ -291,6 +289,14 @@ package object immortan {
     val pk: PrivateKey = randomKey()
     KeyPair(pk.publicKey.value, pk.value)
   }
+
+  val dummyExtPrivKey: ExtendedPrivateKey = ExtendedPrivateKey(
+    secretkeybytes = ByteVector32(Crypto.randomBytes(32)),
+    chaincode = ByteVector32(Crypto.randomBytes(32)),
+    depth = 0,
+    path = KeyPath.Root,
+    parent = 0L
+  )
 
   def chaChaEncrypt(
       key: ByteVector32,

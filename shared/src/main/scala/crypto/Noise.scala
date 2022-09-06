@@ -6,7 +6,6 @@ import scoin.Crypto
 import scoin.Crypto.{PublicKey, PrivateKey}
 import scoin.Protocol.writeUInt64
 import scoin.Crypto.ChaCha20Poly1305
-import scoin.ln.randomBytes
 
 object Noise {
   sealed trait MessagePattern

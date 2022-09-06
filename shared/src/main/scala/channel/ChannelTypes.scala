@@ -136,20 +136,20 @@ case class CMD_ADD_HTLC(
     fullTag.paymentHash,
     cltvExpiry,
     packetAndSecrets.packet,
-    TlvStream(encryptedTag)
+    TlvStream(records = List.empty, unknown = List(encryptedTag))
   )
 
-  lazy val encryptedTag: PaymentTagTlv.EncryptedSecretStream = {
-    val shortTag = ShortPaymentTag(fullTag.paymentSecret, fullTag.tag)
-    val plainBytes =
-      PaymentTagTlv.shortPaymentTagCodec.encode(shortTag).require.toByteVector
-    val cipherbytes = chaChaEncrypt(
+  lazy val encryptedTag = GenericTlv(
+    tag = PaymentTagTlv.TLV_TAG,
+    value = chaChaEncrypt(
       LNParams.secret.keys.ourNodePrivateKey.value,
       Crypto.randomBytes(12),
-      plainBytes
+      PaymentTagTlv.shortPaymentTagCodec
+        .encode(ShortPaymentTag(fullTag.paymentSecret, fullTag.tag))
+        .require
+        .toByteVector
     )
-    TlvStream(EncryptedPaymentSecret(cipherbytes) :: Nil)
-  }
+  )
 }
 
 object CMD_CLOSE {
@@ -433,7 +433,8 @@ object ChannelKeys {
   }
 
   def newKeyPath(isFunder: Boolean): KeyPath = {
-    def nextHop: Long = Crypto.randomBytes(4).toInt(signed = true) & 0xffffffffL
+    def nextHop: Long =
+      Crypto.randomBytes(4).toInt(signed = false) & 0xffffffffL
     val lastHop = if (isFunder) hardened(1) else hardened(0)
     val path = Seq(
       nextHop,

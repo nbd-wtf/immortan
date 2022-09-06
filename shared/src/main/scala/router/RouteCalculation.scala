@@ -42,8 +42,8 @@ object RouteCalculation {
       assistedRoutes: Seq[Seq[ExtraHop]],
       target: PublicKey
   ): Set[GraphEdge] = {
-    val converter = routeToEdges(_: List[ExtraHop], target)
-    assistedRoutes.flatMap(converter).toSet
+    val converter = routeToEdges(_: Seq[ExtraHop], target)
+    assistedRoutes.flatMap(converter(_)).toSet
   }
 
   def routeToEdges(
@@ -69,7 +69,7 @@ object RouteCalculation {
       signature = ByteVector64.Zeroes,
       chainHash = ByteVector32.Zeroes,
       extraHop.shortChannelId,
-      System.currentTimeMillis.milliseconds.toSeconds,
+      TimestampSecond(System.currentTimeMillis.milliseconds.toSeconds),
       // messageFlags = 1,
       channelFlags = ChannelUpdate.ChannelFlags(false, false),
       extraHop.cltvExpiryDelta,

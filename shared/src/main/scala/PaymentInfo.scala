@@ -192,7 +192,7 @@ case class PaymentInfo(
       fsm.lastAmountIn
     ) && fsm.isHolding
   def ratio(fsm: IncomingPaymentProcessor): Long =
-    ratio(received, fsm.lastAmountIn).toLong
+    immortan.ratio(received, fsm.lastAmountIn).toLong
 }
 
 // Payment actions

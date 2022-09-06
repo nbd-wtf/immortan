@@ -6,7 +6,7 @@ import spray.json._
 import scodec.bits.ByteVector
 import scoin.Crypto.PublicKey
 import scoin.{BlockHeader, ByteVector32}
-import scoin.hc.HostedMessageCodecs.hostedChannelBrandingCodec
+import scoin.hc.HostedChannelCodecs.hostedChannelBrandingCodec
 import scoin.hc.HostedChannelBranding
 
 import immortan.router._
@@ -19,7 +19,7 @@ import immortan.{DataBag, WalletSecret}
 object SQLiteData {
   final val LABEL_FEE_RATES = "label-fee-rates"
   final val LABEL_FIAT_RATES = "label-fiat-rates"
-  final val LABLEL_TRAMPOLINE_ON = "label-trampoline-on"
+  final val LABEL_TRAMPOLINE_ON = "label-trampoline-on"
   final val LABEL_BRANDING_PREFIX = "label-branding-node-"
   final val LABEL_SWAP_IN_STATE_PREFIX = "label-swap-in-node-"
   final val LABEL_PAYMENT_REPORT_PREFIX = "label-payment-report-"
@@ -40,11 +40,11 @@ class SQLiteData(val db: DBInterface) extends HeaderDb with DataBag {
 
   // Fiat rates, fee rates
   def putTrampolineOn(ton: TrampolineOn): Unit =
-    put(LABLEL_TRAMPOLINE_ON, trampolineOnCodec.encode(ton).require.toByteArray)
+    put(LABEL_TRAMPOLINE_ON, TrampolineOn.codec.encode(ton).require.toByteArray)
 
   def tryGetTrampolineOn: Try[TrampolineOn] =
-    tryGet(LABLEL_TRAMPOLINE_ON).map(raw =>
-      trampolineOnCodec.decode(raw.toBitVector).require.value
+    tryGet(LABEL_TRAMPOLINE_ON).map(raw =>
+      TrampolineOn.codec.decode(raw.toBitVector).require.value
     )
 
   def putFiatRatesInfo(data: FiatRatesInfo): Unit =

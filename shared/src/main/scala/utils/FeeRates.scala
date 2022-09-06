@@ -49,7 +49,7 @@ class FeeRates(bag: DataBag) extends CanBeShutDown {
   override def becomeShutDown(): Unit = listeners = Set.empty
 
   def reloadData: FeeratesPerKB =
-    Crypto.randomBytes(4).toInt(signed = true) % 3 match {
+    Crypto.randomBytes(4).toInt(signed = false) % 3 match {
       case 0 =>
         new EsploraFeeProvider(
           "https://blockstream.info/api/fee-estimates"

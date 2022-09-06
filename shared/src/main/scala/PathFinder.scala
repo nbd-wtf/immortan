@@ -10,7 +10,6 @@ import rx.lang.scala.Subscription
 import scoin._
 import scoin.Crypto.PublicKey
 import scoin.ln._
-import scoin.ln.{CltvExpiryDelta, MilliSatoshi}
 
 import immortan._
 import immortan.PathFinder._

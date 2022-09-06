@@ -6,7 +6,13 @@ import scoin.ln._
 import scoin.hc._
 
 import immortan._
-import immortan.channel.{CMD_SOCKET_ONLINE, Commitments, PersistentChannelData}
+import immortan.channel.{
+  CMD_SOCKET_ONLINE,
+  Commitments,
+  PersistentChannelData,
+  HostedCommits,
+  WaitRemoteHostedReply
+}
 import immortan.Channel
 import immortan.ChannelListener.{Malfunction, Transition}
 

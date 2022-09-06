@@ -18,6 +18,7 @@ import scoin.hc.HostedChannelCodecs._
 
 import immortan._
 import immortan.channel.Transactions._
+import immortan.blockchain.TxConfirmedAt
 
 case class HostedState(
     nodeId1: PublicKey,

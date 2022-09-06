@@ -10,7 +10,6 @@ import scoin._
 import scoin.ln._
 import scoin.ln.Sphinx
 import scoin.ln.Sphinx.PacketAndSecrets
-import scoin.ln.OutgoingPaymentPacket
 
 import immortan._
 import immortan.router.Router._
@@ -127,18 +126,22 @@ class OutgoingPaymentSender(
 
   def doProcess(msg: Any): Unit = (msg, state) match {
     case (reject: RemoteReject, ABORTED) =>
-      me abortMaybeNotify data.withoutPartId(reject.ourAdd.partId)
+      abortMaybeNotify(data.withoutPartId(reject.ourAdd.partId))
     case (reject: LocalReject, ABORTED) =>
-      me abortMaybeNotify data.withoutPartId(reject.localAdd.partId)
+      abortMaybeNotify(data.withoutPartId(reject.localAdd.partId))
     case (reject: RemoteReject, INIT) =>
-      me abortMaybeNotify data.withLocalFailure(
-        NOT_RETRYING_NO_DETAILS,
-        reject.ourAdd.amountMsat
+      abortMaybeNotify(
+        data.withLocalFailure(
+          NOT_RETRYING_NO_DETAILS,
+          reject.ourAdd.amountMsat
+        )
       )
     case (reject: LocalReject, INIT) =>
-      me abortMaybeNotify data.withLocalFailure(
-        NOT_RETRYING_NO_DETAILS,
-        reject.localAdd.amountMsat
+      abortMaybeNotify(
+        data.withLocalFailure(
+          NOT_RETRYING_NO_DETAILS,
+          reject.localAdd.amountMsat
+        )
       )
     case (reject: RemoteReject, SUCCEEDED)
         if reject.ourAdd.paymentHash == fullTag.paymentHash =>
@@ -161,9 +164,11 @@ class OutgoingPaymentSender(
     case (CMDAbort, INIT | PENDING) if data.waitOnlinePart.nonEmpty =>
       // When at least some parts get through we can eventaully expect for remote timeout
       // but if ALL parts are still waiting after local timeout then we need to fail a whole payment locally
-      me abortMaybeNotify data
-        .copy(parts = Map.empty)
-        .withLocalFailure(TIMED_OUT, data.cmd.split.myPart)
+      abortMaybeNotify(
+        data
+          .copy(parts = Map.empty)
+          .withLocalFailure(TIMED_OUT, data.cmd.split.myPart)
+      )
 
     case (fulfill: RemoteFulfill, INIT | PENDING | ABORTED)
         if fulfill.ourAdd.paymentHash == fullTag.paymentHash =>
@@ -200,17 +205,19 @@ class OutgoingPaymentSender(
             routeMaxLength = data.cmd.routerConf.initRouteMaxLength,
             routeMaxCltv = data.cmd.routerConf.routeMaxCltv
           )
-          opm process RouteRequest(
-            fullTag,
-            wait.partId,
-            invalidPubKey,
-            data.cmd.targetNodeId,
-            wait.amount,
-            mkFakeLocalEdge(
+          opm.process(
+            RouteRequest(
+              fullTag,
+              wait.partId,
               invalidPubKey,
-              wait.cnc.commits.remoteInfo.nodeId
-            ),
-            routeParams
+              data.cmd.targetNodeId,
+              wait.amount,
+              mkFakeLocalEdge(
+                invalidPubKey,
+                wait.cnc.commits.remoteInfo.nodeId
+              ),
+              routeParams
+            )
           )
         }
 
@@ -239,11 +246,14 @@ class OutgoingPaymentSender(
               become(
                 data.withoutPartId(wait.partId),
                 PENDING
-              ) doProcess CutIntoHalves(wait.amount)
+              )
+              doProcess(CutIntoHalves(wait.amount))
             case _ =>
-              me abortMaybeNotify data
-                .withoutPartId(wait.partId)
-                .withLocalFailure(NO_ROUTES_FOUND, wait.amount)
+              abortMaybeNotify(
+                data
+                  .withoutPartId(wait.partId)
+                  .withLocalFailure(NO_ROUTES_FOUND, wait.amount)
+              )
           }
       }
 
@@ -290,9 +300,11 @@ class OutgoingPaymentSender(
             }
             case Failure(err) => {
               // One failure reason could be too much metadata, or too many routing hints if this is a trampoline payment
-              me abortMaybeNotify data
-                .withoutPartId(wait.partId)
-                .withLocalFailure(ONION_CREATION_FAILURE, wait.amount)
+              abortMaybeNotify(
+                data
+                  .withoutPartId(wait.partId)
+                  .withLocalFailure(ONION_CREATION_FAILURE, wait.amount)
+              )
             }
           }
       }
@@ -311,9 +323,11 @@ class OutgoingPaymentSender(
               case (cnc, sendable) if sendable >= wait.amount => cnc
             } match {
             case _ if reject.isInstanceOf[InPrincipleNotSendable] =>
-              me abortMaybeNotify data
-                .withoutPartId(wait.partId)
-                .withLocalFailure(PAYMENT_NOT_SENDABLE, wait.amount)
+              abortMaybeNotify(
+                data
+                  .withoutPartId(wait.partId)
+                  .withLocalFailure(PAYMENT_NOT_SENDABLE, wait.amount)
+              )
             case None if reject.isInstanceOf[ChannelOffline] =>
               assignToChans(
                 opm.rightNowSendable(data.cmd.allowedChans, feeLeftover),
@@ -321,9 +335,11 @@ class OutgoingPaymentSender(
                 wait.amount
               )
             case None =>
-              me abortMaybeNotify data
-                .withoutPartId(wait.partId)
-                .withLocalFailure(RUN_OUT_OF_CAPABLE_CHANNELS, wait.amount)
+              abortMaybeNotify(
+                data
+                  .withoutPartId(wait.partId)
+                  .withLocalFailure(RUN_OUT_OF_CAPABLE_CHANNELS, wait.amount)
+              )
             case Some(okCnc) =>
               become(
                 data.copy(parts =
@@ -340,9 +356,11 @@ class OutgoingPaymentSender(
             if wait.flight.isDefined && wait.partId == reject.ourAdd.partId =>
           // We don't know which node along a route thinks that onion is malformed, but assume it's the 2nd node, by doing this graph will be returning different routes
           for (hop <- wait.flight.get.route.hops.tail.dropRight(1).headOption)
-            opm doProcess NodeFailed(
-              hop.nodeId,
-              data.cmd.routerConf.maxStrangeNodeFailures
+            opm.doProcess(
+              NodeFailed(
+                hop.nodeId,
+                data.cmd.routerConf.maxStrangeNodeFailures
+              )
             )
           resolveRemoteFail(
             LocalFailure(NODE_COULD_NOT_PARSE_ONION, wait.amount),
@@ -362,15 +380,18 @@ class OutgoingPaymentSender(
           ) map {
             case pkt
                 if pkt.originNode == data.cmd.targetNodeId || PaymentTimeout == pkt.failureMessage =>
-              me abortMaybeNotify data
-                .withoutPartId(wait.partId)
-                .copy(failures = RemoteFailure(pkt, route) +: data.failures)
+              abortMaybeNotify(
+                data
+                  .withoutPartId(wait.partId)
+                  .copy(failures = RemoteFailure(pkt, route) +: data.failures)
+              )
 
             case pkt @ Sphinx.DecryptedFailurePacket(
                   originNodeId,
                   failure: Update
                 ) =>
-              // Pathfinder channels must be fully loaded from db at this point since we have already used them to construct a route earlier
+              // Pathfinder channels must be fully loaded from db at this point
+              //   since we have already used them to construct a route earlier
               val isSignatureFine = opm.cm.pf
                 .nodeIdFromUpdate(failure.update)
                 .contains(originNodeId) && Announcements.checkSig(
@@ -378,12 +399,10 @@ class OutgoingPaymentSender(
               )(originNodeId)
 
               if (isSignatureFine) {
-                opm.cm.pf process failure.update
+                opm.cm.pf.process(failure.update)
                 val edgeOpt = route.getEdgeForNode(originNodeId)
-                val isEnabled =
-                  Announcements.isEnabled(failure.update.channelFlags)
-                for (edge <- edgeOpt if !isEnabled)
-                  opm doProcess ChannelNotRoutable(edge.desc)
+                for (edge <- edgeOpt if !failure.update.channelFlags.isEnabled)
+                  opm.doProcess(ChannelNotRoutable(edge.desc))
 
                 edgeOpt match {
                   case Some(edge)
@@ -391,28 +410,34 @@ class OutgoingPaymentSender(
                     // This is fine: remote node has used a different channel than the one we have initially requested
                     // But remote node may send such errors infinitely so increment this specific type of failure
                     // Still fail an originally selected channel since it has most likely been tried too
-                    opm doProcess ChannelFailedAtAmount(
-                      edge.toDescAndCapacity
+                    opm.doProcess(
+                      ChannelFailedAtAmount(
+                        edge.toDescAndCapacity
+                      )
                     )
-                    opm doProcess NodeFailed(originNodeId, increment = 1)
+                    opm.doProcess(NodeFailed(originNodeId, increment = 1))
 
                   case Some(edge)
                       if edge.updExt.update.core.noPosition == failure.update.core.noPosition =>
                     // Remote node returned EXACTLY same update, this channel is likely imbalanced
-                    opm doProcess ChannelFailedAtAmount(
-                      edge.toDescAndCapacity
+                    opm.doProcess(
+                      ChannelFailedAtAmount(
+                        edge.toDescAndCapacity
+                      )
                     )
 
                   case _ =>
                     // Something like higher feerates or CLTV, channel is updated in graph and may be chosen once again
                     // But remote node may send oscillating updates infinitely so increment this specific type of failure
-                    opm doProcess NodeFailed(originNodeId, increment = 1)
+                    opm.doProcess(NodeFailed(originNodeId, increment = 1))
                 }
               } else {
                 // Invalid sig is a severe violation, ban sender node for 6 subsequent MPP sessions
-                opm doProcess NodeFailed(
-                  originNodeId,
-                  data.cmd.routerConf.maxStrangeNodeFailures * 32
+                opm.doProcess(
+                  NodeFailed(
+                    originNodeId,
+                    data.cmd.routerConf.maxStrangeNodeFailures * 32
+                  )
                 )
               }
 
@@ -421,9 +446,11 @@ class OutgoingPaymentSender(
 
             case pkt @ Sphinx.DecryptedFailurePacket(nodeId, _: Node) =>
               // Node may become fine on next payment, but ban it for current attempts
-              opm doProcess NodeFailed(
-                nodeId,
-                data.cmd.routerConf.maxStrangeNodeFailures
+              opm.doProcess(
+                NodeFailed(
+                  nodeId,
+                  data.cmd.routerConf.maxStrangeNodeFailures
+                )
               )
               resolveRemoteFail(RemoteFailure(pkt, route), wait)
 
@@ -433,11 +460,13 @@ class OutgoingPaymentSender(
                 .getEdgeForNode(pkt.originNode)
                 .map(_.toDescAndCapacity) match {
                 case Some(descAndCapacity) =>
-                  opm doProcess ChannelNotRoutable(descAndCapacity.desc)
+                  opm.doProcess(ChannelNotRoutable(descAndCapacity.desc))
                 case None =>
-                  opm doProcess NodeFailed(
-                    pkt.originNode,
-                    data.cmd.routerConf.maxStrangeNodeFailures
+                  opm.doProcess(
+                    NodeFailed(
+                      pkt.originNode,
+                      data.cmd.routerConf.maxStrangeNodeFailures
+                    )
                   )
               }
 
@@ -447,9 +476,11 @@ class OutgoingPaymentSender(
           } getOrElse {
             // We don't know which node along a route is sending garbage, but assume it's the 2nd node, by doing this graph will be returning different routes
             for (hop <- route.hops.tail.dropRight(1).headOption)
-              opm doProcess NodeFailed(
-                hop.nodeId,
-                data.cmd.routerConf.maxStrangeNodeFailures
+              opm.doProcess(
+                NodeFailed(
+                  hop.nodeId,
+                  data.cmd.routerConf.maxStrangeNodeFailures
+                )
               )
             resolveRemoteFail(UnreadableRemoteFailure(route), wait)
           }
@@ -525,7 +556,7 @@ class OutgoingPaymentSender(
               feeLeftover
             )
             .values
-            .sum >= rest =>
+            .fold(MilliSatoshi(0))(_ + _) >= rest =>
         // Amount has not been fully split, but it is possible to further successfully split it once some SLEEPING channel becomes OPEN
         become(
           senderData.copy(parts =
@@ -537,9 +568,11 @@ class OutgoingPaymentSender(
       case _ =>
         // A positive leftover is present with no more channels left
         // partId should have already been removed from data at this point
-        me abortMaybeNotify senderData.withLocalFailure(
-          NOT_ENOUGH_FUNDS,
-          amount
+        abortMaybeNotify(
+          senderData.withLocalFailure(
+            NOT_ENOUGH_FUNDS,
+            amount
+          )
         )
     }
 
@@ -574,11 +607,14 @@ class OutgoingPaymentSender(
         )
       // TODO: case None if <can use trampoline for this shard at affordable price?> =>
       case _ if outgoingHtlcSlotsLeft >= 2 =>
-        become(data, PENDING) doProcess CutIntoHalves(wait.amount)
+        become(data, PENDING)
+        doProcess(CutIntoHalves(wait.amount))
       case _ =>
-        me abortMaybeNotify data.withLocalFailure(
-          RUN_OUT_OF_RETRY_ATTEMPTS,
-          wait.amount
+        abortMaybeNotify(
+          data.withLocalFailure(
+            RUN_OUT_OF_RETRY_ATTEMPTS,
+            wait.amount
+          )
         )
     }
   }

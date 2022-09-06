@@ -54,7 +54,7 @@ class FiatRates(bag: DataBag) extends CanBeShutDown {
   )
 
   def reloadData: Fiat2Btc =
-    (Crypto.randomBytes(1).toInt(signed = true) % 3) match {
+    (Crypto.randomBytes(1).toInt(signed = false) % 3) match {
       case 0 =>
         to[CoinGecko](
           LNParams.connectionProvider.get(
