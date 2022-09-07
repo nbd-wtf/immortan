@@ -1,6 +1,6 @@
 package immortan.router
 
-import scodec.codecs.{double, uint32}
+import scodec.codecs._
 
 import scoin._
 import scoin.Crypto.PublicKey
@@ -29,12 +29,12 @@ case class TrampolineOn(
 
 object TrampolineOn {
   val codec = (
-    (millisatoshi withContext "minMsat") ::
-      (millisatoshi withContext "maxMsat") ::
-      (uint32 withContext "feeProportionalMillionths") ::
-      (double withContext "exponent") ::
-      (double withContext "logExponent") ::
-      (cltvExpiryDelta withContext "cltvExpiryDelta")
+    ("minMsat" | millisatoshi) ::
+      ("maxMsat" | millisatoshi) ::
+      ("feeProportionalMillionths" | uint32) ::
+      ("exponent" | double) ::
+      ("logExponent" | double) ::
+      ("cltvExpiryDelta" | cltvExpiryDelta)
   ).as[TrampolineOn]
 }
 
@@ -62,6 +62,18 @@ case class NodeIdTrampolineParams(nodeId: PublicKey, trampolineOn: TrampolineOn)
   }
 }
 
+object NodeIdTrampolineParams {
+  val codec = (
+    ("nodeId" | publicKey) ::
+      ("trampolineOn" | TrampolineOn.codec)
+  ).as[NodeIdTrampolineParams]
+
+  val routeCodec = {
+    val innerList = listOfN(uint16, NodeIdTrampolineParams.codec)
+    listOfN(valueCodec = innerList, countCodec = uint16)
+  }
+}
+
 object TrampolineStatus {
   type NodeIdTrampolineParamsRoute = List[NodeIdTrampolineParams]
 }
@@ -75,12 +87,28 @@ case class TrampolineStatusInit(
     peerParams: TrampolineOn
 ) extends TrampolineStatus
 
+object TrampolineStatusInit {
+  val codec = (
+    ("routes" | NodeIdTrampolineParams.routeCodec) ::
+      ("peerParams" | TrampolineOn.codec)
+  ).as[TrampolineStatusInit]
+}
+
 case class TrampolineStatusUpdate(
     newRoutes: List[TrampolineStatus.NodeIdTrampolineParamsRoute],
     updatedParams: Map[PublicKey, TrampolineOn],
     updatedPeerParams: Option[TrampolineOn],
     removed: Set[PublicKey] = Set.empty
 ) extends TrampolineStatus
+
+object TrampolineStatusUpdate {
+  val codec = (
+    ("newRoutes" | NodeIdTrampolineParams.routeCodec) ::
+      ("updatedParams" | mapCodec(publicKey, TrampolineOn.codec)) ::
+      ("updatedPeerParams" | optional(bool, TrampolineOn.codec)) ::
+      ("removed" | setCodec(publicKey))
+  ).as[TrampolineStatusUpdate]
+}
 
 case class TrampolineRoutingState(
     routes: Set[TrampolineStatus.NodeIdTrampolineParamsRoute] = Set.empty,

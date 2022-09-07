@@ -1,9 +1,11 @@
 package immortan
 
-import scoin.ln._
-import scoin.ln.{OnionRoutingPacket, UpdateAddHtlc}
 import utest._
+import scoin._
+import scoin.Crypto.randomBytes
+import scoin.ln._
 
+import immortan._
 import immortan.sqlite._
 import immortan.utils.SQLiteUtils
 import immortan.channel.IncomingHtlc
@@ -28,7 +30,7 @@ object DbSpec extends TestSuite {
     }
 
     test("Handle collections") {
-      val onion = OnionRoutingPacket(1, randomKey.publicKey.value, null, null)
+      val onion = OnionRoutingPacket(1, randomKey().publicKey.value, null, null)
       val inserts =
         for (n <- 0L until 100L)
           yield IncomingHtlc(
@@ -36,7 +38,7 @@ object DbSpec extends TestSuite {
               null,
               n,
               MilliSatoshi(100L),
-              randomBytes32,
+              randomBytes32(),
               CltvExpiry(n),
               onion
             )
@@ -54,7 +56,7 @@ object DbSpec extends TestSuite {
           .map(_.add.cltvExpiry)
       )
 
-      sqLiteChannel.rmHtlcInfos(sid = 100L)
+      sqLiteChannel.rmHtlcInfos(scid = ShortChannelId(100L))
       assert(sqLiteChannel.htlcInfos(commitNumer = 100).isEmpty)
     }
   }

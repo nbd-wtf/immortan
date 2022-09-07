@@ -5,11 +5,6 @@ import scodec.codecs._
 import scodec.bits.ByteVector
 import scoin._
 import scoin.Crypto.PublicKey
-import scoin.DeterministicWallet.{
-  KeyPath,
-  ExtendedPrivateKey,
-  ExtendedPublicKey
-}
 import scoin.ln._
 import scoin.ln.CommonCodecs._
 import scoin.ln.LightningMessageCodecs._
@@ -27,65 +22,11 @@ case class HostedState(
 )
 
 object Codecs {
-  def mapCodec[K, V](
-      keyCodec: Codec[K],
-      valueCodec: Codec[V]
-  ): Codec[Map[K, V]] =
-    listOfN(uint16, keyCodec ~ valueCodec).xmap(_.toMap, _.toList)
-
-  val text: Codec[String] = variableSizeBytes(uint16, utf8)
-
-  val compressedByteVecCodec = {
-    val plain = variableSizeBytes(uint24, bytes)
-    zlib(plain)
-  }
-
   val hostedStateCodec = {
     ("nodeId1" | publicKey) ::
       ("nodeId2" | publicKey) ::
       ("lastCrossSignedState" | lastCrossSignedStateCodec)
   }.as[HostedState]
-
-  // All LN protocol message must be stored as length-delimited, because they may have arbitrary trailing data
-  def lengthDelimited[T](codec: Codec[T]): Codec[T] =
-    variableSizeBytesLong(varintoverflow, codec)
-
-  val keyPathCodec = ("path" | listOfN(uint16, uint32))
-    .xmap[KeyPath](KeyPath.apply, _.path.toList)
-    .as[KeyPath]
-
-  val extendedPrivateKeyCodec = {
-    ("secretkeybytes" | bytes32) ::
-      ("chaincode" | bytes32) ::
-      ("depth" | uint16) ::
-      ("path" | keyPathCodec) ::
-      ("parent" | int64)
-  }.as[ExtendedPrivateKey]
-
-  val extendedPublicKeyCodec = {
-    ("publickeybytes" | varsizebinarydata) ::
-      ("chaincode" | bytes32) ::
-      ("depth" | uint16) ::
-      ("path" | keyPathCodec) ::
-      ("parent" | int64)
-  }.as[ExtendedPublicKey]
-
-  val outPointCodec = lengthDelimited(
-    bytes.xmap(d => OutPoint.read(d.toArray), OutPoint.write)
-  )
-
-  val txOutCodec = lengthDelimited(
-    bytes.xmap(d => TxOut.read(d.toArray), TxOut.write)
-  )
-
-  val txCodec = lengthDelimited(
-    bytes.xmap(d => Transaction.read(d.toArray), Transaction.write)
-  )
-
-  def setCodec[T](codec: Codec[T]): Codec[Set[T]] =
-    listOfN(uint16, codec).xmap(_.toSet, _.toList)
-
-  val bool8: Codec[Boolean] = bool(8)
 
   val htlcCodec =
     discriminated[DirectedHtlc]
@@ -263,7 +204,7 @@ object Codecs {
       ("alias" | zeropaddedstring(32))
   ).as[RemoteNodeInfo]
 
-  val channelLabelCodec = ("label" | text).as[ChannelLabel]
+  val channelLabelCodec = ("label" | textCodec).as[ChannelLabel]
 
   val extParamsCodec =
     discriminated[ExtParams]

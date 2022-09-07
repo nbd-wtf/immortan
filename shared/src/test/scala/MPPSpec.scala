@@ -2,12 +2,13 @@ package immortan
 
 import scala.language.existentials
 import com.softwaremill.quicklens._
-import scoin.{ByteVector32, Crypto}
+import scoin._
 import scoin.ln._
 import utest._
 
 import immortan.router.Graph.GraphStructure.DescAndCapacity
 import immortan.router.Router.ChannelDesc
+import immortan.router.TrampolineRoutingStates
 import immortan.fsm._
 import immortan.channel.{RemoteFulfill, RemoteUpdateFail}
 import immortan.utils.ChannelUtils._
@@ -17,7 +18,7 @@ import immortan.utils.TestUtils._
 object MPPSpec extends TestSuite {
   val tests = Tests {
     test("Gradually reduce failed-at-amount") {
-      val desc = ChannelDesc(3L, b, d)
+      val desc = ChannelDesc(ShortChannelId(3L), b, d)
       val capacity = MilliSatoshi(2000000L)
       val failedAt = MilliSatoshi(200000L)
       val stamp = System.currentTimeMillis
@@ -168,7 +169,7 @@ object MPPSpec extends TestSuite {
         .flatMap(_.commits.allOutgoing)
         .head
       cm.opm process RemoteUpdateFail(
-        UpdateFailHtlc(out1.channelId, out1.id, randomBytes32.bytes),
+        UpdateFailHtlc(out1.channelId, out1.id, randomBytes32().bytes),
         out1
       )
 
@@ -373,7 +374,7 @@ object MPPSpec extends TestSuite {
         assistedEdges = Set(edgeDSFromD)
       )
 
-      val desc = ChannelDesc(3L, b, d)
+      val desc = ChannelDesc(ShortChannelId(3L), b, d)
       // B -> D channel is now unable to handle the first split, but still usable for second split
       cm.opm.data = cm.opm.data.copy(chanFailedAtAmount =
         Map(
@@ -416,7 +417,7 @@ object MPPSpec extends TestSuite {
             .feeLeftover == send.totalFeeReserve - parts
             .flatMap(_.flight)
             .map(_.route.fee)
-            .sum
+            .fold(MilliSatoshi(0))(_ + _)
         )
         // Initial split was 300k/300k, but one of routes has previously failed at 200k so we need to split further
         assert(
@@ -474,7 +475,7 @@ object MPPSpec extends TestSuite {
         assistedEdges = Set(edgeDSFromD)
       )
 
-      val desc = ChannelDesc(3L, b, d)
+      val desc = ChannelDesc(ShortChannelId(3L), b, d)
       // B -> D channel is now unable to handle the first split, but still usable for second split
       cm.opm.data = cm.opm.data.copy(chanFailedAtAmount =
         Map(
@@ -860,19 +861,21 @@ object MPPSpec extends TestSuite {
       // Suppose this time we attempt a send when all channels are connected already
       cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
 
-      cm.pf.loadGraph()
-      cm.pf process makeUpdate(
-        3L,
-        b,
-        d,
-        MilliSatoshi(5950L),
-        100,
-        cltvDelta = CltvExpiryDelta(144),
-        minHtlc = MilliSatoshi(10L),
-        maxHtlc = MilliSatoshi(500000L)
+      cm.pf.process(PathFinder.CMDLoadGraph)
+      cm.pf.process(
+        makeUpdate(
+          3L,
+          b,
+          d,
+          MilliSatoshi(5950L),
+          100,
+          cltvDelta = CltvExpiryDelta(144),
+          minHtlc = MilliSatoshi(10L),
+          maxHtlc = MilliSatoshi(500000L)
+        )
       )
 
-      cm.opm process send
+      cm.opm.process(send)
 
       WAIT_UNTIL_TRUE {
         val List(part1, part2) =

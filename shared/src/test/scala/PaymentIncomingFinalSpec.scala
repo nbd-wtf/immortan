@@ -1,5 +1,6 @@
 package immortan
 
+import scoin._
 import scoin.ln._
 import scoin.ln.PaymentTimeout
 import immortan.fsm.{
@@ -8,6 +9,8 @@ import immortan.fsm.{
   IncomingPaymentReceiver,
   IncomingRevealed
 }
+import utest._
+
 import immortan.utils.ChannelUtils.{
   makeChannelMasterWithBasicGraph,
   makeHostedCommits
@@ -15,7 +18,6 @@ import immortan.utils.ChannelUtils.{
 import immortan.utils.GraphUtils._
 import immortan.utils.PaymentUtils._
 import immortan.utils.TestUtils._
-import utest._
 
 object PaymentIncomingFinalSpec extends TestSuite {
   val tests = Tests {
@@ -24,9 +26,9 @@ object PaymentIncomingFinalSpec extends TestSuite {
       val remoteNodeInfo =
         RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
       val (_, _, Seq(paymentSecret), cm) =
-        makeChannelMasterWithBasicGraph(Seq(randomBytes32))
+        makeChannelMasterWithBasicGraph(Seq(randomBytes32()))
 
-      val preimage = randomBytes32
+      val preimage = randomBytes32()
       val invoice = recordIncomingPaymentToFakeNodeId(
         amount = Some(MilliSatoshi(100000L)),
         preimage,
@@ -76,9 +78,9 @@ object PaymentIncomingFinalSpec extends TestSuite {
       val remoteNodeInfo =
         RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
       val (_, _, Seq(paymentSecret), cm) =
-        makeChannelMasterWithBasicGraph(Seq(randomBytes32))
+        makeChannelMasterWithBasicGraph(Seq(randomBytes32()))
 
-      val preimage = randomBytes32
+      val preimage = randomBytes32()
       val invoice = recordIncomingPaymentToFakeNodeId(
         amount = Some(MilliSatoshi(100000L)),
         preimage,
@@ -180,14 +182,14 @@ object PaymentIncomingFinalSpec extends TestSuite {
       val remoteNodeInfo =
         RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
       val (_, _, Seq(paymentSecret), cm) =
-        makeChannelMasterWithBasicGraph(Seq(randomBytes32))
+        makeChannelMasterWithBasicGraph(Seq(randomBytes32()))
 
       // Need this to put something into cm.all so we can accept up to maxInChannelHtlcs parts
       val hcs1 = makeHostedCommits(nodeId = a, alias = "local-channel")
       cm.chanBag.put(hcs1)
       cm.all = Channel.load(Set(cm), cm.chanBag)
 
-      val preimage = randomBytes32
+      val preimage = randomBytes32()
       val invoice = recordIncomingPaymentToFakeNodeId(
         amount = Some(MilliSatoshi(100000L)),
         preimage,
@@ -299,14 +301,14 @@ object PaymentIncomingFinalSpec extends TestSuite {
       val remoteNodeInfo =
         RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
       val (_, _, Seq(paymentSecret), cm) =
-        makeChannelMasterWithBasicGraph(Seq(randomBytes32))
+        makeChannelMasterWithBasicGraph(Seq(randomBytes32()))
 
       // Need this to put something into cm.all so we can accept up to maxInChannelHtlcs parts
       val hcs1 = makeHostedCommits(nodeId = a, alias = "local-channel")
       cm.chanBag.put(hcs1)
       cm.all = Channel.load(Set(cm), cm.chanBag)
 
-      val preimage = randomBytes32
+      val preimage = randomBytes32()
       val invoice = recordIncomingPaymentToFakeNodeId(
         amount = Some(MilliSatoshi(100000L)),
         preimage,
@@ -334,7 +336,7 @@ object PaymentIncomingFinalSpec extends TestSuite {
         partAmount = MilliSatoshi(30000L),
         totalAmount = MilliSatoshi(200000L),
         invoice.paymentHash,
-        randomBytes32,
+        randomBytes32(),
         remoteNodeInfo,
         cm
       ) // Different secret
@@ -389,10 +391,10 @@ object PaymentIncomingFinalSpec extends TestSuite {
       LNParams.secret = WalletSecret.random()
       val remoteNodeInfo =
         RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
-      val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Seq(randomBytes32))
+      val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Seq(randomBytes32()))
 
-      val unknownHash = randomBytes32
-      val unknownSecret = randomBytes32
+      val unknownHash = randomBytes32()
+      val unknownSecret = randomBytes32()
       val add1 = makeRemoteAddToFakeNodeId(
         partAmount = MilliSatoshi(100000),
         totalAmount = MilliSatoshi(100000),
@@ -442,14 +444,14 @@ object PaymentIncomingFinalSpec extends TestSuite {
       val remoteNodeInfo =
         RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
       val (_, _, Seq(paymentSecret), cm) =
-        makeChannelMasterWithBasicGraph(Seq(randomBytes32))
+        makeChannelMasterWithBasicGraph(Seq(randomBytes32()))
 
       // Need this to put something into cm.all so we can accept up to maxInChannelHtlcs parts
       val hcs1 = makeHostedCommits(nodeId = a, alias = "local-channel")
       cm.chanBag.put(hcs1)
       cm.all = Channel.load(Set(cm), cm.chanBag)
 
-      val preimage = randomBytes32
+      val preimage = randomBytes32()
       val invoice = recordIncomingPaymentToFakeNodeId(
         amount = Some(MilliSatoshi(100000L)),
         preimage,
@@ -502,14 +504,14 @@ object PaymentIncomingFinalSpec extends TestSuite {
       val remoteNodeInfo =
         RemoteNodeInfo(nodeId = s, address = null, alias = "peer-1")
       val (_, _, Seq(paymentSecret), cm) =
-        makeChannelMasterWithBasicGraph(Seq(randomBytes32))
+        makeChannelMasterWithBasicGraph(Seq(randomBytes32()))
 
       // Need this to put something into cm.all so we can accept up to maxInChannelHtlcs parts
       val hcs1 = makeHostedCommits(nodeId = a, alias = "local-channel")
       cm.chanBag.put(hcs1)
       cm.all = Channel.load(Set(cm), cm.chanBag)
 
-      val preimage = randomBytes32
+      val preimage = randomBytes32()
       val invoice = recordIncomingPaymentToFakeNodeId(
         amount = Some(MilliSatoshi(100000L)),
         preimage,

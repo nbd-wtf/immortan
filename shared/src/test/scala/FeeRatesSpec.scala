@@ -1,16 +1,11 @@
 package immortan
 
-import java.net.Socket
+import utest._
 import scoin._
-import immortan.blockchain.fee.{
-  FeeratePerKB,
-  FeeratePerKw,
-  FeeratesPerKB
-}
+
 import immortan.utils.FeeRates._
 import immortan.utils.TestUtils._
 import immortan.utils.{BitgoFeeProvider, EsploraFeeProvider}
-import utest._
 
 object FeeRatesSpec extends TestSuite {
   LNParams.connectionProvider = new RequestsConnectionProvider

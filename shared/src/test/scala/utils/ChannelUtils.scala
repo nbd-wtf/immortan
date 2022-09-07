@@ -1,10 +1,12 @@
 package immortan.utils
 
-import scoin.Crypto.PublicKey
-import scoin.{FeeratePerKw, ByteVector32, ByteVector64, SatoshiLong}
+import scoin._
+import scoin.Crypto.{randomBytes, PublicKey}
 import scoin.ln._
+import scoin.hc._
 
-import immortan.{none, ChannelMaster, HostedCommits, PathFinder, RemoteNodeInfo}
+import immortan._
+import immortan.channel._
 import immortan.fsm.{OutgoingPaymentListener, OutgoingPaymentSenderData}
 import immortan.sqlite._
 import immortan.channel.{CommitmentSpec, RemoteFulfill}
@@ -40,11 +42,10 @@ object ChannelUtils {
       toLocal: MilliSatoshi = MilliSatoshi(100000000L)
   ): HostedCommits = {
     val features = List(
-      Features.HostedChannels.mandatory,
-      Features.ResizeableHostedChannels.mandatory
+      HostedChannels.mandatory
     )
     val initMessage = InitHostedChannel(
-      UInt64(toLocal.underlying + 100000000L),
+      UInt64(toLocal.toLong + 100000000L),
       MilliSatoshi(10),
       20,
       MilliSatoshi(200000000L),

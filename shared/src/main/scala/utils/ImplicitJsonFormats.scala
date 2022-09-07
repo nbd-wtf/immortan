@@ -12,7 +12,6 @@ import scoin.ln.LightningMessageCodecs._
 import immortan._
 import immortan.fsm.SplitInfo
 import immortan.utils.FiatRates.{BitpayItemList, CoinGeckoItemMap}
-import immortan.channel.Codecs.extendedPublicKeyCodec
 import immortan.electrum.db.{ChainWalletInfo, SigningWallet, WatchingWallet}
 import immortan.blockchain.fee._
 

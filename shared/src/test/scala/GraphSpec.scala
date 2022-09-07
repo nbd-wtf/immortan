@@ -1,12 +1,14 @@
 package immortan
 
 import com.softwaremill.quicklens._
+import scoin._
 import scoin.ln._
+import utest._
+
 import immortan.router.Graph.GraphStructure.DirectedGraph
 import immortan.router.RouteCalculation
 import immortan.router.Router._
 import immortan.utils.GraphUtils._
-import utest._
 
 object GraphSpec extends TestSuite {
   val tests = Tests {
@@ -74,7 +76,7 @@ object GraphSpec extends TestSuite {
       )
 
       val routeRequest1 = routeRequest.copy(ignoreChannels =
-        Set(ChannelDesc(2L, a, c))
+        Set(ChannelDesc(ShortChannelId(2L), a, c))
       ) // Can't use cheap route
       val RouteFound(route1, _, _) =
         RouteCalculation.handleRouteRequest(graph, routeRequest1)

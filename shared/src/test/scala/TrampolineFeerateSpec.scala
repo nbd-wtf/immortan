@@ -1,7 +1,11 @@
 package immortan
 
-import scoin.ln._
 import utest._
+import scoin._
+import scoin.ln._
+
+import immortan._
+import immortan.router._
 
 object TrampolineFeerateSpec extends TestSuite {
   val tests = Tests {

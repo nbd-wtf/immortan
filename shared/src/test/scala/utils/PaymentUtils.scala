@@ -1,7 +1,7 @@
 package immortan.utils
 
 import scala.util.{Failure, Try}
-import scoin.Crypto.PublicKey
+import scoin.Crypto.{PublicKey, randomBytes}
 import scoin._
 import scoin.ln._
 
@@ -25,7 +25,7 @@ object PaymentUtils {
       tlvs: Seq[GenericTlv] = Nil
   ): UpdateAddHtlc = {
     val update = makeUpdate(
-      ShortChannelId.produce("100x100x100"),
+      ShortChannelId("100x100x100").toLong,
       from,
       to,
       MilliSatoshi(1),
@@ -50,13 +50,18 @@ object PaymentUtils {
       userCustomTlvs = tlvs
     )
     val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket
-      .buildPaymentPacket(randomKey, paymentHash, finalHop :: Nil, finalPayload)
+      .buildPaymentPacket(
+        paymentHash,
+        finalHop :: Nil,
+        finalPayload
+      )
       .toOption
       .get
 
     UpdateAddHtlc(
-      randomBytes32,
-      System.currentTimeMillis + secureRandom.nextInt(1000),
+      randomBytes32(),
+      System.currentTimeMillis +
+        randomBytes(2).toLong() % 1000,
       firstAmount,
       paymentHash,
       firstExpiry,
@@ -75,11 +80,10 @@ object PaymentUtils {
       Block.TestnetGenesisBlock.hash,
       amount,
       Crypto.sha256(preimage),
-      secret,
       remoteInfo.nodeSpecificPrivKey,
-      "Invoice",
+      Left("Invoice"),
       CltvExpiryDelta(18),
-      Nil
+      paymentSecret = secret
     )
     val prExt = PaymentRequestExt(
       uri = Failure(new RuntimeException),
@@ -163,7 +167,6 @@ object PaymentUtils {
     ) // Final CLTV is supposed to be taken from invoice (+ assuming tip = 0 when testing)
     OutgoingPaymentPacket
       .buildTrampolineToLegacyPacket(
-        randomKey,
         pr,
         trampolineRoute,
         finalInnerPayload
@@ -207,7 +210,6 @@ object PaymentUtils {
     ) // Final CLTV is supposed to be taken from invoice (+ assuming tip = 0 when testing)
     OutgoingPaymentPacket
       .buildTrampolinePacket(
-        randomKey,
         pr.paymentHash,
         trampolineRoute,
         finalInnerPayload
@@ -228,7 +230,7 @@ object PaymentUtils {
   ): UpdateAddHtlc = {
 
     val update = makeUpdate(
-      ShortChannelId.produce("100x100x100"),
+      ShortChannelId("100x100x100").toLong,
       from,
       toTrampoline,
       MilliSatoshi(1),
@@ -255,7 +257,6 @@ object PaymentUtils {
     val (firstAmount, firstExpiry, onion) =
       OutgoingPaymentPacket
         .buildPaymentPacket(
-          randomKey,
           pr.paymentHash,
           finalHop :: Nil,
           finalOuterPayload
@@ -263,8 +264,9 @@ object PaymentUtils {
         .toOption
         .get
     UpdateAddHtlc(
-      randomBytes32,
-      System.currentTimeMillis + secureRandom.nextInt(1000),
+      randomBytes32(),
+      System.currentTimeMillis +
+        randomBytes(2).toLong() % 1000,
       firstAmount,
       pr.paymentHash,
       firstExpiry,

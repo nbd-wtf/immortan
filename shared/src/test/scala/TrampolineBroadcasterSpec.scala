@@ -1,15 +1,17 @@
 package immortan
 
+import scala.collection.mutable
+import utest._
+import scoin._
 import scoin.ln._
-import scoin.ln.{MilliSatoshi, MilliSatoshiLong, randomBytes, randomBytes32}
+
+import immortan.router._
+import immortan.channel._
 import immortan.fsm.TrampolineBroadcaster
 import immortan.fsm.TrampolineBroadcaster.RoutingOn
 import immortan.utils.ChannelUtils.{makeChannelMaster, makeHostedCommits}
 import immortan.utils.GraphUtils._
 import immortan.utils.TestUtils.WAIT_UNTIL_TRUE
-import utest._
-
-import scala.collection.mutable
 
 object TrampolineBroadcasterSpec extends TestSuite {
   val tests = Tests {
@@ -23,7 +25,7 @@ object TrampolineBroadcasterSpec extends TestSuite {
         logExponent = 0.0,
         LNParams.minRoutingCltvExpiryDelta
       )
-      val (_, _, cm) = makeChannelMaster(Seq(randomBytes32))
+      val (_, _, cm) = makeChannelMaster(Seq(randomBytes32()))
       val hcs1 =
         makeHostedCommits(
           nodeId = a,

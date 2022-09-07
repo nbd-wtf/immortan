@@ -1,9 +1,10 @@
 package immortan
 
-import scoin.{Block, SatoshiLong}
+import scoin._
 import scoin.ln._
-import immortan.utils._
 import utest._
+
+import immortan.utils._
 
 object InputParserSpec extends TestSuite {
   val req: String =

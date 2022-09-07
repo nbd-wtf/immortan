@@ -1,8 +1,8 @@
 package immortan.utils
 
 import scodec.bits.ByteVector
+import scoin._
 import scoin.Crypto.PublicKey
-import scoin.{Block, ByteVector32, ByteVector64}
 import scoin.ln._
 
 import immortan._
@@ -20,7 +20,14 @@ object GraphUtils {
   val PlaceHolderSig: ByteVector64 = ByteVector64(ByteVector.fill(64)(0xaa))
 
   val (aP, bP, cP, dP, sP, eP) =
-    (randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
+    (
+      randomKey(),
+      randomKey(),
+      randomKey(),
+      randomKey(),
+      randomKey(),
+      randomKey()
+    )
   val (a, b, c, d, s, e) = (
     aP.publicKey,
     bP.publicKey,
@@ -55,15 +62,15 @@ object GraphUtils {
     ChannelUpdate(
       signature = PlaceHolderSig,
       chainHash = Block.RegtestGenesisBlock.hash,
-      shortChannelId = shortChannelId,
-      timestamp = System.currentTimeMillis,
-      messageFlags = 1,
-      channelFlags = if (isNode1) 0 else 1,
+      shortChannelId = ShortChannelId(shortChannelId),
+      timestamp = TimestampSecond(System.currentTimeMillis),
+      channelFlags =
+        ChannelUpdate.ChannelFlags(isNode1 = isNode1, isEnabled = true),
       cltvExpiryDelta = cltvDelta,
       htlcMinimumMsat = minHtlc,
       feeBaseMsat = feeBase,
       feeProportionalMillionths = feeProportionalMillionth,
-      htlcMaximumMsat = Some(maxHtlc)
+      htlcMaximumMsat = maxHtlc
     )
   }
 
@@ -94,7 +101,10 @@ object GraphUtils {
       score,
       useHeuristics = true
     )
-    GraphEdge(ChannelDesc(shortChannelId, nodeId1, nodeId2), updateExt)
+    GraphEdge(
+      ChannelDesc(ShortChannelId(shortChannelId), nodeId1, nodeId2),
+      updateExt
+    )
   }
 
   def makeAnnouncement(
@@ -114,11 +124,11 @@ object GraphUtils {
       PlaceHolderSig,
       Features.empty,
       Block.RegtestGenesisBlock.hash,
-      shortChannelId,
+      ShortChannelId(shortChannelId),
       nodeId1,
       nodeId2,
-      randomKey.publicKey,
-      randomKey.publicKey
+      randomKey().publicKey,
+      randomKey().publicKey
     )
   }
 
@@ -141,8 +151,8 @@ object GraphUtils {
       fromLocalEdge: GraphEdge
   ): RouteRequest = {
     val fullTag = FullPaymentTag(
-      paymentHash = randomBytes32,
-      paymentSecret = randomBytes32,
+      paymentHash = randomBytes32(),
+      paymentSecret = randomBytes32(),
       tag = PaymentTagTlv.LOCALLY_SENT
     )
     RouteRequest(

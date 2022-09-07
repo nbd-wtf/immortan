@@ -1,21 +1,14 @@
 package immortan
 
 import scala.language.existentials
-import scoin.{Block, Crypto}
-import scoin.ln.payment.IncomingPaymentPacket.{
-  FinalPacket,
-  NodeRelayPacket,
-  decrypt
-}
-import scoin.ln.payment.{
-  IncomingPaymentPacket,
-  OutgoingPaymentPacket,
-  Bolt11Invoice
-}
-import scoin.ln._
 import utest._
+import scoin._
+import scoin.Crypto.randomBytes
+import scoin.ln.IncomingPaymentPacket.{FinalPacket, NodeRelayPacket, decrypt}
+import scoin.ln._
 
 import immortan.channel._
+import immortan.router._
 import immortan.router.Router.NodeHop
 import immortan.channel.{RemoteFulfill, RemoteUpdateFail, RemoteUpdateMalform}
 import immortan.fsm._
@@ -41,19 +34,17 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       val pr = Bolt11Invoice(
         Block.TestnetGenesisBlock.hash,
         Some(MilliSatoshi(100000L)),
-        randomBytes32,
-        randomBytes32,
+        randomBytes32(),
         dP,
-        "Invoice",
-        CltvExpiryDelta(18),
-        Nil
+        Left("Invoice"),
+        CltvExpiryDelta(18)
       ) // Final payee
       val remoteNodeInfo = RemoteNodeInfo(
         nodeId = s,
         address = null,
         alias = "peer-1"
       ) // How we see an initial sender (who is our peer)
-      val outerPaymentSecret = randomBytes32
+      val outerPaymentSecret = randomBytes32()
 
       val (trampolineAmountTotal, trampolineExpiry, trampolineOnion) =
         createInnerLegacyTrampoline(
@@ -90,7 +81,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       ) {
         lastAmountIn = List(reasonableTrampoline1, reasonableTrampoline2)
           .map(_.add.amountMsat)
-          .sum
+          .fold(MilliSatoshi(0))(_ + _)
       }
       assert(
         fsm
@@ -118,17 +109,15 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
 
       // s -> us -> a
 
-      val preimage = randomBytes32
+      val preimage = randomBytes32()
       val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
       val pr = Bolt11Invoice(
         Block.TestnetGenesisBlock.hash,
         Some(MilliSatoshi(700000L)),
-        randomBytes32,
-        randomBytes32,
+        randomBytes32(),
         aP,
-        "Invoice",
-        CltvExpiryDelta(18),
-        Nil
+        Left("Invoice"),
+        CltvExpiryDelta(18)
       ) // Final payee is A which we do not have direct channels with
       val remoteNodeInfo = RemoteNodeInfo(
         nodeId = s,
@@ -136,7 +125,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
         alias = "peer-1"
       ) // How we see an initial sender (who is our peer with a private channel)
 
-      val outerPaymentSecret = randomBytes32
+      val outerPaymentSecret = randomBytes32()
       val feeReserve = MilliSatoshi(7000L)
 
       // Private channel US -> A
@@ -201,18 +190,16 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
 
       // s -> us -> a
 
-      val preimage = randomBytes32
+      val preimage = randomBytes32()
       val paymentHash = Crypto.sha256(preimage)
       val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
       val pr = Bolt11Invoice(
         Block.TestnetGenesisBlock.hash,
         Some(MilliSatoshi(700000L)),
         paymentHash,
-        randomBytes32,
         aP,
-        "Invoice",
-        CltvExpiryDelta(18),
-        Nil
+        Left("Invoice"),
+        CltvExpiryDelta(18)
       ) // Final payee is A which we do not have direct channels with
       val remoteNodeInfo = RemoteNodeInfo(
         nodeId = s,
@@ -220,7 +207,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
         alias = "peer-1"
       ) // How we see an initial sender (who is our peer with a private channel)
 
-      val outerPaymentSecret = randomBytes32
+      val outerPaymentSecret = randomBytes32()
       val feeReserve = MilliSatoshi(7000L)
 
       // Private channel US -> A
@@ -284,16 +271,14 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
 
       // e -(trampoline)-> s -(trampoline)-> us -(legacy)-> d
 
-      val paymentHash = Crypto.sha256(randomBytes32)
+      val paymentHash = Crypto.sha256(randomBytes32())
       val pr = Bolt11Invoice(
         Block.TestnetGenesisBlock.hash,
         Some(MilliSatoshi(500000L)),
         paymentHash,
-        randomBytes32,
         dP,
-        "Invoice",
-        CltvExpiryDelta(18),
-        Nil
+        Left("Invoice"),
+        CltvExpiryDelta(18)
       ) // Final payee is D which we have direct channel with
       val upstreamRemoteNodeInfo = RemoteNodeInfo(
         nodeId = s,
@@ -333,7 +318,6 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       val (trampolineAmountTotal, trampolineExpiry, finalOnion) =
         OutgoingPaymentPacket
           .buildTrampolineToLegacyPacket(
-            randomKey,
             pr,
             trampolineRoute,
             finalInnerPayload
@@ -345,13 +329,12 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
         trampolineAmountTotal,
         trampolineAmountTotal,
         trampolineExpiry,
-        randomBytes32,
+        randomBytes32(),
         finalOnion.packet
       )
       val (firstAmount, firstExpiry, onion) =
         OutgoingPaymentPacket
           .buildPaymentPacket(
-            randomKey,
             paymentHash,
             Seq(NodeHop(e, s, CltvExpiryDelta(0), MilliSatoshi(0L))),
             intermediaryPayload
@@ -360,8 +343,8 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
           .get
 
       val add_e_s = UpdateAddHtlc(
-        randomBytes32,
-        secureRandom.nextInt(1000),
+        randomBytes32(),
+        randomBytes(2).toLong() % 1000,
         firstAmount,
         pr.paymentHash,
         firstExpiry,
@@ -374,8 +357,8 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       assert(outer_s.totalAmount == pr.amount_opt.get + feeReserve * 2)
       assert(
         CltvExpiryDelta(
-          outer_s.expiry.underlying.toInt
-        ) == LNParams.ourRoutingCltvExpiryDelta + LNParams.ourRoutingCltvExpiryDelta + pr.minFinalCltvExpiryDelta.get
+          outer_s.expiry.toLong.toInt
+        ) == LNParams.ourRoutingCltvExpiryDelta + LNParams.ourRoutingCltvExpiryDelta + pr.minFinalCltvExpiryDelta
       )
       assert(
         pr.paymentSecret.isEmpty || outer_s.paymentSecret != pr.paymentSecret.get
@@ -383,8 +366,8 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       assert(inner_s.amountToForward == pr.amount_opt.get + feeReserve)
       assert(
         CltvExpiryDelta(
-          inner_s.outgoingCltv.underlying.toInt
-        ) == LNParams.ourRoutingCltvExpiryDelta + pr.minFinalCltvExpiryDelta.get
+          inner_s.outgoingCltv.toLong.toInt
+        ) == LNParams.ourRoutingCltvExpiryDelta + pr.minFinalCltvExpiryDelta
       )
       assert(
         inner_s.outgoingNodeId == upstreamRemoteNodeInfo.nodeSpecificPubKey
@@ -403,13 +386,12 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
         outer_s.totalAmount - feeReserve,
         outer_s.totalAmount - feeReserve,
         outer_s.expiry - LNParams.ourRoutingCltvExpiryDelta,
-        randomBytes32,
+        randomBytes32(),
         packet_s
       )
       val (amount_s_us, expiry_s_us, onion_s_us) =
         OutgoingPaymentPacket
           .buildPaymentPacket(
-            randomKey,
             paymentHash,
             finalNodeHop :: Nil,
             finalPayload
@@ -418,8 +400,8 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
           .get
 
       val add_s_us = UpdateAddHtlc(
-        randomBytes32,
-        secureRandom.nextInt(1000),
+        randomBytes32(),
+        randomBytes(2).toLong() % 1000,
         amount_s_us,
         pr.paymentHash,
         expiry_s_us,
@@ -432,15 +414,15 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       assert(outer_s_us.totalAmount == pr.amount_opt.get + feeReserve)
       assert(
         CltvExpiryDelta(
-          outer_s_us.expiry.underlying.toInt
-        ) == LNParams.ourRoutingCltvExpiryDelta + pr.minFinalCltvExpiryDelta.get
+          outer_s_us.expiry.toLong.toInt
+        ) == LNParams.ourRoutingCltvExpiryDelta + pr.minFinalCltvExpiryDelta
       )
       pr.paymentSecret match {
         case Some(s) => { assert(outer_s_us.paymentSecret != s) }
         case None    => {}
       }
       assert(inner_s_us.amountToForward == pr.amount_opt.get)
-      assert(inner_s_us.outgoingCltv.underlying == 18)
+      assert(inner_s_us.outgoingCltv.toLong == 18)
       assert(inner_s_us.outgoingNodeId == d)
       assert(inner_s_us.totalAmount == pr.amount_opt.get)
       assert(inner_s_us.paymentSecret == pr.paymentSecret)
@@ -464,17 +446,15 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       // s -> us -> a     d
       //             \ c /
 
-      val preimage = randomBytes32
+      val preimage = randomBytes32()
       val paymentHash = Crypto.sha256(preimage)
       val pr = Bolt11Invoice(
         Block.TestnetGenesisBlock.hash,
         Some(MilliSatoshi(700000L)),
         paymentHash,
-        randomBytes32,
         dP,
-        "Invoice",
-        CltvExpiryDelta(18),
-        Nil
+        Left("Invoice"),
+        CltvExpiryDelta(18)
       ) // Final payee is D which we do not have direct channels with
       val remoteNodeInfo = RemoteNodeInfo(
         nodeId = s,
@@ -482,7 +462,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
         alias = "peer-1"
       ) // How we see an initial sender (who is our peer with a private channel)
       val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
-      val outerPaymentSecret = randomBytes32
+      val outerPaymentSecret = randomBytes32()
       val feeReserve = MilliSatoshi(7000L)
 
       // Private channel US -> A
@@ -643,19 +623,17 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       val pr = Bolt11Invoice(
         Block.TestnetGenesisBlock.hash,
         Some(MilliSatoshi(700000L)),
-        randomBytes32,
-        randomBytes32,
+        randomBytes32(),
         dP,
-        "Invoice",
-        CltvExpiryDelta(18),
-        Nil
+        Left("Invoice"),
+        CltvExpiryDelta(18)
       ) // Final payee is D which we do not have direct channels with
       val remoteNodeInfo = RemoteNodeInfo(
         nodeId = s,
         address = null,
         alias = "peer-1"
       ) // How we see an initial sender (who is our peer with a private channel)
-      val outerPaymentSecret = randomBytes32
+      val outerPaymentSecret = randomBytes32()
       val feeReserve = MilliSatoshi(7000L)
 
       var replies = List.empty[Any]
@@ -724,19 +702,17 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       val pr = Bolt11Invoice(
         Block.TestnetGenesisBlock.hash,
         Some(MilliSatoshi(700000L)),
-        randomBytes32,
-        randomBytes32,
+        randomBytes32(),
         dP,
-        "Invoice",
-        CltvExpiryDelta(18),
-        Nil
+        Left("Invoice"),
+        CltvExpiryDelta(18)
       ) // Final payee is D which we do not have direct channels with
       val remoteNodeInfo = RemoteNodeInfo(
         nodeId = s,
         address = null,
         alias = "peer-1"
       ) // How we see an initial sender (who is our peer with a private channel)
-      val outerPaymentSecret = randomBytes32
+      val outerPaymentSecret = randomBytes32()
       val feeReserve = MilliSatoshi(7000L)
 
       var replies = List.empty[Any]
@@ -812,25 +788,23 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       LNParams.routerConf =
         routerConf // Replace with the one which allows for smaller parts
 
-      val preimage = randomBytes32
+      val preimage = randomBytes32()
       val paymentHash = Crypto.sha256(preimage)
       val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
       val pr = Bolt11Invoice(
         Block.TestnetGenesisBlock.hash,
         Some(MilliSatoshi(700000L)),
         paymentHash,
-        randomBytes32,
         dP,
-        "Invoice",
-        CltvExpiryDelta(18),
-        Nil
+        Left("Invoice"),
+        CltvExpiryDelta(18)
       ) // Final payee is D which we do not have direct channels with
       val remoteNodeInfo = RemoteNodeInfo(
         nodeId = s,
         address = null,
         alias = "peer-1"
       ) // How we see an initial sender (who is our peer with a private channel)
-      val outerPaymentSecret = randomBytes32
+      val outerPaymentSecret = randomBytes32()
       val feeReserve = MilliSatoshi(7000L)
 
       var replies = List.empty[Any]
@@ -901,25 +875,23 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       LNParams.routerConf =
         routerConf // Replace with the one which allows for smaller parts
 
-      val preimage = randomBytes32
+      val preimage = randomBytes32()
       val paymentHash = Crypto.sha256(preimage)
       val (_, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
       val pr = Bolt11Invoice(
         Block.TestnetGenesisBlock.hash,
         Some(MilliSatoshi(700000L)),
         paymentHash,
-        randomBytes32,
         eP,
-        "Invoice",
-        CltvExpiryDelta(18),
-        Nil
+        Left("Invoice"),
+        CltvExpiryDelta(18)
       ) // Final payee is E which is not in a graph!
       val remoteNodeInfo = RemoteNodeInfo(
         nodeId = s,
         address = null,
         alias = "peer-1"
       ) // How we see an initial sender (who is our peer with a private channel)
-      val outerPaymentSecret = randomBytes32
+      val outerPaymentSecret = randomBytes32()
       val feeReserve = MilliSatoshi(7000L)
 
       var replies = List.empty[Any]
@@ -990,18 +962,16 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
         0
       ) // Replace with the one which allows for smaller parts
 
-      val preimage = randomBytes32
+      val preimage = randomBytes32()
       val paymentHash = Crypto.sha256(preimage)
       val (normalStore, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
       val pr = Bolt11Invoice(
         Block.TestnetGenesisBlock.hash,
         Some(MilliSatoshi(700000L)),
         paymentHash,
-        randomBytes32,
         dP,
-        "Invoice",
-        CltvExpiryDelta(18),
-        Nil
+        Left("Invoice"),
+        CltvExpiryDelta(18)
       ) // Final payee is D which we do not have direct channels with
       val remoteNodeInfo = RemoteNodeInfo(
         nodeId = s,
@@ -1012,7 +982,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
 
       // s -> us -> a == d
 
-      val outerPaymentSecret = randomBytes32
+      val outerPaymentSecret = randomBytes32()
       val feeReserve = MilliSatoshi(7000L)
 
       // Private channel US -> A
@@ -1093,13 +1063,13 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
         UpdateFailMalformedHtlc(
           out1.channelId,
           out1.id,
-          randomBytes32,
+          randomBytes32(),
           failureCode = 1
         ),
         out1
       )
       cm.opm process RemoteUpdateFail(
-        UpdateFailHtlc(out2.channelId, out2.id, randomBytes32.bytes),
+        UpdateFailHtlc(out2.channelId, out2.id, randomBytes32().bytes),
         out2
       ) // Finishes it
       WAIT_UNTIL_TRUE(
@@ -1133,18 +1103,16 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       LNParams.routerConf =
         routerConf // Replace with the one which allows for smaller parts
 
-      val preimage = randomBytes32
+      val preimage = randomBytes32()
       val paymentHash = Crypto.sha256(preimage)
       val (normalStore, _, _, cm) = makeChannelMasterWithBasicGraph(Nil)
       val pr = Bolt11Invoice(
         Block.TestnetGenesisBlock.hash,
         Some(MilliSatoshi(700000L)),
         paymentHash,
-        randomBytes32,
         dP,
-        "Invoice",
-        CltvExpiryDelta(18),
-        Nil
+        Left("Invoice"),
+        CltvExpiryDelta(18)
       ) // Final payee is D which we do not have direct channels with
       val remoteNodeInfo = RemoteNodeInfo(
         nodeId = s,
@@ -1155,7 +1123,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
 
       // s -> us -> a == d
 
-      val outerPaymentSecret = randomBytes32
+      val outerPaymentSecret = randomBytes32()
       val feeReserve = MilliSatoshi(7000L)
 
       // Private channel US -> A
@@ -1233,15 +1201,15 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       cm.all = Map.empty
 
       cm.opm process RemoteUpdateFail(
-        UpdateFailHtlc(out1.channelId, out1.id, randomBytes32.bytes),
+        UpdateFailHtlc(out1.channelId, out1.id, randomBytes32().bytes),
         out1
       )
       cm.opm process RemoteUpdateFail(
-        UpdateFailHtlc(out1.channelId, out1.id, randomBytes32.bytes),
+        UpdateFailHtlc(out1.channelId, out1.id, randomBytes32().bytes),
         out1
       ) // Noisy event
       cm.opm process RemoteUpdateFail(
-        UpdateFailHtlc(out2.channelId, out2.id, randomBytes32.bytes),
+        UpdateFailHtlc(out2.channelId, out2.id, randomBytes32().bytes),
         out2
       ) // Finishes it
 
@@ -1281,17 +1249,15 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       LNParams.routerConf =
         routerConf // Replace with the one which allows for smaller parts
 
-      val preimage = randomBytes32
+      val preimage = randomBytes32()
       val paymentHash = Crypto.sha256(preimage)
       val pr = Bolt11Invoice(
         Block.TestnetGenesisBlock.hash,
         Some(MilliSatoshi(700000L)),
         paymentHash,
-        randomBytes32,
         dP,
-        "Invoice",
-        CltvExpiryDelta(18),
-        Nil
+        Left("Invoice"),
+        CltvExpiryDelta(18)
       ) // Final payee is D which we do not have direct channels with
       val remoteNodeInfo = RemoteNodeInfo(
         nodeId = s,
@@ -1303,7 +1269,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
 
       // s -> us -> a == d
 
-      val outerPaymentSecret = randomBytes32
+      val outerPaymentSecret = randomBytes32()
       val feeReserve = MilliSatoshi(7000L)
 
       // Private channel US -> A

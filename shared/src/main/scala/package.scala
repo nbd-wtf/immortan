@@ -291,8 +291,8 @@ package object immortan {
   }
 
   val dummyExtPrivKey: ExtendedPrivateKey = ExtendedPrivateKey(
-    secretkeybytes = ByteVector32(Crypto.randomBytes(32)),
-    chaincode = ByteVector32(Crypto.randomBytes(32)),
+    secretkeybytes = randomBytes32(),
+    chaincode = randomBytes32(),
     depth = 0,
     path = KeyPath.Root,
     parent = 0L

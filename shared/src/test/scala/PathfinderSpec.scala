@@ -1,17 +1,18 @@
 package immortan
 
 import utest._
-import scoin.ln._
+import scoin._
 import scoin.ln._
 
 import immortan._
 import immortan.PathFinder.ExpectedRouteFees
-import immortan.router.Announcements
+import immortan.router._
 import immortan.router.Router.{ChannelDesc, NoRouteAvailable, RouteFound}
 import immortan.utils.ChannelUtils._
 import immortan.utils.GraphUtils._
 import immortan.utils.SQLiteUtils._
 import immortan.utils.TestUtils._
+import immortan.channel._
 
 object PathfinderSpec extends TestSuite {
   val (normalStore, hostedStore) = getSQLiteNetworkStores
@@ -191,7 +192,7 @@ object PathfinderSpec extends TestSuite {
 
       pf.listeners += sender // Will get operational notification as a listener
 
-      val fromKey = randomKey.publicKey
+      val fromKey = randomKey().publicKey
       val fakeLocalEdge = mkFakeLocalEdge(from = fromKey, toPeer = a)
       val routeRequest = makeRouteRequest(
         MilliSatoshi(100000),
@@ -265,7 +266,7 @@ object PathfinderSpec extends TestSuite {
           .head
           .asInstanceOf[AvgHopParams]
           .cltvExpiryDelta
-          .underlying == 144
+          .toInt == 144
       ) // Private channel CLTV is disregarded
       assert(
         responses.head
@@ -282,7 +283,7 @@ object PathfinderSpec extends TestSuite {
           .hops(2)
           .asInstanceOf[AvgHopParams]
           .cltvExpiryDelta
-          .underlying == 300
+          .toInt == 300
       ) // Median value
       assert(
         responses.head
@@ -309,7 +310,7 @@ object PathfinderSpec extends TestSuite {
         override def process(reply: Any): Unit = response = reply
       }
 
-      val fromKey = randomKey.publicKey
+      val fromKey = randomKey().publicKey
       val fakeLocalEdge = mkFakeLocalEdge(from = fromKey, toPeer = a)
       val edgeDSFromD = makeEdge(
         6L,
@@ -329,9 +330,9 @@ object PathfinderSpec extends TestSuite {
       ).copy(target = s)
 
       // Assisted channel is now reachable
-      pf process edgeDSFromD
-      pf.loadGraph()
-      pf process PathFinder.FindRoute(sender, routeRequest)
+      pf.process(edgeDSFromD)
+      pf.process(PathFinder.CMDLoadGraph)
+      pf.process(PathFinder.FindRoute(sender, routeRequest))
       WAIT_UNTIL_TRUE(
         response
           .asInstanceOf[RouteFound]
@@ -395,10 +396,6 @@ object PathfinderSpec extends TestSuite {
       )
 
       // Another public channel has been updated, a better one got disabled so the one with worse fee is selected again
-      val disabled = Announcements.makeChannelFlags(
-        isNode1 = Announcements.isNode1(a, b),
-        enable = false
-      )
       val updateABFromA1 = makeUpdate(
         1L,
         a,
@@ -408,7 +405,12 @@ object PathfinderSpec extends TestSuite {
         cltvDelta = CltvExpiryDelta(14),
         minHtlc = MilliSatoshi(10L),
         maxHtlc = MilliSatoshi(500000)
-      ).copy(channelFlags = disabled)
+      ).copy(channelFlags =
+        ChannelUpdate.ChannelFlags(
+          isNode1 = Announcements.isNode1(a, b),
+          isEnabled = false
+        )
+      )
       pf process updateABFromA1
       // Disabled channel is updated and still present in graph, but outgoing FSM instructs pathfinder to omit it
       pf process PathFinder.FindRoute(
@@ -426,10 +428,6 @@ object PathfinderSpec extends TestSuite {
       )
 
       // The only assisted channel got disabled, payee is now unreachable
-      val disabled1 = Announcements.makeChannelFlags(
-        isNode1 = Announcements.isNode1(d, s),
-        enable = false
-      )
       val updateDSFromD1 = makeUpdate(
         6L,
         d,
@@ -439,7 +437,12 @@ object PathfinderSpec extends TestSuite {
         cltvDelta = CltvExpiryDelta(144),
         minHtlc = MilliSatoshi(10L),
         maxHtlc = MilliSatoshi(500000)
-      ).copy(channelFlags = disabled1)
+      ).copy(channelFlags =
+        ChannelUpdate.ChannelFlags(
+          isNode1 = Announcements.isNode1(d, s),
+          isEnabled = false
+        )
+      )
       pf process updateDSFromD1
       // Disabled channel is updated and still present in graph, but outgoing FSM instructs pathfinder to omit it
       pf process PathFinder.FindRoute(
