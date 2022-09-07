@@ -545,8 +545,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
         MilliSatoshi(0L),
         paymentHash,
         CltvExpiry(100L),
-        outPacket,
-        null
+        outPacket
       )
 
       val ourMinimalFee = LNParams.trampoline.relayFee(

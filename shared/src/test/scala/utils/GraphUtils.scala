@@ -63,7 +63,7 @@ object GraphUtils {
       signature = PlaceHolderSig,
       chainHash = Block.RegtestGenesisBlock.hash,
       shortChannelId = ShortChannelId(shortChannelId),
-      timestamp = TimestampSecond(System.currentTimeMillis),
+      timestamp = TimestampSecond(System.currentTimeMillis / 1000),
       channelFlags =
         ChannelUpdate.ChannelFlags(isNode1 = isNode1, isEnabled = true),
       cltvExpiryDelta = cltvDelta,

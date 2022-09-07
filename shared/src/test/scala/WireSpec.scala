@@ -4,7 +4,7 @@ import utest._
 import scoin._
 import scoin.Crypto.randomBytes
 import scoin.ln._
-import scoin.ln.Sphinx._
+import scoin.ln.Sphinx
 import scoin.ln.LightningMessageCodecs._
 import scoin.hc._
 import scoin.hc.HostedChannelCodecs._
@@ -24,13 +24,15 @@ object WireSpec extends TestSuite {
         randomBytes32(),
         None
       )
-      val packetAndSecrets = create(
-        sessionKey,
-        1300,
-        publicKeys,
-        referenceFixedSizePaymentPayloads,
-        associatedData
-      ).toOption.get
+      val packetAndSecrets = Sphinx
+        .create(
+          sessionKey,
+          1300,
+          publicKeys,
+          referencePaymentPayloads,
+          associatedData
+        )
+        .get
       val fullTag = FullPaymentTag(
         paymentHash = ByteVector32.Zeroes,
         paymentSecret = ByteVector32.One,
@@ -56,13 +58,15 @@ object WireSpec extends TestSuite {
         randomBytes32(),
         None
       )
-      val packetAndSecrets = create(
-        sessionKey,
-        1300,
-        publicKeys,
-        referenceFixedSizePaymentPayloads,
-        associatedData
-      ).toOption.get
+      val packetAndSecrets = Sphinx
+        .create(
+          sessionKey,
+          1300,
+          publicKeys,
+          referencePaymentPayloads,
+          associatedData
+        )
+        .get
       val fullTag = FullPaymentTag(
         paymentHash = ByteVector32.Zeroes,
         paymentSecret = ByteVector32.One,

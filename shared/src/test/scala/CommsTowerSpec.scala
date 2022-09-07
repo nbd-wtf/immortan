@@ -18,11 +18,14 @@ object CommsTowerSpec extends TestSuite {
         override def onOperational(
             worker: CommsTower.Worker,
             theirInit: Init
-        ): Unit = worker.sendPing()
+        ): Unit =
+          worker.sendPing()
+
         override def onMessage(
             worker: CommsTower.Worker,
             msg: LightningMessage
-        ): Unit = responses ::= msg
+        ): Unit =
+          responses ::= msg
       }
 
       val remoteInfo = (new SyncParams).acinq
@@ -30,6 +33,7 @@ object CommsTowerSpec extends TestSuite {
       CommsTower.listen(Set(listener1), kpap1, remoteInfo)
 
       // We have connected, sent Ping, got Pong
+      WAIT_UNTIL_TRUE(responses.size > 0)
       WAIT_UNTIL_TRUE(responses.head.isInstanceOf[Pong])
 
       //
@@ -49,9 +53,9 @@ object CommsTowerSpec extends TestSuite {
       CommsTower.listen(Set(listener2), kpap1, remoteInfo)
 
       // Only listener2.onOperational was called
+      WAIT_UNTIL_TRUE(responses.size == 2)
       WAIT_UNTIL_TRUE(responses.head.isInstanceOf[Init])
       WAIT_UNTIL_TRUE(responses.tail.head.isInstanceOf[Pong])
-      WAIT_UNTIL_TRUE(responses.size == 2)
 
       //
 

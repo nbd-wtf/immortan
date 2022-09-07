@@ -45,9 +45,9 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
           TransportHandler.Handshake
         ) =>
       UPDATE(HandshakeData(reader1, buffer ++ bv))
-      doProcess(Ping)
+      doProcess(PING)
 
-    case (HandshakeData(reader1, buffer), Ping, TransportHandler.Handshake)
+    case (HandshakeData(reader1, buffer), PING, TransportHandler.Handshake)
         if buffer.length >= expectedLength(reader1) =>
       require(
         buffer.head == prefix,
@@ -63,7 +63,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
           val d1 = CyphertextData(encoder1, decoder1, None, remainder)
           become(d1, TransportHandler.WaitingCyphertext)
           handleEnterOperationalState()
-          doProcess(Ping)
+          doProcess(PING)
 
         case (writer, _, _) =>
           writer.write(ByteVector.empty) match {
@@ -74,7 +74,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
               handleEncryptedOutgoingData(prefix +: message)
               become(d1, TransportHandler.WaitingCyphertext)
               handleEnterOperationalState()
-              doProcess(Ping)
+              doProcess(PING)
 
             case (reader2, _, message) =>
               handleEncryptedOutgoingData(prefix +: message)
@@ -82,7 +82,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
                 HandshakeData(reader2, remainder),
                 TransportHandler.Handshake
               )
-              doProcess(Ping)
+              doProcess(PING)
           }
       }
 
@@ -93,11 +93,11 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
           TransportHandler.WaitingCyphertext
         ) =>
       UPDATE(cd.copy(buffer = cd.buffer ++ bv))
-      doProcess(Ping)
+      doProcess(PING)
 
     case (
           CyphertextData(encoder, decoder, None, buffer),
-          Ping,
+          PING,
           TransportHandler.WaitingCyphertext
         ) if buffer.length >= 18 =>
       val (ciphertext, remainder) = buffer.splitAt(18)
@@ -106,11 +106,11 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
       val length =
         Some(Protocol.uint16(plaintext.toArray, ByteOrder.BIG_ENDIAN))
       UPDATE(CyphertextData(encoder, decoder1, length, remainder))
-      doProcess(Ping)
+      doProcess(PING)
 
     case (
           CyphertextData(encoder, decoder, Some(length), buffer),
-          Ping,
+          PING,
           TransportHandler.WaitingCyphertext
         ) if buffer.length >= length + 16 =>
       val (ciphertext, remainder) = buffer.splitAt(length + 16)
@@ -118,37 +118,40 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
         decoder.decryptWithAd(ByteVector.empty, ciphertext)
       UPDATE(CyphertextData(encoder, decoder1, length = None, remainder))
       handleDecryptedIncomingData(plaintext)
-      doProcess(Ping)
+      doProcess(PING)
 
     case _ =>
   }
 
   def sendMessage(msg: LightningMessage, channelKind: ChannelKind): Unit =
-    if (
-      data.isInstanceOf[CyphertextData] &&
-      state == TransportHandler.WaitingCyphertext
-    ) {
-      val cd = data.asInstanceOf[CyphertextData]
-      val encoded = channelKind match {
-        case NormalChannelKind | IrrelevantChannelKind =>
-          LightningMessageCodecs.lightningMessageCodec.encode(msg)
-        case _ if msg.isInstanceOf[Init] || msg.isInstanceOf[Pong] =>
-          LightningMessageCodecs.lightningMessageCodec.encode(msg)
-        case HostedChannelKind =>
-          HostedChannelCodecs.hostedMessageCodec.encode(msg)
-      }
+    Future {
+      if (
+        data.isInstanceOf[CyphertextData] &&
+        state == TransportHandler.WaitingCyphertext
+      ) {
+        val cd = data.asInstanceOf[CyphertextData]
+        val encoded = channelKind match {
+          case NormalChannelKind | IrrelevantChannelKind =>
+            LightningMessageCodecs.lightningMessageCodec.encode(msg)
+          case _ if msg.isInstanceOf[Init] || msg.isInstanceOf[Pong] =>
+            LightningMessageCodecs.lightningMessageCodec.encode(msg)
+          case HostedChannelKind =>
+            HostedChannelCodecs.hostedMessageCodec.encode(msg)
+        }
 
-      val (encoder1, ciphertext) =
-        encryptMsg(cd.enc, encoded.require.toByteVector)
-      handleEncryptedOutgoingData(ciphertext)
-      UPDATE(cd.copy(enc = encoder1))
+        val (enc, ciphertext) =
+          encryptMsg(cd.enc, encoded.require.toByteVector)
+
+        handleEncryptedOutgoingData(ciphertext)
+        UPDATE(cd.copy(enc = enc))
+      }
     }
 }
 
 object TransportHandler {
-  val prologue: ByteVector = ByteVector("lightning" getBytes "UTF-8")
+  val prologue: ByteVector = ByteVector("lightning".getBytes("UTF-8"))
   val prefix: Byte = 0.toByte
-  val Ping = "Ping"
+  val PING = "Ping"
 
   sealed trait State
   case object Initial extends State

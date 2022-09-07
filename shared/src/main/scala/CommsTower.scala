@@ -16,6 +16,11 @@ import scoin.ln.LightningMessageCodecs.lightningMessageCodec
 import scoin.hc.HostedChannelCodecs.hostedMessageCodec
 
 import immortan.crypto.Noise.KeyPair
+import immortan.IrrelevantChannelKind
+import immortan.IrrelevantChannelKind
+import immortan.NormalChannelKind
+import immortan.NormalChannelKind
+import immortan.IrrelevantChannelKind
 
 case class KeyPairAndPubKey(keyPair: KeyPair, them: PublicKey)
 
@@ -64,7 +69,9 @@ object CommsTower {
   ): Unit =
     CommsTower.workers
       .get(pair)
-      .foreach(worker => messages.foreach(worker.handler.process(_)))
+      .foreach(worker =>
+        messages.foreach(msg => worker.handler.sendMessage(msg, channelKind))
+      )
 
   // Add or remove listeners to a connection where our nodeId is stable,
   //   not a randomly generated one (one which makes us seen as a constant peer by remote)
@@ -122,8 +129,9 @@ object CommsTower {
                     remoteInit = message
                   )
                 case message: Ping =>
-                  handler.process(
-                    Pong(ByteVector.fromValidHex("00" * message.pongLength))
+                  handler.sendMessage(
+                    Pong(ByteVector.fromValidHex("00" * message.pongLength)),
+                    IrrelevantChannelKind
                   )
                 case message =>
                   ourListeners.foreach(_.onMessage(self, message))
@@ -153,7 +161,7 @@ object CommsTower {
           }
 
           // Send our node parameters
-          handler.process(LNParams.ourInit)
+          handler.sendMessage(LNParams.ourInit, IrrelevantChannelKind)
         }
       }
 
@@ -201,20 +209,24 @@ object CommsTower {
     def sendPing(): Unit = {
       val payloadLength = (Crypto.randomBytes(1).toInt(signed = false) % 5) + 1
       val data = Crypto.randomBytes(length = payloadLength)
-      handler.process(Ping(payloadLength, data))
+      handler.sendMessage(Ping(payloadLength, data), IrrelevantChannelKind)
     }
 
     def requestRemoteForceClose(channelId: ByteVector32): Unit = {
-      handler.process(
+      handler.sendMessage(
         ChannelReestablish(
           channelId,
           0L,
           0L,
           randomKey(),
           randomKey().publicKey
-        )
+        ),
+        NormalChannelKind
       )
-      handler.process(Error(channelId, "please publish your local commitment"))
+      handler.sendMessage(
+        Error(channelId, "please publish your local commitment"),
+        NormalChannelKind
+      )
     }
   }
 }

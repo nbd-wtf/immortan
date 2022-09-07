@@ -529,8 +529,7 @@ object MPPSpec extends TestSuite {
             MilliSatoshi(0L),
             hash,
             CltvExpiry(100L),
-            p1.cmd.packetAndSecrets.packet,
-            null
+            p1.cmd.packetAndSecrets.packet
           ),
           preimage
         )
@@ -541,8 +540,7 @@ object MPPSpec extends TestSuite {
             MilliSatoshi(0L),
             hash,
             CltvExpiry(100L),
-            p2.cmd.packetAndSecrets.packet,
-            null
+            p2.cmd.packetAndSecrets.packet
           ),
           preimage
         )
@@ -553,8 +551,7 @@ object MPPSpec extends TestSuite {
             MilliSatoshi(0L),
             hash,
             CltvExpiry(100L),
-            p3.cmd.packetAndSecrets.packet,
-            null
+            p3.cmd.packetAndSecrets.packet
           ),
           preimage
         )
@@ -810,17 +807,23 @@ object MPPSpec extends TestSuite {
               data: OutgoingPaymentSenderData
           ): Unit =
             senderDataWhenFailed ::= data
+
+          override def gotFirstPreimage(
+              data: OutgoingPaymentSenderData,
+              fulfill: RemoteFulfill
+          ): Unit = {
+            senderDataWhenFailed ::= data
+          }
         }
 
       // Payment is going to be split in two, both of them will fail locally
       cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
       cm.opm.createSenderFSM(Set(failedListener), tag)
-      cm.opm process send
+      cm.opm.process(send)
 
       WAIT_UNTIL_TRUE {
-        assert(
-          senderDataWhenFailed.size == 1
-        ) // We have got exactly one failure event
+        // We have got exactly one failure event
+        assert(senderDataWhenFailed.size == 1)
         assert(
           senderDataWhenFailed.head.failures.head
             .asInstanceOf[LocalFailure]
@@ -878,6 +881,7 @@ object MPPSpec extends TestSuite {
       cm.opm.process(send)
 
       WAIT_UNTIL_TRUE {
+        System.err.println(cm.opm.data.paymentSenders(tag).data)
         val List(part1, part2) =
           cm.opm.data.paymentSenders(tag).data.parts.values.collect {
             case inFlight: WaitForRouteOrInFlight => inFlight

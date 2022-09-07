@@ -304,7 +304,7 @@ package object immortan {
       data: ByteVector
   ): ByteVector = {
     val ciphertext =
-      ChaCha20Poly1305.encrypt(key, nonce, data, ByteVector.empty)
+      ChaCha20Poly1305.encrypt(data, key, nonce, ByteVector.empty)
     ciphertext.takeRight(16) ++ nonce ++ ciphertext.dropRight(
       16
     ) // mac (16b) + nonce (12b) + ciphertext (variable size)
