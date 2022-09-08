@@ -11,7 +11,7 @@ trait PreparedQuery {
 }
 
 case class PreparedQuerySQLiteGeneral(stmt: PreparedStatement)
-    extends PreparedQuery { me =>
+    extends PreparedQuery {
 
   def bound(params: Object*): PreparedQuery = {
     // Mutable, but local and saves one iteration
@@ -34,7 +34,7 @@ case class PreparedQuerySQLiteGeneral(stmt: PreparedStatement)
       positionIndex += 1
     }
 
-    me
+    this
   }
 
   def executeQuery: RichCursor = RichCursorSQLiteGeneral(stmt.executeQuery)

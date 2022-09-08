@@ -60,13 +60,13 @@ case class OutgoingPaymentMasterData(
     nodeFailedWithUnknownUpdateTimes: Map[PublicKey, Int] = Map.empty,
     directionFailedTimes: Map[NodeDirectionDesc, Int] = Map.empty,
     chanNotRoutable: Set[ChannelDesc] = Set.empty
-) { me =>
+) {
   def withNewTrampolineStates(
       trampolineStates: TrampolineRoutingStates
   ): OutgoingPaymentMasterData = copy(trampolineStates = trampolineStates)
 
   def withoutTrampolineStates(nodeId: PublicKey): OutgoingPaymentMasterData =
-    me.modify(_.trampolineStates.states).using(_ - nodeId)
+    this.modify(_.trampolineStates.states).using(_ - nodeId)
 
   def withFailuresReduced(stampInFuture: Long): OutgoingPaymentMasterData = {
     // Reduce failure times to give previously failing channels a chance
@@ -106,7 +106,7 @@ object OutgoingPaymentMaster {
 
 class OutgoingPaymentMaster(val cm: ChannelMaster)
     extends StateMachine[OutgoingPaymentMasterData, OutgoingPaymentMaster.State]
-    with CanBeRepliedTo { me =>
+    with CanBeRepliedTo {
   def initialState = OutgoingPaymentMaster.ExpectingPayments
 
   become(
@@ -115,20 +115,20 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
   )
 
   def process(change: Any): Unit =
-    Future(me doProcess change)(Channel.channelContext)
+    Future(doProcess(change))(Channel.channelContext)
 
   var clearFailures: Boolean = true
 
   def doProcess(change: Any): Unit = (change, state) match {
     case (TrampolinePeerDisconnected(nodeId), _) =>
-      become(data withoutTrampolineStates nodeId, state)
+      become(data.withoutTrampolineStates(nodeId), state)
 
     case (TrampolinePeerUpdated(nodeId, TrampolineUndesired), _) =>
-      become(data withoutTrampolineStates nodeId, state)
+      become(data.withoutTrampolineStates(nodeId), state)
 
     case (TrampolinePeerUpdated(nodeId, init: TrampolineStatusInit), _) =>
       become(
-        data withNewTrampolineStates data.trampolineStates.init(nodeId, init),
+        data.withNewTrampolineStates(data.trampolineStates.init(nodeId, init)),
         state
       )
 
@@ -145,17 +145,17 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
         become(data.withFailuresReduced(System.currentTimeMillis), state)
       for (graphEdge <- send.assistedEdges) cm.pf process graphEdge
       data.paymentSenders(send.fullTag) doProcess send
-      me process CMDAskForRoute
+      process(CMDAskForRoute)
 
     case (CMDChanGotOnline, _) =>
       // Payments may still have awaiting parts due to offline channels
       data.paymentSenders.values.foreach(_ doProcess CMDChanGotOnline)
-      me process CMDAskForRoute
+      process(CMDAskForRoute)
 
     case (CMDAskForRoute, OutgoingPaymentMaster.ExpectingPayments) =>
       // This is a proxy to always send command in payment master thread
       // IMPLICIT GUARD: this message is ignored in all other states
-      data.paymentSenders.values.foreach(_ doProcess CMDAskForRoute)
+      data.paymentSenders.values.foreach(_.doProcess(CMDAskForRoute))
 
     case (req: RouteRequest, OutgoingPaymentMaster.ExpectingPayments) =>
       // IMPLICIT GUARD: this message is ignored in all other states
@@ -192,7 +192,7 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
       // Note: we may get many route request messages from payment FSMs with parts waiting for routes
       // so it is important to immediately switch to WaitingForRoute after seeing a first message
       cm.pf process PathFinder.FindRoute(
-        me,
+        this,
         req.copy(
           ignoreNodes = ignoreNodes.toSet,
           ignoreChannels =
@@ -206,7 +206,7 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
       data.paymentSenders.get(response.fullTag).foreach(_ doProcess response)
       // Switch state to allow new route requests to come through
       become(data, OutgoingPaymentMaster.ExpectingPayments)
-      me process CMDAskForRoute
+      process(CMDAskForRoute)
 
     case (ChannelFailedAtAmount(descAndCapacity), _) =>
       // At this point an affected InFlight status IS STILL PRESENT so failedAtAmount1 = usedCapacities = sum(inFlight)
@@ -260,7 +260,7 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
       data.paymentSenders
         .get(reject.localAdd.fullTag)
         .foreach(_ doProcess reject)
-      me process CMDAskForRoute
+      process(CMDAskForRoute)
 
     case (fulfill: RemoteFulfill, _) =>
       // We may have local and multiple routed outgoing payment sets at once, all of them must be notified
@@ -268,13 +268,13 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
         .filterKeys(_.paymentHash == fulfill.ourAdd.paymentHash)
         .values
         .foreach(_ doProcess fulfill)
-      me process CMDAskForRoute
+      process(CMDAskForRoute)
 
     case (remoteReject: RemoteReject, _) =>
       data.paymentSenders
         .get(remoteReject.ourAdd.fullTag)
         .foreach(_ doProcess remoteReject)
-      me process CMDAskForRoute
+      process(CMDAskForRoute)
 
     case _ =>
   }
@@ -295,7 +295,7 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
       become(
         data.copy(paymentSenders =
           data.paymentSenders.updated(
-            value = new OutgoingPaymentSender(fullTag, listeners, me),
+            value = new OutgoingPaymentSender(fullTag, listeners, this),
             key = fullTag
           )
         ),
@@ -305,8 +305,10 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
   }
 
   def stateUpdated(bag: InFlightPayments): Unit = Future {
-    // We need this to issue "wholePaymentSucceeded" AFTER neither in-flight parts nor leftovers in channels are present
-    // because FIRST peer sends a preimage (removing in-flight in FSM), THEN peer sends a state update (clearing channel leftovers)
+    // We need this to issue "wholePaymentSucceeded" AFTER neither in-flight parts
+    //   nor leftovers in channels are present
+    // because FIRST peer sends a preimage (removing in-flight in FSM),
+    //   THEN peer sends a state update (clearing channel leftovers)
     data.paymentSenders.foreach { case (fullTag, sender) =>
       if (!bag.out.contains(fullTag))
         sender.stateUpdated()

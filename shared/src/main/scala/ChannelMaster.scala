@@ -82,14 +82,14 @@ class ChannelMaster(
     val pf: PathFinder
 ) extends ChannelListener
     with ConnectionListener
-    with CanBeShutDown { me =>
+    with CanBeShutDown {
   val initResolveMemo: LoadingCache[UpdateAddHtlcExt, IncomingResolution] =
     memoize(initResolve)
   val getPreimageMemo: LoadingCache[ByteVector32, PreimageTry] = memoize(
     payBag.getPreimage
   )
-  val opm: OutgoingPaymentMaster = new OutgoingPaymentMaster(me)
-  val tb: TrampolineBroadcaster = new TrampolineBroadcaster(me)
+  val opm: OutgoingPaymentMaster = new OutgoingPaymentMaster(this)
+  val tb: TrampolineBroadcaster = new TrampolineBroadcaster(this)
 
   val localPaymentListeners: mutable.Set[OutgoingPaymentListener] = {
     val defListener: OutgoingPaymentListener = new OutgoingPaymentListener {
@@ -288,7 +288,7 @@ class ChannelMaster(
   def initConnect(): Unit =
     all.values.flatMap(Channel.chanAndCommitsOpt).foreach { cnc =>
       // Connect to all peers with channels, including CLOSED ones
-      CommsTower.listenNative(Set(me, tb), cnc.commits.remoteInfo)
+      CommsTower.listenNative(Set(this, tb), cnc.commits.remoteInfo)
     }
 
   // Marks as failed those payments which did not make it into channels before an app has been restarted
@@ -570,11 +570,11 @@ class ChannelMaster(
       case fullTag
           if PaymentTagTlv.TRAMPLOINE_ROUTED == fullTag.tag && !inProcessors
             .contains(fullTag) =>
-        inProcessors += new TrampolinePaymentRelayer(fullTag, me).tuple
+        inProcessors += new TrampolinePaymentRelayer(fullTag, this).tuple
       case fullTag
           if PaymentTagTlv.FINAL_INCOMING == fullTag.tag && !inProcessors
             .contains(fullTag) =>
-        inProcessors += new IncomingPaymentReceiver(fullTag, me).tuple
+        inProcessors += new IncomingPaymentReceiver(fullTag, this).tuple
       case fullTag if PaymentTagTlv.LOCALLY_SENT == fullTag.tag =>
         opm.createSenderFSM(localPaymentListeners, fullTag)
     }

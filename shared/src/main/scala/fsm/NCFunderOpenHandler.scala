@@ -33,9 +33,9 @@ abstract class NCFunderOpenHandler(
   }
 
   val makeChanListener: ConnectionListener with ChannelListener =
-    new ConnectionListener with ChannelListener { me =>
+    new ConnectionListener with ChannelListener {
       override def onDisconnect(worker: CommsTower.Worker): Unit =
-        CommsTower.rmListenerNative(info, me)
+        CommsTower.rmListenerNative(info, this)
 
       override def onMessage(
           worker: CommsTower.Worker,
@@ -108,7 +108,7 @@ abstract class NCFunderOpenHandler(
             ) =>
           // On disconnect we remove this listener from CommsTower, but retain it as channel listener
           // this ensures successful implanting if disconnect happens while funding is being published
-          CommsTower.rmListenerNative(info, me)
+          CommsTower.rmListenerNative(info, this)
           onChanPersisted(data, freshChannel)
       }
 
@@ -116,7 +116,7 @@ abstract class NCFunderOpenHandler(
         // Something went wrong while trying to establish a new channel
 
         case (openingPhaseError, _, _) =>
-          CommsTower.rmListenerNative(info, me)
+          CommsTower.rmListenerNative(info, this)
           onFailure(openingPhaseError)
       }
     }

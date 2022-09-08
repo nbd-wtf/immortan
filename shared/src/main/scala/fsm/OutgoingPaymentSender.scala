@@ -105,7 +105,7 @@ class OutgoingPaymentSender(
     val fullTag: FullPaymentTag,
     val listeners: Iterable[OutgoingPaymentListener],
     opm: OutgoingPaymentMaster
-) extends StateMachine[OutgoingPaymentSenderData, Int] { me =>
+) extends StateMachine[OutgoingPaymentSenderData, Int] {
   def initialState = -1
 
   become(
@@ -631,9 +631,9 @@ class OutgoingPaymentSender(
 }
 
 // Individual outgoing part status
-sealed trait PartStatus { me =>
+sealed trait PartStatus {
   final val partId: ByteVector = onionKey.publicKey.value
-  def tuple: (ByteVector, PartStatus) = (partId, me)
+  def tuple: (ByteVector, PartStatus) = (partId, this)
   def onionKey: PrivateKey
 }
 

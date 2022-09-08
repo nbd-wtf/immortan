@@ -116,7 +116,7 @@ case class NormalCommits(
     commitInput: InputInfo,
     extParams: List[ExtParams] = Nil,
     startedAt: Long = System.currentTimeMillis
-) extends Commitments { me =>
+) extends Commitments {
 
   lazy val minSendable: MilliSatoshi =
     remoteParams.htlcMinimum.max(localParams.htlcMinimum)
@@ -196,10 +196,10 @@ case class NormalCommits(
   }
 
   def addLocalProposal(proposal: UpdateMessage): NormalCommits =
-    me.modify(_.localChanges.proposed).using(_ :+ proposal)
+    this.modify(_.localChanges.proposed).using(_ :+ proposal)
 
   def addRemoteProposal(proposal: UpdateMessage): NormalCommits =
-    me.modify(_.remoteChanges.proposed).using(_ :+ proposal)
+    this.modify(_.remoteChanges.proposed).using(_ :+ proposal)
 
   def localHasUnsignedOutgoingHtlcs: Boolean = localChanges.proposed.exists {
     case _: UpdateAddHtlc => true
@@ -372,7 +372,7 @@ case class NormalCommits(
   def sendFee(rate: FeeratePerKw): (NormalCommits, Satoshi, UpdateFee) = {
     val msg: UpdateFee = UpdateFee(channelId = channelId, feeratePerKw = rate)
     // Let's compute the current commitment *as seen by them* with this change taken into account
-    val currentCommitments = me
+    val currentCommitments = this
       .modify(_.localChanges.proposed)
       .using(changes =>
         changes.filter {
@@ -394,7 +394,7 @@ case class NormalCommits(
     if (localParams.isFunder) throw ChannelTransitionFail(channelId, fee)
     if (fee.feeratePerKw < FeeratePerKw.MinimumFeeratePerKw)
       throw ChannelTransitionFail(channelId, fee)
-    val currentCommitments = me
+    val currentCommitments = this
       .modify(_.remoteChanges.proposed)
       .using(changes =>
         changes.filter {

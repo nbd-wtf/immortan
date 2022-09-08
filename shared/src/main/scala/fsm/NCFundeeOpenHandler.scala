@@ -25,9 +25,8 @@ abstract class NCFundeeOpenHandler(
   }
 
   private val makeChanListener = new ConnectionListener with ChannelListener {
-    me =>
     override def onDisconnect(worker: CommsTower.Worker): Unit =
-      CommsTower.rmListenerNative(info, me)
+      CommsTower.rmListenerNative(info, this)
 
     override def onMessage(
         worker: CommsTower.Worker,
@@ -66,14 +65,14 @@ abstract class NCFundeeOpenHandler(
           ) =>
         // It is up to NC to store itself and communicate successful opening
         onEstablished(data.commitments, freshChannel)
-        CommsTower.rmListenerNative(info, me)
+        CommsTower.rmListenerNative(info, this)
     }
 
     override def onException: PartialFunction[Malfunction, Unit] = {
       // Something went wrong while trying to establish a channel
 
       case (openingPhaseError, _, _) =>
-        CommsTower.rmListenerNative(info, me)
+        CommsTower.rmListenerNative(info, this)
         onFailure(openingPhaseError)
     }
   }

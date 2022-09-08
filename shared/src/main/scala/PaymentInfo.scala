@@ -322,7 +322,7 @@ case class PlainTxDescription(
     cpfpBy: Option[ByteVector32] = None,
     cpfpOf: Option[ByteVector32] = None,
     rbf: Option[RBFParams] = None
-) extends TxDescription { me =>
+) extends TxDescription {
   override lazy val toAddress: Option[String] =
     if (addresses.size > 1) None else addresses.headOption
   override def queryText(txid: ByteVector32): String =
@@ -331,7 +331,7 @@ case class PlainTxDescription(
   override def withNewOrderCond(
       order: Option[SemanticOrder] = None
   ): TxDescription =
-    if (semanticOrder.isDefined) me else copy(semanticOrder = order)
+    if (semanticOrder.isDefined) this else copy(semanticOrder = order)
   override def withNewLabel(label1: Option[String] = None): TxDescription =
     copy(label = label1)
   override def withNewCPFPBy(txid: ByteVector32): TxDescription =
@@ -345,7 +345,7 @@ case class OpReturnTxDescription(
     cpfpBy: Option[ByteVector32] = None,
     cpfpOf: Option[ByteVector32] = None,
     rbf: Option[RBFParams] = None
-) extends TxDescription { me =>
+) extends TxDescription {
   override def queryText(txid: ByteVector32): String =
     txid.toHex + SEPARATOR + preimages
       .map(_.toHex)
@@ -353,7 +353,7 @@ case class OpReturnTxDescription(
   override def withNewOrderCond(
       order: Option[SemanticOrder] = None
   ): TxDescription =
-    if (semanticOrder.isDefined) me else copy(semanticOrder = order)
+    if (semanticOrder.isDefined) this else copy(semanticOrder = order)
   override def withNewLabel(label1: Option[String] = None): TxDescription =
     copy(label = label1)
   override def withNewCPFPBy(txid: ByteVector32): TxDescription =
@@ -373,7 +373,7 @@ case class ChanFundingTxDescription(
     cpfpBy: Option[ByteVector32] = None,
     cpfpOf: Option[ByteVector32] = None,
     rbf: Option[RBFParams] = None
-) extends ChanTxDescription { me =>
+) extends ChanTxDescription {
   override def queryText(txid: ByteVector32): String =
     txid.toHex + SEPARATOR + nodeId.toString + SEPARATOR + label.getOrElse(
       new String
@@ -381,7 +381,7 @@ case class ChanFundingTxDescription(
   override def withNewOrderCond(
       order: Option[SemanticOrder] = None
   ): TxDescription =
-    if (semanticOrder.isDefined) me else copy(semanticOrder = order)
+    if (semanticOrder.isDefined) this else copy(semanticOrder = order)
   override def withNewLabel(label1: Option[String] = None): TxDescription =
     copy(label = label1)
   override def withNewCPFPBy(txid: ByteVector32): TxDescription =
@@ -396,7 +396,7 @@ case class ChanRefundingTxDescription(
     cpfpBy: Option[ByteVector32] = None,
     cpfpOf: Option[ByteVector32] = None,
     rbf: Option[RBFParams] = None
-) extends ChanTxDescription { me =>
+) extends ChanTxDescription {
   override def queryText(txid: ByteVector32): String =
     txid.toHex + SEPARATOR + nodeId.toString + SEPARATOR + label.getOrElse(
       new String
@@ -404,7 +404,7 @@ case class ChanRefundingTxDescription(
   override def withNewOrderCond(
       order: Option[SemanticOrder] = None
   ): TxDescription =
-    if (semanticOrder.isDefined) me else copy(semanticOrder = order)
+    if (semanticOrder.isDefined) this else copy(semanticOrder = order)
   override def withNewLabel(label1: Option[String] = None): TxDescription =
     copy(label = label1)
   override def withNewCPFPBy(txid: ByteVector32): TxDescription =
@@ -418,7 +418,7 @@ case class HtlcClaimTxDescription(
     cpfpBy: Option[ByteVector32] = None,
     cpfpOf: Option[ByteVector32] = None,
     rbf: Option[RBFParams] = None
-) extends ChanTxDescription { me =>
+) extends ChanTxDescription {
 
   override def queryText(txid: ByteVector32): String =
     txid.toHex + SEPARATOR + nodeId.toString + SEPARATOR + label.getOrElse(
@@ -427,7 +427,7 @@ case class HtlcClaimTxDescription(
   override def withNewOrderCond(
       order: Option[SemanticOrder] = None
   ): TxDescription =
-    if (semanticOrder.isDefined) me else copy(semanticOrder = order)
+    if (semanticOrder.isDefined) this else copy(semanticOrder = order)
   override def withNewLabel(label1: Option[String] = None): TxDescription =
     copy(label = label1)
   override def withNewCPFPBy(txid: ByteVector32): TxDescription =
@@ -441,7 +441,7 @@ case class PenaltyTxDescription(
     cpfpBy: Option[ByteVector32] = None,
     cpfpOf: Option[ByteVector32] = None,
     rbf: Option[RBFParams] = None
-) extends ChanTxDescription { me =>
+) extends ChanTxDescription {
   override def queryText(txid: ByteVector32): String =
     txid.toHex + SEPARATOR + nodeId.toString + SEPARATOR + label.getOrElse(
       new String
@@ -449,7 +449,7 @@ case class PenaltyTxDescription(
   override def withNewOrderCond(
       order: Option[SemanticOrder] = None
   ): TxDescription =
-    if (semanticOrder.isDefined) me else copy(semanticOrder = order)
+    if (semanticOrder.isDefined) this else copy(semanticOrder = order)
   override def withNewLabel(label1: Option[String] = None): TxDescription =
     copy(label = label1)
   override def withNewCPFPBy(txid: ByteVector32): TxDescription =

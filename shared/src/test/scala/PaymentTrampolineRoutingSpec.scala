@@ -1352,8 +1352,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
         MilliSatoshi(0L),
         paymentHash,
         CltvExpiry(100L),
-        senderDataSnapshot.inFlightParts.head.cmd.packetAndSecrets.packet,
-        null
+        senderDataSnapshot.inFlightParts.head.cmd.packetAndSecrets.packet
       )
       cm.opm process RemoteFulfill(ourAdd, preimage)
 

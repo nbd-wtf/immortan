@@ -720,7 +720,7 @@ case class ElectrumData(
     pendingTransactions: List[Transaction] = Nil,
     pendingMerkleResponses: Set[GetMerkleResponse] = Set.empty,
     lastReadyMessage: Option[WalletReady] = None
-) { me =>
+) {
 
   lazy val publicScriptAccountMap: Map[ByteVector, ExtendedPublicKey] =
     accountKeys
@@ -1068,7 +1068,7 @@ case class ElectrumData(
       selected.map(_.item.value).sum.sat - tx3.txOut.map(_.amount).sum
     CompleteTransactionResponse(
       pubKeyScriptToAmount = Map.empty,
-      me,
+      this,
       tx3,
       computedFee
     )
@@ -1120,7 +1120,7 @@ case class ElectrumData(
       strictPubKeyScriptsToAmount.updated(restPubKeyScript, restTxOut1.amount)
     SendAllResponse(
       allPubKeyScriptsToAmount,
-      me,
+      this,
       ewt.signTransaction(usableInUtxos, tx2),
       fee
     )

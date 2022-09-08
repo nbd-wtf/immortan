@@ -323,7 +323,7 @@ object MPPSpec extends TestSuite {
       // Payment is going to be split in two, both of them will fail locally
       cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
       cm.opm.createSenderFSM(Set(failedListener), tag)
-      cm.opm process send
+      cm.opm.process(send)
 
       WAIT_UNTIL_TRUE(
         senderDataWhenFailed.size == 1
@@ -807,13 +807,6 @@ object MPPSpec extends TestSuite {
               data: OutgoingPaymentSenderData
           ): Unit =
             senderDataWhenFailed ::= data
-
-          override def gotFirstPreimage(
-              data: OutgoingPaymentSenderData,
-              fulfill: RemoteFulfill
-          ): Unit = {
-            senderDataWhenFailed ::= data
-          }
         }
 
       // Payment is going to be split in two, both of them will fail locally

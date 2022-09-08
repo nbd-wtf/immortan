@@ -20,7 +20,7 @@ trait RichCursor extends Iterable[RichCursor] {
   def int(pos: Int): Int
 }
 
-case class RichCursorSQLiteGeneral(rs: ResultSet) extends RichCursor { me =>
+case class RichCursorSQLiteGeneral(rs: ResultSet) extends RichCursor { self =>
   def iterable[T](transform: RichCursor => T): Iterable[T] = try map(transform)
   finally rs.close
 
@@ -41,6 +41,6 @@ case class RichCursorSQLiteGeneral(rs: ResultSet) extends RichCursor { me =>
   def iterator: Iterator[RichCursor] =
     new Iterator[RichCursor] {
       def hasNext: Boolean = rs.next
-      def next: RichCursor = me
+      def next: RichCursor = self
     }
 }

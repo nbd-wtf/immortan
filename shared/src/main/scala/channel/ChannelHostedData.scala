@@ -35,7 +35,7 @@ case class HostedCommits(
     extParams: List[ExtParams] = Nil,
     startedAt: Long = System.currentTimeMillis
 ) extends PersistentChannelData
-    with Commitments { me =>
+    with Commitments {
 
   lazy val error: Option[Error] = localError.orElse(remoteError)
 
@@ -164,7 +164,8 @@ case class HostedCommits(
     }
 
   def withResize(resize: ResizeChannel): HostedCommits =
-    me.modify(_.lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat)
+    this
+      .modify(_.lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat)
       .setTo(UInt64(resize.newCapacity.toMilliSatoshi.toLong))
       .modify(_.lastCrossSignedState.initHostedChannel.channelCapacityMsat)
       .setTo(resize.newCapacity.toMilliSatoshi)

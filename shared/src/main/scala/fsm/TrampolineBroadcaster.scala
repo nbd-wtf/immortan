@@ -59,20 +59,22 @@ object TrampolineBroadcaster {
 class TrampolineBroadcaster(cm: ChannelMaster)
     extends StateMachine[BroadcastStatus, TrampolineBroadcaster.State]
     with ConnectionListener
-    with CanBeShutDown { me =>
+    with CanBeShutDown {
   implicit val context: ExecutionContextExecutor =
     ExecutionContext fromExecutor Executors.newSingleThreadExecutor
 
   def initialState = TrampolineBroadcaster.RoutingDisabled
 
   private val subscription =
-    Observable.interval(10.seconds).subscribe(_ => me process CMDBroadcast)
+    Observable.interval(10.seconds).subscribe(_ => process(CMDBroadcast))
   var broadcasters: Map[PublicKey, LastBroadcast] = Map.empty
 
   def doBroadcast(msg: Option[TrampolineStatus], info: RemoteNodeInfo): Unit =
     CommsTower.sendMany(msg, info.nodeSpecificPair, IrrelevantChannelKind)
+
   def process(message: Any): Unit =
-    scala.concurrent.Future(me doProcess message)
+    scala.concurrent.Future(doProcess(message))
+
   override def becomeShutDown(): Unit = subscription.unsubscribe()
   become(RoutingOff, TrampolineBroadcaster.RoutingDisabled)
 
@@ -84,7 +86,7 @@ class TrampolineBroadcaster(cm: ChannelMaster)
       LNParams.isPeerSupports(theirInit)(feature = PrivateRouting)
     val msg =
       LastBroadcast(TrampolineUndesired, worker.info, maxRoutableRatio = 0.9d)
-    if (isPrivateRoutingEnabled) me process msg
+    if (isPrivateRoutingEnabled) process(msg)
   }
 
   override def onDisconnect(worker: CommsTower.Worker): Unit =

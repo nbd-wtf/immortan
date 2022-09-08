@@ -146,15 +146,15 @@ object Noise {
   }
 
   case class UnitializedCipherState(cipher: CipherFunctions)
-      extends CipherState { me =>
+      extends CipherState {
     def decryptWithAd(
         ad: ByteVector,
         ciphertext: ByteVector
-    ): (UnitializedCipherState, ByteVector) = me -> ciphertext
+    ): (UnitializedCipherState, ByteVector) = this -> ciphertext
     def encryptWithAd(
         ad: ByteVector,
         plaintext: ByteVector
-    ): (UnitializedCipherState, ByteVector) = me -> plaintext
+    ): (UnitializedCipherState, ByteVector) = this -> plaintext
     val hasKey = false
   }
 
@@ -162,7 +162,7 @@ object Noise {
       k: ByteVector,
       n: Long,
       cipher: CipherFunctions
-  ) extends CipherState { me =>
+  ) extends CipherState {
     def decryptWithAd(
         ad: ByteVector,
         ciphertext: ByteVector
@@ -259,13 +259,12 @@ object Noise {
       rs: ByteVector,
       re: ByteVector,
       dh: DHFunctions
-  ) extends HandshakeState { me =>
-
+  ) extends HandshakeState {
     def toReader: HandshakeStateReader =
       HandshakeStateReader(messages, state, s, e, rs, re, dh)
 
     def fold(pts: MessagePatterns): (HandshakeStateWriter, ByteVector) =
-      pts.foldLeft(me -> ByteVector.empty) {
+      pts.foldLeft(this -> ByteVector.empty) {
 
         case Tuple2(Tuple2(writer, buffer), E) =>
           val e1 = dh.generateKeyPair(Crypto.randomBytes(dh.dhLen))
@@ -316,13 +315,13 @@ object Noise {
       rs: ByteVector,
       re: ByteVector,
       dh: DHFunctions
-  ) extends HandshakeState { me =>
+  ) extends HandshakeState {
 
     def toWriter: HandshakeStateWriter =
       HandshakeStateWriter(messages, state, s, e, rs, re, dh)
 
     def fold(message: ByteVector): (HandshakeStateReader, ByteVector) =
-      messages.head.foldLeft(me -> message) {
+      messages.head.foldLeft(this -> message) {
         case Tuple2(Tuple2(reader, buffer), E) =>
           val (re1, buffer1) = buffer.splitAt(dh.pubKeyLen)
           (reader.copy(state = reader.state mixHash re1, re = re1), buffer1)

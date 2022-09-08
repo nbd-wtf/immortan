@@ -167,7 +167,7 @@ case class WithdrawRequest(
     balance: Option[Long] = None,
     balanceCheck: Option[String] = None,
     payLink: Option[String] = None
-) extends CallbackLNUrlData { me =>
+) extends CallbackLNUrlData {
   def requestWithdraw(ext: PaymentRequestExt): Observable[String] =
     LNUrl.level2DataResponse {
       callbackUri.buildUpon

@@ -390,7 +390,7 @@ abstract class SyncMaster(
     routerData: Data,
     maxConnections: Int
 ) extends StateMachine[SyncMasterData, SyncMaster.State]
-    with CanBeRepliedTo { me =>
+    with CanBeRepliedTo {
   def initialState = SyncMaster.ShortIDSync
 
   private[this] val confirmedChanUpdates = mutable.Map
@@ -421,7 +421,7 @@ abstract class SyncMaster(
   implicit val context: ExecutionContextExecutor =
     ExecutionContext fromExecutor Executors.newSingleThreadExecutor
   def process(changeMessage: Any): Unit =
-    scala.concurrent.Future(me doProcess changeMessage)
+    scala.concurrent.Future(doProcess(changeMessage))
 
   def doProcess(change: Any): Unit = (change, data, state) match {
     case (setupData: SyncMasterScidData, null, SyncMaster.ShortIDSync)
@@ -433,7 +433,7 @@ abstract class SyncMaster(
         if data1.activeSyncs.size < maxConnections =>
       // We are asked to create a new worker AND we don't have enough workers yet: create a new one and instruct it to sync right away
 
-      val newSyncWorker = data.getNewSync(me)
+      val newSyncWorker = data.getNewSync(this)
       become(
         data1.copy(activeSyncs = data1.activeSyncs + newSyncWorker),
         SyncMaster.ShortIDSync
@@ -489,7 +489,7 @@ abstract class SyncMaster(
         become(syncData, SyncMaster.GossipSync)
         // Transfer every worker into gossip syncing state
         for (currentActiveSync <- syncData.activeSyncs)
-          currentActiveSync process SyncWorkerGossipData(me, queries)
+          currentActiveSync process SyncWorkerGossipData(this, queries)
         for (currentActiveSync <- syncData.activeSyncs)
           currentActiveSync process CMDGetGossip
       }
@@ -504,12 +504,12 @@ abstract class SyncMaster(
       // Turns out one of the workers has disconnected while getting gossip, create one with unused remote nodeId and track its progress
       // Important: we retain pending queries from previous sync worker, that's why we need worker data here
 
-      val newSyncWorker = data1.getNewSync(me)
+      val newSyncWorker = data1.getNewSync(this)
       become(
         data1.copy(activeSyncs = data1.activeSyncs + newSyncWorker),
         SyncMaster.GossipSync
       )
-      newSyncWorker process SyncWorkerGossipData(me, workerData.queries)
+      newSyncWorker.process(SyncWorkerGossipData(this, workerData.queries))
 
     case (
           sd: SyncDisconnected,
@@ -540,9 +540,7 @@ abstract class SyncMaster(
         val pure = getPureNormalNetworkData
         // Current batch is ready, send it out and start a new one right away
         val nextData = data1.copy(chunksLeft = LNParams.syncParams.chunksToWait)
-        me onChunkSyncComplete pure.copy(queriesLeft =
-          nextData.batchQueriesLeft
-        )
+        onChunkSyncComplete(pure.copy(queriesLeft = nextData.batchQueriesLeft))
         become(nextData, SyncMaster.GossipSync)
       }
 
@@ -558,7 +556,7 @@ abstract class SyncMaster(
       } else {
         become(null, SyncMaster.ShutDown)
         // This one will have zero queries left by default
-        me onChunkSyncComplete getPureNormalNetworkData
+        onChunkSyncComplete(getPureNormalNetworkData)
         confirmedChanAnnounces.clear()
         confirmedChanUpdates.clear()
         onTotalSyncComplete()
@@ -676,13 +674,13 @@ case class SyncMasterPHCData(
 
 abstract class PHCSyncMaster(routerData: Data)
     extends StateMachine[SyncMasterData, SyncMaster.State]
-    with CanBeRepliedTo { me =>
+    with CanBeRepliedTo {
   implicit val context: ExecutionContextExecutor =
     ExecutionContext fromExecutor Executors.newSingleThreadExecutor
   def initialState = SyncMaster.PHCSync
 
   def process(changeMessage: Any): Unit =
-    scala.concurrent.Future(me doProcess changeMessage)
+    scala.concurrent.Future(doProcess(changeMessage))
 
   // These checks require graph
   def isAcceptable(ann: ChannelAnnouncement): Boolean = {
@@ -708,12 +706,12 @@ abstract class PHCSyncMaster(routerData: Data)
       // We are asked to create a new worker AND we don't have a worker yet: create one
       // for now PHC sync happens with a single remote peer
 
-      val newSyncWorker = data1.getNewSync(me)
+      val newSyncWorker = data1.getNewSync(this)
       become(
         data1.copy(activeSyncs = data1.activeSyncs + newSyncWorker),
         SyncMaster.PHCSync
       )
-      newSyncWorker process SyncWorkerPHCData(me, updates = Set.empty)
+      newSyncWorker process SyncWorkerPHCData(this, updates = Set.empty)
 
     case (sd: SyncDisconnected, data1: SyncMasterPHCData, SyncMaster.PHCSync)
         if data1.attemptsLeft > 0 =>
@@ -729,7 +727,7 @@ abstract class PHCSyncMaster(routerData: Data)
 
     case (data: SyncWorkerPHCData, _, SyncMaster.PHCSync) =>
       // Worker has informed us that PHC sync is complete, shut everything down
-      me.onSyncComplete(
+      this.onSyncComplete(
         CompleteHostedRoutingData(
           data.announces.values.toSet,
           data.updates
