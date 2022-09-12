@@ -19,7 +19,7 @@ import scala.annotation.tailrec
 import scala.collection.immutable
 import scala.concurrent.duration._
 import scala.concurrent.Future
-import scala.util.{Success, Try}
+import scala.util.{Success, Failure, Try}
 
 class ElectrumWallet(
     pool: ElectrumClientPool,
@@ -46,7 +46,7 @@ class ElectrumWallet(
   }
 
   EventStream
-    .subscribe({ case data: Blockchain => self.send(data) })
+    .subscribe { case data: Blockchain => self.send(data) }
 
   pool.addStatusListener(self.asInstanceOf[castor.SimpleActor[Any]])
 
@@ -57,6 +57,7 @@ class ElectrumWallet(
   case object Disconnected
       extends State({
         case (raw: ByteVector, null) => {
+          System.err.println(s"got bytevector ${raw.size}")
           // Serialized data may become big with much usage
           // Deserialzie it in this dedicated thread to not slow down UI
 
@@ -105,11 +106,22 @@ class ElectrumWallet(
         }
 
         case (bc: Blockchain, data) => {
+          System.err.println("got blockchain")
+
           for (scriptHash <- data.accountKeyMap.keys)
-            pool.subscribeToScriptHash(
-              scriptHash,
-              self.asInstanceOf[castor.SimpleActor[Any]]
-            )
+            pool
+              .subscribeToScriptHash(
+                scriptHash,
+                self.asInstanceOf[castor.SimpleActor[Any]]
+              )
+              .onComplete {
+                case Success(resp) =>
+                  System.err.println(s"subscribed ${scriptHash.toHex}: $resp")
+                  handleSubscriptionHashResponse(resp)
+                case Failure(err) =>
+                  System.err
+                    .println(s"failed to subscribe ${scriptHash.toHex}: $err")
+              }
 
           for (scriptHash <- data.changeKeyMap.keys)
             pool.subscribeToScriptHash(
@@ -129,70 +141,6 @@ class ElectrumWallet(
           val newData = data.copy(blockchain = bc)
           newData.pendingMerkleResponses.foreach(self.send(_))
           (state, persistAndNotify(newData))
-        }
-
-        case (
-              ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status),
-              data
-            ) if data.status.get(scriptHash).contains(status) => {
-          val missing = data.history
-            .getOrElse(scriptHash, Nil)
-            .map(item => item.txHash -> item.height)
-            .toMap -- data.transactions.keySet -- data.pendingTransactionRequests
-
-          missing.foreach { case (txid, height) =>
-            getTransaction(txid)
-            getMerkle(txid, height)
-          }
-
-          if (missing.nonEmpty) {
-            // An optimization to not recalculate internal data values on each scriptHashResponse event
-            (
-              state,
-              persistAndNotify(
-                data.copy(pendingHistoryRequests =
-                  data.pendingTransactionRequests ++ missing.keySet
-                )
-              )
-            )
-          } else stay
-        }
-
-        case (
-              ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, _),
-              data
-            )
-            if !data.accountKeyMap.contains(scriptHash) && !data.changeKeyMap
-              .contains(scriptHash) =>
-          stay
-
-        case (
-              ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status),
-              data
-            ) if status.isEmpty =>
-          (
-            state,
-            persistAndNotify(
-              data.copy(status = data.status.updated(scriptHash, status))
-            )
-          )
-
-        case (
-              ElectrumClient
-                .ScriptHashSubscriptionResponse(scriptHash, status),
-              data
-            ) => {
-          getScriptHashHistory(scriptHash)
-          (
-            state,
-            persistAndNotify(
-              data.copy(
-                status = data.status.updated(scriptHash, status),
-                pendingHistoryRequests =
-                  data.pendingHistoryRequests + scriptHash
-              )
-            )
-          )
         }
 
         case other => whenUnhandled(other)
@@ -250,6 +198,59 @@ class ElectrumWallet(
 
       case _ => stay
     }
+
+  def handleSubscriptionHashResponse(
+      response: ElectrumClient.ScriptHashSubscriptionResponse
+  ): Unit = {
+    val ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status) =
+      response
+
+    if (data.status.get(scriptHash).contains(status)) {
+      val missing = data.history
+        .getOrElse(scriptHash, Nil)
+        .map(item => item.txHash -> item.height)
+        .toMap -- data.transactions.keySet -- data.pendingTransactionRequests
+
+      missing.foreach { case (txid, height) =>
+        getTransaction(txid)
+        getMerkle(txid, height)
+      }
+
+      if (missing.nonEmpty) {
+        // An optimization to not recalculate internal data values on each scriptHashResponse event
+        setStateAndData(
+          state,
+          persistAndNotify(
+            data.copy(pendingHistoryRequests =
+              data.pendingTransactionRequests ++ missing.keySet
+            )
+          )
+        )
+      }
+    } else if (
+      !data.accountKeyMap.contains(scriptHash) && !data.changeKeyMap
+        .contains(scriptHash)
+    ) { // do nothing
+    } else if (status.isEmpty) {
+      setStateAndData(
+        state,
+        persistAndNotify(
+          data.copy(status = data.status.updated(scriptHash, status))
+        )
+      )
+    } else {
+      getScriptHashHistory(scriptHash)
+      setStateAndData(
+        state,
+        persistAndNotify(
+          data.copy(
+            status = data.status.updated(scriptHash, status),
+            pendingHistoryRequests = data.pendingHistoryRequests + scriptHash
+          )
+        )
+      )
+    }
+  }
 
   def getData() = Future { GetDataResponse(data) }
 
@@ -377,81 +378,90 @@ class ElectrumWallet(
           Some(Error(code = -1, "wallet is not connected"))
         )
       }
-    case Running => pool.request(BroadcastTransaction(tx))
+    case Running =>
+      pool.request[BroadcastTransactionResponse](BroadcastTransaction(tx))
   }
 
   def getScriptHashHistory(scriptHash: ByteVector32): Unit =
-    pool.request(GetScriptHashHistory(scriptHash)).onComplete {
-      case Success(
-            ElectrumClient.GetScriptHashHistoryResponse(scriptHash, items)
-          ) => {
-        val pendingHeadersRequests1 =
-          collection.mutable.HashSet.empty[GetHeaders]
-        pendingHeadersRequests1 ++= data.pendingHeadersRequests
+    pool
+      .request[GetScriptHashHistoryResponse](GetScriptHashHistory(scriptHash))
+      .onComplete {
+        case Success(
+              ElectrumClient.GetScriptHashHistoryResponse(scriptHash, items)
+            ) => {
+          System.err.println(s"got history")
 
-        val shadowItems = for {
-          existingItems <- data.history.get(scriptHash).toList
-          item <- existingItems if !items.exists(_.txHash == item.txHash)
-        } yield item
+          val pendingHeadersRequests1 =
+            collection.mutable.HashSet.empty[GetHeaders]
+          pendingHeadersRequests1 ++= data.pendingHeadersRequests
 
-        val allItems = items ++ shadowItems
+          val shadowItems = for {
+            existingItems <- data.history.get(scriptHash).toList
+            item <- existingItems if !items.exists(_.txHash == item.txHash)
+          } yield item
 
-        def downloadHeadersIfMissing(height: Int): Unit = {
-          if (
-            data.blockchain
-              .getHeader(height)
-              .orElse(params.headerDb getHeader height)
-              .isEmpty
-          ) {
-            // we don't have this header because it is older than our checkpoints => request the entire chunk
-            val request = GetHeaders(
-              height / RETARGETING_PERIOD * RETARGETING_PERIOD,
-              RETARGETING_PERIOD
-            )
-            if (pendingHeadersRequests1 contains request) return
-            pendingHeadersRequests1.add(request)
-            chainSync.send(request)
+          val allItems = items ++ shadowItems
+
+          def downloadHeadersIfMissing(height: Int): Unit = {
+            if (
+              data.blockchain
+                .getHeader(height)
+                .orElse(params.headerDb getHeader height)
+                .isEmpty
+            ) {
+              // we don't have this header because it is older than our checkpoints => request the entire chunk
+              val request = GetHeaders(
+                height / RETARGETING_PERIOD * RETARGETING_PERIOD,
+                RETARGETING_PERIOD
+              )
+              if (pendingHeadersRequests1 contains request) return
+              pendingHeadersRequests1.add(request)
+              chainSync.send(request)
+            }
           }
-        }
 
-        def process(txid: ByteVector32, height: Int): Unit = {
-          if (data.proofs.contains(txid) || height < 1) return
-          downloadHeadersIfMissing(height)
-          getMerkle(txid, height)
-        }
+          def process(txid: ByteVector32, height: Int): Unit = {
+            if (data.proofs.contains(txid) || height < 1) return
+            downloadHeadersIfMissing(height)
+            getMerkle(txid, height)
+          }
 
-        setStateAndData(
-          state,
-          persistAndNotify(
-            data.copy(
-              history = data.history.updated(scriptHash, allItems),
-              pendingHistoryRequests = data.pendingHistoryRequests - scriptHash,
-              pendingTransactionRequests =
-                allItems.foldLeft(data.pendingTransactionRequests) {
-                  case (hashes, item)
-                      if !data.transactions.contains(
-                        item.txHash
-                      ) && !data.pendingTransactionRequests
-                        .contains(item.txHash) =>
-                    getTransaction(item.txHash)
-                    process(item.txHash, item.height)
-                    hashes + item.txHash
+          setStateAndData(
+            state,
+            persistAndNotify(
+              data.copy(
+                history = data.history.updated(scriptHash, allItems),
+                pendingHistoryRequests =
+                  data.pendingHistoryRequests - scriptHash,
+                pendingTransactionRequests =
+                  allItems.foldLeft(data.pendingTransactionRequests) {
+                    case (hashes, item)
+                        if !data.transactions.contains(
+                          item.txHash
+                        ) && !data.pendingTransactionRequests
+                          .contains(item.txHash) =>
+                      getTransaction(item.txHash)
+                      process(item.txHash, item.height)
+                      hashes + item.txHash
 
-                  case (hashes, item) =>
-                    process(item.txHash, item.height)
-                    hashes
-                },
-              pendingHeadersRequests = pendingHeadersRequests1.toSet
+                    case (hashes, item) =>
+                      process(item.txHash, item.height)
+                      hashes
+                  },
+                pendingHeadersRequests = pendingHeadersRequests1.toSet
+              )
             )
           )
-        )
+        }
+
+        case Failure(err) =>
+          System.err.println(
+            s"[error] failed to call electrum server for GetScriptHashHistory: $err"
+          )
       }
 
-      case _ => {}
-    }
-
   def getTransaction(txid: ByteVector32): Unit =
-    pool.request(GetTransaction(txid)).onComplete {
+    pool.request[GetTransactionResponse](GetTransaction(txid)).onComplete {
       case Success(GetTransactionResponse(tx, contextOpt)) => {
         val clearedExcludedOutPoints: List[OutPoint] =
           data.excludedOutPoints diff tx.txIn.map(_.outPoint)
@@ -495,11 +505,14 @@ class ElectrumWallet(
         }
       }
 
-      case _ => {}
+      case Failure(err) =>
+        System.err.println(
+          s"[error] failed to call electrum server for GetTransaction: $err"
+        )
     }
 
   def getMerkle(txid: ByteVector32, height: Int): Unit =
-    pool.request(GetMerkle(txid, height)).onComplete {
+    pool.request[GetMerkleResponse](GetMerkle(txid, height)).onComplete {
       case Success(
             response @ GetMerkleResponse(Some(source), txid, _, height, _, _)
           ) => {
@@ -562,7 +575,17 @@ class ElectrumWallet(
         }
       }
 
-      case _ => {}
+      case Success(
+            ElectrumClient.GetMerkleResponse(_, _, _, _, _, _)
+          ) =>
+        System.err.println(
+          s"[error] GetMerkle response didn't have the context"
+        )
+
+      case Failure(err) =>
+        System.err.println(
+          s"[error] failed to call electrum server for GetMerkle: $err"
+        )
     }
 }
 
@@ -676,7 +699,15 @@ object ElectrumWallet {
   ) extends WalletEvent
 }
 
-case class Utxo(key: ExtendedPublicKey, item: ElectrumClient.UnspentItem)
+case class UnspentItem(
+    txHash: ByteVector32,
+    txPos: Int,
+    value: Long,
+    height: Long
+) {
+  lazy val outPoint = OutPoint(txHash.reverse, txPos)
+}
+case class Utxo(key: ExtendedPublicKey, item: UnspentItem)
 
 case class AccountAndXPrivKey(
     xPriv: ExtendedPrivateKey,
@@ -787,13 +818,15 @@ case class ElectrumData(
             if !overriddenPendingTxids.contains(tx.txid)
             (txOut, index) <- tx.txOut.zipWithIndex
             if computeScriptHash(txOut.publicKeyScript) == scriptHash
-            unspent = ElectrumClient.UnspentItem(
+          } yield Utxo(
+            key,
+            UnspentItem(
               item.txHash,
               index,
               txOut.amount.toLong,
               item.height
             )
-          } yield Utxo(key, unspent)
+          )
 
           // Find all out points which spend from this script hash and make sure unspents do not contain them
           val outPoints = historyItems
@@ -901,13 +934,15 @@ case class ElectrumData(
       // we create simulated as-if yet unused UTXOs to be reused in RBF transaction
       val TxOut(amount, publicKeyScript) =
         transactions(txIn.outPoint.txid).txOut(txIn.outPoint.index.toInt)
-      val item = UnspentItem(
-        txIn.outPoint.txid,
-        txIn.outPoint.index.toInt,
-        amount.toLong,
-        height = 0
+      Utxo(
+        key = publicScriptMap(publicKeyScript),
+        UnspentItem(
+          txIn.outPoint.txid,
+          txIn.outPoint.index.toInt,
+          amount.toLong,
+          height = 0
+        )
       )
-      Utxo(key = publicScriptMap(publicKeyScript), item)
     }
 
     val mineSent = spentUtxos.map(_.item.value.sat).sum

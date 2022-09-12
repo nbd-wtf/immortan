@@ -87,6 +87,7 @@ class ElectrumChainSync(
         EventStream publish ElectrumChainSync.ChainSyncEnded(
           blockchain.height
         )
+        System.err.println("publishing blockchain alt")
         EventStream publish blockchain
         RUNNING
       }
@@ -125,6 +126,7 @@ class ElectrumChainSync(
           case Success(bc) if difficultyOk => {
             val (blockchain2, chunks) = Blockchain.optimize(bc)
             headerDb.addHeaders(chunks.map(_.header), chunks.head.height)
+            System.err.println("publishing blockchain2")
             EventStream publish blockchain2
             blockchain = blockchain2
             stay
@@ -146,52 +148,61 @@ class ElectrumChainSync(
   }
 
   def getHeaders(startHeight: Int, count: Int): Unit =
-    pool.request(ElectrumClient.GetHeaders(startHeight, count)).onComplete {
-      case Success(
-            ElectrumClient.GetHeadersResponse(source, start, headers, _)
-          ) =>
-        if (headers.isEmpty) {
-          if (state == SYNCING) {
-            EventStream publish ElectrumChainSync.ChainSyncEnded(
-              blockchain.height
-            )
-            EventStream publish blockchain
-            state = RUNNING
-          }
-        } else {
-          Try(Blockchain.addHeaders(blockchain, start, headers)) match {
-            case Success(bc) =>
-              state match {
-                case SYNCING => {
-                  val (obc, chunks) = Blockchain.optimize(bc)
-                  headerDb.addHeaders(chunks.map(_.header), chunks.head.height)
-                  System.err.println(
-                    s"[info] got new headers chunk at ${obc.height}, requesting next chunk"
-                  )
-                  getHeaders(obc.height + 1, RETARGETING_PERIOD)
-                  blockchain = obc
-                  state = SYNCING
-                }
+    pool
+      .request[ElectrumClient.Response](
+        ElectrumClient.GetHeaders(startHeight, count)
+      )
+      .onComplete {
+        case Success(
+              ElectrumClient.GetHeadersResponse(source, start, headers, _)
+            ) =>
+          if (headers.isEmpty) {
+            if (state == SYNCING) {
+              EventStream publish ElectrumChainSync.ChainSyncEnded(
+                blockchain.height
+              )
+              System.err.println("publishing blockchain")
+              EventStream publish blockchain
+              state = RUNNING
+            }
+          } else {
+            Try(Blockchain.addHeaders(blockchain, start, headers)) match {
+              case Success(bc) =>
+                state match {
+                  case SYNCING => {
+                    val (obc, chunks) = Blockchain.optimize(bc)
+                    headerDb.addHeaders(
+                      chunks.map(_.header),
+                      chunks.head.height
+                    )
+                    System.err.println(
+                      s"[info] got new headers chunk at ${obc.height}, requesting next chunk"
+                    )
+                    getHeaders(obc.height + 1, RETARGETING_PERIOD)
+                    blockchain = obc
+                    state = SYNCING
+                  }
 
-                case RUNNING => {
-                  headerDb.addHeaders(headers, start)
-                  EventStream publish bc
-                  blockchain = bc
-                }
+                  case RUNNING => {
+                    headerDb.addHeaders(headers, start)
+                    System.err.println("publishing bc")
+                    EventStream publish bc
+                    blockchain = bc
+                  }
 
-                case _ => {}
+                  case _ => {}
+                }
+              case Failure(err) => {
+                System.err
+                  .println(s"[error] electrum peer sent bad headers: $err")
+                source.send(PoisonPill)
+                state = DISCONNECTED
               }
-            case Failure(err) => {
-              System.err
-                .println(s"[error] electrum peer sent bad headers: $err")
-              source.send(PoisonPill)
-              state = DISCONNECTED
             }
           }
-        }
 
-      case _ => {}
-    }
+        case _ => {}
+      }
 
   def getChain = blockchain
 }

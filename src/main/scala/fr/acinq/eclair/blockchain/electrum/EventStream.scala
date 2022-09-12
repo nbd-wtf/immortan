@@ -8,6 +8,9 @@ object EventStream {
     listeners.add(fn)
   }
   def publish(msg: Any): Unit = {
+    val msgName = msg.getClass().getName()
+    System.err.println(s"publishing $msgName")
+
     scala.concurrent.ExecutionContext.global.execute(() => {
       listeners.foreach { l =>
         if (l.isDefinedAt(msg))

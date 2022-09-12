@@ -12,9 +12,10 @@ import immortan.LNParams
 import org.json4s.JsonAST.{JObject, JString}
 import org.json4s.native.JsonMethods
 
-import scala.concurrent.{Future, ExecutionContext}
+import scala.concurrent.{Promise, Future, ExecutionContext}
 import scala.concurrent.duration._
 import scala.util.{Try, Random}
+import scala.annotation.nowarn
 
 class ElectrumClientPool(
     blockCount: AtomicLong,
@@ -39,6 +40,16 @@ class ElectrumClientPool(
     scala.collection.mutable.Map.empty[ElectrumClient, InetSocketAddress]
   val statusListeners =
     scala.collection.mutable.HashSet.empty[castor.SimpleActor[Any]]
+
+  @nowarn
+  def resetWaitForConnected(): Unit = {
+    val p = Promise[Connected]()
+    reportConnected = (c: Connected) => Future { p.success(c) }
+    waitForConnected = p.future
+  }
+  var reportConnected: Function[Connected, Future[Unit]] = _
+  var waitForConnected: Future[Connected] = _
+  resetWaitForConnected()
 
   def initialState: State = Disconnected()
   def stay = state
@@ -96,12 +107,16 @@ class ElectrumClientPool(
               s"[info] lost connection to $address, no active connections left"
             )
             statusListeners.foreach(
-              // we send the original disconnect source here but it doesn't matter, pool listeners will ignore it since there is only one pool
+              // we send the original disconnect source here but it doesn't matter,
+              // pool listeners will ignore it since there is only one pool
               _.send(ElectrumClient.ElectrumDisconnected(source))
             )
             EventStream
               .publish(ElectrumClient.ElectrumDisconnected)
-            Disconnected() // no more connections
+
+            // no more connections
+            resetWaitForConnected()
+            Disconnected()
           } else if (d.master != source) {
             System.err.println(
               s"[debug] lost connection to $address, we still have our master server"
@@ -170,37 +185,23 @@ class ElectrumClientPool(
 
   def subscribeToHeaders(
       listener: castor.SimpleActor[Any]
-  ): Unit = {
-    state match {
-      case Connected(master, _) => master.subscribeToHeaders(listener)
-      case _ =>
-        Future.failed(
-          new Exception(
-            "subscription must be started only after the client is connected"
-          )
-        )
-    }
+  ): Unit = waitForConnected.foreach { case Connected(master, _) =>
+    master.subscribeToHeaders(listener)
   }
 
   def subscribeToScriptHash(
       scriptHash: ByteVector32,
       listener: castor.SimpleActor[Any]
-  ): Unit = {
-    state match {
-      case Connected(master, _) =>
-        master.subscribeToScriptHash(scriptHash, listener)
-      case _ =>
-        Future.failed(
-          new Exception(
-            "subscription must be started only after the client is connected"
-          )
-        )
+  ): Future[ElectrumClient.ScriptHashSubscriptionResponse] =
+    waitForConnected.flatMap { case Connected(master, _) =>
+      master.subscribeToScriptHash(scriptHash, listener)
     }
-  }
 
-  def request(r: ElectrumClient.Request): Future[ElectrumClient.Response] =
+  def request[R <: ElectrumClient.Response](
+      r: ElectrumClient.Request
+  ): Future[R] =
     state match {
-      case Connected(master, _) => master.request(r)
+      case Connected(master, _) => master.request[R](r)
       case _ =>
         Future.failed(
           new Exception(
@@ -235,10 +236,13 @@ class ElectrumClientPool(
         EventStream.publish(
           ElectrumClient.ElectrumReady(connection, height, tip, remoteAddress)
         )
-        Connected(
+
+        val newState = Connected(
           connection,
           Map(connection -> (height, tip))
         )
+        reportConnected(newState)
+        newState
       }
       case Some(d) if connection != d.master && height > d.blockHeight + 2 => {
         // we only switch to a new master if there is a significant difference with our current master, because

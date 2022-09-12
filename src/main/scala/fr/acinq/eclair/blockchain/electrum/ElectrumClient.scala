@@ -68,12 +68,7 @@ object ElectrumClient {
   // this is for when we don't care about the response
   case object IrrelevantResponse extends Response
 
-  case class GetAddressHistory(address: String) extends Request
   case class TransactionHistoryItem(height: Int, txHash: ByteVector32)
-  case class GetAddressHistoryResponse(
-      address: String,
-      history: Seq[TransactionHistoryItem] = Nil
-  ) extends Response
 
   case class GetScriptHashHistory(scriptHash: ByteVector32) extends Request
   case class GetScriptHashHistoryResponse(
@@ -81,42 +76,10 @@ object ElectrumClient {
       history: List[TransactionHistoryItem] = Nil
   ) extends Response
 
-  case class AddressListUnspent(address: String) extends Request
-  case class UnspentItem(
-      txHash: ByteVector32,
-      txPos: Int,
-      value: Long,
-      height: Long
-  ) {
-    lazy val outPoint = OutPoint(txHash.reverse, txPos)
-  }
-  case class AddressListUnspentResponse(
-      address: String,
-      unspents: Seq[UnspentItem] = Nil
-  ) extends Response
-
-  case class ScriptHashListUnspent(scriptHash: ByteVector32) extends Request
-  case class ScriptHashListUnspentResponse(
-      scriptHash: ByteVector32,
-      unspents: Seq[UnspentItem] = Nil
-  ) extends Response
-
   case class BroadcastTransaction(tx: Transaction) extends Request
   case class BroadcastTransactionResponse(
       tx: Transaction,
       error: Option[Error] = None
-  ) extends Response
-
-  case class GetTransactionIdFromPosition(
-      height: Int,
-      txPos: Int,
-      merkle: Boolean = false
-  ) extends Request
-  case class GetTransactionIdFromPositionResponse(
-      txid: ByteVector32,
-      height: Int,
-      txPos: Int,
-      merkle: Seq[ByteVector32] = Nil
   ) extends Response
 
   case class GetTransaction(
@@ -339,28 +302,10 @@ object ElectrumClient {
         )
       case Ping =>
         JsonRPCRequest(id = reqId, method = "server.ping", params = Nil)
-      case GetAddressHistory(address) =>
-        JsonRPCRequest(
-          id = reqId,
-          method = "blockchain.address.get_history",
-          params = address :: Nil
-        )
       case GetScriptHashHistory(scripthash) =>
         JsonRPCRequest(
           id = reqId,
           method = "blockchain.scripthash.get_history",
-          params = scripthash.toHex :: Nil
-        )
-      case AddressListUnspent(address) =>
-        JsonRPCRequest(
-          id = reqId,
-          method = "blockchain.address.listunspent",
-          params = address :: Nil
-        )
-      case ScriptHashListUnspent(scripthash) =>
-        JsonRPCRequest(
-          id = reqId,
-          method = "blockchain.scripthash.listunspent",
           params = scripthash.toHex :: Nil
         )
       case ScriptHashSubscription(scriptHash) =>
@@ -374,12 +319,6 @@ object ElectrumClient {
           id = reqId,
           method = "blockchain.transaction.broadcast",
           params = Transaction.write(tx).toHex :: Nil
-        )
-      case GetTransactionIdFromPosition(height, tx_pos, merkle) =>
-        JsonRPCRequest(
-          id = reqId,
-          method = "blockchain.transaction.id_from_pos",
-          params = height :: tx_pos :: merkle :: Nil
         )
       case GetTransaction(txid, _) =>
         JsonRPCRequest(
@@ -437,18 +376,6 @@ object ElectrumClient {
             ServerVersionResponse(clientName, protocolVersion)
           }
           case Ping => PingResponse
-          case GetAddressHistory(address) => {
-            val JArray(jitems) = json.result
-            val items = jitems.map(jvalue => {
-              val JString(tx_hash) = jvalue \ "tx_hash"
-              val height = intField(jvalue, "height")
-              TransactionHistoryItem(
-                height,
-                ByteVector32.fromValidHex(tx_hash)
-              )
-            })
-            GetAddressHistoryResponse(address, items)
-          }
           case GetScriptHashHistory(scripthash) => {
             val JArray(jitems) = json.result
             val items = jitems.map(jvalue => {
@@ -460,60 +387,6 @@ object ElectrumClient {
               )
             })
             GetScriptHashHistoryResponse(scripthash, items)
-          }
-          case AddressListUnspent(address) => {
-            val JArray(jitems) = json.result
-            val items = jitems.map(jvalue => {
-              val JString(tx_hash) = jvalue \ "tx_hash"
-              val tx_pos = intField(jvalue, "tx_pos")
-              val height = intField(jvalue, "height")
-              val value = longField(jvalue, "value")
-              UnspentItem(
-                ByteVector32.fromValidHex(tx_hash),
-                tx_pos,
-                value,
-                height
-              )
-            })
-            AddressListUnspentResponse(address, items)
-          }
-          case ScriptHashListUnspent(scripthash) => {
-            val JArray(jitems) = json.result
-            val items = jitems.map(jvalue => {
-              val JString(tx_hash) = jvalue \ "tx_hash"
-              val tx_pos = intField(jvalue, "tx_pos")
-              val height = longField(jvalue, "height")
-              val value = longField(jvalue, "value")
-              UnspentItem(
-                ByteVector32.fromValidHex(tx_hash),
-                tx_pos,
-                value,
-                height
-              )
-            })
-            ScriptHashListUnspentResponse(scripthash, items)
-          }
-          case GetTransactionIdFromPosition(height, tx_pos, false) => {
-            val JString(tx_hash) = json.result
-            GetTransactionIdFromPositionResponse(
-              ByteVector32.fromValidHex(tx_hash),
-              height,
-              tx_pos,
-              Nil
-            )
-          }
-          case GetTransactionIdFromPosition(height, tx_pos, true) => {
-            val JString(tx_hash) = json.result \ "tx_hash"
-            val JArray(hashes) = json.result \ "merkle"
-            val leaves = hashes collect { case JString(value) =>
-              ByteVector32.fromValidHex(value)
-            }
-            GetTransactionIdFromPositionResponse(
-              ByteVector32.fromValidHex(tx_hash),
-              height,
-              tx_pos,
-              leaves
-            )
           }
           case GetTransaction(_, context_opt) => {
             val JString(hex) = json.result
@@ -753,8 +626,10 @@ class ElectrumClient(
         case Right(json: JsonRPCResponse) => {
           requests.get(json.id) match {
             case Some((request, promise)) => {
-              promise.success(parseJsonResponse(self, request, json))
+              val response = parseJsonResponse(self, request, json)
+              promise.success(response)
               requests.remove(json.id)
+              self.send(response)
             }
             case None => {}
           }
@@ -765,6 +640,11 @@ class ElectrumClient(
         }
 
         case Left(response @ ScriptHashSubscriptionResponse(scriptHash, _)) => {
+          System.err.println(
+            s"got subscription response ${scriptHash.toHex}, listeners: ${scriptHashSubscriptions
+                .get(response.scriptHash)
+                .size} ${scriptHashSubscriptions.get(scriptHash).size}"
+          )
           scriptHashSubscriptions
             .get(response.scriptHash)
             .foreach(listeners => listeners.foreach(_.send(response)))
@@ -787,11 +667,14 @@ class ElectrumClient(
   case class Disconnected()
       extends State({
         case ctx: ChannelHandlerContext => {
-          request(ServerVersion(CLIENT_NAME, PROTOCOL_VERSION), ctx)
+          request[ServerVersionResponse](
+            ServerVersion(CLIENT_NAME, PROTOCOL_VERSION),
+            ctx
+          )
             .onComplete {
               case Success(v: ServerVersionResponse) => {
                 headerSubscriptions += self
-                request(HeaderSubscription(), ctx)
+                request[HeaderSubscriptionResponse](HeaderSubscription(), ctx)
                   .onComplete {
                     case Success(w: HeaderSubscriptionResponse) => self.send(w)
                     case _                                      => {}
@@ -861,15 +744,25 @@ class ElectrumClient(
   def subscribeToScriptHash(
       scriptHash: ByteVector32,
       listener: castor.SimpleActor[Any]
-  ): Unit = {
+  ): Future[ScriptHashSubscriptionResponse] = {
+    System.err.println(s"subscribing to scripthash ${scriptHash.toHex}")
+
     scriptHashSubscriptions = scriptHashSubscriptions.updated(
       scriptHash,
       scriptHashSubscriptions.getOrElse(scriptHash, Set()) + listener
     )
-    request(ScriptHashSubscription(scriptHash))
+
+    System.err.println(
+      s"added a script hash listener, now ${scriptHashSubscriptions.size}"
+    )
+
+    request[ScriptHashSubscriptionResponse](ScriptHashSubscription(scriptHash))
   }
 
-  def request(r: Request, ctx: ChannelHandlerContext): Future[Response] = {
+  def request[R <: Response](
+      r: Request,
+      ctx: ChannelHandlerContext
+  ): Future[R] = {
     val promise = Promise[Response]()
 
     val electrumRequestId = reqId.toString
@@ -886,10 +779,10 @@ class ElectrumClient(
       )
     }
 
-    promise.future
+    promise.future.map(_.asInstanceOf[R])
   }
 
-  def request(r: Request): Future[Response] = {
+  def request[R <: Response](r: Request): Future[R] = {
     state match {
       case Connected(ctx, _, _) => request(r, ctx)
       case otherstate =>

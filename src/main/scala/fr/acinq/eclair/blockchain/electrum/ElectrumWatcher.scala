@@ -28,7 +28,7 @@ import fr.acinq.eclair.channel.{
 import fr.acinq.eclair.transactions.Scripts
 
 import scala.collection.immutable.{Queue, SortedMap}
-import scala.util.Success
+import scala.util.{Failure, Success}
 
 class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
     ac: castor.Context
@@ -286,19 +286,26 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
 
   def getScriptHashHistory(scriptHash: ByteVector32): Unit = {
     pool
-      .request(ElectrumClient.GetScriptHashHistory(scriptHash))
+      .request[ElectrumClient.GetScriptHashHistoryResponse](
+        ElectrumClient.GetScriptHashHistory(scriptHash)
+      )
       .onComplete {
         case Success(ElectrumClient.GetScriptHashHistoryResponse(_, history)) =>
           // we retrieve the transaction before checking watches
           // NB: height=-1 means that the tx is unconfirmed and at least one of its inputs is also unconfirmed. we need to take them into consideration if we want to handle unconfirmed txes (which is the case for turbo channels)
           history.filter(_.height >= -1).foreach(getTransaction)
 
-        case _ => {}
+        case Failure(err) =>
+          System.err.println(
+            s"[error] failed to call electrum server for GetScriptHashHistoryResponse: $err"
+          )
       }
   }
 
   def getTransaction(item: ElectrumClient.TransactionHistoryItem): Unit = pool
-    .request(ElectrumClient.GetTransaction(item.txHash, Some(item)))
+    .request[ElectrumClient.GetTransactionResponse](
+      ElectrumClient.GetTransaction(item.txHash, Some(item))
+    )
     .onComplete {
       case Success(
             ElectrumClient.GetTransactionResponse(
@@ -376,12 +383,24 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
           }
         }
 
-      case _ => {}
+      case Success(
+            ElectrumClient.GetTransactionResponse(tx, _)
+          ) =>
+        System.err.println(
+          s"[error] GetTransaction response didn't have the context"
+        )
+
+      case Failure(err) =>
+        System.err.println(
+          s"[error] failed to call electrum server for GetTransaction: $err"
+        )
     }
 
   def getMerkle(tx: Transaction, height: Int): Unit =
     pool
-      .request(ElectrumClient.GetMerkle(tx.txid, height, Some(tx)))
+      .request[ElectrumClient.GetMerkleResponse](
+        ElectrumClient.GetMerkle(tx.txid, height, Some(tx))
+      )
       .onComplete {
         case Success(
               ElectrumClient.GetMerkleResponse(
@@ -415,43 +434,60 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
             }
           }
 
-        case _ => {}
+        case Success(
+              ElectrumClient.GetMerkleResponse(_, _, _, _, _, _)
+            ) =>
+          System.err.println(
+            s"[error] GetMerkle response didn't have the context"
+          )
+
+        case Failure(err) =>
+          System.err.println(
+            s"[error] failed to call electrum server for GetMerkle: $err"
+          )
       }
 
   def publish(tx: Transaction): Unit = {
-    pool.request(ElectrumClient.BroadcastTransaction(tx)).onComplete {
-      case Success(
-            ElectrumClient.BroadcastTransactionResponse(tx, error_opt)
-          ) =>
-        state match {
-          case running: Running => {
-            error_opt match {
-              case None =>
-                System.err.println(
-                  s"[info] broadcast succeeded for txid=${tx.txid} tx={}",
-                  tx
-                )
-              case Some(error)
-                  if error.message
-                    .contains("transaction already in block chain") =>
-                System.err.println(
-                  s"[info] broadcast ignored for txid=${tx.txid} tx={} (tx was already in blockchain)",
-                  tx
-                )
-              case Some(error) =>
-                System.err.println(
-                  s"[error] broadcast failed for txid=${tx.txid} tx=$tx with error=$error"
-                )
+    pool
+      .request[ElectrumClient.BroadcastTransactionResponse](
+        ElectrumClient.BroadcastTransaction(tx)
+      )
+      .onComplete {
+        case Success(
+              ElectrumClient.BroadcastTransactionResponse(tx, error_opt)
+            ) =>
+          state match {
+            case running: Running => {
+              error_opt match {
+                case None =>
+                  System.err.println(
+                    s"[info] broadcast succeeded for txid=${tx.txid} tx={}",
+                    tx
+                  )
+                case Some(error)
+                    if error.message
+                      .contains("transaction already in block chain") =>
+                  System.err.println(
+                    s"[info] broadcast ignored for txid=${tx.txid} tx={} (tx was already in blockchain)",
+                    tx
+                  )
+                case Some(error) =>
+                  System.err.println(
+                    s"[error] broadcast failed for txid=${tx.txid} tx=$tx with error=$error"
+                  )
+              }
+
+              setState(
+                running.copy(sent = running.sent diff Seq(tx))
+              )
             }
-
-            setState(
-              running.copy(sent = running.sent diff Seq(tx))
-            )
           }
-        }
 
-      case _ => {}
-    }
+        case Failure(err) =>
+          System.err.println(
+            s"[error] failed to call electrum server for BroadcastTransaction: $err"
+          )
+      }
   }
 }
 
