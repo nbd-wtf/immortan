@@ -653,9 +653,12 @@ class ElectrumClient(
   }
 
   var scriptHashSubscriptions =
-    Map.empty[ByteVector32, Set[castor.SimpleActor[Any]]]
+    Map.empty[ByteVector32, Set[
+      castor.SimpleActor[_ >: ScriptHashSubscriptionResponse]
+    ]]
   val headerSubscriptions =
-    collection.mutable.HashSet.empty[castor.SimpleActor[Any]]
+    collection.mutable.HashSet
+      .empty[castor.SimpleActor[_ >: HeaderSubscriptionResponse]]
   val statusListeners =
     collection.mutable.HashSet
       .empty[castor.SimpleActor[Any]]
@@ -732,7 +735,9 @@ class ElectrumClient(
   def removeStatusListener(listener: castor.SimpleActor[Any]): Unit =
     statusListeners -= listener
 
-  def subscribeToHeaders(listener: castor.SimpleActor[Any]): Unit = {
+  def subscribeToHeaders(
+      listener: castor.SimpleActor[_ >: HeaderSubscriptionResponse]
+  ): Unit = {
     headerSubscriptions += listener
     state match {
       case d: Connected =>
@@ -743,7 +748,7 @@ class ElectrumClient(
 
   def subscribeToScriptHash(
       scriptHash: ByteVector32,
-      listener: castor.SimpleActor[Any]
+      listener: castor.SimpleActor[_ >: ScriptHashSubscriptionResponse]
   ): Future[ScriptHashSubscriptionResponse] = {
     System.err.println(s"subscribing to scripthash ${scriptHash.toHex}")
 

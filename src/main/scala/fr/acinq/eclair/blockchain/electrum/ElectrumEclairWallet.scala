@@ -35,8 +35,6 @@ case class ElectrumEclairWallet(
       error: fr.acinq.eclair.blockchain.bitcoind.rpc.Error
   ): Boolean = error.message.toLowerCase.contains("already in block chain")
 
-  override def getData: Future[GetDataResponse] = wallet.getData()
-
   override def getReceiveAddresses: Future[GetCurrentReceiveAddressesResponse] =
     wallet.getCurrentReceiveAddresses()
 
@@ -44,25 +42,22 @@ case class ElectrumEclairWallet(
       pubkeyScript: ByteVector,
       amount: Satoshi,
       feeRatePerKw: FeeratePerKw
-  ): Future[GenerateTxResponse] = {
-    getData.flatMap { response =>
-      if (response.data.balance == amount)
-        wallet
-          .sendAll(
-            pubkeyScript,
-            pubKeyScriptToAmount = Map.empty,
-            feeRatePerKw,
-            sequenceFlag = TxIn.SEQUENCE_FINAL,
-            fromOutpoints = Set.empty
-          )
-      else
-        wallet.generateTxResponse(
-          pubKeyScriptToAmount = Map(pubkeyScript -> amount),
+  ): Future[GenerateTxResponse] =
+    if (wallet.getData.balance == amount)
+      wallet
+        .sendAll(
+          pubkeyScript,
+          pubKeyScriptToAmount = Map.empty,
           feeRatePerKw,
-          sequenceFlag = TxIn.SEQUENCE_FINAL
+          sequenceFlag = TxIn.SEQUENCE_FINAL,
+          fromOutpoints = Set.empty
         )
-    }
-  }
+    else
+      wallet.generateTxResponse(
+        pubKeyScriptToAmount = Map(pubkeyScript -> amount),
+        feeRatePerKw,
+        sequenceFlag = TxIn.SEQUENCE_FINAL
+      )
 
   override def broadcast(tx: Transaction): Future[Boolean] = {
     wallet.broadcastTransaction(tx) flatMap {
@@ -113,25 +108,20 @@ case class ElectrumEclairWallet(
       amount: Satoshi,
       prevScriptToAmount: Map[ByteVector, Satoshi],
       feeRatePerKw: FeeratePerKw
-  ): Future[GenerateTxResponse] = {
-    getData
-      .map(_.data.balance == prevScriptToAmount.values.sum + amount)
-      .flatMap {
-        case false =>
-          makeBatchTx(
-            prevScriptToAmount.updated(pubKeyScript, amount),
-            feeRatePerKw
-          )
-        case true =>
-          wallet.sendAll(
-            pubKeyScript,
-            prevScriptToAmount,
-            feeRatePerKw,
-            OPT_IN_FULL_RBF,
-            fromOutpoints = Set.empty
-          )
-      }
-  }
+  ): Future[GenerateTxResponse] =
+    if (wallet.getData.balance == prevScriptToAmount.values.sum + amount)
+      wallet.sendAll(
+        pubKeyScript,
+        prevScriptToAmount,
+        feeRatePerKw,
+        OPT_IN_FULL_RBF,
+        fromOutpoints = Set.empty
+      )
+    else
+      makeBatchTx(
+        prevScriptToAmount.updated(pubKeyScript, amount),
+        feeRatePerKw
+      )
 
   override def makeCPFP(
       fromOutpoints: Set[OutPoint],
@@ -166,7 +156,7 @@ case class ElectrumEclairWallet(
 
   override def provideExcludedOutpoints(
       excludedOutPoints: List[OutPoint] = Nil
-  ): Unit = wallet.send(ProvideExcludedOutPoints(excludedOutPoints))
+  ): Unit = wallet.provideExcludedOutPoints(excludedOutPoints)
 
   override def doubleSpent(tx: Transaction): Future[IsDoubleSpentResponse] =
     wallet.isDoubleSpent(tx)

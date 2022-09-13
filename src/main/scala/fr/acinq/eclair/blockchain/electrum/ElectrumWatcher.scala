@@ -20,7 +20,11 @@ import java.util.concurrent.atomic.AtomicLong
 
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32, Transaction}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.electrum.ElectrumClient.computeScriptHash
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{
+  ElectrumDisconnected,
+  ElectrumReady,
+  computeScriptHash
+}
 import fr.acinq.eclair.channel.{
   BITCOIN_FUNDING_DEPTHOK,
   BITCOIN_PARENT_TX_CONFIRMED
@@ -32,10 +36,34 @@ import scala.util.{Failure, Success}
 
 class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
     ac: castor.Context
-) extends CastorStateMachineActorWithSetState[Any] {
-  val self = this
+) extends CastorStateMachineActorWithSetState[Any] { self =>
 
-  pool.addStatusListener(self)
+  EventStream.subscribe {
+    case ElectrumReady => onElectrumReady()
+    case ElectrumDisconnected =>
+      state match {
+        case s: Running =>
+          // we remember watches and keep track of tx that have not yet been published
+          // we also re-send the txes that we previously sent but hadn't yet received the confirmation
+          setState(
+            Disconnected(
+              s.watches,
+              s.sent.map(PublishAsap),
+              s.block2tx
+            )
+          )
+        case _ =>
+      }
+  }
+
+  def onElectrumReady(): Unit = {
+    if (state.isInstanceOf[Disconnected]) pool.subscribeToHeaders(self)
+  }
+
+  pool.getReady match {
+    case None    =>
+    case Some(_) => onElectrumReady()
+  }
 
   def stay = state
   def initialState =
@@ -46,11 +74,6 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
       publishQueue: Queue[PublishAsap],
       block2tx: SortedMap[Long, Seq[Transaction]]
   ) extends State({
-        case _: ElectrumClient.ElectrumReady => {
-          pool.subscribeToHeaders(self)
-          stay
-        }
-
         case ElectrumClient.HeaderSubscriptionResponse(_, height, header) => {
           watches.foreach(self.send(_))
           publishQueue.foreach(self.send(_))
@@ -79,8 +102,6 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
             block2tx
           )
         }
-
-        case ElectrumClient.ElectrumDisconnected => stay
       })
 
   case class Running(
@@ -270,18 +291,6 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
             )
           }
         }
-
-        case ElectrumClient.ElectrumDisconnected =>
-          // we remember watches and keep track of tx that have not yet been published
-          // we also re-send the txes that we previously sent but hadn't yet received the confirmation
-          Disconnected(
-            watches,
-            sent.map(PublishAsap),
-            block2tx
-          )
-
-        case _: ElectrumClient.ElectrumReady =>
-          stay
       })
 
   def getScriptHashHistory(scriptHash: ByteVector32): Unit = {

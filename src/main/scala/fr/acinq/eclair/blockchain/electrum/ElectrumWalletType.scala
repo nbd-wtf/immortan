@@ -159,29 +159,19 @@ object ElectrumWalletType {
 
 abstract class ElectrumWalletType {
   val secrets: Option[AccountAndXPrivKey]
-
   val xPub: ExtendedPublicKey
-
   val chainHash: ByteVector32
-
   val changeMaster: ExtendedPublicKey = derivePublicKey(xPub, 1L :: Nil)
-
   val accountMaster: ExtendedPublicKey = derivePublicKey(xPub, 0L :: Nil)
-
   def textAddress(key: ExtendedPublicKey): String
-
   def computePublicKeyScript(key: PublicKey): Seq[ScriptElt]
-
   def extractPubKeySpentFrom(txIn: TxIn): Option[PublicKey]
-
   def signTransaction(usableUtxos: Seq[Utxo], tx: Transaction): Transaction
-
   def setUtxosWithDummySig(
       usableUtxos: Seq[Utxo],
       tx: Transaction,
       sequenceFlag: Long
   ): Transaction
-
   def writePublicKeyScriptHash(key: PublicKey): ByteVector = {
     val scriptProgram = computePublicKeyScript(key)
     Script.write(scriptProgram)

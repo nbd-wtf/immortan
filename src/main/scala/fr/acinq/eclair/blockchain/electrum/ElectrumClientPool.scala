@@ -6,7 +6,13 @@ import java.util.concurrent.atomic.AtomicLong
 
 import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32}
 import fr.acinq.eclair.blockchain.CurrentBlockCount
-import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{
+  SSL,
+  ElectrumReady,
+  ElectrumDisconnected,
+  HeaderSubscriptionResponse,
+  ScriptHashSubscriptionResponse
+}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool._
 import immortan.LNParams
 import org.json4s.JsonAST.{JObject, JString}
@@ -86,7 +92,7 @@ class ElectrumClientPool(
         }
 
         case (
-              ElectrumClient.HeaderSubscriptionResponse(source, height, tip),
+              HeaderSubscriptionResponse(source, height, tip),
               d: Connected
             ) if addresses.contains(source) => {
           handleHeader(source, height, tip, Some(d))
@@ -164,35 +170,30 @@ class ElectrumClientPool(
       }
   }
 
-  def addStatusListener(listener: castor.SimpleActor[Any]): Unit = {
-    state match {
-      case _: Disconnected =>
-        statusListeners += listener
-      case Connected(master, tips) if addresses.contains(master) => {
-        statusListeners += listener
-        val (height, tip) = tips(master)
-        listener.send(
-          ElectrumClient.ElectrumReady(
-            master, // this field is ignored by ElectrumClientPool listeners (since there is only one pool)
-            height,
-            tip,
-            addresses(master)
-          )
+  def getReady: Option[ElectrumReady] = state match {
+    case _: Disconnected => None
+    case Connected(master, tips) if addresses.contains(master) =>
+      val (height, tip) = tips(master)
+      Some(
+        ElectrumReady(
+          master, // this field is ignored by ElectrumClientPool listeners (since there is only one pool)
+          height,
+          tip,
+          addresses(master)
         )
-      }
-    }
+      )
   }
 
   def subscribeToHeaders(
-      listener: castor.SimpleActor[Any]
+      listener: castor.SimpleActor[_ >: HeaderSubscriptionResponse]
   ): Unit = waitForConnected.foreach { case Connected(master, _) =>
     master.subscribeToHeaders(listener)
   }
 
   def subscribeToScriptHash(
       scriptHash: ByteVector32,
-      listener: castor.SimpleActor[Any]
-  ): Future[ElectrumClient.ScriptHashSubscriptionResponse] =
+      listener: castor.SimpleActor[_ >: Any]
+  ): Future[ScriptHashSubscriptionResponse] =
     waitForConnected.flatMap { case Connected(master, _) =>
       master.subscribeToScriptHash(scriptHash, listener)
     }
