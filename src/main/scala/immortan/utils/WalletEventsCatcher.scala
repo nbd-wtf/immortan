@@ -2,11 +2,15 @@ package immortan.utils
 
 import java.net.InetSocketAddress
 
-import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.electrum.ElectrumChainSync
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
-import fr.acinq.eclair.blockchain.electrum.EventStream
+import fr.acinq.eclair.blockchain.electrum.{
+  EventStream,
+  ElectrumReady,
+  ElectrumDisconnected,
+  CurrentBlockCount
+}
 import immortan.crypto.Tools.none
 
 class WalletEventsCatcher {
@@ -28,7 +32,7 @@ class WalletEventsCatcher {
       for (lst <- listeners) lst.onChainTipKnown(event)
     case event: ElectrumReady =>
       for (lst <- listeners) lst.onChainMasterSelected(event.serverAddress)
-    case ElectrumDisconnected =>
+    case _: ElectrumDisconnected =>
       for (lst <- listeners) lst.onChainDisconnected()
 
     case event: ElectrumChainSync.ChainSyncStarted =>

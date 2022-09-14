@@ -4,7 +4,7 @@ import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.{ByteVector64, SatoshiLong}
 import fr.acinq.eclair._
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.blockchain.CurrentBlockCount
+import fr.acinq.eclair.blockchain.electrum.CurrentBlockCount
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.HashToPreimage
 import fr.acinq.eclair.channel._

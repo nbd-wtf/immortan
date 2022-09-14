@@ -3,19 +3,18 @@ package fr.acinq.eclair.blockchain.electrum
 import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.blockchain.electrum.Blockchain.RETARGETING_PERIOD
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
-import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{
-  ElectrumDisconnected,
-  ElectrumReady,
-  HeaderSubscriptionResponse
-}
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.HeaderSubscriptionResponse
 import fr.acinq.eclair.blockchain.electrum.db.HeaderDb
 
 import scala.util.{Failure, Success, Try}
 
 object ElectrumChainSync {
   case class ChainSyncStarted(localTip: Long, remoteTip: Long)
-  case class ChainSyncEnded(localTip: Long)
+      extends ElectrumEvent
+  case class ChainSyncEnded(localTip: Long) extends ElectrumEvent
 }
+
+case class BlockchainReady(bc: Blockchain) extends ElectrumEvent
 
 class ElectrumChainSync(
     pool: ElectrumClientPool,
@@ -56,11 +55,11 @@ class ElectrumChainSync(
       )
 
   EventStream.subscribe {
-    case ElectrumDisconnected                   => state = DISCONNECTED
-    case ElectrumReady if state == DISCONNECTED => onElectrumReady()
+    case _: ElectrumDisconnected => state = DISCONNECTED
+    case _: ElectrumReady        => onElectrumReady()
   }
 
-  def onElectrumReady(): Unit = {
+  def onElectrumReady(): Unit = if (state == DISCONNECTED) {
     pool.subscribeToHeaders(self)
     state = WAITING_FOR_TIP
   }
@@ -85,6 +84,7 @@ class ElectrumChainSync(
             WAITING_FOR_TIP,
             response: HeaderSubscriptionResponse
           ) if blockchain.bestchain.isEmpty => {
+        System.err.println("[debug][chain-sync] starting sync from scratch")
         EventStream.publish(
           ElectrumChainSync.ChainSyncStarted(
             blockchain.height,
@@ -102,13 +102,13 @@ class ElectrumChainSync(
             WAITING_FOR_TIP,
             response: HeaderSubscriptionResponse
           ) if Some(response.header) == blockchain.tip.map(_.header) => {
+        System.err.println("[debug][chain-sync] we're synced already")
         EventStream.publish(
           ElectrumChainSync.ChainSyncEnded(
             blockchain.height
           )
         )
-        System.err.println("publishing blockchain alt")
-        EventStream.publish(blockchain)
+        EventStream.publish(BlockchainReady(blockchain))
         RUNNING
       }
 
@@ -116,9 +116,12 @@ class ElectrumChainSync(
             WAITING_FOR_TIP,
             response: HeaderSubscriptionResponse
           ) => {
-        EventStream publish ElectrumChainSync.ChainSyncStarted(
-          blockchain.height,
-          response.height
+        System.err.println("[debug][chain-sync] starting sync")
+        EventStream.publish(
+          ElectrumChainSync.ChainSyncStarted(
+            blockchain.height,
+            response.height
+          )
         )
         getHeaders(blockchain.height + 1, RETARGETING_PERIOD)
         SYNCING
@@ -146,8 +149,7 @@ class ElectrumChainSync(
           case Success(bc) if difficultyOk => {
             val (blockchain2, chunks) = Blockchain.optimize(bc)
             headerDb.addHeaders(chunks.map(_.header), chunks.head.height)
-            System.err.println("publishing blockchain2")
-            EventStream.publish(blockchain2)
+            EventStream.publish(BlockchainReady(blockchain2))
             blockchain = blockchain2
             stay
           }
@@ -166,7 +168,7 @@ class ElectrumChainSync(
 
   def getHeaders(startHeight: Int, count: Int): Unit =
     pool
-      .request[ElectrumClient.Response](
+      .request[ElectrumClient.GetHeadersResponse](
         ElectrumClient.GetHeaders(startHeight, count)
       )
       .onComplete {
@@ -174,14 +176,14 @@ class ElectrumChainSync(
               ElectrumClient.GetHeadersResponse(source, start, headers, _)
             ) =>
           if (headers.isEmpty) {
+            System.err.println("[debug][chain-sync] no more headers, sync done")
             if (state == SYNCING) {
               EventStream.publish(
                 ElectrumChainSync.ChainSyncEnded(
                   blockchain.height
                 )
               )
-              System.err.println("publishing blockchain")
-              EventStream.publish(blockchain)
+              EventStream.publish(BlockchainReady(blockchain))
               state = RUNNING
             }
           } else {
@@ -203,9 +205,9 @@ class ElectrumChainSync(
                   }
 
                   case RUNNING => {
+                    System.err.println("new block")
                     headerDb.addHeaders(headers, start)
-                    System.err.println("publishing bc")
-                    EventStream.publish(bc)
+                    EventStream.publish(BlockchainReady(bc))
                     blockchain = bc
                   }
 
@@ -228,5 +230,5 @@ class ElectrumChainSync(
     getHeaders(start, count)
   }
 
-  def getChain = blockchain
+  def getSyncedBlockchain = if (state == RUNNING) Some(blockchain) else None
 }

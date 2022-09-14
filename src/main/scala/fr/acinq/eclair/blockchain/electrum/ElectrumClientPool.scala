@@ -5,11 +5,14 @@ import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicLong
 
 import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32}
-import fr.acinq.eclair.blockchain.CurrentBlockCount
+import fr.acinq.eclair.wire.NodeAddress
+import fr.acinq.eclair.blockchain.electrum.{
+  CurrentBlockCount,
+  ElectrumReady,
+  ElectrumDisconnected
+}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{
   SSL,
-  ElectrumReady,
-  ElectrumDisconnected,
   HeaderSubscriptionResponse,
   ScriptHashSubscriptionResponse
 }
@@ -27,12 +30,13 @@ class ElectrumClientPool(
     blockCount: AtomicLong,
     chainHash: ByteVector32,
     useOnion: Boolean = false,
-    customAddress: Option[ElectrumServerAddress] = None
+    customAddress: Option[NodeAddress] = None
 )(implicit
     ac: castor.Context
 ) extends CastorStateMachineActorWithState[Any] { self =>
-  val serverAddresses: Set[ElectrumServerAddress] = customAddress match {
-    case Some(address) => Set(address)
+  lazy val serverAddresses: Set[ElectrumServerAddress] = customAddress match {
+    case Some(address) =>
+      Set(ElectrumServerAddress(address.socketAddress, SSL.DECIDE))
     case None => {
       val addresses = loadFromChainHash(chainHash)
       if (useOnion) addresses
@@ -42,10 +46,9 @@ class ElectrumClientPool(
         )
     }
   }
+
   val addresses =
     scala.collection.mutable.Map.empty[ElectrumClient, InetSocketAddress]
-  val statusListeners =
-    scala.collection.mutable.HashSet.empty[castor.SimpleActor[Any]]
 
   @nowarn
   def resetWaitForConnected(): Unit = {
@@ -62,13 +65,13 @@ class ElectrumClientPool(
 
   case class Disconnected()
       extends State({
-        case (ElectrumClient.ElectrumReady(source, height, tip, _), _)
+        case (ElectrumReady(source, height, tip, _), _)
             if addresses.contains(source) => {
           source.subscribeToHeaders(self.asInstanceOf[castor.SimpleActor[Any]])
           handleHeader(source, height, tip, None)
         }
 
-        case (ElectrumClient.ElectrumDisconnected(source), _) => {
+        case (ElectrumDisconnected(source), _) => {
           val t = new java.util.Timer()
           val task = new java.util.TimerTask { def run() = self.connect() }
           t.schedule(task, 5000L)
@@ -84,7 +87,7 @@ class ElectrumClientPool(
       tips: Map[ElectrumClient, TipAndHeader]
   ) extends State({
         case (
-              ElectrumClient.ElectrumReady(source, height, tip, _),
+              ElectrumReady(source, height, tip, _),
               d: Connected
             ) if addresses.contains(source) => {
           source.subscribeToHeaders(self.asInstanceOf[castor.SimpleActor[Any]])
@@ -98,7 +101,7 @@ class ElectrumClientPool(
           handleHeader(source, height, tip, Some(d))
         }
 
-        case (ElectrumClient.ElectrumDisconnected(source), d: Connected)
+        case (ElectrumDisconnected(source), d: Connected)
             if addresses.contains(source) => {
           val address = addresses(source)
           val tips = d.tips - source
@@ -112,13 +115,8 @@ class ElectrumClientPool(
             System.err.println(
               s"[info] lost connection to $address, no active connections left"
             )
-            statusListeners.foreach(
-              // we send the original disconnect source here but it doesn't matter,
-              // pool listeners will ignore it since there is only one pool
-              _.send(ElectrumClient.ElectrumDisconnected(source))
-            )
             EventStream
-              .publish(ElectrumClient.ElectrumDisconnected)
+              .publish(ElectrumDisconnected(master /* this will be ignored */ ))
 
             // no more connections
             resetWaitForConnected()
@@ -127,10 +125,13 @@ class ElectrumClientPool(
             System.err.println(
               s"[debug] lost connection to $address, we still have our master server"
             )
-            Connected(
+
+            val newState = Connected(
               master = master,
               tips = tips
-            ) // we don't care, this wasn't our master
+            )
+            reportConnected(newState)
+            newState
           } else {
             System.err
               .println(s"[info] lost connection to our master server $address")
@@ -170,18 +171,21 @@ class ElectrumClientPool(
       }
   }
 
-  def getReady: Option[ElectrumReady] = state match {
-    case _: Disconnected => None
-    case Connected(master, tips) if addresses.contains(master) =>
-      val (height, tip) = tips(master)
-      Some(
-        ElectrumReady(
-          master, // this field is ignored by ElectrumClientPool listeners (since there is only one pool)
-          height,
-          tip,
-          addresses(master)
+  def getReady: Option[ElectrumReady] = {
+    state match {
+      case _: Disconnected => None
+      case Connected(master, tips) if addresses.contains(master) =>
+        val (height, tip) = tips(master)
+        Some(
+          ElectrumReady(
+            master, // this field is ignored by ElectrumClientPool listeners (since there is only one pool)
+            height,
+            tip,
+            addresses(master)
+          )
         )
-      )
+      case _: Connected => None
+    }
   }
 
   def subscribeToHeaders(
@@ -191,11 +195,10 @@ class ElectrumClientPool(
   }
 
   def subscribeToScriptHash(
-      scriptHash: ByteVector32,
-      listener: castor.SimpleActor[_ >: Any]
-  ): Future[ScriptHashSubscriptionResponse] =
-    waitForConnected.flatMap { case Connected(master, _) =>
-      master.subscribeToScriptHash(scriptHash, listener)
+      scriptHash: ByteVector32
+  )(cb: ScriptHashSubscriptionResponse => Unit): Unit =
+    waitForConnected.foreach { case Connected(master, _) =>
+      master.subscribeToScriptHash(scriptHash)(cb)
     }
 
   def request[R <: ElectrumClient.Response](
@@ -224,18 +227,8 @@ class ElectrumClientPool(
       case None => {
         // as soon as we have a connection to an electrum server, we select it as master
         System.err.println(s"[info] selecting master $remoteAddress at $height")
-        statusListeners.foreach(
-          _.send(
-            ElectrumClient.ElectrumReady(
-              connection,
-              height,
-              tip,
-              remoteAddress
-            )
-          )
-        )
         EventStream.publish(
-          ElectrumClient.ElectrumReady(connection, height, tip, remoteAddress)
+          ElectrumReady(connection, height, tip, remoteAddress)
         )
 
         val newState = Connected(
@@ -256,22 +249,20 @@ class ElectrumClientPool(
         )
         // we've switched to a new master, treat this as a disconnection/reconnection
         // so users (wallet, watcher, ...) will reset their subscriptions
-        statusListeners.foreach(_.send(ElectrumClient.ElectrumDisconnected))
-        EventStream.publish(ElectrumClient.ElectrumDisconnected)
-        statusListeners.foreach(
-          _.send(
-            ElectrumClient.ElectrumReady(d.master, height, tip, remoteAddress)
-          )
-        )
+        EventStream.publish(ElectrumDisconnected(d.master))
         EventStream.publish(
-          ElectrumClient.ElectrumReady(d.master, height, tip, remoteAddress)
+          ElectrumReady(d.master, height, tip, remoteAddress)
         )
-        Connected(
+
+        val newState = Connected(
           master = connection,
           tips = d.tips + (connection -> (height, tip))
         )
+        reportConnected(newState)
+        newState
       }
-      case Some(d) => d.copy(tips = d.tips + (connection -> (height, tip)))
+      case Some(d) =>
+        d.copy(tips = d.tips + (connection -> (height, tip)))
     }
   }
 

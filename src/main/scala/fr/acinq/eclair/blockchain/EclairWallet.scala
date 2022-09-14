@@ -2,6 +2,7 @@ package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Transaction, TxIn}
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
+import fr.acinq.eclair.blockchain.electrum.ElectrumData
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import scodec.bits.ByteVector
 
@@ -19,6 +20,8 @@ object EclairWallet {
 }
 
 trait EclairWallet {
+  def getData: ElectrumData
+
   def getReceiveAddresses: Future[GetCurrentReceiveAddressesResponse]
 
   def makeFundingTx(

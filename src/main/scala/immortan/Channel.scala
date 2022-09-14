@@ -4,8 +4,7 @@ import java.util.concurrent.Executors
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.MilliSatoshi
-import fr.acinq.eclair.blockchain.CurrentBlockCount
-import fr.acinq.eclair.blockchain.electrum.EventStream
+import fr.acinq.eclair.blockchain.electrum.{EventStream, CurrentBlockCount}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteReject}
 import fr.acinq.eclair.wire.LightningMessage

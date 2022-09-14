@@ -288,10 +288,10 @@ case class WalletExt(
       params.emptyPersistentDataBytes,
       eclairWallet.ewt.xPub.publicKey
     )
-    eclairWallet.wallet.send(
-      EncodedPersistentData(params.emptyPersistentDataBytes)
-    )
-    eclairWallet.wallet.send(BlockchainReady(sync.getChain))
+    eclairWallet.wallet.load(params.emptyPersistentDataBytes)
+    sync.getSyncedBlockchain.foreach { bc =>
+      eclairWallet.wallet.blockchainReady(_)
+    }
     copy(wallets = eclairWallet :: wallets)
   }
 

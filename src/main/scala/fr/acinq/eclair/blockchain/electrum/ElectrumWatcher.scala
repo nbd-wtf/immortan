@@ -20,11 +20,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32, Transaction}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{
-  ElectrumDisconnected,
-  ElectrumReady,
-  computeScriptHash
-}
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.computeScriptHash
 import fr.acinq.eclair.channel.{
   BITCOIN_FUNDING_DEPTHOK,
   BITCOIN_PARENT_TX_CONFIRMED
@@ -39,8 +35,8 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
 ) extends CastorStateMachineActorWithSetState[Any] { self =>
 
   EventStream.subscribe {
-    case ElectrumReady => onElectrumReady()
-    case ElectrumDisconnected =>
+    case _: ElectrumReady => onElectrumReady()
+    case _: ElectrumDisconnected =>
       state match {
         case s: Running =>
           // we remember watches and keep track of tx that have not yet been published
@@ -56,9 +52,8 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
       }
   }
 
-  def onElectrumReady(): Unit = {
+  def onElectrumReady(): Unit =
     if (state.isInstanceOf[Disconnected]) pool.subscribeToHeaders(self)
-  }
 
   pool.getReady match {
     case None    =>
@@ -148,7 +143,8 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
           System.err.println(
             s"[info] added watch-spent on output=$txid:$outputIndex scriptHash=$scriptHash"
           )
-          pool.subscribeToScriptHash(scriptHash, self)
+          trackScriptHash(scriptHash)
+
           Running(
             height,
             tip,
@@ -164,39 +160,13 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
           System.err.println(
             s"[info] added watch-confirmed on txid=$txid scriptHash=$scriptHash"
           )
-          pool.subscribeToScriptHash(scriptHash, self)
+          trackScriptHash(scriptHash)
+
           Running(
             height,
             tip,
             watches + watch,
             scriptHashStatus,
-            block2tx,
-            sent
-          )
-        }
-
-        case ElectrumClient
-              .ScriptHashSubscriptionResponse(scriptHash, status) => {
-          scriptHashStatus.get(scriptHash) match {
-            case Some(s) if s == status =>
-              System.err.println(
-                s"[debug] already have status=$status for scriptHash=$scriptHash"
-              )
-            case _ if status.isEmpty =>
-              System.err
-                .println(s"[info] empty status for scriptHash=$scriptHash")
-            case _ => {
-              System.err.println(
-                s"[info] new status=$status for scriptHash=$scriptHash"
-              )
-              getScriptHashHistory(scriptHash)
-            }
-          }
-          Running(
-            height,
-            tip,
-            watches,
-            scriptHashStatus + (scriptHash -> status),
             block2tx,
             sent
           )
@@ -292,6 +262,49 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
           }
         }
       })
+
+  def trackScriptHash(scriptHash: ByteVector32): Unit =
+    pool.subscribeToScriptHash(scriptHash) {
+      case ElectrumClient
+            .ScriptHashSubscriptionResponse(scriptHash, status) =>
+        state match {
+          case Running(
+                height,
+                tip,
+                watches,
+                scriptHashStatus,
+                block2tx,
+                sent
+              ) =>
+            scriptHashStatus.get(scriptHash) match {
+              case Some(s) if s == status =>
+                System.err.println(
+                  s"[debug] already have status=$status for scriptHash=$scriptHash"
+                )
+              case _ if status.isEmpty =>
+                System.err
+                  .println(s"[info] empty status for scriptHash=$scriptHash")
+              case _ => {
+                System.err.println(
+                  s"[info] new status=$status for scriptHash=$scriptHash"
+                )
+                getScriptHashHistory(scriptHash)
+              }
+            }
+            setState(
+              Running(
+                height,
+                tip,
+                watches,
+                scriptHashStatus + (scriptHash -> status),
+                block2tx,
+                sent
+              )
+            )
+
+          case _ =>
+        }
+    }
 
   def getScriptHashHistory(scriptHash: ByteVector32): Unit = {
     pool

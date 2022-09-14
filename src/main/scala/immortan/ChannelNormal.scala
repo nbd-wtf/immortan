@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.{ByteVector32, Transaction}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.GenerateTxResponse
+import fr.acinq.eclair.blockchain.electrum.CurrentBlockCount
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._

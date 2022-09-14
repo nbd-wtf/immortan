@@ -35,6 +35,8 @@ case class ElectrumEclairWallet(
       error: fr.acinq.eclair.blockchain.bitcoind.rpc.Error
   ): Boolean = error.message.toLowerCase.contains("already in block chain")
 
+  override def getData: ElectrumData = wallet.getData
+
   override def getReceiveAddresses: Future[GetCurrentReceiveAddressesResponse] =
     wallet.getCurrentReceiveAddresses()
 

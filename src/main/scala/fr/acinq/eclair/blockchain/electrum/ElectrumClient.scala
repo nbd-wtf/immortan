@@ -40,6 +40,17 @@ import scala.concurrent.{ExecutionContext, Promise, Future}
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
+trait ElectrumEvent
+case class ElectrumReady(
+    source: ElectrumClient,
+    height: Int,
+    tip: BlockHeader,
+    serverAddress: InetSocketAddress
+) extends ElectrumEvent
+case class ElectrumDisconnected(source: ElectrumClient) extends ElectrumEvent
+
+case class CurrentBlockCount(blockCount: Long) extends ElectrumEvent
+
 object ElectrumClient {
   val CLIENT_NAME = "3.3.6"
   val PROTOCOL_VERSION = "1.4"
@@ -53,7 +64,9 @@ object ElectrumClient {
     Crypto.sha256(publicKeyScript).reverse
 
   sealed trait Request { def contextOpt: Option[Any] = None }
-  sealed trait Response { def contextOpt: Option[Any] = None }
+  sealed trait Response extends ElectrumEvent {
+    def contextOpt: Option[Any] = None
+  }
 
   case class ServerVersion(clientName: String, protocolVersion: String)
       extends Request
@@ -193,15 +206,6 @@ object ElectrumClient {
       extends Response
 
   case class ServerError(request: Request, error: Error) extends Response
-
-  sealed trait ElectrumEvent
-  case class ElectrumReady(
-      source: ElectrumClient,
-      height: Int,
-      tip: BlockHeader,
-      serverAddress: InetSocketAddress
-  ) extends ElectrumEvent
-  case class ElectrumDisconnected(source: ElectrumClient) extends ElectrumEvent
 
   sealed trait SSL
 
@@ -623,7 +627,7 @@ class ElectrumClient(
 
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit =
       msg match {
-        case Right(json: JsonRPCResponse) => {
+        case Right(json: JsonRPCResponse) =>
           requests.get(json.id) match {
             case Some((request, promise)) => {
               val response = parseJsonResponse(self, request, json)
@@ -633,29 +637,19 @@ class ElectrumClient(
             }
             case None => {}
           }
-        }
 
-        case Left(response @ HeaderSubscriptionResponse(_, height, tip)) => {
+        case Left(response @ HeaderSubscriptionResponse(_, height, tip)) =>
           headerSubscriptions.foreach(_.send(response))
-        }
 
-        case Left(response @ ScriptHashSubscriptionResponse(scriptHash, _)) => {
-          System.err.println(
-            s"got subscription response ${scriptHash.toHex}, listeners: ${scriptHashSubscriptions
-                .get(response.scriptHash)
-                .size} ${scriptHashSubscriptions.get(scriptHash).size}"
-          )
+        case Left(response @ ScriptHashSubscriptionResponse(scriptHash, _)) =>
           scriptHashSubscriptions
             .get(response.scriptHash)
-            .foreach(listeners => listeners.foreach(_.send(response)))
-        }
+            .foreach(cbs => cbs.foreach(_(response)))
       }
   }
 
   var scriptHashSubscriptions =
-    Map.empty[ByteVector32, Set[
-      castor.SimpleActor[_ >: ScriptHashSubscriptionResponse]
-    ]]
+    Map.empty[ByteVector32, Set[ScriptHashSubscriptionResponse => Unit]]
   val headerSubscriptions =
     collection.mutable.HashSet
       .empty[castor.SimpleActor[_ >: HeaderSubscriptionResponse]]
@@ -746,22 +740,22 @@ class ElectrumClient(
     }
   }
 
-  def subscribeToScriptHash(
-      scriptHash: ByteVector32,
-      listener: castor.SimpleActor[_ >: ScriptHashSubscriptionResponse]
-  ): Future[ScriptHashSubscriptionResponse] = {
-    System.err.println(s"subscribing to scripthash ${scriptHash.toHex}")
-
+  def subscribeToScriptHash(scriptHash: ByteVector32)(
+      cb: ScriptHashSubscriptionResponse => Unit
+  ): Unit = {
     scriptHashSubscriptions = scriptHashSubscriptions.updated(
       scriptHash,
-      scriptHashSubscriptions.getOrElse(scriptHash, Set()) + listener
-    )
-
-    System.err.println(
-      s"added a script hash listener, now ${scriptHashSubscriptions.size}"
+      scriptHashSubscriptions.getOrElse(scriptHash, Set()) + cb
     )
 
     request[ScriptHashSubscriptionResponse](ScriptHashSubscription(scriptHash))
+      .onComplete {
+        case Success(resp) => cb(resp)
+        case Failure(err) =>
+          System.err.println(
+            s"[error] failed to subscribe to sh ${scriptHash.toHex} at $address"
+          )
+      }
   }
 
   def request[R <: Response](
