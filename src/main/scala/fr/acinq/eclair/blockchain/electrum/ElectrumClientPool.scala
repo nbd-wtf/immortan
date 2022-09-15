@@ -274,6 +274,10 @@ class ElectrumClientPool(
       this.blockCount.set(blockCount)
     }
   }
+
+  def master = state match {
+    case Connected(master, _) => Some(master); case _ => None
+  }
 }
 
 object ElectrumClientPool {

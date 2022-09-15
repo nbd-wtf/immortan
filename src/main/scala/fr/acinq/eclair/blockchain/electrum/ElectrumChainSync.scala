@@ -1,12 +1,13 @@
 package fr.acinq.eclair.blockchain.electrum
 
+import scala.util.{Failure, Success, Try}
+import scala.concurrent.Future
+import scala.concurrent.ExecutionContext.Implicits.global
 import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.blockchain.electrum.Blockchain.RETARGETING_PERIOD
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.HeaderSubscriptionResponse
 import fr.acinq.eclair.blockchain.electrum.db.HeaderDb
-
-import scala.util.{Failure, Success, Try}
 
 object ElectrumChainSync {
   case class ChainSyncStarted(localTip: Long, remoteTip: Long)
@@ -166,12 +167,12 @@ class ElectrumChainSync(
     }
   }
 
-  def getHeaders(startHeight: Int, count: Int): Unit =
+  def getHeaders(startHeight: Int, count: Int): Future[Unit] =
     pool
       .request[ElectrumClient.GetHeadersResponse](
         ElectrumClient.GetHeaders(startHeight, count)
       )
-      .onComplete {
+      .andThen {
         case Success(
               ElectrumClient.GetHeadersResponse(source, start, headers, _)
             ) =>
@@ -224,11 +225,7 @@ class ElectrumChainSync(
 
         case _ => {}
       }
-
-  def getHeaders(req: ElectrumClient.GetHeaders): Unit = {
-    val ElectrumClient.GetHeaders(start, count, _) = req
-    getHeaders(start, count)
-  }
+      .map(_ => ())
 
   def getSyncedBlockchain = if (state == RUNNING) Some(blockchain) else None
 }
