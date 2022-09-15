@@ -9,7 +9,8 @@ import fr.acinq.eclair.wire.NodeAddress
 import fr.acinq.eclair.blockchain.electrum.{
   CurrentBlockCount,
   ElectrumReady,
-  ElectrumDisconnected
+  ElectrumDisconnected,
+  ElectrumClientStatus
 }
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{
   SSL,
@@ -33,7 +34,7 @@ class ElectrumClientPool(
     customAddress: Option[NodeAddress] = None
 )(implicit
     ac: castor.Context
-) extends CastorStateMachineActorWithState[Any] { self =>
+) extends CastorStateMachineActorWithState[ElectrumClientStatus] { self =>
   lazy val serverAddresses: Set[ElectrumServerAddress] = customAddress match {
     case Some(address) =>
       Set(ElectrumServerAddress(address.socketAddress, SSL.DECIDE))
@@ -67,7 +68,7 @@ class ElectrumClientPool(
       extends State({
         case (ElectrumReady(source, height, tip, _), _)
             if addresses.contains(source) => {
-          source.subscribeToHeaders(self.asInstanceOf[castor.SimpleActor[Any]])
+          source.subscribeToHeaders("pool", onHeader)
           handleHeader(source, height, tip, None)
         }
 
@@ -90,14 +91,7 @@ class ElectrumClientPool(
               ElectrumReady(source, height, tip, _),
               d: Connected
             ) if addresses.contains(source) => {
-          source.subscribeToHeaders(self.asInstanceOf[castor.SimpleActor[Any]])
-          handleHeader(source, height, tip, Some(d))
-        }
-
-        case (
-              HeaderSubscriptionResponse(source, height, tip),
-              d: Connected
-            ) if addresses.contains(source) => {
+          source.subscribeToHeaders("pool", onHeader)
           handleHeader(source, height, tip, Some(d))
         }
 
@@ -123,7 +117,7 @@ class ElectrumClientPool(
             Disconnected()
           } else if (d.master != source) {
             System.err.println(
-              s"[debug] lost connection to $address, we still have our master server"
+              s"[debug][pool] lost connection to $address, we still have our master server"
             )
 
             val newState = Connected(
@@ -189,9 +183,11 @@ class ElectrumClientPool(
   }
 
   def subscribeToHeaders(
-      listener: castor.SimpleActor[_ >: HeaderSubscriptionResponse]
-  ): Unit = waitForConnected.foreach { case Connected(master, _) =>
-    master.subscribeToHeaders(listener)
+      id: String,
+      cb: HeaderSubscriptionResponse => Unit
+  ): Future[HeaderSubscriptionResponse] = waitForConnected.flatMap {
+    case Connected(master, _) =>
+      master.subscribeToHeaders(id, cb)
   }
 
   def subscribeToScriptHash(
@@ -214,19 +210,37 @@ class ElectrumClientPool(
         )
     }
 
+  private def onHeader(resp: HeaderSubscriptionResponse): Unit = {
+    val HeaderSubscriptionResponse(source, height, tip) = resp
+    handleHeader(
+      source,
+      height,
+      tip,
+      state match { case d: Connected => Some(d); case _ => None }
+    )
+  }
+
   private def handleHeader(
       connection: ElectrumClient,
       height: Int,
       tip: BlockHeader,
       data: Option[Connected] = None
   ): State = {
+    System.err.println(
+      s"[debug][pool] got header $height from ${connection.address}"
+    )
+
     val remoteAddress = addresses(connection)
+
     // we update our block count even if it doesn't come from our current master
     updateBlockCount(height)
-    data match {
+
+    val newState = data match {
       case None => {
         // as soon as we have a connection to an electrum server, we select it as master
-        System.err.println(s"[info] selecting master $remoteAddress at $height")
+        System.err.println(
+          s"[info][pool] selecting master $remoteAddress at $height"
+        )
         EventStream.publish(
           ElectrumReady(connection, height, tip, remoteAddress)
         )
@@ -245,7 +259,7 @@ class ElectrumClientPool(
         // (and maybe on testnet in some pathological cases where there's a block every second) it may seen like our master
         // skipped a block and is suddenly at height + 2
         System.err.println(
-          s"[info] switching to master $remoteAddress at $tip"
+          s"[info][pool] switching to master $remoteAddress at $tip"
         )
         // we've switched to a new master, treat this as a disconnection/reconnection
         // so users (wallet, watcher, ...) will reset their subscriptions
@@ -262,21 +276,29 @@ class ElectrumClientPool(
         newState
       }
       case Some(d) =>
+        System.err.println(
+          s"[debug][pool] bumping our tip for ${connection.address} to $height->${tip.blockId.toHex.take(26)}"
+        )
         d.copy(tips = d.tips + (connection -> (height, tip)))
     }
+
+    setState(newState)
+
+    newState
   }
 
   private def updateBlockCount(blockCount: Long): Unit = {
     // when synchronizing we don't want to advertise previous blocks
     if (this.blockCount.get() < blockCount) {
-      System.err.println(s"[debug] current blockchain height=$blockCount")
+      System.err.println(s"[debug][pool] current blockchain height=$blockCount")
       EventStream.publish(CurrentBlockCount(blockCount))
       this.blockCount.set(blockCount)
     }
   }
 
   def master = state match {
-    case Connected(master, _) => Some(master); case _ => None
+    case Connected(master, _) => Some(master)
+    case _                    => None
   }
 }
 

@@ -23,6 +23,10 @@ import immortan.crypto.Tools._
 import immortan.sqlite.SQLiteTx
 import scodec.bits.ByteVector
 
+class BadElectrumData(msg: String) extends Exception(msg)
+class BadMerkleProof(msg: String) extends BadElectrumData(msg)
+class BadTxIdMismatched(msg: String) extends BadElectrumData(msg)
+
 // @formatter:off
 /**
  * Simple electrum wallet.
@@ -191,13 +195,14 @@ class ElectrumWallet(
               s"[debug][wallet] $scriptHash status hasn't changed"
             )
           } else if (
-            data.accountKeyMap.contains(scriptHash) ||
-            data.changeKeyMap.contains(scriptHash)
+            status != "" &&
+            (data.accountKeyMap.contains(scriptHash) ||
+              data.changeKeyMap.contains(scriptHash))
           ) {
             System.err.println(
-              s"[debug][wallet] $scriptHash has changed, requesting history"
+              s"[debug][wallet] script hash $scriptHash has changed, requesting history"
             )
-            for {
+            val result = for {
               GetScriptHashHistoryResponse(_, history) <- pool
                 .request[GetScriptHashHistoryResponse](
                   GetScriptHashHistory(scriptHash)
@@ -244,15 +249,18 @@ class ElectrumWallet(
 
                           headerOpt match {
                             case Some(existingHeader)
-                                if existingHeader.hashMerkleRoot == merkle.root =>
+                                if existingHeader.hashMerkleRoot != merkle.root =>
+                              throw new BadMerkleProof(
+                                s"${existingHeader.hashMerkleRoot} != ${merkle.root} at ${merkle.blockHeight}"
+                              )
+                            case Some(_) =>
                             // it's ok
+                            // merkle root matches block header
                             // TODO: check the merkle path
                             case None =>
-                              System.err.println(
-                                s"[error][wallet] got bad merkle proofs"
+                              throw new Exception(
+                                "no header for merkle proof? this should never happen."
                               )
-                              pool.master.foreach { _.send(PoisonPill) }
-                              return
                           }
                         }
                     )
@@ -271,14 +279,12 @@ class ElectrumWallet(
                             GetTransaction(item.txHash)
                           )
                           .map(_.tx)
-                          .andThen { case Success(tx) =>
-                            if (tx.hash != item.txHash) {
-                              System.err.println(
-                                s"[error][wallet] got bad tx that doesn't match requested hash"
+                          .andThen {
+                            case Success(tx)
+                                if tx.hash.reverse != item.txHash =>
+                              throw new BadTxIdMismatched(
+                                s"${tx.hash.reverse} != ${item.txHash} while fetching a parent"
                               )
-                              pool.master.foreach { _.send(PoisonPill) }
-                              return
-                            }
                           }
                       )
                   )
@@ -288,25 +294,22 @@ class ElectrumWallet(
               parents <- Future
                 .sequence(
                   transactions
-                    .flatMap(_.txIn.map(_.outPoint.hash))
-                    .map(txHash =>
+                    .flatMap(_.txIn.map(_.outPoint.txid))
+                    .map(txid =>
                       data.transactions
-                        .get(txHash)
+                        .get(txid)
                         .map(p => Future(p))
                         .getOrElse(
                           pool
                             .request[GetTransactionResponse](
-                              GetTransaction(txHash)
+                              GetTransaction(txid)
                             )
                             .map(_.tx)
-                            .andThen { case Success(tx) =>
-                              if (tx.hash != txHash) {
-                                System.err.println(
-                                  s"[error][wallet] got bad tx that doesn't match requested hash"
+                            .andThen {
+                              case Success(tx) if tx.hash != txid =>
+                                throw new BadTxIdMismatched(
+                                  s"${tx.hash} != ${txid} while fetching a transaction"
                                 )
-                                pool.master.foreach { _.send(PoisonPill) }
-                                return
-                              }
                             }
                         )
                     )
@@ -332,22 +335,28 @@ class ElectrumWallet(
                   }
               )
 
+              System.err.println(s"\n\n=== $scriptHash ===")
+              System.err.println(s"NEW TRANSACTIONS: $transactions")
+              System.err.println(s"NEW PARENTS: $transactions")
+              System.err.println(s"NEW MERKLE: $merkleProofs")
+              System.err.println(s"\n")
+
               // notify all transactions so they can be stored/displayed etc by wallet
               transactions.foreach { tx =>
-                data.computeTransactionDelta(tx).map {
+                newData.computeTransactionDelta(tx).map {
                   case TransactionDelta(_, feeOpt, received, sent) =>
                     EventStream.publish(
                       TransactionReceived(
                         tx,
-                        depth(tx.txid),
-                        timestamp(tx.txid, params.headerDb),
+                        newData.depth(tx.txid),
+                        newData.timestamp(tx.txid, params.headerDb),
                         received,
                         sent,
                         tx.txOut
-                          .filter(isMine)
+                          .filter(newData.isMine)
                           .map(_.publicKeyScript)
-                          .flatMap(publicScriptMap.get)
-                          .map(ewt.textAddress)
+                          .flatMap(newData.publicScriptMap.get)
+                          .map(newData.ewt.textAddress)
                           .toList,
                         ewt.xPub,
                         feeOpt
@@ -358,6 +367,23 @@ class ElectrumWallet(
 
               // update data
               persistAndNotify(newData)
+            }
+
+            result.onComplete {
+              case Success(_) =>
+                System.err.println(
+                  s"[info][wallet] scripthash $scriptHash updated successfully"
+                )
+              case Failure(err: BadElectrumData) =>
+                // kill this electrum client
+                System.err.println(
+                  s"[error][wallet] got bad data from ${pool.master}: $err"
+                )
+                pool.master.foreach { _.send(PoisonPill) }
+              case Failure(err) =>
+                System.err.println(
+                  s"[error][wallet] something wrong happened while updating script hashes: $err"
+                )
             }
           }
       }
@@ -798,15 +824,13 @@ case class ElectrumData(
   }
 
   def depth(txid: ByteVector32): Int = {
-    System.err.println(s"DEPTH: $txid --> ${proofs.get(txid)}")
-    proofs.get(txid).map(_.blockHeight).map(computeDepth(_)).getOrElse(0)
+    val depth =
+      proofs.get(txid).map(_.blockHeight).map(computeDepth(_)).getOrElse(0)
+    System.err.println(s"depth($txid) = $depth")
+    depth
   }
 
   def computeDepth(txHeight: Int): Int = {
-    System.err.println(
-      s"      ${blockchain.height} - $txHeight + 1 = ${if (txHeight <= 0L) 0
-        else blockchain.height - txHeight + 1}"
-    )
     if (txHeight <= 0L) 0 else blockchain.height - txHeight + 1
   }
 
@@ -820,43 +844,44 @@ case class ElectrumData(
     // ourInputs will be empty if we're receiving this transaction normally
     val ourInputs = tx.txIn.filter(isMine)
 
-    for (txIn <- ourInputs) {
-      // Can only be computed if all our inputs have parents
-      val hasParent = transactions.contains(txIn.outPoint.txid)
-      if (!hasParent) return None
-    }
+    // can only be computed if all our inputs have parents
+    val allParentsArePresent =
+      ourInputs.forall(txIn => transactions.contains(txIn.outPoint.txid))
 
-    val spentUtxos = ourInputs.map { txIn =>
-      // This may be needed for RBF and it's a good place to create these UTXOs
-      // we create simulated as-if yet unused UTXOs to be reused in RBF transaction
-      val TxOut(amount, publicKeyScript) =
-        transactions(txIn.outPoint.txid).txOut(txIn.outPoint.index.toInt)
-      Utxo(
-        key = publicScriptMap(publicKeyScript),
-        UnspentItem(
-          txIn.outPoint.txid,
-          txIn.outPoint.index.toInt,
-          amount.toLong,
-          height = 0
+    if (!allParentsArePresent) None
+    else {
+      val spentUtxos = ourInputs.map { txIn =>
+        // This may be needed for RBF and it's a good place to create these UTXOs
+        // we create simulated as-if yet unused UTXOs to be reused in RBF transaction
+        val TxOut(amount, publicKeyScript) =
+          transactions(txIn.outPoint.txid).txOut(txIn.outPoint.index.toInt)
+        Utxo(
+          key = publicScriptMap(publicKeyScript),
+          UnspentItem(
+            txIn.outPoint.txid,
+            txIn.outPoint.index.toInt,
+            amount.toLong,
+            height = 0
+          )
         )
-      )
-    }
+      }
 
-    val mineSent = spentUtxos.map(_.item.value.sat).sum
-    val mineReceived = tx.txOut.filter(isMine).map(_.amount).sum
-    val totalReceived = tx.txOut.map(_.amount).sum
+      val mineSent = spentUtxos.map(_.item.value.sat).sum
+      val mineReceived = tx.txOut.filter(isMine).map(_.amount).sum
+      val totalReceived = tx.txOut.map(_.amount).sum
 
-    if (ourInputs.size != tx.txIn.size)
-      Some(TransactionDelta(spentUtxos, None, mineReceived, mineSent))
-    else
-      Some(
-        TransactionDelta(
-          spentUtxos,
-          Some(mineSent - totalReceived),
-          mineReceived,
-          mineSent
+      if (ourInputs.size != tx.txIn.size)
+        Some(TransactionDelta(spentUtxos, None, mineReceived, mineSent))
+      else
+        Some(
+          TransactionDelta(
+            spentUtxos,
+            Some(mineSent - totalReceived),
+            mineReceived,
+            mineSent
+          )
         )
-      )
+    }
   }
 
   def rbfBump(bump: RBFBump, dustLimit: Satoshi): RBFResponse = {

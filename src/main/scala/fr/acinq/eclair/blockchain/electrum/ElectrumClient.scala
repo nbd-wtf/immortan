@@ -2,6 +2,10 @@ package fr.acinq.eclair.blockchain.electrum
 
 import java.net.{InetSocketAddress, SocketAddress}
 import java.util
+import scala.annotation.{tailrec, nowarn}
+import scala.concurrent.{ExecutionContext, Promise, Future}
+import scala.concurrent.duration._
+import scala.util.{Failure, Success, Try}
 
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{
@@ -35,19 +39,19 @@ import org.json4s.JsonAST._
 import org.json4s.native.JsonMethods
 import org.json4s.{JInt, JLong, JString}
 import scodec.bits.ByteVector
-import scala.annotation.{tailrec, nowarn}
-import scala.concurrent.{ExecutionContext, Promise, Future}
-import scala.concurrent.duration._
-import scala.util.{Failure, Success, Try}
+import java.rmi
 
 trait ElectrumEvent
+
+sealed trait ElectrumClientStatus extends ElectrumEvent
 case class ElectrumReady(
     source: ElectrumClient,
     height: Int,
     tip: BlockHeader,
     serverAddress: InetSocketAddress
-) extends ElectrumEvent
-case class ElectrumDisconnected(source: ElectrumClient) extends ElectrumEvent
+) extends ElectrumClientStatus
+case class ElectrumDisconnected(source: ElectrumClient)
+    extends ElectrumClientStatus
 
 case class CurrentBlockCount(blockCount: Long) extends ElectrumEvent
 
@@ -467,12 +471,22 @@ class ElectrumClient(
     server: ElectrumClientPool.ElectrumServerAddress
 )(implicit
     ac: castor.Context
-) extends castor.StateMachineActor[Any] { self =>
+) extends CastorStateMachineActorWithSetState[Any] { self =>
   def address = server.address.getHostName()
-  System.err.println(s"[info] connecting to $address")
+  System.err.println(s"[info][electrum] connecting to $address")
 
   var requests =
     scala.collection.mutable.Map.empty[String, (Request, Promise[Response])]
+
+  @nowarn
+  def resetWaitForConnected(): Unit = {
+    val p = Promise[Connected]()
+    reportConnected = (c: Connected) => Future { p.success(c) }
+    waitForConnected = p.future
+  }
+  var reportConnected: Function[Connected, Future[Unit]] = _
+  var waitForConnected: Future[Connected] = _
+  resetWaitForConnected()
 
   // We need to regularly send a ping in order not to get disconnected
   val cancelPingTrigger = {
@@ -535,7 +549,9 @@ class ElectrumClient(
     override def operationComplete(future: ChannelFuture): Unit = {
       if (!future.isSuccess) {
         // the connection was not open successfully, close this actor
-        System.err.println(s"[info] failed to connect to $address: $future")
+        System.err.println(
+          s"[info][electrum] failed to connect to $address: $future"
+        )
         self.close()
       } else {
         // if we are here it means the connection was opened successfully
@@ -571,7 +587,9 @@ class ElectrumClient(
       val listener = new ChannelFutureListener {
         override def operationComplete(future: ChannelFuture): Unit = {
           if (!future.isSuccess) {
-            System.err.println(s"[info] failed to write to $address: $future")
+            System.err.println(
+              s"[info][electrum] failed to write to $address: $future"
+            )
             self.close()
           }
         }
@@ -639,7 +657,7 @@ class ElectrumClient(
           }
 
         case Left(response @ HeaderSubscriptionResponse(_, height, tip)) =>
-          headerSubscriptions.foreach(_.send(response))
+          headerSubscriptions.values.foreach(_(response))
 
         case Left(response @ ScriptHashSubscriptionResponse(scriptHash, _)) =>
           scriptHashSubscriptions
@@ -651,8 +669,7 @@ class ElectrumClient(
   var scriptHashSubscriptions =
     Map.empty[ByteVector32, Set[ScriptHashSubscriptionResponse => Unit]]
   val headerSubscriptions =
-    collection.mutable.HashSet
-      .empty[castor.SimpleActor[_ >: HeaderSubscriptionResponse]]
+    Map.empty[String, HeaderSubscriptionResponse => Unit]
   val statusListeners =
     collection.mutable.HashSet
       .empty[castor.SimpleActor[Any]]
@@ -670,11 +687,17 @@ class ElectrumClient(
           )
             .onComplete {
               case Success(v: ServerVersionResponse) => {
-                headerSubscriptions += self
+                headerSubscriptions.updated(
+                  "ourselves",
+                  (r: HeaderSubscriptionResponse) => self.send(r)
+                )
                 request[HeaderSubscriptionResponse](HeaderSubscription(), ctx)
                   .onComplete {
                     case Success(w: HeaderSubscriptionResponse) => self.send(w)
-                    case _                                      => {}
+                    case Failure(err) =>
+                      System.err.println(
+                        s"[warn][electrum] ${address} failed to get a header subscription"
+                      )
                   }
               }
               case err => {
@@ -694,7 +717,10 @@ class ElectrumClient(
           statusListeners.foreach(
             _.send(ElectrumReady(self, height, tip, server.address))
           )
-          Connected(ctx, height, tip)
+
+          val newState = Connected(ctx, height, tip)
+          reportConnected(newState)
+          newState
         }
 
         case _ => stay
@@ -730,13 +756,20 @@ class ElectrumClient(
     statusListeners -= listener
 
   def subscribeToHeaders(
-      listener: castor.SimpleActor[_ >: HeaderSubscriptionResponse]
-  ): Unit = {
-    headerSubscriptions += listener
-    state match {
-      case d: Connected =>
-        listener.send(HeaderSubscriptionResponse(self, d.height, d.tip))
-      case _ => {}
+      listenerId: String,
+      cb: HeaderSubscriptionResponse => Unit
+  ): Future[HeaderSubscriptionResponse] = {
+    System.err.println(s"subscribing as $listenerId")
+
+    if (!headerSubscriptions.contains(listenerId)) {
+      headerSubscriptions.updated(listenerId, cb)
+    } else
+      System.err.println("  already here")
+
+    waitForConnected.map { case d: Connected =>
+      val current = HeaderSubscriptionResponse(self, d.height, d.tip)
+      cb(current)
+      current
     }
   }
 
@@ -753,8 +786,10 @@ class ElectrumClient(
         case Success(resp) => cb(resp)
         case Failure(err) =>
           System.err.println(
-            s"[error] failed to subscribe to sh ${scriptHash.toHex} at $address"
+            s"[error][electrum] failed to subscribe to sh ${scriptHash.toHex} at $address"
           )
+          self.close()
+          setState(Disconnected())
       }
   }
 
@@ -778,7 +813,11 @@ class ElectrumClient(
       )
     }
 
-    promise.future.map(_.asInstanceOf[R])
+    promise.future.map {
+      case resp: ServerError =>
+        throw new Exception(s"$address has sent an error: $resp")
+      case any => any.asInstanceOf[R]
+    }
   }
 
   def request[R <: Response](r: Request): Future[R] = {

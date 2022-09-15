@@ -55,4 +55,8 @@ abstract class CastorStateMachineActorWithState[T]()(implicit
   def run(msg: T): Unit = {
     state0 = state.run((msg, state0))
   }
+
+  def setState(newState: State): Unit = {
+    state0 = newState
+  }
 }
