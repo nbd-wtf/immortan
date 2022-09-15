@@ -16,6 +16,12 @@ object ElectrumChainSync {
   case class ChainSyncStarted(localTip: Long, remoteTip: Long)
       extends ElectrumEvent
   case class ChainSyncEnded(localTip: Long) extends ElectrumEvent
+
+  sealed trait State
+  case object DISCONNECTED extends State
+  case object SYNCING extends State
+  case object RUNNING extends State
+  case object WAITING_FOR_CHAIN_TIP extends State
 }
 
 case class BlockchainReady(bc: Blockchain) extends ElectrumEvent
@@ -25,11 +31,7 @@ class ElectrumChainSync(
     headerDb: HeaderDb,
     chainHash: ByteVector32
 ) {
-  sealed trait State
-  case object DISCONNECTED extends State
-  case object SYNCING extends State
-  case object RUNNING extends State
-  case object WAITING_FOR_CHAIN_TIP extends State
+  import ElectrumChainSync._
 
   var blockchain: Blockchain =
     if (chainHash != Block.RegtestGenesisBlock.hash) {
@@ -75,9 +77,7 @@ class ElectrumChainSync(
           state = DISCONNECTED
         } else if (blockchain.bestchain.isEmpty) {
           System.err.println("[debug][chain-sync] starting sync from scratch")
-          EventStream.publish(
-            ElectrumChainSync.ChainSyncStarted(blockchain.height, tip.height)
-          )
+          EventStream.publish(ChainSyncStarted(blockchain.height, tip.height))
           getHeaders(
             blockchain.checkpoints.size * RETARGETING_PERIOD,
             RETARGETING_PERIOD
@@ -85,16 +85,12 @@ class ElectrumChainSync(
           state = SYNCING
         } else if (Some(tip.header) == blockchain.tip.map(_.header)) {
           System.err.println("[debug][chain-sync] we're synced already")
-          EventStream.publish(
-            ElectrumChainSync.ChainSyncEnded(blockchain.height)
-          )
+          EventStream.publish(ChainSyncEnded(blockchain.height))
           EventStream.publish(BlockchainReady(blockchain))
           state = RUNNING
         } else {
           System.err.println("[debug][chain-sync] starting sync")
-          EventStream.publish(
-            ElectrumChainSync.ChainSyncStarted(blockchain.height, tip.height)
-          )
+          EventStream.publish(ChainSyncStarted(blockchain.height, tip.height))
           getHeaders(blockchain.height + 1, RETARGETING_PERIOD)
           state = SYNCING
         }
@@ -131,9 +127,6 @@ class ElectrumChainSync(
   def stay = state
 
   def onHeader(response: HeaderSubscriptionResponse): Unit = {
-    System.err.println(s">>>>> HEADER ${response.height}")
-    System.err.println(s">>>>>    TIP ${blockchain.tip.map(_.height)}")
-
     val HeaderSubscriptionResponse(source, height, header) = response
 
     state = state match {
@@ -188,9 +181,7 @@ class ElectrumChainSync(
             )
             if (state == SYNCING) {
               EventStream.publish(
-                ElectrumChainSync.ChainSyncEnded(
-                  blockchain.height
-                )
+                ElectrumChainSync.ChainSyncEnded(blockchain.height)
               )
               EventStream.publish(BlockchainReady(blockchain))
               state = RUNNING
@@ -217,7 +208,6 @@ class ElectrumChainSync(
                   }
 
                   case RUNNING => {
-                    System.err.println("new block")
                     headerDb.addHeaders(headers, start)
                     EventStream.publish(BlockchainReady(bc))
                     blockchain = bc

@@ -759,12 +759,8 @@ class ElectrumClient(
       listenerId: String,
       cb: HeaderSubscriptionResponse => Unit
   ): Future[HeaderSubscriptionResponse] = {
-    System.err.println(s"subscribing as $listenerId")
-
-    if (!headerSubscriptions.contains(listenerId)) {
+    if (!headerSubscriptions.contains(listenerId))
       headerSubscriptions.updated(listenerId, cb)
-    } else
-      System.err.println("  already here")
 
     waitForConnected.map { case d: Connected =>
       val current = HeaderSubscriptionResponse(self, d.height, d.tip)

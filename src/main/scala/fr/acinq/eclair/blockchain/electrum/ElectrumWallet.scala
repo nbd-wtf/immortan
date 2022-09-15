@@ -6,7 +6,6 @@ import scala.collection.immutable
 import scala.concurrent.duration._
 import scala.concurrent.Future
 import scala.util.{Success, Failure, Try}
-import scala.concurrent.ExecutionContext.Implicits.global
 
 import fr.acinq.bitcoin.DeterministicWallet._
 import fr.acinq.bitcoin._
@@ -27,28 +26,16 @@ class BadElectrumData(msg: String) extends Exception(msg)
 class BadMerkleProof(msg: String) extends BadElectrumData(msg)
 class BadTxIdMismatched(msg: String) extends BadElectrumData(msg)
 
-// @formatter:off
-/**
- * Simple electrum wallet.
- * See the documentation at https://electrumx-spesmilo.readthedocs.io/en/latest/
- *
- * Typical workflow:
- *
- * client ---- header update ----> wallet
- * client ---- status update ----> wallet
- * client <--- ask history   ----- wallet
- * client ---- history       ----> wallet
- * client <--- ask tx        ----- wallet
- * client ---- tx            ----> wallet
- */
-// @formatter:on
-
 class ElectrumWallet(
     pool: ElectrumClientPool,
     chainSync: ElectrumChainSync,
     params: WalletParameters,
     ewt: ElectrumWalletType
 ) { self =>
+  implicit val context = scala.concurrent.ExecutionContext.fromExecutor(
+    java.util.concurrent.Executors.newSingleThreadExecutor
+  )
+
   sealed trait State
   case object Disconnected extends State
   case object Running extends State
@@ -56,34 +43,20 @@ class ElectrumWallet(
   var data: ElectrumData = _
   var state: State = Disconnected
 
-  // @formatter:off
-  /**
-   * If the wallet is ready and its state changed since the last time it was ready:
-   * - publish a `WalletReady` notification
-   * - persist state data
-   *
-   * @param data wallet data
-   * @return the input data with an updated 'last ready message' if needed
-   */
-  // @formatter:on
-
-  def persistAndNotify(dataInTransit: ElectrumData): Unit = {
+  def persistAndNotify(nextData: ElectrumData): Unit = {
     val t = new java.util.Timer()
     val task = new java.util.TimerTask { def run() = { self.keyRefill() } }
     t.schedule(task, 100L)
 
-    if (!data.lastReadyMessage.contains(data.currentReadyMessage)) {
-      data = dataInTransit.copy(
-        lastReadyMessage = Some(dataInTransit.currentReadyMessage)
-      )
-      params.walletDb.persist(
-        data.toPersistent,
-        data.balance,
-        ewt.xPub.publicKey
-      )
+    EventStream.publish(nextData.readyMessage)
 
-      EventStream.publish(data.currentReadyMessage)
-    }
+    params.walletDb.persist(
+      nextData.toPersistent,
+      nextData.balance,
+      ewt.xPub.publicKey
+    )
+
+    data = nextData
   }
 
   EventStream
@@ -145,8 +118,7 @@ class ElectrumWallet(
         data.accountKeyMap.keys.foreach(trackScriptHash(_))
         data.changeKeyMap.keys.foreach(trackScriptHash(_))
       case Running =>
-        val newData = data.copy(blockchain = bc)
-        persistAndNotify(newData)
+        persistAndNotify(data.copy(blockchain = bc))
     }
   }
 
@@ -200,13 +172,27 @@ class ElectrumWallet(
               data.changeKeyMap.contains(scriptHash))
           ) {
             System.err.println(
-              s"[debug][wallet] script hash $scriptHash has changed, requesting history"
+              s"[debug][wallet] script hash $scriptHash has changed ($status), requesting history"
             )
             val result = for {
-              GetScriptHashHistoryResponse(_, history) <- pool
-                .request[GetScriptHashHistoryResponse](
-                  GetScriptHashHistory(scriptHash)
+              history <- pool
+                .requestMany[GetScriptHashHistoryResponse](
+                  GetScriptHashHistory(scriptHash),
+                  2
                 )
+                .map(_.map { case GetScriptHashHistoryResponse(_, items) =>
+                  items
+                })
+                .map(histories =>
+                  histories.reduce[List[TransactionHistoryItem]] {
+                    case (
+                          itemsA,
+                          itemsB
+                        ) =>
+                      itemsA ++ itemsB.filterNot(i => itemsA.contains(i))
+                  }
+                )
+                .map(_.sortBy(_.height))
               _ = System.err.println(
                 s"[debug][wallet] got history $scriptHash ::> ${history}"
               )
@@ -280,10 +266,9 @@ class ElectrumWallet(
                           )
                           .map(_.tx)
                           .andThen {
-                            case Success(tx)
-                                if tx.hash.reverse != item.txHash =>
+                            case Success(tx) if tx.txid != item.txHash =>
                               throw new BadTxIdMismatched(
-                                s"${tx.hash.reverse} != ${item.txHash} while fetching a parent"
+                                s"${tx.txid} != ${item.txHash} while fetching a parent"
                               )
                           }
                       )
@@ -306,9 +291,9 @@ class ElectrumWallet(
                             )
                             .map(_.tx)
                             .andThen {
-                              case Success(tx) if tx.hash != txid =>
+                              case Success(tx) if tx.txid != txid =>
                                 throw new BadTxIdMismatched(
-                                  s"${tx.hash} != ${txid} while fetching a transaction"
+                                  s"${tx.txid} != ${txid} while fetching a transaction"
                                 )
                             }
                         )
@@ -317,15 +302,29 @@ class ElectrumWallet(
             } yield {
               // prepare updated data
               val newData = data.copy(
+                // add the history
+                history = data.history.updatedWith(scriptHash) {
+                  case None => Some(history)
+                  case Some(existing) =>
+                    Some(
+                      existing ++
+                        history.filterNot(ni => existing.contains(ni))
+                    )
+                },
+
                 // add all transactions
                 transactions = data.transactions ++
-                  transactions.map(tx => tx.hash -> tx) ++
-                  parents.map(tx => tx.hash -> tx),
+                  transactions.map(tx => tx.txid -> tx) ++
+                  parents.map(tx => tx.txid -> tx),
 
                 // add all merkle proofs
                 proofs = data.proofs ++ merkleProofs.map(merkle =>
                   merkle.txid -> merkle
                 ),
+
+                // add the status so we don't query again
+                status = data.status
+                  .updated(scriptHash, status),
 
                 // even though we have excluded some utxos in this wallet user may still
                 //   spend them from elsewhere, so clear excluded outpoints here
@@ -339,7 +338,13 @@ class ElectrumWallet(
               System.err.println(s"NEW TRANSACTIONS: $transactions")
               System.err.println(s"NEW PARENTS: $transactions")
               System.err.println(s"NEW MERKLE: $merkleProofs")
+              System.err.println(
+                s"NEW HISTORY: ${newData.history.get(scriptHash)}"
+              )
               System.err.println(s"\n")
+
+              // update data
+              persistAndNotify(newData)
 
               // notify all transactions so they can be stored/displayed etc by wallet
               transactions.foreach { tx =>
@@ -364,9 +369,6 @@ class ElectrumWallet(
                     )
                 }
               }
-
-              // update data
-              persistAndNotify(newData)
             }
 
             result.onComplete {
@@ -412,10 +414,10 @@ class ElectrumWallet(
       data.firstUnusedChangeKeys.headOption.getOrElse(
         data.changeKeys.head
       )
-    val sortredAccountKeys =
+    val sortedAccountKeys =
       data.firstUnusedAccountKeys.toList.sortBy(_.path.lastChildNumber)
     GetCurrentReceiveAddressesResponse(
-      sortredAccountKeys,
+      sortedAccountKeys,
       changeKey,
       ewt
     )
@@ -529,9 +531,6 @@ class ElectrumWallet(
 }
 
 object ElectrumWallet {
-  type TxOutOption = Option[TxOut]
-  type TxHistoryItemList = List[TransactionHistoryItem]
-
   // RBF
   final val GENERATION_FAIL = 0
   final val PARENTS_MISSING = 1
@@ -683,7 +682,7 @@ case class WalletParameters(
    * @param transactions               wallet transactions
    * @param heights                    transactions heights
    * @param history                    script hash -> history
-   * @param pendingTransactions        transactions received but not yet connected to their parents
+   * @param pendingTransactions        transactions received but not yet connected to their parents [unused]
    */
   // @formatter:on
 case class ElectrumData(
@@ -695,10 +694,9 @@ case class ElectrumData(
     status: Map[ByteVector32, String],
     transactions: Map[ByteVector32, Transaction],
     overriddenPendingTxids: Map[ByteVector32, ByteVector32],
-    history: Map[ByteVector32, TxHistoryItemList],
+    history: Map[ByteVector32, List[TransactionHistoryItem]],
     proofs: Map[ByteVector32, GetMerkleResponse],
-    pendingTransactions: List[Transaction] = Nil,
-    lastReadyMessage: Option[WalletReady] = None
+    pendingTransactions: List[Transaction] = Nil
 ) {
   lazy val publicScriptAccountMap: Map[ByteVector, ExtendedPublicKey] =
     accountKeys
@@ -718,7 +716,7 @@ case class ElectrumData(
     for ((serialized, key) <- publicScriptChangeMap)
       yield (computeScriptHash(serialized), key)
 
-  lazy val currentReadyMessage: WalletReady = WalletReady(
+  def readyMessage: WalletReady = WalletReady(
     balance,
     blockchain.height,
     proofs.hashCode + transactions.hashCode,
@@ -752,7 +750,7 @@ case class ElectrumData(
     }
   }
 
-  lazy val unExcludedUtxos: Seq[Utxo] = {
+  def unExcludedUtxos: Seq[Utxo] = {
     history.toSeq.flatMap { case (scriptHash, historyItems) =>
       accountKeyMap.get(scriptHash) orElse changeKeyMap.get(scriptHash) map {
         key =>
@@ -785,15 +783,14 @@ case class ElectrumData(
     }
   }
 
-  lazy val utxos: Seq[Utxo] = unExcludedUtxos.filterNot(utxo =>
+  def utxos: Seq[Utxo] = unExcludedUtxos.filterNot(utxo =>
     excludedOutPoints.contains(utxo.item.outPoint)
   )
 
   // Remove status for each script hash for which we have pending requests,
   //   this will make us query script hash history for these script hashes again when we reconnect
   def reset: ElectrumData = copy(
-    status = status,
-    lastReadyMessage = None
+    status = status
   )
 
   def toPersistent: PersistentData = PersistentData(
@@ -823,12 +820,8 @@ case class ElectrumData(
     stampOpt.map(_.time * 1000L).getOrElse(System.currentTimeMillis)
   }
 
-  def depth(txid: ByteVector32): Int = {
-    val depth =
-      proofs.get(txid).map(_.blockHeight).map(computeDepth(_)).getOrElse(0)
-    System.err.println(s"depth($txid) = $depth")
-    depth
-  }
+  def depth(txid: ByteVector32): Int =
+    proofs.get(txid).map(_.blockHeight).map(computeDepth(_)).getOrElse(0)
 
   def computeDepth(txHeight: Int): Int = {
     if (txHeight <= 0L) 0 else blockchain.height - txHeight + 1
@@ -837,7 +830,14 @@ case class ElectrumData(
   def isMine(txOut: TxOut): Boolean =
     publicScriptMap.contains(txOut.publicKeyScript)
 
-  lazy val balance: Satoshi = utxos.foldLeft(0L.sat)(_ + _.item.value.sat)
+  def balance: Satoshi = {
+    System.err.println(
+      s"uxtos: ${utxos.map(utxo => s"${utxo.item.value}").mkString("|")}"
+    )
+    val b = utxos.foldLeft(0L.sat)(_ + _.item.value.sat)
+    System.err.println(s"balance: $b")
+    b
+  }
 
   // Computes the effect of this transaction on the wallet
   def computeTransactionDelta(tx: Transaction): Option[TransactionDelta] = {
@@ -956,7 +956,7 @@ case class ElectrumData(
       usableInUtxos: Seq[Utxo],
       mustUseUtxos: Seq[Utxo] = Nil
   ): Try[CompleteTransactionResponse] = Try {
-    def computeFee(candidates: Seq[Utxo], change: TxOutOption) = {
+    def computeFee(candidates: Seq[Utxo], change: Option[TxOut]) = {
       val tx1 =
         ewt.setUtxosWithDummySig(usableUtxos = candidates, tx, sequenceFlag)
       val weight = change
@@ -978,7 +978,7 @@ case class ElectrumData(
     def loop(
         current: Seq[Utxo],
         remaining: Seq[Utxo] = Nil
-    ): (Seq[Utxo], TxOutOption) = current.map(_.item.value).sum.sat match {
+    ): (Seq[Utxo], Option[TxOut]) = current.map(_.item.value).sum.sat match {
       case total
           if total - computeFee(
             current,
@@ -1116,7 +1116,7 @@ case class PersistentData(
     status: Map[ByteVector32, String] = Map.empty,
     transactions: Map[ByteVector32, Transaction] = Map.empty,
     overriddenPendingTxids: Map[ByteVector32, ByteVector32] = Map.empty,
-    history: Map[ByteVector32, TxHistoryItemList] = Map.empty,
+    history: Map[ByteVector32, List[TransactionHistoryItem]] = Map.empty,
     proofs: Map[ByteVector32, GetMerkleResponse] = Map.empty,
     pendingTransactions: List[Transaction] = Nil,
     excludedOutPoints: List[OutPoint] = Nil

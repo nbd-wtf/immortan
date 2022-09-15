@@ -35,19 +35,6 @@ class ElectrumClientPool(
 )(implicit
     ac: castor.Context
 ) extends CastorStateMachineActorWithState[ElectrumClientStatus] { self =>
-  lazy val serverAddresses: Set[ElectrumServerAddress] = customAddress match {
-    case Some(address) =>
-      Set(ElectrumServerAddress(address.socketAddress, SSL.DECIDE))
-    case None => {
-      val addresses = loadFromChainHash(chainHash)
-      if (useOnion) addresses
-      else
-        addresses.filterNot(address =>
-          address.address.getHostName().endsWith(".onion")
-        )
-    }
-  }
-
   val addresses =
     scala.collection.mutable.Map.empty[ElectrumClient, InetSocketAddress]
 
@@ -146,6 +133,19 @@ class ElectrumClientPool(
     def blockHeight: Int = tips.get(master).map(_._1).getOrElse(0)
   }
 
+  lazy val serverAddresses: Set[ElectrumServerAddress] = customAddress match {
+    case Some(address) =>
+      Set(ElectrumServerAddress(address.socketAddress, SSL.DECIDE))
+    case None => {
+      val addresses = loadFromChainHash(chainHash)
+      if (useOnion) addresses
+      else
+        addresses.filterNot(address =>
+          address.address.getHostName().endsWith(".onion")
+        )
+    }
+  }
+
   def initConnect(): Unit = {
     try {
       val connections =
@@ -209,6 +209,17 @@ class ElectrumClientPool(
           )
         )
     }
+
+  def requestMany[R <: ElectrumClient.Response](
+      r: ElectrumClient.Request,
+      clientsToUse: Int
+  ): Future[List[R]] =
+    Future.sequence[R, List, List[R]](
+      scala.util.Random
+        .shuffle(addresses.keys.toList)
+        .take(clientsToUse)
+        .map(_.request(r))
+    )
 
   private def onHeader(resp: HeaderSubscriptionResponse): Unit = {
     val HeaderSubscriptionResponse(source, height, tip) = resp
