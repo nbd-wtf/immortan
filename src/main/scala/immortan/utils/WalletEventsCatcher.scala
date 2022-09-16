@@ -31,8 +31,8 @@ class WalletEventsCatcher {
     case event: CurrentBlockCount =>
       for (lst <- listeners) lst.onChainTipKnown(event)
     case event: ElectrumReady =>
-      for (lst <- listeners) lst.onChainMasterSelected(event.serverAddress)
-    case _: ElectrumDisconnected =>
+      for (lst <- listeners) lst.onChainConnected()
+    case ElectrumDisconnected =>
       for (lst <- listeners) lst.onChainDisconnected()
 
     case event: ElectrumChainSync.ChainSyncStarted =>
@@ -48,7 +48,7 @@ class WalletEventsListener {
   def onTransactionReceived(event: TransactionReceived): Unit = none
 
   def onChainTipKnown(event: CurrentBlockCount): Unit = none
-  def onChainMasterSelected(event: InetSocketAddress): Unit = none
+  def onChainConnected(): Unit = none
   def onChainDisconnected(): Unit = none
 
   def onChainSyncStarted(localTip: Long, remoteTip: Long): Unit = none

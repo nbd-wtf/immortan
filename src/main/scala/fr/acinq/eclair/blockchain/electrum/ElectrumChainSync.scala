@@ -7,6 +7,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.blockchain.electrum.Blockchain.RETARGETING_PERIOD
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{
+  GetHeaders,
   GetHeadersResponse,
   HeaderSubscriptionResponse
 }
@@ -21,7 +22,7 @@ object ElectrumChainSync {
   case object DISCONNECTED extends State
   case object SYNCING extends State
   case object RUNNING extends State
-  case object WAITING_FOR_CHAIN_TIP extends State
+  case object WAITING_FOR_TIP extends State
 }
 
 case class BlockchainReady(bc: Blockchain) extends ElectrumEvent
@@ -57,122 +58,18 @@ class ElectrumChainSync(
         Block.RegtestGenesisBlock.header
       )
 
-  def onElectrumReady(): Unit = if (state == DISCONNECTED) {
-    // do this so this won't run twice
-    state = WAITING_FOR_CHAIN_TIP
-
-    System.err.println(
-      s"[debug][chain-sync] subscribing to headers so we can get the chain tip ($state)"
-    )
-    pool.subscribeToHeaders("chain-sync", onHeader).onComplete {
-      case Success(tip: HeaderSubscriptionResponse) =>
-        System.err
-          .println(s"[debug][chain-sync] got the chain tip: ${tip.height}")
-
-        if (tip.height < blockchain.height) {
-          System.err.println(
-            s"[warn][chain-sync] ${tip.source.address} is out of sync, its tip is ${tip.height}, disconnecting"
-          )
-          tip.source.send(PoisonPill)
-          state = DISCONNECTED
-        } else if (blockchain.bestchain.isEmpty) {
-          System.err.println("[debug][chain-sync] starting sync from scratch")
-          EventStream.publish(ChainSyncStarted(blockchain.height, tip.height))
-          getHeaders(
-            blockchain.checkpoints.size * RETARGETING_PERIOD,
-            RETARGETING_PERIOD
-          )
-          state = SYNCING
-        } else if (Some(tip.header) == blockchain.tip.map(_.header)) {
-          System.err.println("[debug][chain-sync] we're synced already")
-          EventStream.publish(ChainSyncEnded(blockchain.height))
-          EventStream.publish(BlockchainReady(blockchain))
-          state = RUNNING
-        } else {
-          System.err.println("[debug][chain-sync] starting sync")
-          EventStream.publish(ChainSyncStarted(blockchain.height, tip.height))
-          getHeaders(blockchain.height + 1, RETARGETING_PERIOD)
-          state = SYNCING
-        }
-
-      case Failure(err) =>
-        pool.master match {
-          case Some(master) =>
-            System.err.println(
-              s"[warn][chain-sync] HeaderSubscription to ${pool.master.get.address} has failed, disconnecting"
-            )
-            pool.master.get.send(PoisonPill)
-            state = DISCONNECTED
-
-          case None =>
-            System.err.println(
-              s"[warn][chain-sync] we were told electrum was ready, but apparently it's not"
-            )
-            state = DISCONNECTED
-        }
-    }
-  }
-
-  pool.getReady match {
-    case None    =>
-    case Some(_) => onElectrumReady()
-  }
-
-  EventStream.subscribe {
-    case _: ElectrumDisconnected => state = DISCONNECTED
-    case _: ElectrumReady        => onElectrumReady()
+  EventStream.subscribe { case ElectrumDisconnected =>
+    state = DISCONNECTED
   }
 
   var state: State = DISCONNECTED
-  def stay = state
-
-  def onHeader(response: HeaderSubscriptionResponse): Unit = {
-    val HeaderSubscriptionResponse(source, height, header) = response
-
-    state = state match {
-      case SYNCING => {
-        System.err.println(
-          s"[info][chain-sync] ignoring header for $height since we are syncing"
-        )
-        stay
-      }
-
-      case RUNNING if blockchain.tip.map(_.header) != Some(header) => {
-        val difficultyOk = Blockchain
-          .getDifficulty(blockchain, height, headerDb)
-          .forall(header.bits.==)
-
-        Try(Blockchain.addHeader(blockchain, height, header)) match {
-          case Success(bc) if difficultyOk => {
-            val (blockchain2, chunks) = Blockchain.optimize(bc)
-            headerDb.addHeaders(chunks.map(_.header), chunks.head.height)
-            EventStream.publish(BlockchainReady(blockchain2))
-            blockchain = blockchain2
-            stay
-          }
-
-          case _ => {
-            System.err.println(
-              "[error][chain-sync] electrum peer sent bad headers"
-            )
-            source.send(PoisonPill)
-            stay
-          }
-        }
-      }
-
-      case _ => stay
-    }
-  }
 
   def getHeaders(startHeight: Int, count: Int): Future[Unit] = {
     System.err.println(
       s"[debug][chain-sync] requesting headers from $startHeight to ${startHeight + count}"
     )
     pool
-      .request[GetHeadersResponse](
-        ElectrumClient.GetHeaders(startHeight, count)
-      )
+      .request[GetHeadersResponse](GetHeaders(startHeight, count))
       .andThen {
         case Success(GetHeadersResponse(source, start, headers, max)) =>
           if (headers.isEmpty) {
@@ -223,21 +120,85 @@ class ElectrumChainSync(
                   .println(
                     s"[error][chain-sync] electrum peer sent bad headers: $err"
                   )
-                source.send(PoisonPill)
-                state = DISCONNECTED
               }
             }
           }
 
         case Failure(err) =>
           System.err.println(
-            s"[warn][chain-sync] failed to get headers, disconnecting from master"
+            s"[warn][chain-sync] failed to get headers: $err"
           )
-          pool.master.foreach { _.send(PoisonPill) }
-          state = DISCONNECTED
       }
       .map(_ => ())
   }
 
   def getSyncedBlockchain = if (state == RUNNING) Some(blockchain) else None
+
+  // sync process starts right away
+  state = WAITING_FOR_TIP
+  System.err.println(
+    s"[debug][chain-sync] subscribing to headers so we can get the chain tip"
+  )
+  pool.subscribeToHeaders("chain-sync") {
+    case tip: HeaderSubscriptionResponse =>
+      state match {
+        case WAITING_FOR_TIP =>
+          System.err
+            .println(s"[debug][chain-sync] got the chain tip: ${tip.height}")
+
+          if (tip.height < blockchain.height) {
+            System.err.println(
+              s"[warn][chain-sync] ${tip.source.address} is out of sync, its tip is ${tip.height}, disconnecting"
+            )
+            pool.killClient(tip.source)
+            state = DISCONNECTED
+          } else if (blockchain.bestchain.isEmpty) {
+            System.err.println("[debug][chain-sync] starting sync from scratch")
+            EventStream.publish(ChainSyncStarted(blockchain.height, tip.height))
+            getHeaders(
+              blockchain.checkpoints.size * RETARGETING_PERIOD,
+              RETARGETING_PERIOD
+            )
+            state = SYNCING
+          } else if (Some(tip.header) == blockchain.tip.map(_.header)) {
+            System.err.println("[debug][chain-sync] we're synced already")
+            EventStream.publish(ChainSyncEnded(blockchain.height))
+            EventStream.publish(BlockchainReady(blockchain))
+            state = RUNNING
+          } else {
+            System.err.println("[debug][chain-sync] starting sync")
+            EventStream.publish(ChainSyncStarted(blockchain.height, tip.height))
+            getHeaders(blockchain.height + 1, RETARGETING_PERIOD)
+            state = SYNCING
+          }
+
+        case SYNCING =>
+          System.err.println(
+            s"[info][chain-sync] ignoring header for ${tip.height} since we are syncing"
+          )
+
+        case RUNNING if blockchain.tip.map(_.header) != Some(tip.header) =>
+          val difficultyOk = Blockchain
+            .getDifficulty(blockchain, tip.height, headerDb)
+            .forall(tip.header.bits.==)
+
+          Try(Blockchain.addHeader(blockchain, tip.height, tip.header)) match {
+            case Success(bc) if difficultyOk => {
+              val (nextBlockchain, chunks) = Blockchain.optimize(bc)
+              headerDb.addHeaders(chunks.map(_.header), chunks.head.height)
+              EventStream.publish(BlockchainReady(nextBlockchain))
+              blockchain = nextBlockchain
+            }
+
+            case _ => {
+              System.err.println(
+                "[error][chain-sync] electrum peer sent bad headers"
+              )
+              pool.killClient(tip.source)
+            }
+          }
+
+        case _ => System.err.println(s"@@@@ $state > $tip")
+      }
+  }
 }

@@ -25,7 +25,6 @@ import immortan.crypto.Tools._
 import immortan.sqlite._
 import immortan.utils._
 import scodec.bits.{ByteVector, HexStringSyntax}
-import castor.Context.Simple.global
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext}

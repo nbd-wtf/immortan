@@ -3,6 +3,10 @@ package fr.acinq.eclair.blockchain.electrum
 import java.io.InputStream
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicLong
+import scala.concurrent.{Promise, Future, ExecutionContext}
+import scala.concurrent.duration._
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.util.{Try, Random, Success, Failure}
 
 import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32}
 import fr.acinq.eclair.wire.NodeAddress
@@ -14,6 +18,7 @@ import fr.acinq.eclair.blockchain.electrum.{
 }
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{
   SSL,
+  ScriptHashSubscription,
   HeaderSubscriptionResponse,
   ScriptHashSubscriptionResponse
 }
@@ -22,115 +27,53 @@ import immortan.LNParams
 import org.json4s.JsonAST.{JObject, JString}
 import org.json4s.native.JsonMethods
 
-import scala.concurrent.{Promise, Future, ExecutionContext}
-import scala.concurrent.duration._
-import scala.util.{Try, Random}
-import scala.annotation.nowarn
-
 class ElectrumClientPool(
     blockCount: AtomicLong,
     chainHash: ByteVector32,
     useOnion: Boolean = false,
     customAddress: Option[NodeAddress] = None
-)(implicit
-    ac: castor.Context
-) extends CastorStateMachineActorWithState[ElectrumClientStatus] { self =>
+) { self =>
   val addresses =
     scala.collection.mutable.Map.empty[ElectrumClient, InetSocketAddress]
+  var usedAddresses = Set.empty[InetSocketAddress]
 
-  @nowarn
-  def resetWaitForConnected(): Unit = {
-    val p = Promise[Connected]()
-    reportConnected = (c: Connected) => Future { p.success(c) }
-    waitForConnected = p.future
-  }
-  var reportConnected: Function[Connected, Future[Unit]] = _
-  var waitForConnected: Future[Connected] = _
-  resetWaitForConnected()
+  val tips: scala.collection.mutable.Map[ElectrumClient, TipAndHeader] =
+    scala.collection.mutable.Map.empty
+  def blockHeight: Int = tips.map(_._2._1).maxOption.getOrElse(0)
 
-  def initialState: State = Disconnected()
-  def stay = state
+  val scriptHashSubscriptions =
+    scala.collection.mutable.Map
+      .empty[ByteVector32, scala.collection.mutable.Map[
+        String,
+        ScriptHashSubscriptionResponse => Unit
+      ]]
+  val headerSubscriptions =
+    scala.collection.mutable.Map
+      .empty[String, HeaderSubscriptionResponse => Unit]
 
-  case class Disconnected()
-      extends State({
-        case (ElectrumReady(source, height, tip, _), _)
-            if addresses.contains(source) => {
-          source.subscribeToHeaders("pool", onHeader)
-          handleHeader(source, height, tip, None)
-        }
+  private val awaitForLatestTip = Promise[HeaderSubscriptionResponse]()
+  var latestTip: Future[HeaderSubscriptionResponse] = awaitForLatestTip.future
 
-        case (ElectrumDisconnected(source), _) => {
-          val t = new java.util.Timer()
-          val task = new java.util.TimerTask { def run() = self.connect() }
-          t.schedule(task, 5000L)
-          addresses -= source
-          stay
-        }
+  def killClient(client: ElectrumClient): Unit = {
+    client.disconnect()
+    client.cancelPingTrigger()
 
-        case _ => stay
-      })
+    if (addresses.contains(client)) {
+      System.err.println(
+        s"[info][pool] disconnecting from client ${client.address}"
+      )
 
-  case class Connected(
-      master: ElectrumClient,
-      tips: Map[ElectrumClient, TipAndHeader]
-  ) extends State({
-        case (
-              ElectrumReady(source, height, tip, _),
-              d: Connected
-            ) if addresses.contains(source) => {
-          source.subscribeToHeaders("pool", onHeader)
-          handleHeader(source, height, tip, Some(d))
-        }
+      addresses -= client
+      tips.remove(client)
 
-        case (ElectrumDisconnected(source), d: Connected)
-            if addresses.contains(source) => {
-          val address = addresses(source)
-          val tips = d.tips - source
+      if (addresses.isEmpty) {
+        System.err.println(s"[info][pool] no active connections left")
+        EventStream.publish(ElectrumDisconnected)
+      }
 
-          val t = new java.util.Timer()
-          val task = new java.util.TimerTask { def run() = self.connect() }
-          t.schedule(task, 5000L)
-          addresses -= source
-
-          if (tips.isEmpty) {
-            System.err.println(
-              s"[info] lost connection to $address, no active connections left"
-            )
-            EventStream
-              .publish(ElectrumDisconnected(master /* this will be ignored */ ))
-
-            // no more connections
-            resetWaitForConnected()
-            Disconnected()
-          } else if (d.master != source) {
-            System.err.println(
-              s"[debug][pool] lost connection to $address, we still have our master server"
-            )
-
-            val newState = Connected(
-              master = master,
-              tips = tips
-            )
-            reportConnected(newState)
-            newState
-          } else {
-            System.err
-              .println(s"[info] lost connection to our master server $address")
-            // we choose next best candidate as master
-            val tips = d.tips - source
-            val (bestClient, bestTip) = tips.toSeq.maxBy(_._2._1)
-            handleHeader(
-              bestClient,
-              bestTip._1,
-              bestTip._2,
-              Some(d.copy(tips = tips))
-            )
-          }
-        }
-
-        case _ => stay
-      }) {
-    def blockHeight: Int = tips.get(master).map(_._1).getOrElse(0)
+      // connect to a new one
+      Future { self.connect() }
+    }
   }
 
   lazy val serverAddresses: Set[ElectrumServerAddress] = customAddress match {
@@ -147,68 +90,57 @@ class ElectrumClientPool(
   }
 
   def initConnect(): Unit = {
-    try {
-      val connections =
-        Math.min(LNParams.maxChainConnectionsCount, serverAddresses.size)
-      (0 until connections).foreach(_ => self.connect())
-    } catch {
-      case _: java.lang.NoClassDefFoundError =>
-    }
+    val connections =
+      Math.min(LNParams.maxChainConnectionsCount, serverAddresses.size)
+    (0 until connections).foreach(_ => self.connect())
   }
 
   def connect(): Unit = {
-    pickAddress(serverAddresses, addresses.values.toSet)
+    pickAddress(serverAddresses, usedAddresses)
       .foreach { esa =>
-        val client = new ElectrumClient(self, esa)
-        client.addStatusListener(self.asInstanceOf[castor.SimpleActor[Any]])
+        usedAddresses = usedAddresses + esa.address
+
+        val client = new ElectrumClient(
+          self,
+          esa,
+          client =>
+            // upon connecting to a new client, tell it to subscribe to all script hashes
+            scriptHashSubscriptions.keys.foreach { sh =>
+              client.request[ScriptHashSubscriptionResponse](
+                ScriptHashSubscription(sh)
+              )
+            }
+        )
         addresses += (client -> esa.address)
       }
   }
 
-  def getReady: Option[ElectrumReady] = {
-    state match {
-      case _: Disconnected => None
-      case Connected(master, tips) if addresses.contains(master) =>
-        val (height, tip) = tips(master)
-        Some(
-          ElectrumReady(
-            master, // this field is ignored by ElectrumClientPool listeners (since there is only one pool)
-            height,
-            tip,
-            addresses(master)
-          )
-        )
-      case _: Connected => None
-    }
-  }
-
-  def subscribeToHeaders(
-      id: String,
+  def subscribeToHeaders(listenerId: String)(
       cb: HeaderSubscriptionResponse => Unit
-  ): Future[HeaderSubscriptionResponse] = waitForConnected.flatMap {
-    case Connected(master, _) =>
-      master.subscribeToHeaders(id, cb)
+  ): Future[HeaderSubscriptionResponse] = {
+    headerSubscriptions += (listenerId -> cb)
+    latestTip
   }
 
   def subscribeToScriptHash(
-      scriptHash: ByteVector32
-  )(cb: ScriptHashSubscriptionResponse => Unit): Unit =
-    waitForConnected.foreach { case Connected(master, _) =>
-      master.subscribeToScriptHash(scriptHash)(cb)
+      listenerId: String,
+      sh: ByteVector32
+  )(cb: ScriptHashSubscriptionResponse => Unit): Unit = {
+    scriptHashSubscriptions.updateWith(sh) {
+      case None => {
+        // no one has subscribed to this scripthash yet, start
+        addresses.keys.foreach {
+          _.request[ScriptHashSubscriptionResponse](ScriptHashSubscription(sh))
+        }
+        Some(scala.collection.mutable.Map(listenerId -> cb))
+      }
+      case Some(subs) => Some(subs.concat(List(listenerId -> cb)))
     }
+  }
 
   def request[R <: ElectrumClient.Response](
       r: ElectrumClient.Request
-  ): Future[R] =
-    state match {
-      case Connected(master, _) => master.request[R](r)
-      case _ =>
-        Future.failed(
-          new Exception(
-            "request must be called only after the client is connected"
-          )
-        )
-    }
+  ): Future[R] = requestMany[R](r, 1).map(_.head)
 
   def requestMany[R <: ElectrumClient.Response](
       r: ElectrumClient.Request,
@@ -218,85 +150,58 @@ class ElectrumClientPool(
       scala.util.Random
         .shuffle(addresses.keys.toList)
         .take(clientsToUse)
-        .map(_.request(r))
+        .map { client =>
+          client.request[R](r).transformWith {
+            case Success(resp) => Future(resp)
+            case Failure(err) => {
+              System.err.println(
+                s"[warn][pool] request to ${client.address} has failed ($err), disconnecting from it and trying with another"
+              )
+              killClient(client)
+              request[R](r)
+            }
+          }
+        }
     )
 
-  private def onHeader(resp: HeaderSubscriptionResponse): Unit = {
-    val HeaderSubscriptionResponse(source, height, tip) = resp
-    handleHeader(
-      source,
-      height,
-      tip,
-      state match { case d: Connected => Some(d); case _ => None }
-    )
-  }
-
-  private def handleHeader(
-      connection: ElectrumClient,
-      height: Int,
-      tip: BlockHeader,
-      data: Option[Connected] = None
-  ): State = {
+  private var lastHeaderResponseEmitted: Option[HeaderSubscriptionResponse] =
+    None
+  def onHeader(resp: HeaderSubscriptionResponse): Unit = {
+    val HeaderSubscriptionResponse(client, height, tip) = resp
     System.err.println(
-      s"[debug][pool] got header $height from ${connection.address}"
+      s"[debug][pool] got header $height from ${client.address}"
     )
 
-    val remoteAddress = addresses(connection)
-
-    // we update our block count even if it doesn't come from our current master
     updateBlockCount(height)
 
-    val newState = data match {
-      case None => {
-        // as soon as we have a connection to an electrum server, we select it as master
-        System.err.println(
-          s"[info][pool] selecting master $remoteAddress at $height"
-        )
-        EventStream.publish(
-          ElectrumReady(connection, height, tip, remoteAddress)
-        )
+    // if we didn't have any connection before, now we have one
+    if (tips.size == 0)
+      EventStream.publish(ElectrumReady(height, tip))
 
-        val newState = Connected(
-          connection,
-          Map(connection -> (height, tip))
-        )
-        reportConnected(newState)
-        newState
-      }
-      case Some(d) if connection != d.master && height > d.blockHeight + 2 => {
-        // we only switch to a new master if there is a significant difference with our current master, because
-        // we don't want to switch to a new master every time a new block arrives (some servers will be notified before others)
-        // we check that the current connection is not our master because on regtest when you generate several blocks at once
-        // (and maybe on testnet in some pathological cases where there's a block every second) it may seen like our master
-        // skipped a block and is suddenly at height + 2
-        System.err.println(
-          s"[info][pool] switching to master $remoteAddress at $tip"
-        )
-        // we've switched to a new master, treat this as a disconnection/reconnection
-        // so users (wallet, watcher, ...) will reset their subscriptions
-        EventStream.publish(ElectrumDisconnected(d.master))
-        EventStream.publish(
-          ElectrumReady(d.master, height, tip, remoteAddress)
-        )
+    System.err.println(
+      s"[debug][pool] bumping our tip for ${client.address} to $height->${tip.blockId.toHex.take(26)}"
+    )
+    tips += (client -> (height, tip))
 
-        val newState = Connected(
-          master = connection,
-          tips = d.tips + (connection -> (height, tip))
-        )
-        reportConnected(newState)
-        newState
-      }
-      case Some(d) =>
-        System.err.println(
-          s"[debug][pool] bumping our tip for ${connection.address} to $height->${tip.blockId.toHex.take(26)}"
-        )
-        d.copy(tips = d.tips + (connection -> (height, tip)))
+    if (!awaitForLatestTip.isCompleted) awaitForLatestTip.success(resp)
+    latestTip = Future(resp)
+
+    if (lastHeaderResponseEmitted != Some(resp)) {
+      headerSubscriptions.values.foreach { _(resp) }
+      lastHeaderResponseEmitted = Some(resp)
     }
-
-    setState(newState)
-
-    newState
   }
+
+  private var lastScriptHashResponseEmitted
+      : Option[ScriptHashSubscriptionResponse] =
+    None
+  def onScriptHash(resp: ScriptHashSubscriptionResponse): Unit =
+    if (lastScriptHashResponseEmitted != Some(resp)) {
+      scriptHashSubscriptions
+        .get(resp.scriptHash)
+        .foreach(_.values.foreach(_(resp)))
+      lastScriptHashResponseEmitted = Some(resp)
+    }
 
   private def updateBlockCount(blockCount: Long): Unit = {
     // when synchronizing we don't want to advertise previous blocks
@@ -305,11 +210,6 @@ class ElectrumClientPool(
       EventStream.publish(CurrentBlockCount(blockCount))
       this.blockCount.set(blockCount)
     }
-  }
-
-  def master = state match {
-    case Connected(master, _) => Some(master)
-    case _                    => None
   }
 }
 
@@ -333,13 +233,12 @@ object ElectrumClientPool {
     try {
       val JObject(values) = JsonMethods.parse(stream)
 
-      for ((name, fields) <- values.toSet) yield {
+      for ((name, fields) <- Random.shuffle(values.toSet)) yield {
         val port = Try((fields \ "s").asInstanceOf[JString].s.toInt).toOption
           .getOrElse(0)
         val address = InetSocketAddress.createUnresolved(name, port)
         ElectrumServerAddress(address, SSL.LOOSE)
       }
-
     } finally {
       stream.close
     }
@@ -348,14 +247,9 @@ object ElectrumClientPool {
       serverAddresses: Set[ElectrumServerAddress],
       usedAddresses: Set[InetSocketAddress] = Set.empty
   ): Option[ElectrumServerAddress] =
-    Random
-      .shuffle(
-        serverAddresses
-          .filterNot(serverAddress =>
-            usedAddresses contains serverAddress.address
-          )
-          .toSeq
-      )
+    serverAddresses
+      .filterNot(serverAddress => usedAddresses contains serverAddress.address)
+      .toSeq
       .headOption
 
   type TipAndHeader = (Int, BlockHeader)

@@ -77,12 +77,6 @@
         "s": "50002",
         "version": "1.4.2"
     },
-    "89.248.168.53": {
-        "pruning": "-",
-        "s": "50002",
-        "t": "50001",
-        "version": "1.4.2"
-    },
     "E-X.not.fyi": {
         "pruning": "-",
         "s": "50002",
@@ -277,12 +271,6 @@
         "s": "50002",
         "t": "50001",
         "version": "1.4"
-    },
-    "electrumx.schulzemic.net": {
-        "pruning": "-",
-        "s": "50002",
-        "t": "50001",
-        "version": "1.4.2"
     },
     "elx.bitske.com": {
         "pruning": "-",

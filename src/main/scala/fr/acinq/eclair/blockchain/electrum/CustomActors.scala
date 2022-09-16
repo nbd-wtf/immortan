@@ -2,8 +2,6 @@ package fr.acinq.eclair.blockchain.electrum
 
 import castor._
 
-case object PoisonPill
-
 abstract class CastorStateMachineActorWithSetState[T]()(implicit ac: Context)
     extends StateMachineActor[T]() {
   var state0: State = null

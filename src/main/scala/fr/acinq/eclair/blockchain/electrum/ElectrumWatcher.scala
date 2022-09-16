@@ -18,32 +18,23 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
     ac: castor.Context
 ) extends CastorStateMachineActorWithSetState[Any] { self =>
 
-  EventStream.subscribe {
-    case _: ElectrumReady => onElectrumReady()
-    case _: ElectrumDisconnected =>
-      state match {
-        case s: Running =>
-          // we remember watches and keep track of tx that have not yet been published
-          // we also re-send the txes that we previously sent but hadn't yet received the confirmation
-          setState(
-            Disconnected(
-              s.watches,
-              s.sent.map(PublishAsap),
-              s.block2tx
-            )
+  EventStream.subscribe { case ElectrumDisconnected =>
+    state match {
+      case s: Running =>
+        // we remember watches and keep track of tx that have not yet been published
+        // we also re-send the txes that we previously sent but hadn't yet received the confirmation
+        setState(
+          Disconnected(
+            s.watches,
+            s.sent.map(PublishAsap),
+            s.block2tx
           )
-        case _ =>
-      }
+        )
+      case _ =>
+    }
   }
 
-  def onElectrumReady(): Unit =
-    if (state.isInstanceOf[Disconnected])
-      pool.subscribeToHeaders("watcher", self.send(_)).foreach(self.send(_))
-
-  pool.getReady match {
-    case None    =>
-    case Some(_) => onElectrumReady()
-  }
+  pool.subscribeToHeaders("watcher") { self.send(_) }.foreach(self.send(_))
 
   def stay = state
   def initialState =
@@ -249,7 +240,7 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool)(implicit
       })
 
   def trackScriptHash(scriptHash: ByteVector32): Unit =
-    pool.subscribeToScriptHash(scriptHash) {
+    pool.subscribeToScriptHash("watcher", scriptHash) {
       case ElectrumClient
             .ScriptHashSubscriptionResponse(scriptHash, status) =>
         state match {

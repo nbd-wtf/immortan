@@ -62,7 +62,7 @@ class ElectrumWallet(
   EventStream
     .subscribe {
       case BlockchainReady(bc) => self.blockchainReady(bc)
-      case _: ElectrumDisconnected => {
+      case ElectrumDisconnected => {
         state = Disconnected
         data = data.reset
       }
@@ -160,7 +160,7 @@ class ElectrumWallet(
 
   def trackScriptHash(scriptHash: ByteVector32): Unit =
     pool
-      .subscribeToScriptHash(scriptHash) {
+      .subscribeToScriptHash("wallet", scriptHash) {
         case ScriptHashSubscriptionResponse(scriptHash, status) =>
           if (data.status.get(scriptHash).contains(status)) {
             System.err.println(
@@ -204,15 +204,38 @@ class ElectrumWallet(
                     .getHeader(item.height)
                     .orElse(params.headerDb.getHeader(item.height))
                     .isEmpty
-                )
+                ) {
+                  System.err.println(
+                    s"[debug][wallet] downloading missing header ${item.height} for transaction ${item.txHash}"
+                  )
                   // we don't have this header because it is older than our checkpoints => request the entire chunk
                   //   and wait for chainsync to process it
                   chainSync.getHeaders(
                     item.height / RETARGETING_PERIOD * RETARGETING_PERIOD,
                     RETARGETING_PERIOD
                   )
-                else Future { () }
+                } else Future { () }
               })
+              _ = System.err.println("headers ok")
+
+              // fetch transactions in the mempool for this scripthash
+              mempool <- pool
+                .requestMany[GetScriptHashMempoolResponse](
+                  GetScriptHashMempool(scriptHash),
+                  2
+                )
+                .map(_.map { case GetScriptHashMempoolResponse(_, items) =>
+                  items
+                })
+                .map(mempools =>
+                  mempools.reduce[List[TransactionHistoryItem]] {
+                    case (
+                          itemsA,
+                          itemsB
+                        ) =>
+                      itemsA ++ itemsB.filterNot(i => itemsA.contains(i))
+                  }
+                )
 
               // fetch transaction and merkle proof for all these txids
               // (if the user is doing things right we'll have at most 2 transactions for each script hash)
@@ -255,7 +278,7 @@ class ElectrumWallet(
 
               transactions <- Future
                 .sequence(
-                  history.map(item =>
+                  (history ++ mempool).map(item =>
                     data.transactions
                       .get(item.txHash)
                       .map(p => Future(p))
@@ -304,11 +327,12 @@ class ElectrumWallet(
               val newData = data.copy(
                 // add the history
                 history = data.history.updatedWith(scriptHash) {
-                  case None => Some(history)
+                  case None => Some(history ++ mempool)
                   case Some(existing) =>
                     Some(
                       existing ++
-                        history.filterNot(ni => existing.contains(ni))
+                        (history ++ mempool)
+                          .filterNot(ni => existing.contains(ni))
                     )
                 },
 
@@ -335,9 +359,6 @@ class ElectrumWallet(
               )
 
               System.err.println(s"\n\n=== $scriptHash ===")
-              System.err.println(s"NEW TRANSACTIONS: $transactions")
-              System.err.println(s"NEW PARENTS: $transactions")
-              System.err.println(s"NEW MERKLE: $merkleProofs")
               System.err.println(
                 s"NEW HISTORY: ${newData.history.get(scriptHash)}"
               )
@@ -379,9 +400,8 @@ class ElectrumWallet(
               case Failure(err: BadElectrumData) =>
                 // kill this electrum client
                 System.err.println(
-                  s"[error][wallet] got bad data from ${pool.master}: $err"
+                  s"[error][wallet] got bad data from electrum server: $err"
                 )
-                pool.master.foreach { _.send(PoisonPill) }
               case Failure(err) =>
                 System.err.println(
                   s"[error][wallet] something wrong happened while updating script hashes: $err"
