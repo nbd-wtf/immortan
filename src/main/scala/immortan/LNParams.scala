@@ -369,7 +369,7 @@ class SyncParams {
     PublicKey(
       hex"02d5562ef0eb09c29b9ebe2393134292aa0cfd8bd0b022eed02dc2dcafd6f7097d"
     ),
-    NodeAddress.unresolved(9735, host = 54, 175, 219, 75),
+    NodeAddress.unresolved(9735, host = 54, 87, 19, 126),
     "ZEBEDEE"
   )
   val silentBob: RemoteNodeInfo = RemoteNodeInfo(
@@ -394,6 +394,8 @@ class SyncParams {
     "ACINQ"
   )
   val syncNodes: Set[RemoteNodeInfo] = Set(
+    zebedee,
+    jiraiya,
     satm,
     motherbase,
     bCashIsTrash,
