@@ -155,7 +155,7 @@ class ElectrumClientPool(
             case Success(resp) => Future(resp)
             case Failure(err) => {
               System.err.println(
-                s"[warn][pool] request to ${client.address} has failed ($err), disconnecting from it and trying with another"
+                s"[warn][pool] request $r to ${client.address} has failed with error $err, disconnecting from it and trying with another"
               )
               killClient(client)
               request[R](r)

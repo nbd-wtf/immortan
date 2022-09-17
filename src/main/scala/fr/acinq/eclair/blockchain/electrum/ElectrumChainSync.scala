@@ -96,9 +96,6 @@ class ElectrumChainSync(
                       chunks.map(_.header),
                       chunks.head.height
                     )
-                    System.err.println(
-                      s"[info][chain-sync] got new headers chunk at ${obc.height}, requesting next chunk"
-                    )
                     getHeaders(obc.height + 1, RETARGETING_PERIOD)
                     blockchain = obc
                     state = SYNCING
@@ -198,7 +195,7 @@ class ElectrumChainSync(
             }
           }
 
-        case _ => System.err.println(s"@@@@ $state > $tip")
+        case _ =>
       }
   }
 }
