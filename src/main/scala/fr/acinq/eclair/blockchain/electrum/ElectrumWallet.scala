@@ -25,8 +25,17 @@ import immortan.sqlite.SQLiteTx
 import scodec.bits.ByteVector
 
 class BadElectrumData(msg: String) extends Exception(msg)
-class BadMerkleProof(msg: String) extends BadElectrumData(msg)
-class BadTxIdMismatched(msg: String) extends BadElectrumData(msg)
+class BadMerkleProof(
+    txid: ByteVector32,
+    rootFromHeader: ByteVector32,
+    rootFromProof: ByteVector32,
+    heightRequested: Int,
+    heightReceived: Int
+) extends BadElectrumData(
+      s"txid=$txid, root-from-header=$rootFromHeader, root-from-proof=$rootFromProof, height-requested: $heightRequested, height-received=$heightReceived"
+    )
+class BadTxIdMismatched(requested: ByteVector32, received: ByteVector32)
+    extends BadElectrumData(s"requested=$requested, received=$received")
 
 class ElectrumWallet(
     pool: ElectrumClientPool,
@@ -42,6 +51,7 @@ class ElectrumWallet(
   var state: State = Disconnected
 
   val scriptHashesSyncing: AtomicInteger = new AtomicInteger(0)
+  var maxEverInConcurrentSync = 0 // this is used in the UI
 
   def persistAndNotify(nextData: ElectrumData): Unit = {
     val t = new java.util.Timer()
@@ -158,7 +168,7 @@ class ElectrumWallet(
     }
   }
 
-  def trackScriptHash(scriptHash: ByteVector32): Unit =
+  def trackScriptHash(scriptHash: ByteVector32): Unit = {
     pool
       .subscribeToScriptHash("wallet", scriptHash) {
         case ScriptHashSubscriptionResponse(scriptHash, status) =>
@@ -170,6 +180,16 @@ class ElectrumWallet(
           ) {
             if (scriptHashesSyncing.getAndIncrement() == 0)
               EventStream.publish(WalletSyncStarted)
+
+            if (scriptHashesSyncing.get > maxEverInConcurrentSync)
+              maxEverInConcurrentSync += 1
+
+            EventStream.publish(
+              WalletSyncProgress(
+                maxEverInConcurrentSync,
+                scriptHashesSyncing.get
+              )
+            )
 
             System.err.println(
               s"[debug][wallet] script hash $scriptHash has changed ($status), requesting history"
@@ -245,7 +265,11 @@ class ElectrumWallet(
                               case Some(existingHeader)
                                   if existingHeader.hashMerkleRoot != merkle.root =>
                                 throw new BadMerkleProof(
-                                  s"${existingHeader.hashMerkleRoot} != ${merkle.root} at ${merkle.blockHeight}"
+                                  item.txHash,
+                                  existingHeader.hashMerkleRoot,
+                                  merkle.root,
+                                  item.height,
+                                  merkle.blockHeight
                                 )
                               case Some(_) =>
                               // it's ok
@@ -275,9 +299,7 @@ class ElectrumWallet(
                           .map(_.tx)
                           .andThen {
                             case Success(tx) if tx.txid != item.txHash =>
-                              throw new BadTxIdMismatched(
-                                s"${tx.txid} != ${item.txHash} while fetching a parent"
-                              )
+                              throw new BadTxIdMismatched(item.txHash, tx.txid)
                           }
                       )
                   )
@@ -300,9 +322,7 @@ class ElectrumWallet(
                             .map(_.tx)
                             .andThen {
                               case Success(tx) if tx.txid != txid =>
-                                throw new BadTxIdMismatched(
-                                  s"${tx.txid} != ${txid} while fetching a transaction"
-                                )
+                                throw new BadTxIdMismatched(txid, tx.txid)
                             }
                         )
                     )
@@ -358,19 +378,19 @@ class ElectrumWallet(
                   case TransactionDelta(_, feeOpt, received, sent) =>
                     EventStream.publish(
                       TransactionReceived(
-                        tx,
-                        newData.depth(tx.txid),
-                        newData.timestamp(tx.txid, params.headerDb),
-                        received,
-                        sent,
-                        tx.txOut
+                        tx = tx,
+                        depth = newData.depth(tx.txid),
+                        stamp = newData.timestamp(tx.txid, params.headerDb),
+                        received = received,
+                        sent = sent,
+                        walletAddreses = tx.txOut
                           .filter(newData.isMine)
                           .map(_.publicKeyScript)
                           .flatMap(newData.publicScriptMap.get)
                           .map(newData.ewt.textAddress)
                           .toList,
-                        ewt.xPub,
-                        feeOpt
+                        xPub = ewt.xPub,
+                        feeOpt = feeOpt
                       )
                     )
                 }
@@ -381,6 +401,13 @@ class ElectrumWallet(
               .andThen { _ =>
                 if (scriptHashesSyncing.decrementAndGet() == 0)
                   EventStream.publish(WalletSyncEnded)
+
+                EventStream.publish(
+                  WalletSyncProgress(
+                    maxEverInConcurrentSync,
+                    scriptHashesSyncing.get
+                  )
+                )
               }
               .onComplete {
                 case Success(_) =>
@@ -399,6 +426,7 @@ class ElectrumWallet(
               }
           }
       }
+  }
 
   def getData = data
 
@@ -543,6 +571,7 @@ class ElectrumWallet(
 object ElectrumWallet {
   sealed trait Event extends ElectrumEvent
   case object WalletSyncStarted extends Event
+  case class WalletSyncProgress(max: Int, left: Int) extends Event
   case object WalletSyncEnded extends Event
 
   // RBF
@@ -786,13 +815,15 @@ case class ElectrumData(
           )
 
           // Find all out points which spend from this script hash and make sure unspents do not contain them
-          val outPoints = historyItems
-            .map(_.txHash)
-            .flatMap(transactions.get)
-            .flatMap(_.txIn)
-            .map(_.outPoint)
-            .toSet
-          unspents.filterNot(utxo => outPoints contains utxo.item.outPoint)
+          unspents.filterNot(utxo =>
+            historyItems
+              .map(_.txHash)
+              .flatMap(transactions.get)
+              .flatMap(_.txIn)
+              .map(_.outPoint)
+              .toSet
+              .contains(utxo.item.outPoint)
+          )
       } getOrElse Nil
     }
   }

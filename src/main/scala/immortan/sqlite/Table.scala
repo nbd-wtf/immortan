@@ -394,7 +394,7 @@ object TxTable extends Table {
   val newVirtualSql = s"INSERT INTO $fts$table ($search, $txid) VALUES (?, ?)"
 
   // Selecting
-  val selectRecentSql = s"SELECT * FROM $table ORDER BY $depth ASC LIMIT ?"
+  val selectRecentSql = s"SELECT * FROM $table ORDER BY $seenAt DESC LIMIT ?"
 
   val selectSummarySql =
     s"SELECT SUM($feeSat), SUM($receivedSat), SUM($sentSat), COUNT($id) FROM $table WHERE $doubleSpent = 0"

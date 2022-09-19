@@ -98,7 +98,6 @@ class SQLiteTx(val db: DBInterface) {
       fiatRateSnap: Fiat2Btc,
       stamp: Long
   ): Unit = {
-
     val newSqlPQ = db.makePreparedQuery(TxTable.newSql)
     db.change(
       newSqlPQ,

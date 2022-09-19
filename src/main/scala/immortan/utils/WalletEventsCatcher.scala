@@ -24,25 +24,29 @@ class WalletEventsCatcher {
     listeners = listeners diff List(listener)
 
   EventStream.subscribe {
-    case event: WalletReady => for (lst <- listeners) lst.onWalletReady(event)
+    case event: WalletReady =>
+      listeners.foreach(_.onWalletReady(event))
     case event: TransactionReceived =>
-      for (lst <- listeners) lst.onTransactionReceived(event)
+      listeners.foreach(_.onTransactionReceived(event))
 
     case event: CurrentBlockCount =>
-      for (lst <- listeners) lst.onChainTipKnown(event)
+      listeners.foreach(_.onChainTipKnown(event))
     case event: ElectrumReady =>
-      for (lst <- listeners) lst.onChainConnected()
+      listeners.foreach(_.onChainConnected())
     case ElectrumDisconnected =>
-      for (lst <- listeners) lst.onChainDisconnected()
+      listeners.foreach(_.onChainDisconnected())
 
     case event: ChainSyncStarted =>
-      for (lst <- listeners)
-        lst.onChainSyncStarted(event.localTip, event.remoteTip)
+      listeners.foreach(_.onChainSyncStarted(event.localTip, event.remoteTip))
+    case event: ChainSyncProgress =>
+      listeners.foreach(_.onChainSyncProgress(event.localTip, event.remoteTip))
     case event: ChainSyncEnded =>
-      for (lst <- listeners) lst.onChainSyncEnded(event.localTip)
+      listeners.foreach(_.onChainSyncEnded(event.localTip))
 
     case WalletSyncStarted =>
       listeners.foreach(_.onWalletSyncStarted())
+    case event: WalletSyncProgress =>
+      listeners.foreach(_.onWalletSyncProgress(event.max, event.left))
     case WalletSyncEnded =>
       listeners.foreach(_.onWalletSyncEnded())
   }
@@ -57,8 +61,10 @@ class WalletEventsListener {
   def onChainDisconnected(): Unit = none
 
   def onChainSyncStarted(localTip: Long, remoteTip: Long): Unit = none
+  def onChainSyncProgress(localTip: Long, remoteTip: Long): Unit = none
   def onChainSyncEnded(localTip: Long): Unit = none
 
   def onWalletSyncStarted(): Unit = none
+  def onWalletSyncProgress(max: Int, left: Int): Unit = none
   def onWalletSyncEnded(): Unit = none
 }

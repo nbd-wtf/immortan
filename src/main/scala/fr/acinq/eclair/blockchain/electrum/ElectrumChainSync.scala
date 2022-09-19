@@ -16,6 +16,8 @@ import fr.acinq.eclair.blockchain.electrum.db.HeaderDb
 object ElectrumChainSync {
   case class ChainSyncStarted(localTip: Long, remoteTip: Long)
       extends ElectrumEvent
+  case class ChainSyncProgress(localTip: Long, remoteTip: Long)
+      extends ElectrumEvent
   case class ChainSyncEnded(localTip: Long) extends ElectrumEvent
 
   sealed trait State
@@ -76,17 +78,20 @@ class ElectrumChainSync(
             System.err.println(
               "[debug][chain-sync] no more headers, sync done"
             )
-            if (state == SYNCING) {
-              EventStream.publish(
-                ElectrumChainSync.ChainSyncEnded(blockchain.height)
-              )
-              EventStream.publish(BlockchainReady(blockchain))
-              state = RUNNING
-            }
+            EventStream.publish(
+              ChainSyncEnded(blockchain.height)
+            )
+            EventStream.publish(BlockchainReady(blockchain))
+            state = RUNNING
           } else {
             System.err.println(
               s"[debug][chain-sync] got headers from $start to ${start + max}"
             )
+
+            EventStream.publish(
+              ChainSyncProgress(start + max, blockchain.height)
+            )
+
             Try(Blockchain.addHeaders(blockchain, start, headers)) match {
               case Success(bc) =>
                 state match {

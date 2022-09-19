@@ -147,7 +147,7 @@ class ChannelMaster(
   var inProcessors = Map.empty[FullPaymentTag, IncomingPaymentProcessor]
 
   var sendTo: (Any, ByteVector32) => Unit = (change, channelId) =>
-    all.get(channelId).foreach(_ process change)
+    all.get(channelId).foreach(_.process(change))
 
   private def defineResolution(
       secret: PrivateKey,

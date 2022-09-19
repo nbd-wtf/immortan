@@ -45,7 +45,7 @@ class ElectrumClientPool(
     scala.collection.mutable.Map
       .empty[ByteVector32, scala.collection.mutable.Map[
         String,
-        ScriptHashSubscriptionResponse => Unit
+        ScriptHashSubscriptionResponse => Future[Unit]
       ]]
   val headerSubscriptions =
     scala.collection.mutable.Map
@@ -126,15 +126,18 @@ class ElectrumClientPool(
       listenerId: String,
       sh: ByteVector32
   )(cb: ScriptHashSubscriptionResponse => Unit): Unit = {
+    val debouncedCallback = debounce(cb, 3.seconds)
+
     scriptHashSubscriptions.updateWith(sh) {
       case None => {
         // no one has subscribed to this scripthash yet, start
         addresses.keys.foreach {
           _.request[ScriptHashSubscriptionResponse](ScriptHashSubscription(sh))
         }
-        Some(scala.collection.mutable.Map(listenerId -> cb))
+        Some(scala.collection.mutable.Map(listenerId -> debouncedCallback))
       }
-      case Some(subs) => Some(subs.concat(List(listenerId -> cb)))
+      case Some(subs) =>
+        Some(subs.concat(List(listenerId -> debouncedCallback)))
     }
   }
 
@@ -192,16 +195,10 @@ class ElectrumClientPool(
     }
   }
 
-  private var lastScriptHashResponseEmitted
-      : Option[ScriptHashSubscriptionResponse] =
-    None
   def onScriptHash(resp: ScriptHashSubscriptionResponse): Unit =
-    if (lastScriptHashResponseEmitted != Some(resp)) {
-      scriptHashSubscriptions
-        .get(resp.scriptHash)
-        .foreach(_.values.foreach(_(resp)))
-      lastScriptHashResponseEmitted = Some(resp)
-    }
+    scriptHashSubscriptions
+      .get(resp.scriptHash)
+      .foreach(_.values.foreach(_(resp)))
 
   private def updateBlockCount(blockCount: Long): Unit = {
     // when synchronizing we don't want to advertise previous blocks

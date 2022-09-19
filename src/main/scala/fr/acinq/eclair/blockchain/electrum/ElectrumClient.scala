@@ -1,5 +1,6 @@
 package fr.acinq.eclair.blockchain.electrum
 
+import java.util.concurrent.atomic.AtomicInteger
 import java.net.{InetSocketAddress, SocketAddress}
 import java.util
 import scala.annotation.{tailrec, nowarn}
@@ -496,7 +497,7 @@ class ElectrumClient(
   def address = server.address.getHostName()
   System.err.println(s"[info][electrum] connecting to $address")
 
-  var reqId = 0
+  var nextRequestId = new AtomicInteger(0)
   var requests =
     scala.collection.mutable.Map.empty[String, (Request, Promise[Response])]
 
@@ -741,11 +742,10 @@ class ElectrumClient(
   ): Future[R] = {
     val promise = Promise[Response]()
 
-    val electrumRequestId = reqId.toString
+    val reqId = nextRequestId.getAndIncrement().toString()
     if (ctx.channel.isWritable) {
-      ctx.channel.writeAndFlush(makeRequest(r, electrumRequestId))
-      reqId = reqId + 1
-      requests += (electrumRequestId -> ((r, promise)))
+      ctx.channel.writeAndFlush(makeRequest(r, reqId))
+      requests += (reqId -> ((r, promise)))
     } else {
       pool.killClient(self)
       promise.failure(
