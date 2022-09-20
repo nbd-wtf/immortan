@@ -178,12 +178,20 @@ class ElectrumWallet(
             (data.accountKeyMap.contains(scriptHash) ||
               data.changeKeyMap.contains(scriptHash))
           ) {
+            // save the new status to the data so we don't run this same thing twice for the same updates
+            //   (this shouldn't happen in general because of the debouncing, but it's still a good idea
+            //    to put this here just after the check)
+            data = data.copy(status = data.status.updated(scriptHash, status))
+
+            System.err.println(
+              s"[debug][wallet] script hash $scriptHash has changed ($status), requesting history"
+            )
+
+            // emit events so wallets can display nice things
             if (scriptHashesSyncing.getAndIncrement() == 0)
               EventStream.publish(WalletSyncStarted)
-
             if (scriptHashesSyncing.get > maxEverInConcurrentSync)
               maxEverInConcurrentSync += 1
-
             EventStream.publish(
               WalletSyncProgress(
                 maxEverInConcurrentSync,
@@ -191,9 +199,6 @@ class ElectrumWallet(
               )
             )
 
-            System.err.println(
-              s"[debug][wallet] script hash $scriptHash has changed ($status), requesting history"
-            )
             val result = for {
               history <- pool
                 .requestMany[GetScriptHashHistoryResponse](
@@ -356,10 +361,6 @@ class ElectrumWallet(
                     merkle.txid -> merkle
                   ),
 
-                  // add the status so we don't query again
-                  status = data.status
-                    .updated(scriptHash, status),
-
                   // even though we have excluded some utxos in this wallet user may still
                   //   spend them from elsewhere, so clear excluded outpoints here
                   excludedOutPoints =
@@ -399,9 +400,9 @@ class ElectrumWallet(
 
             result
               .andThen { _ =>
+                // emit events so wallets can show visual things to users
                 if (scriptHashesSyncing.decrementAndGet() == 0)
                   EventStream.publish(WalletSyncEnded)
-
                 EventStream.publish(
                   WalletSyncProgress(
                     maxEverInConcurrentSync,
