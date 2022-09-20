@@ -17,6 +17,11 @@ import scodec.bits.ByteVector
 import spray.json._
 
 object LNUrl {
+  case class ErrorFromVendor(msg: String)
+      extends Exception(s"error from lnurl vendor: $msg")
+  case object InvalidJsonFromVendor
+      extends Exception("invalid json from lnurl vendor")
+
   def fromIdentifier(identifier: String): LNUrl = {
     val (user, domain) = identifier.splitAt(identifier indexOf '@')
     val isOnionDomain: Boolean = domain.endsWith(NodeAddress.onionSuffix)
@@ -54,11 +59,11 @@ object LNUrl {
       .map(json2String)
       .filter(_.toUpperCase == "ERROR")
     if (hasErrorDescription.isSuccess)
-      throw new Exception(s"Error from vendor: ${hasErrorDescription.get}")
+      throw ErrorFromVendor(hasErrorDescription.get)
     else if (hasError.isSuccess)
-      throw new Exception(s"Error from vendor: no description provided")
+      throw ErrorFromVendor("")
     else if (parseAttempt.isFailure)
-      throw new Exception(s"Invalid json from vendor: $raw")
+      throw InvalidJsonFromVendor
     raw
   }
 
@@ -100,7 +105,9 @@ case class LNUrl(request: String) {
   }
 
   def level1DataResponse: Observable[LNUrlData] = Rx.ioQueue.map { _ =>
-    to[LNUrlData](LNParams.connectionProvider.get(uri.toString))
+    to[LNUrlData](
+      LNUrl.guardResponse(LNParams.connectionProvider.get(uri.toString))
+    )
   }
 }
 
