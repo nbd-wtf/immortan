@@ -181,6 +181,7 @@ class ElectrumWallet(
             // save the new status to the data so we don't run this same thing twice for the same updates
             //   (this shouldn't happen in general because of the debouncing, but it's still a good idea
             //    to put this here just after the check)
+            val previousScriptHashStatus = data.status.get(scriptHash)
             data = data.copy(status = data.status.updated(scriptHash, status))
 
             System.err.println(
@@ -407,6 +408,16 @@ class ElectrumWallet(
                   WalletSyncProgress(
                     maxEverInConcurrentSync,
                     scriptHashesSyncing.get
+                  )
+                )
+              }
+              .andThen { case Failure(_) =>
+                // in case of any failure, set the script hash status to what it was before
+                //   so we'll try to update it again next time we connect to a new electrum
+                //   server or restart the wallet.
+                data = data.copy(status =
+                  data.status.updatedWith(scriptHash)(_ =>
+                    previousScriptHashStatus
                   )
                 )
               }
