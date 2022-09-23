@@ -32,7 +32,8 @@ package object electrum {
       task = new java.util.TimerTask {
         // actually run the function when the timer ends
         def run(): Unit = {
-          promise.success(fn(arg))
+          val res = fn(arg)
+          if (!promise.isCompleted) promise.success(res)
         }
       }
       timer.schedule(task, duration.toMillis)
