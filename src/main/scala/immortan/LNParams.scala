@@ -364,12 +364,12 @@ class SyncParams {
     NodeAddress.unresolved(9735, host = 107, 189, 30, 195),
     "Jiraiya"
   )
-  val zebedee: RemoteNodeInfo = RemoteNodeInfo(
+  val kamenRiderBlack: RemoteNodeInfo = RemoteNodeInfo(
     PublicKey(
       hex"02d5562ef0eb09c29b9ebe2393134292aa0cfd8bd0b022eed02dc2dcafd6f7097d"
     ),
     NodeAddress.unresolved(9735, host = 54, 87, 19, 126),
-    "ZEBEDEE"
+    "Kamen Rider Black"
   )
   val silentBob: RemoteNodeInfo = RemoteNodeInfo(
     PublicKey(
@@ -393,7 +393,7 @@ class SyncParams {
     "ACINQ"
   )
   val syncNodes: Set[RemoteNodeInfo] = Set(
-    zebedee,
+    kamenRiderBlack,
     jiraiya,
     satm,
     motherbase,
