@@ -11,7 +11,7 @@ import immortan._
 import immortan.Channel._
 import immortan.ErrorCodes._
 import immortan.fsm.PreimageCheck
-import immortan.blockchain.CurrentBlockCount
+import immortan.electrum.CurrentBlockCount
 import immortan.channel.Helpers.HashToPreimage
 import immortan.channel._
 

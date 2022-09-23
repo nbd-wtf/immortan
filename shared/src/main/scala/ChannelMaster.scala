@@ -147,7 +147,7 @@ class ChannelMaster(
   var inProcessors = Map.empty[FullPaymentTag, IncomingPaymentProcessor]
 
   var sendTo: (Any, ByteVector32) => Unit = (change, channelId) =>
-    all.get(channelId).foreach(_ process change)
+    all.get(channelId).foreach(_.process(change))
 
   private def defineResolution(
       secret: PrivateKey,
@@ -266,7 +266,7 @@ class ChannelMaster(
   ): Unit = message match {
     case msg: HostedChannelBranding =>
       dataBag.putBranding(worker.info.nodeId, msg)
-    case _ => hostedFromNode(worker.info.nodeId).foreach(_ process message)
+    case _ => hostedFromNode(worker.info.nodeId).foreach(_.process(message))
   }
 
   override def onDisconnect(worker: CommsTower.Worker): Unit = {
