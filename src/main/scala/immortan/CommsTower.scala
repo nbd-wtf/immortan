@@ -128,6 +128,14 @@ object CommsTower {
 
             case message =>
               // This is always a base protocol message
+              message.getClass().getSimpleName() match {
+                case "ChannelAnnouncement"     =>
+                case "NodeAnnouncement"        =>
+                case "ChannelUpdate"           =>
+                case "ReplyShortChannelIdsEnd" =>
+                case "Pong"                    =>
+                case _ => System.err.println(s"_got_ MESSAGE: $message")
+              }
               for (lst <- ourListeners) lst.onMessage(me, message)
           }
         }

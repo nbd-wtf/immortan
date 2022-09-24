@@ -11,6 +11,7 @@ import immortan.crypto.StateMachine
 import scodec.bits.ByteVector
 
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
+import fr.acinq.eclair.wire.HostedChannelMessage
 
 // Used to decrypt remote messages -> send to channel as well as encrypt outgoing messages -> send to socket
 abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
@@ -91,6 +92,14 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
           msg: LightningMessage,
           TransportHandler.WaitingCyphertext
         ) =>
+      if (!msg.isInstanceOf[HostedChannelMessage])
+        msg.getClass().getSimpleName() match {
+          case "Pong"                 =>
+          case "Ping"                 =>
+          case "QueryShortChannelIds" =>
+          case _ => System.err.println(s"_sent_ MESSAGE: $msg")
+        }
+
       val encoded =
         LightningMessageCodecs.lightningMessageCodecWithFallback.encode(
           LightningMessageCodecs prepare msg

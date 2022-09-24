@@ -54,27 +54,33 @@ class ElectrumClientPool(
   private val awaitForLatestTip = Promise[HeaderSubscriptionResponse]()
   var latestTip: Future[HeaderSubscriptionResponse] = awaitForLatestTip.future
 
-  def killClient(client: ElectrumClient): Unit = {
-    client.disconnect()
-    client.cancelPingTrigger()
-
-    if (addresses.contains(client)) {
+  def killClient(client: ElectrumClient): Unit =
+    if (customAddress.isDefined) {
+      // we only have one, do not disconnect from it
       System.err.println(
-        s"[info][pool] disconnecting from client ${client.address}"
+        "[warn][pool] we were asked to disconnect from this client, but since it is a custom server we won't do that"
       )
+    } else {
+      client.disconnect()
+      client.cancelPingTrigger()
 
-      addresses -= client
-      tips.remove(client)
+      if (addresses.contains(client)) {
+        System.err.println(
+          s"[info][pool] disconnecting from client ${client.address}"
+        )
 
-      if (addresses.isEmpty) {
-        System.err.println(s"[info][pool] no active connections left")
-        EventStream.publish(ElectrumDisconnected)
+        addresses -= client
+        tips.remove(client)
+
+        if (addresses.isEmpty) {
+          System.err.println(s"[info][pool] no active connections left")
+          EventStream.publish(ElectrumDisconnected)
+        }
+
+        // connect to a new one
+        Future { self.connect() }
       }
-
-      // connect to a new one
-      Future { self.connect() }
     }
-  }
 
   lazy val serverAddresses: Set[ElectrumServerAddress] = customAddress match {
     case Some(address) =>

@@ -9,7 +9,7 @@ import com.google.common.cache.LoadingCache
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.TxConfirmedAt
+import fr.acinq.eclair.blockchain.electrum.TxConfirmedAt
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.{IncomingPaymentPacket, Bolt11Invoice}
 import fr.acinq.eclair.transactions.{LocalFulfill, RemoteFulfill, RemoteReject}

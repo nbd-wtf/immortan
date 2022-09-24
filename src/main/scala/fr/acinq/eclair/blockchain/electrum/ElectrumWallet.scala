@@ -3,7 +3,6 @@ package fr.acinq.eclair.blockchain.electrum
 import java.util.concurrent.atomic.AtomicInteger
 import scala.util.chaining._
 import scala.annotation.tailrec
-import scala.collection.immutable
 import scala.concurrent.duration._
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -780,7 +779,8 @@ case class ElectrumData(
     excludedOutPoints
   )
 
-  lazy val firstUnusedAccountKeys: immutable.Iterable[ExtendedPublicKey] =
+  lazy val firstUnusedAccountKeys
+      : scala.collection.immutable.Iterable[ExtendedPublicKey] =
     accountKeyMap.collect {
       case (nonExistentScriptHash, privKey)
           if !status.contains(nonExistentScriptHash) =>
@@ -789,7 +789,8 @@ case class ElectrumData(
         privKey
     }
 
-  lazy val firstUnusedChangeKeys: immutable.Iterable[ExtendedPublicKey] = {
+  lazy val firstUnusedChangeKeys
+      : scala.collection.immutable.Iterable[ExtendedPublicKey] = {
     val usedChangeNumbers = transactions.values
       .flatMap(_.txOut)
       .map(_.publicKeyScript)

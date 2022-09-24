@@ -6,7 +6,7 @@ import fr.acinq.bitcoin.DeterministicWallet.{
   KeyPath
 }
 import fr.acinq.bitcoin.{OutPoint, Transaction, TxOut}
-import fr.acinq.eclair.blockchain.TxConfirmedAt
+import fr.acinq.eclair.blockchain.electrum.TxConfirmedAt
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._

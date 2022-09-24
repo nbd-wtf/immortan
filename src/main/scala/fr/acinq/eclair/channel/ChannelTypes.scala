@@ -4,7 +4,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.TxConfirmedAt
+import fr.acinq.eclair.blockchain.electrum.TxConfirmedAt
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.Sphinx.PacketAndSecrets

@@ -4,7 +4,7 @@ import java.util.concurrent.Executors
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.MilliSatoshi
-import fr.acinq.eclair.blockchain.electrum.{EventStream, CurrentBlockCount}
+import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions.{RemoteFulfill, RemoteReject}
 import fr.acinq.eclair.wire.LightningMessage
@@ -61,11 +61,12 @@ object Channel {
     case _                                                            => false
   }
 
-  def isWaiting(chan: Channel): Boolean = chan.data match {
-    case _: DATA_WAIT_FOR_FUNDING_CONFIRMED => true
-    case _: DATA_WAIT_FOR_FUNDING_LOCKED    => true
-    case _                                  => false
-  }
+  def isWaiting(chan: Channel): Boolean =
+    chan.data match {
+      case _: DATA_WAIT_FOR_FUNDING_CONFIRMED => true
+      case _: DATA_WAIT_FOR_FUNDING_LOCKED    => true
+      case _                                  => false
+    }
 
   def isOperationalOrWaiting(chan: Channel): Boolean =
     isOperational(chan) || isWaiting(chan)
@@ -85,11 +86,16 @@ trait Channel
     with CanBeRepliedTo {
   def initialState = Channel.Initial
 
-  def process(changeMsg: Any): Unit =
+  def process(changeMsg: Any): Unit = {
+    System.err.println(
+      s"_processing_, at state $state with data ${if (data != null) data.getClass().getSimpleName()
+        else "<null>"} the message $changeMsg"
+    )
     Future(doProcess(changeMsg)).onComplete {
       case Failure(reason) => events.onException((reason, this, data))
       case _               => // Do nothing
     }
+  }
 
   def SEND(msg: LightningMessage*): Unit
 
@@ -97,6 +103,9 @@ trait Channel
 
   def BECOME(newData: ChannelData, newState: Channel.State): Unit = {
     // Transition must be defined before vars are updated
+    System.err.println(
+      s"_becoming_ $newState with data ${newData.getClass().getSimpleName()}"
+    )
     val trans = (this, data, newData, state, newState)
     super.become(newData, newState)
     events.onBecome(trans)
@@ -157,7 +166,14 @@ trait Channel
           if lastSeenBlockCount.isEmpty && useDelay => {
         val t = new java.util.Timer()
         val task = new java.util.TimerTask {
-          def run() = self.send("propagate")
+          def run() = {
+            // Propagate subsequent block counts right away
+            useDelay = false
+            lastSeenBlockCount = None
+            // Popagate the last delayed block count
+            lastSeenBlockCount.foreach(process)
+
+          }
         }
         t.schedule(task, 10000L)
         lastSeenBlockCount = Some(currentBlockCount)
@@ -169,14 +185,6 @@ trait Channel
         // We may get another chain tip while delaying a current one: store a new one then
         lastSeenBlockCount = Some(currentBlockCount)
         useDelay = true
-      }
-
-      case "propagate" => {
-        // Propagate subsequent block counts right away
-        useDelay = false
-        lastSeenBlockCount = None
-        // Popagate the last delayed block count
-        lastSeenBlockCount.foreach(process)
       }
 
       case message =>
