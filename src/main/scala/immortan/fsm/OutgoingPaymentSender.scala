@@ -70,7 +70,8 @@ case class RemoteFailure(packet: Sphinx.DecryptedFailurePacket, route: Route)
     .getOrElse("first hop")
 
   override def asString: String = {
-    s"- ${packet.failureMessage.message} at ${chanString}.\n${route.asString}"
+    val shortNode = packet.originNode.value.toHex.take(6)
+    s"- ${packet.failureMessage.message} at ${chanString} (${shortNode}).\n${route.asString}"
   }
 }
 
