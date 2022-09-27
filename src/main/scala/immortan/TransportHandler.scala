@@ -92,14 +92,6 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
           msg: LightningMessage,
           TransportHandler.WaitingCyphertext
         ) =>
-      if (!msg.isInstanceOf[HostedChannelMessage])
-        msg.getClass().getSimpleName() match {
-          case "Pong"                 =>
-          case "Ping"                 =>
-          case "QueryShortChannelIds" =>
-          case _ => System.err.println(s"_sent_ MESSAGE: $msg")
-        }
-
       val encoded =
         LightningMessageCodecs.lightningMessageCodecWithFallback.encode(
           LightningMessageCodecs prepare msg

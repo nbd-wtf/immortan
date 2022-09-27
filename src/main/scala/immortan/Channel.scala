@@ -87,10 +87,6 @@ trait Channel
   def initialState = Channel.Initial
 
   def process(changeMsg: Any): Unit = {
-    System.err.println(
-      s"_processing_, at state $state with data ${if (data != null) data.getClass().getSimpleName()
-        else "<null>"} the message $changeMsg"
-    )
     Future(doProcess(changeMsg)).onComplete {
       case Failure(reason) => events.onException((reason, this, data))
       case _               => // Do nothing
@@ -103,9 +99,6 @@ trait Channel
 
   def BECOME(newData: ChannelData, newState: Channel.State): Unit = {
     // Transition must be defined before vars are updated
-    System.err.println(
-      s"_becoming_ $newState with data ${newData.getClass().getSimpleName()}"
-    )
     val trans = (this, data, newData, state, newState)
     super.become(newData, newState)
     events.onBecome(trans)
