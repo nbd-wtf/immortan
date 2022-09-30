@@ -120,7 +120,7 @@ class ElectrumChainSync(
               case Failure(err) => {
                 System.err
                   .println(
-                    s"[error][chain-sync] electrum peer sent bad headers: $err"
+                    s"[warn][chain-sync] electrum peer sent bad headers: $err"
                   )
               }
             }
@@ -182,23 +182,30 @@ class ElectrumChainSync(
         case RUNNING if blockchain.tip.map(_.header) != Some(tip.header) =>
           val difficultyOk = Blockchain
             .getDifficulty(blockchain, tip.height, headerDb)
-            .forall(tip.header.bits.==)
+            .forall(tip.header.bits == _)
 
-          Try(Blockchain.addHeader(blockchain, tip.height, tip.header)) match {
-            case Success(bc) if difficultyOk => {
-              val (nextBlockchain, chunks) = Blockchain.optimize(bc)
-              headerDb.addHeaders(chunks.map(_.header), chunks.head.height)
-              EventStream.publish(BlockchainReady(nextBlockchain))
-              blockchain = nextBlockchain
+          if (!difficultyOk) {
+            System.err.println(
+              s"[warn][chain-sync] difficulty not ok from header subscription"
+            )
+            pool.killClient(tip.source)
+          } else
+            Try(
+              Blockchain.addHeader(blockchain, tip.height, tip.header)
+            ) match {
+              case Success(bc) => {
+                val (nextBlockchain, chunks) = Blockchain.optimize(bc)
+                headerDb.addHeaders(chunks.map(_.header), chunks.head.height)
+                EventStream.publish(BlockchainReady(nextBlockchain))
+                blockchain = nextBlockchain
+              }
+              case Failure(err) => {
+                System.err.println(
+                  s"[warn][chain-sync] bad headers from subscription: $err"
+                )
+                pool.killClient(tip.source)
+              }
             }
-
-            case _ => {
-              System.err.println(
-                "[error][chain-sync] electrum peer sent bad headers"
-              )
-              pool.killClient(tip.source)
-            }
-          }
 
         case _ =>
       }

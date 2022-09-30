@@ -1,7 +1,7 @@
 name                   := "immortan"
 organization           := "com.fiatjaf"
 scalaVersion           := "2.13.8"
-version                := "0.7.7"
+version                := "0.7.8-SNAPSHOT"
 sonatypeProfileName    := "com.fiatjaf"
 homepage               := Some(url("https://github.com/fiatjaf/immortan"))
 scmInfo                := Some(ScmInfo(url("https://github.com/fiatjaf/immortan"), "git@github.com:fiatjaf/immortan.git"))
