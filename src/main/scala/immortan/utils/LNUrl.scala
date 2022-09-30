@@ -75,12 +75,23 @@ object LNUrl {
 
 case class LNUrl(request: String) {
   val uri: Uri = LNUrl.checkHost(request)
-  val warnUri: String = uri.getHost.map { char =>
-    if (CharMatcher.ascii matches char) char.toString
-    else s"<b>[$char]</b>"
-  }.mkString
 
-  lazy val k1: Try[String] = Try(uri getQueryParameter "k1")
+  def warnUri: String = {
+    val host = uri.getHost.map { char =>
+      if (CharMatcher.ascii.matches(char)) char.toString
+      else s"<b>[$char]</b>"
+    }.mkString
+
+    val withLud18Name =
+      uri.getPath().split("/.well-known/lnurlp/").toList match {
+        case _ :: name :: Nil => s"${name}@${host}"
+        case _                => host
+      }
+
+    withLud18Name
+  }
+
+  lazy val k1: Try[String] = Try(uri.getQueryParameter("k1"))
   lazy val isAuth: Boolean = {
     val authTag =
       Try(uri.getQueryParameter("tag").toLowerCase == "login").getOrElse(false)
