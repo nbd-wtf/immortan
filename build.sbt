@@ -29,7 +29,7 @@ lazy val immortan = crossProject(JVMPlatform, JSPlatform)
       "io.spray" % "spray-json_2.13" % "1.3.5",
 
       // good
-      "com.fiatjaf" %% "scoin" % "0.3.1-SNAPSHOT",
+      "com.fiatjaf" %% "scoin" % "0.4.0-SNAPSHOT",
       "org.scala-lang.modules" %% "scala-parser-combinators" % "2.1.1",
       "com.softwaremill.quicklens" %% "quicklens" % "1.8.4",
     )
