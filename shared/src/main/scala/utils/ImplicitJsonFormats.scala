@@ -335,15 +335,17 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
   implicit object LNUrlDataFmt extends JsonFormat[LNUrlData] {
     def write(unserialized: LNUrlData): JsValue = throw new RuntimeException
     def read(serialized: JsValue): LNUrlData =
-      serialized.asJsObject fields TAG match {
+      serialized.asJsObject.fields(TAG) match {
         case JsString("hostedChannelRequest") =>
           serialized.convertTo[HostedChannelRequest]
         case JsString("channelRequest") =>
           serialized.convertTo[NormalChannelRequest]
         case JsString("withdrawRequest") =>
           serialized.convertTo[WithdrawRequest]
-        case JsString("payRequest") => serialized.convertTo[PayRequest]
-        case _                      => throw new Exception
+        case JsString("payRequest") =>
+          serialized.convertTo[PayRequest]
+        case otherValue =>
+          throw new Exception(s"unknown tag $otherValue")
       }
   }
 

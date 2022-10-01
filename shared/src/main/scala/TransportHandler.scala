@@ -7,7 +7,7 @@ import scodec.bits.ByteVector
 import scoin._
 import scoin.Protocol
 import scoin.ln.{LightningMessage, LightningMessageCodecs, Pong, Init}
-import scoin.hc.HostedChannelCodecs
+import scoin.hc.{HostedChannelMessage, HostedChannelCodecs}
 
 import immortan._
 import immortan.TransportHandler._

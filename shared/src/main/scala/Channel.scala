@@ -8,7 +8,7 @@ import scoin._
 import scoin.ln.LightningMessage
 
 import immortan._
-import immortan.electrum.{EventStream, CurrentblockCount}
+import immortan.electrum.{EventStream, CurrentBlockCount}
 import immortan.channel._
 import immortan.Channel.channelContext
 
@@ -58,11 +58,12 @@ object Channel {
     case _                                                            => false
   }
 
-  def isWaiting(chan: Channel): Boolean = chan.data match {
-    case _: DATA_WAIT_FOR_FUNDING_CONFIRMED => true
-    case _: DATA_WAIT_FOR_FUNDING_LOCKED    => true
-    case _                                  => false
-  }
+  def isWaiting(chan: Channel): Boolean =
+    chan.data match {
+      case _: DATA_WAIT_FOR_FUNDING_CONFIRMED => true
+      case _: DATA_WAIT_FOR_FUNDING_LOCKED    => true
+      case _                                  => false
+    }
 
   def isOperationalOrWaiting(chan: Channel): Boolean =
     isOperational(chan) || isWaiting(chan)
@@ -157,7 +158,13 @@ trait Channel
           if lastSeenBlockCount.isEmpty && useDelay => {
         val t = new java.util.Timer()
         val task = new java.util.TimerTask {
-          def run() = self.send("propagate")
+          def run() = {
+            // Propagate subsequent block counts right away
+            useDelay = false
+            lastSeenBlockCount = None
+            // Popagate the last delayed block count
+            lastSeenBlockCount.foreach(process)
+          }
         }
         t.schedule(task, 10000L)
         lastSeenBlockCount = Some(currentBlockCount)
@@ -169,14 +176,6 @@ trait Channel
         // We may get another chain tip while delaying a current one: store a new one then
         lastSeenBlockCount = Some(currentBlockCount)
         useDelay = true
-      }
-
-      case "propagate" => {
-        // Propagate subsequent block counts right away
-        useDelay = false
-        lastSeenBlockCount = None
-        // Popagate the last delayed block count
-        lastSeenBlockCount.foreach(process)
       }
 
       case message =>

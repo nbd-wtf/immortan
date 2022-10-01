@@ -224,7 +224,7 @@ object RelayTable extends Table {
   val selectSummarySql =
     s"SELECT SUM($relayed), SUM($earned), COUNT($id) FROM $table"
 
-  val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT ?"
+  val selectRecentSql = s"SELECT * FROM $table ORDER BY $seenAt DESC LIMIT ?"
 
   def createStatements: Seq[String] = {
     val createTable = s"""CREATE TABLE IF NOT EXISTS $table(
@@ -301,7 +301,7 @@ object PaymentTable extends Table {
       s"($updatedAt > ? AND $status = $PENDING AND $incoming = 1)" // Skip unfulfilled incoming payments which are expired
     val allFulfilledIncoming =
       s"($updatedAt > 0 AND $status = $SUCCEEDED AND $incoming = 1)" // Select all incoming payments which are fulfilled by now
-    s"SELECT * FROM $table WHERE $recentFailed OR $nonFailedOutgoing OR $recentPendingIncoming OR $allFulfilledIncoming ORDER BY $id DESC LIMIT ?"
+    s"SELECT * FROM $table WHERE $recentFailed OR $nonFailedOutgoing OR $recentPendingIncoming OR $allFulfilledIncoming ORDER BY $seenAt DESC LIMIT ?"
   }
 
   val selectAllPendingOutgoing =
@@ -394,7 +394,7 @@ object TxTable extends Table {
   val newVirtualSql = s"INSERT INTO $fts$table ($search, $txid) VALUES (?, ?)"
 
   // Selecting
-  val selectRecentSql = s"SELECT * FROM $table ORDER BY $id DESC LIMIT ?"
+  val selectRecentSql = s"SELECT * FROM $table ORDER BY $seenAt DESC LIMIT ?"
 
   val selectSummarySql =
     s"SELECT SUM($feeSat), SUM($receivedSat), SUM($sentSat), COUNT($id) FROM $table WHERE $doubleSpent = 0"

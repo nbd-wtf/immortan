@@ -3,11 +3,16 @@ package immortan.utils
 import java.net.InetSocketAddress
 
 import immortan.none
-import immortan.blockchain.CurrentBlockCount
-import immortan.electrum.ElectrumChainSync
-import immortan.electrum.EventStream
+import immortan.electrum.CurrentBlockCount
+import immortan.electrum.ElectrumChainSync._
 import immortan.electrum.ElectrumClient._
 import immortan.electrum.ElectrumWallet._
+import immortan.electrum.{
+  EventStream,
+  ElectrumReady,
+  ElectrumDisconnected,
+  CurrentBlockCount
+}
 
 class WalletEventsCatcher {
   // Not using a set to ensure insertion order
@@ -20,22 +25,31 @@ class WalletEventsCatcher {
     listeners = listeners diff List(listener)
 
   EventStream.subscribe {
-    case event: WalletReady => for (lst <- listeners) lst.onWalletReady(event)
+    case event: WalletReady =>
+      listeners.foreach(_.onWalletReady(event))
     case event: TransactionReceived =>
-      for (lst <- listeners) lst.onTransactionReceived(event)
+      listeners.foreach(_.onTransactionReceived(event))
 
     case event: CurrentBlockCount =>
-      for (lst <- listeners) lst.onChainTipKnown(event)
+      listeners.foreach(_.onChainTipKnown(event))
     case event: ElectrumReady =>
-      for (lst <- listeners) lst.onChainMasterSelected(event.serverAddress)
+      listeners.foreach(_.onChainConnected())
     case ElectrumDisconnected =>
-      for (lst <- listeners) lst.onChainDisconnected()
+      listeners.foreach(_.onChainDisconnected())
 
-    case event: ElectrumChainSync.ChainSyncStarted =>
-      for (lst <- listeners)
-        lst.onChainSyncStarted(event.localTip, event.remoteTip)
-    case event: ElectrumChainSync.ChainSyncEnded =>
-      for (lst <- listeners) lst.onChainSyncEnded(event.localTip)
+    case event: ChainSyncStarted =>
+      listeners.foreach(_.onChainSyncStarted(event.localTip, event.remoteTip))
+    case event: ChainSyncProgress =>
+      listeners.foreach(_.onChainSyncProgress(event.localTip, event.remoteTip))
+    case event: ChainSyncEnded =>
+      listeners.foreach(_.onChainSyncEnded(event.localTip))
+
+    case WalletSyncStarted =>
+      listeners.foreach(_.onWalletSyncStarted())
+    case event: WalletSyncProgress =>
+      listeners.foreach(_.onWalletSyncProgress(event.max, event.left))
+    case WalletSyncEnded =>
+      listeners.foreach(_.onWalletSyncEnded())
   }
 }
 
@@ -44,9 +58,14 @@ class WalletEventsListener {
   def onTransactionReceived(event: TransactionReceived): Unit = none
 
   def onChainTipKnown(event: CurrentBlockCount): Unit = none
-  def onChainMasterSelected(event: InetSocketAddress): Unit = none
+  def onChainConnected(): Unit = none
   def onChainDisconnected(): Unit = none
 
   def onChainSyncStarted(localTip: Long, remoteTip: Long): Unit = none
+  def onChainSyncProgress(localTip: Long, remoteTip: Long): Unit = none
   def onChainSyncEnded(localTip: Long): Unit = none
+
+  def onWalletSyncStarted(): Unit = none
+  def onWalletSyncProgress(max: Int, left: Int): Unit = none
+  def onWalletSyncEnded(): Unit = none
 }

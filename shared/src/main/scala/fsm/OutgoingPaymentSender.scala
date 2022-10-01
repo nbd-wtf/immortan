@@ -52,7 +52,7 @@ case class LocalFailure(status: String, amount: MilliSatoshi)
 
 case class UnreadableRemoteFailure(route: Route) extends PaymentFailure {
   override def asString: String =
-    s"- Remote failure at unknown channel.\n${route.asString}"
+    s"- Unreadable remote failure.\n${route.asString}"
 }
 
 case class RemoteFailure(packet: Sphinx.DecryptedFailurePacket, route: Route)
@@ -63,10 +63,11 @@ case class RemoteFailure(packet: Sphinx.DecryptedFailurePacket, route: Route)
 
   def chanString = originShortChanId
     .map(_.toString)
-    .getOrElse("first hop")
+    .getOrElse("last hop")
 
   override def asString: String = {
-    s"- ${packet.failureMessage.message} at ${chanString}.\n${route.asString}"
+    val shortNode = packet.originNode.value.toHex.take(6)
+    s"- ${packet.failureMessage.message} at $chanString ($shortNode).\n${route.asString}"
   }
 }
 

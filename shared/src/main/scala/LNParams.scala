@@ -6,7 +6,6 @@ import scala.concurrent.{Await, ExecutionContext}
 import scala.util.Try
 import com.softwaremill.quicklens._
 import scodec.bits.{ByteVector, HexStringSyntax}
-import castor.Context.Simple.global
 import scoin.Crypto.{PrivateKey, PublicKey}
 import scoin._
 import scoin.ln._
@@ -297,8 +296,9 @@ case class WalletExt(
       params.emptyPersistentDataBytes,
       eclairWallet.ewt.xPub.publicKey
     )
-    eclairWallet.wallet.send(params.emptyPersistentDataBytes)
-    eclairWallet.wallet.send(sync.getChain)
+    eclairWallet.wallet.load(params.emptyPersistentDataBytes)
+    sync.getSyncedBlockchain.foreach(eclairWallet.wallet.blockchainReady(_))
+
     copy(wallets = eclairWallet :: wallets)
   }
 
@@ -386,14 +386,14 @@ class SyncParams {
     NodeAddress.unresolved(9735, host = 107, 189, 30, 195),
     "Jiraiya"
   )
-  val zebedee: RemoteNodeInfo = RemoteNodeInfo(
+  val kamenRiderBlack: RemoteNodeInfo = RemoteNodeInfo(
     PublicKey(
       ByteVector.fromValidHex(
         "02d5562ef0eb09c29b9ebe2393134292aa0cfd8bd0b022eed02dc2dcafd6f7097d"
       )
     ),
-    NodeAddress.unresolved(9735, host = 54, 175, 219, 75),
-    "ZEBEDEE"
+    NodeAddress.unresolved(9735, host = 54, 87, 19, 126),
+    "Kamen Rider Black"
   )
   val silentBob: RemoteNodeInfo = RemoteNodeInfo(
     PublicKey(
@@ -423,6 +423,8 @@ class SyncParams {
     "ACINQ"
   )
   val syncNodes: Set[RemoteNodeInfo] = Set(
+    kamenRiderBlack,
+    jiraiya,
     satm,
     motherbase,
     bCashIsTrash,
