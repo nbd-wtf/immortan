@@ -199,6 +199,13 @@ class ElectrumChainSync(
                 EventStream.publish(BlockchainReady(nextBlockchain))
                 blockchain = nextBlockchain
               }
+              case Failure(MissingParent(header, height)) =>
+                System.err.println(
+                  s"[warn][chain-sync] missing parent for header $header at $height, going back into syncing mode"
+                )
+                EventStream.publish(ChainSyncStarted(height - 1, tip.height))
+                getHeaders(height - 1, RETARGETING_PERIOD)
+                state = SYNCING
               case Failure(err) => {
                 System.err.println(
                   s"[warn][chain-sync] bad headers from subscription: $err"
