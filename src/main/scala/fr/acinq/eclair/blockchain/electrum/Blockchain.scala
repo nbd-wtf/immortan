@@ -23,7 +23,10 @@ case class Blockchain(
   import Blockchain._
 
   require(
-    chainHash == Block.LivenetGenesisBlock.hash || chainHash == Block.TestnetGenesisBlock.hash || chainHash == Block.RegtestGenesisBlock.hash,
+    chainHash == Block.LivenetGenesisBlock.hash ||
+      chainHash == Block.TestnetGenesisBlock.hash ||
+      chainHash == Block.RegtestGenesisBlock.hash ||
+      chainHash == Block.SignetGenesisBlock.hash,
     s"invalid chain hash $chainHash"
   )
 
@@ -136,7 +139,6 @@ object Blockchain {
       chainhash: ByteVector32,
       genesis: BlockHeader
   ): Blockchain = {
-    require(chainhash == Block.RegtestGenesisBlock.hash)
     // the height of the genesis block is 0
     val blockIndex =
       BlockIndex(genesis, 0, None, decodeCompact(genesis.bits)._1)
@@ -279,8 +281,10 @@ object Blockchain {
           headersMap =
             blockchain.headersMap ++ bestchain.map(bi => bi.hash -> bi)
         )
+
       case _ if height < blockchain.checkpoints.length * RETARGETING_PERIOD =>
         blockchain
+
       case _ if height == blockchain.height + 1 =>
         // attach at our best chain
         require(
@@ -307,8 +311,9 @@ object Blockchain {
         val headersMap1 =
           blockchain.headersMap ++ indexes.map(bi => bi.hash -> bi)
         blockchain.copy(bestchain = bestchain1, headersMap = headersMap1)
-      // do nothing; headers have been validated
+
       case _ =>
+        // do nothing; headers have been validated
         throw new IllegalArgumentException(
           s"cannot add headers chunk to an empty blockchain: not within our checkpoint"
         )
@@ -374,12 +379,9 @@ object Blockchain {
       addHeadersChunk(blockchain, height, headers)
     else {
       @tailrec
-      def loop(bc: Blockchain, h: Int, hs: Seq[BlockHeader]): Blockchain = if (
-        hs.isEmpty
-      ) bc
-      else {
-        loop(Blockchain.addHeader(bc, h, hs.head), h + 1, hs.tail)
-      }
+      def loop(bc: Blockchain, h: Int, hs: Seq[BlockHeader]): Blockchain =
+        if (hs.isEmpty) bc
+        else loop(Blockchain.addHeader(bc, h, hs.head), h + 1, hs.tail)
 
       loop(blockchain, height, headers)
     }

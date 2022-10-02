@@ -22,7 +22,7 @@ object ElectrumWalletType {
       makeSigningType(tag, xPriv49(master, chainHash), chainHash)
     case EclairWallet.BIP84 =>
       makeSigningType(tag, xPriv84(master, chainHash), chainHash)
-    case _ => throw new RuntimeException
+    case t => throw new RuntimeException(s"signing wallet type unknown: $t")
   }
 
   def makeSigningType(
@@ -38,7 +38,7 @@ object ElectrumWalletType {
       new ElectrumWallet49(Some(secrets), publicKey(secrets.xPriv), chainHash)
     case EclairWallet.BIP84 =>
       new ElectrumWallet84(Some(secrets), publicKey(secrets.xPriv), chainHash)
-    case _ => throw new RuntimeException
+    case t => throw new RuntimeException(s"signing wallet type unkown: $t")
   }
 
   def xPriv32(
@@ -46,6 +46,11 @@ object ElectrumWalletType {
       chainHash: ByteVector32
   ): AccountAndXPrivKey = chainHash match {
     case Block.RegtestGenesisBlock.hash =>
+      AccountAndXPrivKey(
+        derivePrivateKey(master, hardened(1L) :: 0L :: Nil),
+        master
+      )
+    case Block.SignetGenesisBlock.hash =>
       AccountAndXPrivKey(
         derivePrivateKey(master, hardened(1L) :: 0L :: Nil),
         master
@@ -60,7 +65,7 @@ object ElectrumWalletType {
         derivePrivateKey(master, hardened(0L) :: 0L :: Nil),
         master
       )
-    case _ => throw new RuntimeException
+    case _ => throw new RuntimeException("unknown chain on xpriv32 derivation")
   }
 
   def xPriv44(
@@ -68,6 +73,14 @@ object ElectrumWalletType {
       chainHash: ByteVector32
   ): AccountAndXPrivKey = chainHash match {
     case Block.RegtestGenesisBlock.hash =>
+      AccountAndXPrivKey(
+        derivePrivateKey(
+          master,
+          hardened(44L) :: hardened(1L) :: hardened(0L) :: Nil
+        ),
+        master
+      )
+    case Block.SignetGenesisBlock.hash =>
       AccountAndXPrivKey(
         derivePrivateKey(
           master,
@@ -91,7 +104,7 @@ object ElectrumWalletType {
         ),
         master
       )
-    case _ => throw new RuntimeException
+    case _ => throw new RuntimeException("unknown chain on xpriv44 derivation")
   }
 
   def xPriv49(
@@ -99,6 +112,14 @@ object ElectrumWalletType {
       chainHash: ByteVector32
   ): AccountAndXPrivKey = chainHash match {
     case Block.RegtestGenesisBlock.hash =>
+      AccountAndXPrivKey(
+        derivePrivateKey(
+          master,
+          hardened(49L) :: hardened(1L) :: hardened(0L) :: Nil
+        ),
+        master
+      )
+    case Block.SignetGenesisBlock.hash =>
       AccountAndXPrivKey(
         derivePrivateKey(
           master,
@@ -122,7 +143,7 @@ object ElectrumWalletType {
         ),
         master
       )
-    case _ => throw new RuntimeException
+    case _ => throw new RuntimeException("unknown chain on xpriv49 derivation")
   }
 
   def xPriv84(
@@ -130,6 +151,14 @@ object ElectrumWalletType {
       chainHash: ByteVector32
   ): AccountAndXPrivKey = chainHash match {
     case Block.RegtestGenesisBlock.hash =>
+      AccountAndXPrivKey(
+        derivePrivateKey(
+          master,
+          hardened(84L) :: hardened(1L) :: hardened(0L) :: Nil
+        ),
+        master
+      )
+    case Block.SignetGenesisBlock.hash =>
       AccountAndXPrivKey(
         derivePrivateKey(
           master,
@@ -153,7 +182,7 @@ object ElectrumWalletType {
         ),
         master
       )
-    case _ => throw new RuntimeException
+    case _ => throw new RuntimeException("unknown chain on xpriv84 derivation")
   }
 }
 

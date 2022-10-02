@@ -36,8 +36,18 @@ class ElectrumChainSync(
 ) {
   import ElectrumChainSync._
 
-  var blockchain: Blockchain =
-    if (chainHash != Block.RegtestGenesisBlock.hash) {
+  var blockchain: Blockchain = chainHash match {
+    case Block.RegtestGenesisBlock.hash =>
+      Blockchain.fromGenesisBlock(
+        Block.RegtestGenesisBlock.hash,
+        Block.RegtestGenesisBlock.header
+      )
+    case Block.SignetGenesisBlock.hash =>
+      Blockchain.fromGenesisBlock(
+        Block.SignetGenesisBlock.hash,
+        Block.SignetGenesisBlock.header
+      )
+    case _ =>
       // In case if anything at all goes wrong we just use an initial blockchain and resync it from checkpoint
       val blockchain = Blockchain.fromCheckpoints(
         checkpoints = CheckPoint.load(chainHash, headerDb),
@@ -54,11 +64,7 @@ class ElectrumChainSync(
           headers
         )
       } getOrElse blockchain
-    } else
-      Blockchain.fromGenesisBlock(
-        Block.RegtestGenesisBlock.hash,
-        Block.RegtestGenesisBlock.header
-      )
+  }
 
   EventStream.subscribe { case ElectrumDisconnected =>
     state = DISCONNECTED

@@ -228,7 +228,10 @@ object ElectrumClientPool {
           case Block.SignetGenesisBlock.hash  => "signet.json"
           case Block.TestnetGenesisBlock.hash => "testnet.json"
           case Block.RegtestGenesisBlock.hash => "regtest.json"
-          case _                              => throw new RuntimeException
+          case _ =>
+            throw new RuntimeException(
+              "missing electrum servers for given chain"
+            )
         }))
     )
 

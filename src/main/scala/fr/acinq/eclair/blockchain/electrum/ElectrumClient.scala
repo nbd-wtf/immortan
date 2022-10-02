@@ -205,6 +205,8 @@ object ElectrumClient {
 
     val RegtestGenesisHeader: Header =
       makeHeader(0, Block.RegtestGenesisBlock.header)
+    val SignetGenesisHeader: Header =
+      makeHeader(0, Block.SignetGenesisBlock.header)
     val TestnetGenesisHeader: Header =
       makeHeader(0, Block.TestnetGenesisBlock.header)
     val LivenetGenesisHeader: Header =
