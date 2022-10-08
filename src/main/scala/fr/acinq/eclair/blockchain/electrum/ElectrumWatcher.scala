@@ -287,10 +287,9 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool) {
         watchConfirmeds.foreach { case (w: WatchConfirmed, cb) => watch(w)(cb) }
         watchSpents.foreach { case (w: WatchSpent, cb) => watch(w)(cb) }
 
-        // publish all pending transactions
-        publishQueue.foreach(maybePublish(_))
-
         state = Running
+        // publish all pending transactions (after changing the state to Running)
+        publishQueue.foreach(maybePublish(_))
 
       case Running =>
         // a new block was found
