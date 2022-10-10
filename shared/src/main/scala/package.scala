@@ -371,7 +371,8 @@ package object immortan {
     // We ONLY support BIP84 watching wallets so all inputs have witnesses
     psbt.extract() orElse psbt.inputs.zipWithIndex
       .foldLeft(psbt) { case (psbt1, input ~ index) =>
-        val witness = (Script.witnessPay2wpkh _).tupled(input.partialSigs.head)
+        val (pubkey, signature) = input.partialSigs.head
+        val witness = Script.witnessPay2wpkh(pubkey, signature)
         psbt1.finalizeWitnessInput(index, witness).get
       }
       .extract()

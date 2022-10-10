@@ -65,7 +65,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
           handleEnterOperationalState()
           doProcess(PING)
 
-        case (writer, _, _) =>
+        case (writer, null, _) =>
           writer.write(ByteVector.empty) match {
             case (_, (encoder, decoder, ck), message) =>
               val encoder1 = ExtendedCipherState(encoder, ck)
@@ -76,7 +76,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
               handleEnterOperationalState()
               doProcess(PING)
 
-            case (reader2, _, message) =>
+            case (reader2, null, message) =>
               handleEncryptedOutgoingData(prefix +: message)
               become(
                 HandshakeData(reader2, remainder),

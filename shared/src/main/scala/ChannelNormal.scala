@@ -236,7 +236,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
           if (wait.channelFlags.announceChannel) 1.toByte else 2.toByte,
           wait.channelId,
           wait.channelFeatures,
-          Right(randomKey.publicKey),
+          Right(randomKey().publicKey),
           ShaChain.init,
           updateOpt = None,
           postCloseOutgoingResolvedIds = Set.empty,
@@ -368,7 +368,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
           else 0.toByte,
           fundingSigned.channelId,
           wait.initFundee.channelFeatures,
-          Right(randomKey.publicKey),
+          Right(randomKey().publicKey),
           ShaChain.init,
           updateOpt = None,
           postCloseOutgoingResolvedIds = Set.empty[Long],
@@ -552,7 +552,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
             update: ChannelUpdate,
             Channel.Open | Channel.Sleeping
           )
-          if update.shortChannelId == norm.shortChannelId && norm.commitments.updateOpt
+          if update.shortChannelId.toLong == norm.shortChannelId && norm.commitments.updateOpt
             .forall(_.core != update.core) =>
         StoreBecomeSend(
           norm withNewCommits norm.commitments.copy(updateOpt = Some(update)),
@@ -821,7 +821,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
           Channel.Open
         )
         for (reject <- remoteRejects) events addRejectedRemotely reject
-        events.notifyResolvers
+        events.notifyResolvers()
 
       case (norm: DATA_NORMAL, remoteFee: UpdateFee, Channel.Open) =>
         BECOME(
@@ -1070,21 +1070,21 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
             norm.commitments.remoteNextCommitInfo match {
               case _
                   if norm.commitments.remoteNextCommitInfo.isRight && norm.commitments.remoteCommit.index + 1 == rs.nextLocalCommitmentNumber =>
-                resendRevocation
+                resendRevocation()
               case Left(waitingForRevocation)
                   if waitingForRevocation.nextRemoteCommit.index + 1 == rs.nextLocalCommitmentNumber =>
-                resendRevocation
+                resendRevocation()
 
               case Left(waitingForRevocation)
                   if waitingForRevocation.nextRemoteCommit.index == rs.nextLocalCommitmentNumber =>
                 if (
                   norm.commitments.localCommit.index <= waitingForRevocation.sentAfterLocalCommitIndex
-                ) resendRevocation
+                ) resendRevocation()
                 (norm.commitments.localChanges.signed :+ waitingForRevocation.sent)
                   .foreach(change => sendQueue :+= change)
                 if (
                   norm.commitments.localCommit.index > waitingForRevocation.sentAfterLocalCommitIndex
-                ) resendRevocation
+                ) resendRevocation()
 
               case _ =>
                 // Sync has failed, no sense to continue normally, force-close it
@@ -1093,7 +1093,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
 
             BECOME(norm, Channel.Open)
             SEND(sendQueue ++ norm.localShutdown: _*)
-            events.notifyResolvers
+            events.notifyResolvers()
         }
 
       case (
@@ -1158,7 +1158,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
         // Peer might have just used a preimage on chain to claim our timeout HTLCs UTXO: consider a payment sent then
         val remoteFulfills = Closing
           .extractPreimages(closing.commitments.localCommit, tx)
-          .map(RemoteFulfill.tupled)
+          .map { case (add, preimage) => RemoteFulfill(add, preimage) }
         val settledOutgoingHtlcIds = remoteFulfills.map(_.ourAdd.id)
 
         val rev = closing.revokedCommitPublished.map { revokedCommit =>
@@ -1199,7 +1199,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
         )
         remoteFulfills foreach events.fulfillReceived
         // There will be no state update
-        events.notifyResolvers
+        events.notifyResolvers()
 
       case (
             closing: DATA_CLOSING,
@@ -1429,13 +1429,13 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
       prev: HasNormalCommitments
   )(turnIntoClosing: HasNormalCommitments => DATA_CLOSING): Unit = {
     val (newClosing: DATA_CLOSING, localProposedAdds, _) =
-      turnIntoClosing.andThen(maybeRevertUnsignedOutgoing)(prev)
+      turnIntoClosing.andThen(maybeRevertUnsignedOutgoing)(prev): @unchecked
     // Here we don't care whether there were proposed updates since data type changes to Channel.Closing anyway
     StoreBecomeSend(newClosing, Channel.Closing)
 
     // Unsigned outgoing HTLCs should be failed right away on any force-closing
     for (add <- localProposedAdds)
-      events addRejectedLocally ChannelNotAbleToSend(add)
+      events.addRejectedLocally(ChannelNotAbleToSend(add))
     // In case if force-closing happens when we have a cross-signed mutual tx
     newClosing.mutualClosePublished.foreach(doPublish)
   }
@@ -1677,8 +1677,10 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
       txes: Iterable[Transaction],
       fcc: ForceCloseCommitPublished
   ): Unit =
-    txes.filterNot(fcc.isIrrevocablySpent).map(BITCOIN_TX_CONFIRMED).foreach {
-      replyEvent =>
+    txes
+      .filterNot(fcc.isIrrevocablySpent)
+      .map(BITCOIN_TX_CONFIRMED(_))
+      .foreach { replyEvent =>
         LNParams.chainWallets.watcher.watch(
           WatchConfirmed(
             replyEvent.tx,
@@ -1686,7 +1688,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
             minDepth = 1L
           )
         ) { process(_) }
-    }
+      }
 
   // Watch utxos that both we and peer can spend to get triggered (spent, but not confirmed yet)
   private def watchSpentIfNeeded(

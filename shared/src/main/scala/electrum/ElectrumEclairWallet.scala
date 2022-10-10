@@ -4,6 +4,7 @@ import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.Try
 import scodec.bits.ByteVector
+import scoin.NumericSatoshi
 import scoin.{
   ByteVector32,
   OP_PUSHDATA,

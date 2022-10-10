@@ -58,9 +58,9 @@ object RouteCalculation {
         .lazyZip(extraHops.map(_.nodeId).drop(1) :+ targetNodeId)
 
     protoDescs.toList
-      .map(ChannelDesc.tupled)
-      .zip(extraHops map toFakeUpdate)
-      .map(GraphEdge.tupled)
+      .map { case (scid, from, to) => ChannelDesc(scid, from, to) }
+      .zip(extraHops.map(toFakeUpdate(_)))
+      .map { case (desc, updext) => GraphEdge(desc, updext) }
   }
 
   def toFakeUpdate(extraHop: ExtraHop): ChannelUpdateExt = {

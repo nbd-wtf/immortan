@@ -191,9 +191,10 @@ sealed trait ForceCloseCommitPublished {
   def isIrrevocablySpent(tx: Transaction): Boolean =
     irrevocablySpent.values.exists(_.tx.txid == tx.txid)
   lazy val isCommitConfirmed: Boolean = isIrrevocablySpent(commitTx)
-  val irrevocablySpent: Map[OutPoint, TxConfirmedAt]
-  val delayedRefundsLeft: Seq[Transaction]
+
   val commitTx: Transaction
+  val irrevocablySpent: Map[OutPoint, TxConfirmedAt]
+  def delayedRefundsLeft: Seq[Transaction]
 }
 
 case class LocalCommitPublished(

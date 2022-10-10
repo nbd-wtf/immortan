@@ -82,24 +82,44 @@ object SqliteWalletDb {
   val seqOfTransactionHistoryItemCodec =
     listOfN[TransactionHistoryItem](uint16, transactionHistoryItemCodec)
 
-  val historyCodec: Codec[Map[ByteVector32, List[TransactionHistoryItem]]] =
-    Codec[Map[ByteVector32, List[TransactionHistoryItem]]](
-      (runtimeMap: Map[ByteVector32, List[TransactionHistoryItem]]) =>
-        listOfN(uint16, bytes32 ~ seqOfTransactionHistoryItemCodec)
-          .encode(runtimeMap.toList),
-      (wire: BitVector) =>
-        listOfN(uint16, bytes32 ~ seqOfTransactionHistoryItemCodec)
-          .decode(wire)
-          .map(_.map(_.toMap))
+  val historyCodec: Codec[Map[ByteVector32, List[TransactionHistoryItem]]] = {
+    case class Bytes32TxHistoryItemList(
+        k: ByteVector32,
+        v: List[TransactionHistoryItem]
     )
+    val bytes32txHistoryItemList =
+      (bytes32 :: seqOfTransactionHistoryItemCodec)
+        .as[Bytes32TxHistoryItemList]
+    val subCodec = listOfN(uint16, bytes32txHistoryItemList)
 
-  val proofsCodec: Codec[Map[ByteVector32, GetMerkleResponse]] =
-    Codec[Map[ByteVector32, GetMerkleResponse]](
-      (runtimeMap: Map[ByteVector32, GetMerkleResponse]) =>
-        listOfN(uint16, bytes32 ~ proofCodec).encode(runtimeMap.toList),
-      (wire: BitVector) =>
-        listOfN(uint16, bytes32 ~ proofCodec).decode(wire).map(_.map(_.toMap))
+    Codec[Map[ByteVector32, List[TransactionHistoryItem]]](
+      (values: Map[ByteVector32, List[TransactionHistoryItem]]) =>
+        subCodec.encode(
+          values.map((k, v) => Bytes32TxHistoryItemList(k, v)).toList
+        ),
+      (bits: BitVector) =>
+        subCodec
+          .decode(bits)
+          .map(_.map(_.map { case Bytes32TxHistoryItemList(k, v) =>
+            (k, v)
+          }.toMap))
     )
+  }
+
+  val proofsCodec: Codec[Map[ByteVector32, GetMerkleResponse]] = {
+    case class Bytes32Merkle(k: ByteVector32, v: GetMerkleResponse)
+    val bytes32merkle = (bytes32 :: proofCodec).as[Bytes32Merkle]
+    val subCodec = listOfN(uint16, bytes32merkle)
+
+    Codec[Map[ByteVector32, GetMerkleResponse]](
+      (values: Map[ByteVector32, GetMerkleResponse]) =>
+        subCodec.encode(values.map((k, v) => Bytes32Merkle(k, v)).toList),
+      (bits: BitVector) =>
+        subCodec
+          .decode(bits)
+          .map(_.map(_.map { case Bytes32Merkle(k, v) => (k, v) }.toMap))
+    )
+  }
 
   val persistentDataCodec: Codec[PersistentData] = {
     ("accountKeysCount" | int32) ::

@@ -2,7 +2,6 @@ package immortan.utils
 
 import scala.util.Try
 import scala.util.chaining._
-import scala.annotation.unchecked
 import com.google.common.base.CharMatcher
 import com.softwaremill.quicklens._
 import rx.lang.scala.Observable
@@ -166,7 +165,7 @@ case class HostedChannelRequest(uri: String, alias: Option[String], k1: String)
     with HasRemoteInfo {
 
   val secret: ByteVector32 = ByteVector32.fromValidHex(k1): @unchecked
-  val InputParser.nodeLink(nodeKey, hostAddress, portNumber) = uri
+  val InputParser.nodeLink(nodeKey, hostAddress, portNumber) = uri: @unchecked
   val pubKey: PublicKey = PublicKey(ByteVector.fromValidHex(nodeKey))
   val address: NodeAddress =
     NodeAddress.fromParts(hostAddress, portNumber.toInt).get

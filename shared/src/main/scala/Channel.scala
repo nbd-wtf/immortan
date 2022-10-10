@@ -143,43 +143,31 @@ trait Channel
       lst.notifyResolvers()
   }
 
-  val receiver = new castor.SimpleActor[Any]()(
-    castor.Context.Simple.global
-  ) { self =>
-    EventStream.subscribe { case c: CurrentBlockCount =>
-      self.send(c)
+  var lastSeenBlockCount: Option[CurrentBlockCount] = None
+  var useDelay = true
+  EventStream.subscribe {
+    case currentBlockCount: CurrentBlockCount
+        if lastSeenBlockCount.isEmpty && useDelay => {
+      val t = new java.util.Timer()
+      val task = new java.util.TimerTask {
+        def run() = {
+          // Propagate subsequent block counts right away
+          useDelay = false
+          lastSeenBlockCount = None
+          // Popagate the last delayed block count
+          lastSeenBlockCount.foreach(process)
+        }
+      }
+      t.schedule(task, 10000L)
+      lastSeenBlockCount = Some(currentBlockCount)
+      useDelay = true
     }
 
-    var lastSeenBlockCount: Option[CurrentBlockCount] = None
-    var useDelay = true
-
-    def run(msg: Any): Unit = msg match {
-      case currentBlockCount: CurrentBlockCount
-          if lastSeenBlockCount.isEmpty && useDelay => {
-        val t = new java.util.Timer()
-        val task = new java.util.TimerTask {
-          def run() = {
-            // Propagate subsequent block counts right away
-            useDelay = false
-            lastSeenBlockCount = None
-            // Popagate the last delayed block count
-            lastSeenBlockCount.foreach(process)
-          }
-        }
-        t.schedule(task, 10000L)
-        lastSeenBlockCount = Some(currentBlockCount)
-        useDelay = true
-      }
-
-      case currentBlockCount: CurrentBlockCount
-          if lastSeenBlockCount.isDefined && useDelay => {
-        // We may get another chain tip while delaying a current one: store a new one then
-        lastSeenBlockCount = Some(currentBlockCount)
-        useDelay = true
-      }
-
-      case message =>
-        process(message)
+    case currentBlockCount: CurrentBlockCount
+        if lastSeenBlockCount.isDefined && useDelay => {
+      // We may get another chain tip while delaying a current one: store a new one then
+      lastSeenBlockCount = Some(currentBlockCount)
+      useDelay = true
     }
   }
 }

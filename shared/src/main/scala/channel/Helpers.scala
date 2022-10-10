@@ -1043,11 +1043,10 @@ object Helpers {
       } else Tuple2(None, revokedCommitPublished)
     }
 
-    type OurAddAndPreimage = (UpdateAddHtlc, ByteVector32)
     def extractPreimages(
         localCommit: LocalCommit,
         tx: Transaction
-    ): Set[OurAddAndPreimage] = {
+    ): Set[(UpdateAddHtlc, ByteVector32)] = {
       val claimHtlcSuccess = tx.txIn
         .map(_.witness)
         .collect(Scripts.extractPreimageFromClaimHtlcSuccess)
@@ -1057,7 +1056,7 @@ object Helpers {
 
       for {
         preimage <- paymentPreimages
-        OutgoingHtlc(add) <- localCommit.spec.htlcs
+        case OutgoingHtlc(add) <- localCommit.spec.htlcs
         if add.paymentHash == sha256(preimage)
       } yield (add, preimage)
     }

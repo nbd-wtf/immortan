@@ -324,15 +324,13 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool) {
           error_opt match {
             case None =>
               System.err.println(
-                s"[info][watcher] broadcast succeeded for txid=${tx.txid} tx={}",
-                tx
+                s"[info][watcher] broadcast succeeded for txid=${tx.txid} tx=$tx"
               )
             case Some(error)
                 if error.message
                   .contains("transaction already in block chain") =>
               System.err.println(
-                s"[info][watcher] broadcast ignored for txid=${tx.txid} tx={} (tx was already in blockchain)",
-                tx
+                s"[info][watcher] broadcast ignored for txid=${tx.txid} tx=$tx (tx was already in blockchain)"
               )
             case Some(error) =>
               System.err.println(

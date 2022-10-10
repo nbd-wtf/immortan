@@ -5,7 +5,7 @@ import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext}
 import scala.util.Try
 import com.softwaremill.quicklens._
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.ByteVector
 import scoin.Crypto.{PrivateKey, PublicKey}
 import scoin._
 import scoin.ln._

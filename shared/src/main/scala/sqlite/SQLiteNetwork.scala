@@ -167,7 +167,11 @@ class SQLiteNetwork(
     }
 
   def getRoutingData: Map[ShortChannelId, PublicChannel] = {
-    val updatesByScid = listChannelUpdates.groupBy(_.update.shortChannelId)
+    val updatesByScid =
+      listChannelUpdates
+        .groupBy(_.update.shortChannelId)
+        .view
+        .mapValues(_.toList)
 
     val tuples = listChannelAnnouncements.flatMap { ann =>
       updatesByScid.get(ann.shortChannelId).collectFirst {

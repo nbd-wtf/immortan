@@ -2,6 +2,7 @@ package immortan.electrum
 
 import java.io.InputStream
 import org.json4s.JsonAST.{JArray, JInt, JString}
+import org.json4s.StreamInput
 import org.json4s.native.JsonMethods
 import scoin.{Block, ByteVector32, encodeCompact}
 
@@ -31,7 +32,7 @@ object CheckPoint {
   }
 
   def load(stream: InputStream): Vector[CheckPoint] = {
-    val JArray(values) = JsonMethods.parse(stream)
+    val JArray(values) = JsonMethods.parse(StreamInput(stream)): @unchecked
     val checkpoints = values.collect {
       case JArray(JString(a) :: JInt(b) :: Nil) =>
         CheckPoint(

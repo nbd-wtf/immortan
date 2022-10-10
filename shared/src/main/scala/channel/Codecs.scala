@@ -209,7 +209,7 @@ object Codecs {
   val extParamsCodec =
     discriminated[ExtParams]
       .by(uint16)
-      .\(1) { case v: ChannelLabel => v }(channelLabelCodec)
+      .typecase(1, channelLabelCodec)
 
   val commitmentsCodec = (
     ("channelFlags" | byte) ::

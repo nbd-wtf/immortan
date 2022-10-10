@@ -7,7 +7,7 @@ import scala.concurrent.{Promise, Future, ExecutionContext}
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Try, Random, Success, Failure}
-import org.json4s.JsonAST.{JObject, JString}
+import org.json4s._
 import org.json4s.native.JsonMethods
 import scoin.{Block, BlockHeader, ByteVector32}
 import scoin.ln.NodeAddress
@@ -242,7 +242,7 @@ object ElectrumClientPool {
 
   def readServerAddresses(stream: InputStream): Set[ElectrumServerAddress] =
     try {
-      val JObject(values) = JsonMethods.parse(stream)
+      val JObject(values) = JsonMethods.parse(stream): @unchecked
 
       for ((name, fields) <- Random.shuffle(values.toSet)) yield {
         val port = Try((fields \ "s").asInstanceOf[JString].s.toInt).toOption

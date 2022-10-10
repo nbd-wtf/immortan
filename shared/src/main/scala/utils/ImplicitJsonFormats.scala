@@ -68,13 +68,13 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
     def read(raw: JsValue): ChainWalletInfo = raw.asJsObject.fields(TAG) match {
       case JsString("WatchingWallet") => raw.convertTo[WatchingWallet]
       case JsString("SigningWallet")  => raw.convertTo[SigningWallet]
-      case _                          => throw new Exception
+      case _ => throw new Exception("unexpected chain wallet type")
     }
 
     def write(internal: ChainWalletInfo): JsValue = internal match {
       case walletInfo: WatchingWallet => walletInfo.toJson
       case walletInfo: SigningWallet  => walletInfo.toJson
-      case _                          => throw new Exception
+      case null => throw new Exception("unexpected chain wallet info")
     }
   }
 
@@ -148,7 +148,7 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
       case txDescription: ChanRefundingTxDescription => txDescription.toJson
       case txDescription: HtlcClaimTxDescription     => txDescription.toJson
       case txDescription: PenaltyTxDescription       => txDescription.toJson
-      case _                                         => throw new Exception
+      case null => throw new Exception("unexpected tx description")
     }
   }
 
@@ -297,7 +297,7 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
       case paymentAction: MessageAction => paymentAction.toJson
       case paymentAction: UrlAction     => paymentAction.toJson
       case paymentAction: AESAction     => paymentAction.toJson
-      case _                            => throw new Exception
+      case null => throw new Exception("unexpected payment action")
     }
   }
 

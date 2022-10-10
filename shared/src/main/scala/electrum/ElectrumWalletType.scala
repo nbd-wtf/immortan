@@ -301,7 +301,8 @@ class ElectrumWallet49(
     Try {
       require(txIn.witness.stack.size == 2)
       val publicKey = PublicKey(txIn.witness.stack.tail.head)
-      val OP_PUSHDATA(script, _) :: Nil = Script.parse(txIn.signatureScript)
+      val OP_PUSHDATA(script, _) :: Nil =
+        Script.parse(txIn.signatureScript): @unchecked
       require(Script.write(Script pay2wpkh publicKey) == script)
       publicKey
     }.toOption

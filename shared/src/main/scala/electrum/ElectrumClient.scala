@@ -2,7 +2,7 @@ package immortan.electrum
 
 import java.util.concurrent.atomic.AtomicInteger
 import java.net.{InetSocketAddress, SocketAddress}
-import scala.annotation.{tailrec, nowarn, unchecked}
+import scala.annotation.{tailrec, nowarn}
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{Promise, Future}
 import scala.concurrent.duration._
