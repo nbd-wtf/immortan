@@ -1,4 +1,4 @@
-ThisBuild / scalaVersion        := "3.1.3"
+ThisBuild / scalaVersion        := "3.2.0"
 ThisBuild / organization        := "com.fiatjaf"
 ThisBuild / homepage            := Some(url("https://github.com/fiatjaf/immortan"))
 ThisBuild / licenses            += License.Apache2
@@ -9,6 +9,8 @@ ThisBuild / developers          := List(
 
 ThisBuild / version             := "0.8.0-SNAPSHOT"
 ThisBuild / tlSonatypeUseLegacyHost := false
+
+Global / onChangedBuildSource := ReloadOnSourceChanges
 
 lazy val root = tlCrossRootProject.aggregate(immortan)
 
@@ -29,13 +31,13 @@ lazy val immortan = crossProject(JVMPlatform, JSPlatform)
       "io.spray" % "spray-json_2.13" % "1.3.5",
 
       // good
-      "com.fiatjaf" %% "scoin" % "0.4.0-SNAPSHOT",
+      "com.fiatjaf" %% "scoin" % "0.4.0",
       "org.scala-lang.modules" %% "scala-parser-combinators" % "2.1.1",
       "com.softwaremill.quicklens" %% "quicklens" % "1.8.4",
     )
   )
   .jvmSettings(
-    scalaVersion := "2.13.8",
+    crossScalaVersions := List("2.13.8", "3.2.0"),
     libraryDependencies ++= Seq(
       // test
       "com.lihaoyi" % "utest_2.13" % "0.7.11" % Test,
@@ -45,7 +47,7 @@ lazy val immortan = crossProject(JVMPlatform, JSPlatform)
   )
   .jsConfigure { _.enablePlugins(NpmDependenciesPlugin) }
   .jsSettings(
-    scalaVersion := "3.1.3",
+    scalaVersion := "3.2.0",
     Compile / npmDependencies ++= Seq(
       // electrum client
       "@keep-network/electrum-client-js" -> "0.1.1",
