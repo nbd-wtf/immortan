@@ -5,15 +5,15 @@ import scodec.codecs._
 import scodec.bits.ByteVector
 import scoin._
 import scoin.Crypto.PublicKey
+import scoin.CommonCodecs._
 import scoin.ln._
-import scoin.ln.CommonCodecs._
 import scoin.ln.LightningMessageCodecs._
 import scoin.hc._
 import scoin.hc.HostedChannelCodecs._
 
 import immortan._
 import immortan.channel.Transactions._
-import immortan.blockchain.TxConfirmedAt
+import immortan.electrum.TxConfirmedAt
 
 case class HostedState(
     nodeId1: PublicKey,
@@ -23,8 +23,8 @@ case class HostedState(
 
 object Codecs {
   val hostedStateCodec = {
-    ("nodeId1" | publicKey) ::
-      ("nodeId2" | publicKey) ::
+    ("nodeId1" | publickey) ::
+      ("nodeId2" | publickey) ::
       ("lastCrossSignedState" | lastCrossSignedStateCodec)
   }.as[HostedState]
 
@@ -119,7 +119,7 @@ object Codecs {
     ("index" | uint64overflow) ::
       ("spec" | commitmentSpecCodec) ::
       ("txid" | bytes32) ::
-      ("remotePerCommitmentPoint" | publicKey)
+      ("remotePerCommitmentPoint" | publickey)
   ).as[RemoteCommit]
 
   val updateMessageCodec = lengthDelimited {
@@ -180,7 +180,7 @@ object Codecs {
       ("maxAcceptedHtlcs" | uint16) ::
       ("isFunder" | bool8) ::
       ("defaultFinalScriptPubKey" | lengthDelimited(bytes)) ::
-      ("walletStaticPaymentBasepoint" | publicKey)
+      ("walletStaticPaymentBasepoint" | publickey)
   ).as[LocalParams]
 
   val remoteParamsCodec = (
@@ -190,16 +190,16 @@ object Codecs {
       ("htlcMinimum" | millisatoshi) ::
       ("toSelfDelay" | cltvExpiryDelta) ::
       ("maxAcceptedHtlcs" | uint16) ::
-      ("fundingPubKey" | publicKey) ::
-      ("revocationBasepoint" | publicKey) ::
-      ("paymentBasepoint" | publicKey) ::
-      ("delayedPaymentBasepoint" | publicKey) ::
-      ("htlcBasepoint" | publicKey) ::
+      ("fundingPubKey" | publickey) ::
+      ("revocationBasepoint" | publickey) ::
+      ("paymentBasepoint" | publickey) ::
+      ("delayedPaymentBasepoint" | publickey) ::
+      ("htlcBasepoint" | publickey) ::
       ("shutdownScript" | optional(bool8, lengthDelimited(bytes)))
   ).as[RemoteParams]
 
   val remoteNodeInfoCodec = (
-    ("nodeId" | publicKey) ::
+    ("nodeId" | publickey) ::
       ("address" | nodeaddress) ::
       ("alias" | zeropaddedstring(32))
   ).as[RemoteNodeInfo]
@@ -218,7 +218,7 @@ object Codecs {
       ("remoteNextCommitInfo" | either(
         bool8,
         waitingForRevocationCodec,
-        publicKey
+        publickey
       )) ::
       ("remotePerCommitmentSecrets" | byteAligned(
         ShaChain.shaChainCodec

@@ -10,7 +10,7 @@ import scoin.ln.PaymentOnion.FinalPayload
 
 import immortan._
 import immortan.channel.Transactions._
-import immortan.blockchain.TxConfirmedAt
+import immortan.electrum.TxConfirmedAt
 
 sealed trait HtlcResult
 object HtlcResult {

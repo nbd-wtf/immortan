@@ -1,9 +1,10 @@
 package immortan.electrum
 
+import java.util.concurrent.atomic.AtomicInteger
 import java.net.{InetSocketAddress, SocketAddress}
-import java.util
-import scala.annotation.{tailrec, nowarn}
-import scala.concurrent.{ExecutionContext, Promise, Future}
+import scala.annotation.{tailrec, nowarn, unchecked}
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.{Promise, Future}
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 import io.netty.bootstrap.Bootstrap
@@ -24,11 +25,14 @@ import io.netty.handler.ssl.util.InsecureTrustManagerFactory
 import io.netty.resolver.NoopAddressResolverGroup
 import io.netty.util.CharsetUtil
 import io.netty.util.internal.logging.{InternalLoggerFactory, JdkLoggerFactory}
-import org.json4s.JsonAST._
+import org.json4s._
 import org.json4s.native.JsonMethods
 import org.json4s.{JInt, JLong, JString}
 import scodec.bits.ByteVector
-import java.rmi
+import scoin._
+
+import immortan.LNParams
+import ElectrumClient._
 
 trait ElectrumEvent
 
@@ -88,7 +92,7 @@ object ElectrumClient {
   case class BroadcastTransaction(tx: Transaction) extends Request
   case class BroadcastTransactionResponse(
       tx: Transaction,
-      error: Option[Error] = None
+      error: Option[JSONRPC.Error] = None
   ) extends Response
 
   case class GetTransaction(
@@ -203,7 +207,8 @@ object ElectrumClient {
   case class TransactionHistory(history: Seq[TransactionHistoryItem])
       extends Response
 
-  case class ServerError(request: Request, error: Error) extends Response
+  case class ServerError(request: Request, error: JSONRPC.Error)
+      extends Response
 
   sealed trait SSL
 
@@ -215,12 +220,12 @@ object ElectrumClient {
   def parseResponse(
       receiver: ElectrumClient,
       input: String
-  ): Either[Response, JsonRPCResponse] = {
-    val json = JsonMethods.parse(new String(input))
+  ): Either[Response, JSONRPC.Response] = {
+    val json = JsonMethods.parse(input)
     json \ "method" match {
       case JString(method) =>
         // this is a jsonrpc request, i.e. a subscription response
-        val JArray(params) = json \ "params"
+        val JArray(params) = json \ "params": @unchecked
         Left(((method, params): @unchecked) match {
           case ("blockchain.headers.subscribe", jheader :: Nil) => {
             val (height, header) = parseBlockHeader(jheader)
@@ -250,7 +255,7 @@ object ElectrumClient {
   def parseJsonRpcResponse(
       receiver: ElectrumClient,
       json: JValue
-  ): JsonRPCResponse = {
+  ): JSONRPC.Response = {
     val result = json \ "result"
     val error = json \ "error" match {
       case JNull    => None
@@ -265,7 +270,7 @@ object ElectrumClient {
           case JLong(value) => value.intValue
           case _            => 0
         }
-        Some(Error(code, message))
+        Some(JSONRPC.Error(code, message))
     }
     val id = json \ "id" match {
       case JString(value) => value
@@ -273,7 +278,7 @@ object ElectrumClient {
       case JLong(value)   => value.toString
       case _              => ""
     }
-    JsonRPCResponse(result, error, id)
+    JSONRPC.Response(result, error, id)
   }
 
   def longField(jvalue: JValue, field: String): Long =
@@ -290,70 +295,70 @@ object ElectrumClient {
 
   def parseBlockHeader(json: JValue): (Int, BlockHeader) = {
     val height = intField(json, "height")
-    val JString(hex) = json \ "hex"
+    val JString(hex) = json \ "hex": @unchecked
     (height, BlockHeader.read(hex))
   }
 
-  def makeRequest(request: Request, reqId: String): JsonRPCRequest =
+  def makeRequest(request: Request, reqId: String): JSONRPC.Request =
     request match {
       case ServerVersion(clientName, protocolVersion) =>
-        JsonRPCRequest(
+        JSONRPC.Request(
           id = reqId,
           method = "server.version",
           params = clientName :: protocolVersion :: Nil
         )
       case Ping =>
-        JsonRPCRequest(id = reqId, method = "server.ping", params = Nil)
+        JSONRPC.Request(id = reqId, method = "server.ping", params = Nil)
       case GetScriptHashHistory(scripthash) =>
-        JsonRPCRequest(
+        JSONRPC.Request(
           id = reqId,
           method = "blockchain.scripthash.get_history",
           params = scripthash.toHex :: Nil
         )
       case GetScriptHashMempool(scripthash) =>
-        JsonRPCRequest(
+        JSONRPC.Request(
           id = reqId,
           method = "blockchain.scripthash.get_mempool",
           params = scripthash.toHex :: Nil
         )
       case ScriptHashSubscription(scriptHash) =>
-        JsonRPCRequest(
+        JSONRPC.Request(
           id = reqId,
           method = "blockchain.scripthash.subscribe",
           params = scriptHash.toString() :: Nil
         )
       case BroadcastTransaction(tx) =>
-        JsonRPCRequest(
+        JSONRPC.Request(
           id = reqId,
           method = "blockchain.transaction.broadcast",
           params = Transaction.write(tx).toHex :: Nil
         )
       case GetTransaction(txid, _) =>
-        JsonRPCRequest(
+        JSONRPC.Request(
           id = reqId,
           method = "blockchain.transaction.get",
           params = txid :: Nil
         )
       case HeaderSubscription() =>
-        JsonRPCRequest(
+        JSONRPC.Request(
           id = reqId,
           method = "blockchain.headers.subscribe",
           params = Nil
         )
       case GetHeader(height) =>
-        JsonRPCRequest(
+        JSONRPC.Request(
           id = reqId,
           method = "blockchain.block.header",
           params = height :: Nil
         )
       case GetHeaders(start_height, count, _) =>
-        JsonRPCRequest(
+        JSONRPC.Request(
           id = reqId,
           method = "blockchain.block.headers",
           params = start_height :: count :: Nil
         )
       case GetMerkle(txid, height, _) =>
-        JsonRPCRequest(
+        JSONRPC.Request(
           id = reqId,
           method = "blockchain.transaction.get_merkle",
           params = txid :: height :: Nil
@@ -363,7 +368,7 @@ object ElectrumClient {
   def parseJsonResponse(
       source: ElectrumClient,
       request: Request,
-      json: JsonRPCResponse
+      json: JSONRPC.Response
   ): Response = {
     json.error match {
       case Some(error) =>
@@ -378,16 +383,16 @@ object ElectrumClient {
       case None =>
         (request: @unchecked) match {
           case _: ServerVersion => {
-            val JArray(jitems) = json.result
-            val JString(clientName) = jitems.head
-            val JString(protocolVersion) = jitems(1)
+            val JArray(jitems) = json.result: @unchecked
+            val JString(clientName) = jitems.head: @unchecked
+            val JString(protocolVersion) = jitems(1): @unchecked
             ServerVersionResponse(clientName, protocolVersion)
           }
           case Ping => PingResponse
           case GetScriptHashHistory(scripthash) => {
-            val JArray(jitems) = json.result
+            val JArray(jitems) = json.result: @unchecked
             val items = jitems.map(jvalue => {
-              val JString(tx_hash) = jvalue \ "tx_hash"
+              val JString(tx_hash) = jvalue \ "tx_hash": @unchecked
               val height = intField(jvalue, "height")
               TransactionHistoryItem(
                 height,
@@ -397,9 +402,9 @@ object ElectrumClient {
             GetScriptHashHistoryResponse(scripthash, items)
           }
           case GetScriptHashMempool(scripthash) => {
-            val JArray(jitems) = json.result
+            val JArray(jitems) = json.result: @unchecked
             val items = jitems.map(jvalue => {
-              val JString(tx_hash) = jvalue \ "tx_hash"
+              val JString(tx_hash) = jvalue \ "tx_hash": @unchecked
               val height = intField(jvalue, "height")
               TransactionHistoryItem(
                 height,
@@ -409,7 +414,7 @@ object ElectrumClient {
             GetScriptHashMempoolResponse(scripthash, items)
           }
           case GetTransaction(_, context_opt) => {
-            val JString(hex) = json.result
+            val JString(hex) = json.result: @unchecked
             GetTransactionResponse(Transaction.read(hex), context_opt)
           }
           case HeaderSubscription() => {
@@ -424,7 +429,7 @@ object ElectrumClient {
             }
           }
           case BroadcastTransaction(tx) => {
-            val JString(message) = json.result
+            val JString(message) = json.result: @unchecked
             // if we got here, it means that the server's response does not contain an error and message should be our
             // transaction id. However, it seems that at least on testnet some servers still use an older version of the
             // Electrum protocol and return an error message in the result field
@@ -435,34 +440,37 @@ object ElectrumClient {
                 BroadcastTransactionResponse(
                   tx,
                   Some(
-                    Error(
+                    JSONRPC.Error(
                       1,
                       s"response txid $txid does not match request txid ${tx.txid}"
                     )
                   )
                 )
               case Failure(_) =>
-                BroadcastTransactionResponse(tx, Some(Error(1, message)))
+                BroadcastTransactionResponse(
+                  tx,
+                  Some(JSONRPC.Error(1, message))
+                )
             }
           }
           case GetHeader(height) => {
-            val JString(hex) = json.result
+            val JString(hex) = json.result: @unchecked
             GetHeaderResponse(height, BlockHeader.read(hex))
           }
           case GetHeaders(start_height, _, _) => {
             val max = intField(json.result, "max")
-            val JString(hex) = json.result \ "hex"
+            val JString(hex) = json.result \ "hex": @unchecked
             val bin = ByteVector.fromValidHex(hex).toArray
             val blockHeaders = bin.grouped(80).map(BlockHeader.read).toList
             GetHeadersResponse(source, start_height, blockHeaders, max)
           }
           case GetMerkle(txid, _, context_opt) => {
-            val JArray(hashes) = json.result \ "merkle"
+            val JArray(hashes) = json.result \ "merkle": @unchecked
             val leaves = hashes collect { case JString(value) =>
               ByteVector32.fromValidHex(value)
             }
             val blockHeight = intField(json.result, "block_height")
-            val JInt(pos) = json.result \ "pos"
+            val JInt(pos) = json.result \ "pos": @unchecked
             GetMerkleResponse(
               Some(source),
               txid,
@@ -476,6 +484,21 @@ object ElectrumClient {
         }
     }
   }
+}
+
+object JSONRPC {
+  case class Request(
+      jsonrpc: String = "2.0",
+      id: String,
+      method: String,
+      params: Seq[Any] = Nil
+  )
+  case class Response(
+      result: org.json4s.JsonAST.JValue,
+      error: Option[Error],
+      id: String
+  )
+  case class Error(code: Int, message: String)
 }
 
 class ElectrumClient(
@@ -636,7 +659,7 @@ class ElectrumClient(
     override def decode(
         ctx: ChannelHandlerContext,
         msg: String,
-        out: util.List[AnyRef]
+        out: java.util.List[AnyRef]
     ): Unit = {
       val s = msg.asInstanceOf[String]
       val r = parseResponse(self, s)
@@ -644,11 +667,11 @@ class ElectrumClient(
     }
   }
 
-  class JsonRPCRequestEncoder extends MessageToMessageEncoder[JsonRPCRequest] {
+  class JsonRPCRequestEncoder extends MessageToMessageEncoder[JSONRPC.Request] {
     override def encode(
         ctx: ChannelHandlerContext,
-        request: JsonRPCRequest,
-        out: util.List[AnyRef]
+        request: JSONRPC.Request,
+        out: java.util.List[AnyRef]
     ): Unit = {
       import org.json4s.JsonDSL._
       import org.json4s._
@@ -697,7 +720,7 @@ class ElectrumClient(
 
     override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit =
       msg match {
-        case Right(json: JsonRPCResponse) =>
+        case Right(json: JSONRPC.Response) =>
           requests.get(json.id) match {
             case Some((request, promise)) => {
               val response = parseJsonResponse(self, request, json)

@@ -5,8 +5,8 @@ import spray.json._
 import scoin.Crypto.PublicKey
 import scoin.DeterministicWallet.ExtendedPublicKey
 import scoin._
+import scoin.CommonCodecs._
 import scoin.ln.ChannelUpdate
-import scoin.ln.CommonCodecs._
 import scoin.ln.LightningMessageCodecs._
 
 import immortan._
@@ -44,7 +44,7 @@ object ImplicitJsonFormats extends DefaultJsonProtocol {
         codec.encode(unserialized).require.toHex.toJson
     }
 
-  implicit val publicKeyFmt: JsonFormat[PublicKey] = sCodecJsonFmt(publicKey)
+  implicit val publicKeyFmt: JsonFormat[PublicKey] = sCodecJsonFmt(publickey)
 
   implicit val byteVector32Fmt: JsonFormat[ByteVector32] = sCodecJsonFmt(
     bytes32

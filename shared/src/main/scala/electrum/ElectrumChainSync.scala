@@ -1,10 +1,16 @@
 package immortan.electrum
 
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 import scoin.{Block, ByteVector32}
 
 import immortan.electrum.Blockchain.RETARGETING_PERIOD
-import immortan.electrum.ElectrumClient
+import immortan.electrum.ElectrumClient.{
+  HeaderSubscriptionResponse,
+  GetHeaders,
+  GetHeadersResponse
+}
 import immortan.electrum.db.HeaderDb
 
 object ElectrumChainSync {

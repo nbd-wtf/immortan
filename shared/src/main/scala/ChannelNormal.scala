@@ -15,6 +15,7 @@ import immortan.Channel._
 import immortan.sqlite.ChannelTxFeesTable
 import immortan.utils.Rx
 import immortan.blockchain._
+import immortan.electrum._
 import immortan.electrum.ElectrumWallet.GenerateTxResponse
 import immortan.channel.Helpers.Closing
 import immortan.channel._
@@ -1180,7 +1181,7 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
                   .toInt,
                 BITCOIN_OUTPUT_SPENT
               )
-            )
+            ) { process(_) }
 
           for (claimTx <- txOpt)
             LNParams.chainWallets.watcher.maybePublish(claimTx)

@@ -1,10 +1,12 @@
 package immortan.electrum
 
+import java.util.concurrent.atomic.AtomicInteger
 import scala.annotation.tailrec
 import scala.collection.immutable
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.concurrent.Future
-import scala.util.{Success, Try}
+import scala.util.{Success, Failure, Try}
 import scodec.bits.ByteVector
 import scoin.DeterministicWallet._
 import scoin._
@@ -12,7 +14,6 @@ import scoin._
 import immortan._
 import immortan.channel.Transactions
 import immortan.blockchain.EclairWallet._
-import immortan.blockchain.bitcoind.rpc.Error
 import immortan.electrum.Blockchain.RETARGETING_PERIOD
 import immortan.electrum.ElectrumClient._
 import immortan.electrum.ElectrumWallet._
@@ -567,7 +568,7 @@ class ElectrumWallet(
       Future {
         BroadcastTransactionResponse(
           tx,
-          Some(Error(code = -1, "wallet is not connected"))
+          Some(JSONRPC.Error(code = -1, "wallet is not connected"))
         )
       }
     case Running =>

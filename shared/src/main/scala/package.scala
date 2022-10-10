@@ -11,8 +11,8 @@ import scoin.Crypto.{PrivateKey, PublicKey, ChaCha20Poly1305}
 import scoin.Psbt.KeyPathWithMaster
 import scoin._
 import scoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
+import scoin.CommonCodecs._
 import scoin.ln._
-import scoin.ln.CommonCodecs._
 import scoin.ln.Bolt11Invoice.ExtraHop
 
 import immortan.electrum.ElectrumWallet.GenerateTxResponse

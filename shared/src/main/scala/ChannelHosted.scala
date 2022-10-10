@@ -42,8 +42,8 @@ object ChannelHosted {
       remoteInfo.safeAlias,
       CommitmentSpec(
         htlcs = inFlightHtlcs.toSet,
-        toLocal = localLCSS.localBalanceMsat,
-        toRemote = localLCSS.remoteBalanceMsat,
+        toLocal = localLCSS.localBalance,
+        toRemote = localLCSS.remoteBalance,
         commitTxFeerate = FeeratePerKw(Satoshi(0L))
       ),
       localLCSS,
@@ -81,17 +81,17 @@ abstract class ChannelHosted extends Channel {
           init: InitHostedChannel,
           Channel.WaitForAccept
         ) =>
-      if (init.initialClientBalanceMsat > init.channelCapacityMsat)
+      if (init.initialClientBalance > init.channelCapacity)
         throw new RuntimeException(
-          s"Their init balance for us=${init.initialClientBalanceMsat}, is larger than capacity"
+          s"Their init balance for us=${init.initialClientBalance}, is larger than capacity"
         )
-      if (UInt64(100000000L) > init.maxHtlcValueInFlightMsat)
+      if (UInt64(100000000L) > init.maxHtlcValueInFlight)
         throw new RuntimeException(
-          s"Their max value in-flight=${init.maxHtlcValueInFlightMsat}, is too low"
+          s"Their max value in-flight=${init.maxHtlcValueInFlight}, is too low"
         )
-      if (init.htlcMinimumMsat > MilliSatoshi(546000L))
+      if (init.htlcMinimum > MilliSatoshi(546000L))
         throw new RuntimeException(
-          s"Their minimal payment size=${init.htlcMinimumMsat}, is too high"
+          s"Their minimal payment size=${init.htlcMinimum}, is too high"
         )
       if (init.maxAcceptedHtlcs < 1)
         throw new RuntimeException(
@@ -103,8 +103,8 @@ abstract class ChannelHosted extends Channel {
         refundScriptPubKey,
         init,
         LNParams.currentBlockDay,
-        init.initialClientBalanceMsat,
-        init.channelCapacityMsat - init.initialClientBalanceMsat,
+        init.initialClientBalance,
+        init.channelCapacity - init.initialClientBalance,
         localUpdates = 0L,
         remoteUpdates = 0L,
         incomingHtlcs = Nil,
@@ -425,13 +425,13 @@ abstract class ChannelHosted extends Channel {
           if hc.error.isDefined && hc.overrideProposal.isDefined => {
         val remoteSO = hc.overrideProposal.get
         val overriddenLocalBalance =
-          hc.lastCrossSignedState.initHostedChannel.channelCapacityMsat - remoteSO.localBalanceMsat
+          hc.lastCrossSignedState.initHostedChannel.channelCapacity - remoteSO.localBalance
         val completeLocalLCSS = hc.lastCrossSignedState
           .copy(
             incomingHtlcs = Nil,
             outgoingHtlcs = Nil,
-            localBalanceMsat = overriddenLocalBalance,
-            remoteBalanceMsat = remoteSO.localBalanceMsat,
+            localBalance = overriddenLocalBalance,
+            remoteBalance = remoteSO.localBalance,
             localUpdates = remoteSO.remoteUpdates,
             remoteUpdates = remoteSO.localUpdates,
             blockDay = remoteSO.blockDay,
@@ -444,7 +444,7 @@ abstract class ChannelHosted extends Channel {
         val newHCState =
           ChannelHosted.restoreCommits(completeLocalLCSS, hc.remoteInfo)
 
-        if (completeLocalLCSS.localBalanceMsat < MilliSatoshi(0L))
+        if (completeLocalLCSS.localBalance < MilliSatoshi(0L))
           return Left(
             "Override impossible: new local balance is larger than capacity"
           )
@@ -479,7 +479,7 @@ abstract class ChannelHosted extends Channel {
   def proposeResize(delta: Satoshi): Either[String, Unit] = data match {
     case hc: HostedCommits if hc.resizeProposal.isEmpty && hc.error.isEmpty => {
       val capacitySat =
-        hc.lastCrossSignedState.initHostedChannel.channelCapacityMsat.truncateToSatoshi
+        hc.lastCrossSignedState.initHostedChannel.channelCapacity.truncateToSatoshi
       val resize = ResizeChannel(capacitySat + delta)
         .sign(hc.remoteInfo.nodeSpecificPrivKey)
       StoreBecomeSend(hc.copy(resizeProposal = Some(resize)), state, resize)

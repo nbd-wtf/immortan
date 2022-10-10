@@ -4,13 +4,28 @@ import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.collection.immutable.{Queue, SortedMap}
-import scala.util.Success
-import scoin.{BlockHeight, BlockHeader, ByteVector32, Transaction}
+import scala.util.{Try, Success, Failure}
+import scodec.bits.ByteVector
+import scoin._
+import scoin.Crypto.PublicKey
 
 import immortan.blockchain._
-import immortan.electrum.ElectrumClient.computeScriptHash
+import immortan.electrum.ElectrumClient.{
+  computeScriptHash,
+  HeaderSubscriptionResponse,
+  BroadcastTransactionResponse,
+  GetScriptHashHistory,
+  GetScriptHashHistoryResponse,
+  ScriptHashSubscriptionResponse,
+  TransactionHistoryItem,
+  GetTransaction,
+  GetTransactionResponse,
+  GetMerkle,
+  GetMerkleResponse
+}
 import immortan.channel.{
   Scripts,
+  BitcoinEvent,
   BITCOIN_FUNDING_DEPTHOK,
   BITCOIN_PARENT_TX_CONFIRMED
 }
@@ -96,8 +111,7 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool) {
         // time a parent's relative delays are satisfied, so we will eventually succeed.
         csvTimeouts.foreach { case (parentTxId, csvTimeout) =>
           System.err.println(
-            s"[info][watcher] txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parentTxId=$parentTxId tx={}",
-            tx
+            s"[info][watcher] txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parentTxId=$parentTxId tx=$tx"
           )
           val parentPublicKeyScript = WatchConfirmed.extractPublicKeyScript(
             tx.txIn.find(_.outPoint.txid == parentTxId).get.witness

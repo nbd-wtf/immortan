@@ -102,12 +102,13 @@ object PaymentRequestExt {
   def withoutSlashes(prefix: String, uri: Uri): String =
     prefix + removePrefix(uri.toString)
 
-  def fromUri(invoiceWithoutSlashes: String): PaymentRequestExt = {
-    val lnPayReq(invoicePrefix, invoiceData) = invoiceWithoutSlashes
-    val pr = Bolt11Invoice.fromString(s"$invoicePrefix$invoiceData").get
-    val uri = Try(Uri parse s"$lightning//$invoiceWithoutSlashes")
-    PaymentRequestExt(uri, pr, s"$invoicePrefix$invoiceData")
-  }
+  def fromUri(invoiceWithoutSlashes: String): PaymentRequestExt =
+    invoiceWithoutSlashes match {
+      case lnPayReq(invoicePrefix, invoiceData) =>
+        val pr = Bolt11Invoice.fromString(s"$invoicePrefix$invoiceData").get
+        val uri = Try(Uri parse s"$lightning//$invoiceWithoutSlashes")
+        PaymentRequestExt(uri, pr, s"$invoicePrefix$invoiceData")
+    }
 
   def from(pr: Bolt11Invoice): PaymentRequestExt = {
     val noUri: Try[Uri] = Failure(new RuntimeException)

@@ -9,7 +9,7 @@ import scoin.ln.Generators
 import scoin.ln._
 
 import immortan.{newFeerate, ChannelBag, LNParams}
-import immortan.blockchain.TxConfirmedAt
+import immortan.electrum.TxConfirmedAt
 import immortan.blockchain.fee._
 import immortan.channel.Scripts._
 import immortan.channel.DirectedHtlc._

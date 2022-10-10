@@ -1,4 +1,4 @@
-package fr.acinq.eclair.blockchain
+package immortan
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{Promise, Future}

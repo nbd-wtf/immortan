@@ -76,12 +76,10 @@ case class HostedCommits(
   )
 
   lazy val maxSendInFlight: MilliSatoshi =
-    MilliSatoshi(
-      lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat.toLong
-    )
+    lastCrossSignedState.initHostedChannel.maxHtlcValueInFlight
 
   lazy val minSendable: MilliSatoshi =
-    lastCrossSignedState.initHostedChannel.htlcMinimumMsat
+    lastCrossSignedState.initHostedChannel.htlcMinimum
 
   lazy val availableForReceive: MilliSatoshi = nextLocalSpec.toRemote
 
@@ -95,8 +93,8 @@ case class HostedCommits(
       lastCrossSignedState.refundScriptPubKey,
       lastCrossSignedState.initHostedChannel,
       blockDay = blockDay,
-      localBalanceMsat = nextLocalSpec.toLocal,
-      remoteBalanceMsat = nextLocalSpec.toRemote,
+      localBalance = nextLocalSpec.toLocal,
+      remoteBalance = nextLocalSpec.toRemote,
       nextTotalLocal,
       nextTotalRemote,
       nextLocalSpec.incomingAdds.toList.sortBy(_.id),
@@ -141,7 +139,7 @@ case class HostedCommits(
 
   def receiveAdd(add: UpdateAddHtlc): HostedCommits = {
     val commits1: HostedCommits = addRemoteProposal(add)
-    // We do not check whether total incoming amount exceeds maxHtlcValueInFlightMsat becase we always accept up to channel capacity
+    // We do not check whether total incoming amount exceeds maxHtlcValueInFlight becase we always accept up to channel capacity
     if (
       commits1.nextLocalSpec.incomingAdds.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs
     ) throw ChannelTransitionFail(channelId, add)
@@ -165,13 +163,13 @@ case class HostedCommits(
 
   def withResize(resize: ResizeChannel): HostedCommits =
     this
-      .modify(_.lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat)
-      .setTo(UInt64(resize.newCapacity.toMilliSatoshi.toLong))
-      .modify(_.lastCrossSignedState.initHostedChannel.channelCapacityMsat)
+      .modify(_.lastCrossSignedState.initHostedChannel.maxHtlcValueInFlight)
+      .setTo(resize.newCapacity.toMilliSatoshi)
+      .modify(_.lastCrossSignedState.initHostedChannel.channelCapacity)
       .setTo(resize.newCapacity.toMilliSatoshi)
       .modify(_.localSpec.toRemote)
       .using(
-        _ + resize.newCapacity - lastCrossSignedState.initHostedChannel.channelCapacityMsat
+        _ + resize.newCapacity - lastCrossSignedState.initHostedChannel.channelCapacity
       )
       .modify(_.resizeProposal)
       .setTo(None)

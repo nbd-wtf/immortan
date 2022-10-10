@@ -14,7 +14,7 @@ import scoin.ln.{IncomingPaymentPacket, Bolt11Invoice}
 import scoin.hc._
 
 import immortan._
-import immortan.blockchain.electrum.TxConfirmedAt
+import immortan.electrum.TxConfirmedAt
 import immortan.router._
 import immortan.channel._
 import immortan.Channel._

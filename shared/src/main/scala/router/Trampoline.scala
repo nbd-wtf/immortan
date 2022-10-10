@@ -4,8 +4,8 @@ import scodec.codecs._
 
 import scoin._
 import scoin.Crypto.PublicKey
+import scoin.CommonCodecs._
 import scoin.ln._
-import scoin.ln.CommonCodecs._
 
 sealed trait HasRelayFee {
   def relayFee(amount: MilliSatoshi): MilliSatoshi
@@ -64,7 +64,7 @@ case class NodeIdTrampolineParams(nodeId: PublicKey, trampolineOn: TrampolineOn)
 
 object NodeIdTrampolineParams {
   val codec = (
-    ("nodeId" | publicKey) ::
+    ("nodeId" | publickey) ::
       ("trampolineOn" | TrampolineOn.codec)
   ).as[NodeIdTrampolineParams]
 
@@ -104,9 +104,9 @@ case class TrampolineStatusUpdate(
 object TrampolineStatusUpdate {
   val codec = (
     ("newRoutes" | NodeIdTrampolineParams.routeCodec) ::
-      ("updatedParams" | mapCodec(publicKey, TrampolineOn.codec)) ::
+      ("updatedParams" | mapCodec(publickey, TrampolineOn.codec)) ::
       ("updatedPeerParams" | optional(bool, TrampolineOn.codec)) ::
-      ("removed" | setCodec(publicKey))
+      ("removed" | setCodec(publickey))
   ).as[TrampolineStatusUpdate]
 }
 

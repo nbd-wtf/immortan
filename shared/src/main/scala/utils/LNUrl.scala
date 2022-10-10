@@ -2,6 +2,7 @@ package immortan.utils
 
 import scala.util.Try
 import scala.util.chaining._
+import scala.annotation.unchecked
 import com.google.common.base.CharMatcher
 import com.softwaremill.quicklens._
 import rx.lang.scala.Observable
@@ -49,12 +50,14 @@ object LNUrl {
 
   def guardResponse(raw: String): String = {
     val parseAttempt = Try(raw.parseJson.asJsObject.fields)
-    val hasErrorDescription =
-      parseAttempt.map(_ apply "reason").map(json2String)
+    val hasErrorDescription = parseAttempt
+      .map(_("reason"))
+      .map(json2String)
     val hasError = parseAttempt
-      .map(_ apply "status")
+      .map(_("status"))
       .map(json2String)
       .filter(_.toUpperCase == "ERROR")
+
     if (hasErrorDescription.isSuccess)
       throw ErrorFromVendor(hasErrorDescription.get)
     else if (hasError.isSuccess)
@@ -151,8 +154,8 @@ case class NormalChannelRequest(uri: String, callback: String, k1: String)
     }
     .foreach(none, none)
 
-  val InputParser.nodeLink(nodeKey, hostAddress, portNumber) = uri
-  val pubKey: PublicKey = PublicKey.fromBin(ByteVector fromValidHex nodeKey)
+  val InputParser.nodeLink(nodeKey, hostAddress, portNumber) = uri: @unchecked
+  val pubKey: PublicKey = PublicKey.fromBin(ByteVector.fromValidHex(nodeKey))
   val address: NodeAddress =
     NodeAddress.fromParts(hostAddress, portNumber.toInt).get
   val remoteInfo: RemoteNodeInfo = RemoteNodeInfo(pubKey, address, hostAddress)
@@ -162,9 +165,9 @@ case class HostedChannelRequest(uri: String, alias: Option[String], k1: String)
     extends LNUrlData
     with HasRemoteInfo {
 
-  val secret: ByteVector32 = ByteVector32.fromValidHex(k1)
+  val secret: ByteVector32 = ByteVector32.fromValidHex(k1): @unchecked
   val InputParser.nodeLink(nodeKey, hostAddress, portNumber) = uri
-  val pubKey: PublicKey = PublicKey(ByteVector fromValidHex nodeKey)
+  val pubKey: PublicKey = PublicKey(ByteVector.fromValidHex(nodeKey))
   val address: NodeAddress =
     NodeAddress.fromParts(hostAddress, portNumber.toInt).get
   val remoteInfo: RemoteNodeInfo = RemoteNodeInfo(pubKey, address, hostAddress)

@@ -1,6 +1,6 @@
 package immortan.fsm
 
-import scoin.{ByteVector32, MilliSatoshi, Satoshi, FeeratePerKw}
+import scoin.{ByteVector32, MilliSatoshi, Satoshi, FeeratePerKw, randomBytes32}
 import scoin.ln._
 import scoin.ln.Features.StaticRemoteKey
 

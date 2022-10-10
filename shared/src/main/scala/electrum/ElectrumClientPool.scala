@@ -1,4 +1,4 @@
-package fr.acinq.eclair.blockchain.electrum
+package immortan.electrum
 
 import java.io.InputStream
 import java.net.InetSocketAddress
@@ -7,25 +7,25 @@ import scala.concurrent.{Promise, Future, ExecutionContext}
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Try, Random, Success, Failure}
+import org.json4s.JsonAST.{JObject, JString}
+import org.json4s.native.JsonMethods
+import scoin.{Block, BlockHeader, ByteVector32}
+import scoin.ln.NodeAddress
 
-import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32}
-import fr.acinq.eclair.wire.NodeAddress
-import fr.acinq.eclair.blockchain.electrum.{
+import immortan.LNParams
+import immortan.electrum.{
   CurrentBlockCount,
   ElectrumReady,
   ElectrumDisconnected,
   ElectrumClientStatus
 }
-import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{
+import immortan.electrum.ElectrumClient.{
   SSL,
   ScriptHashSubscription,
   HeaderSubscriptionResponse,
   ScriptHashSubscriptionResponse
 }
-import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool._
-import immortan.LNParams
-import org.json4s.JsonAST.{JObject, JString}
-import org.json4s.native.JsonMethods
+import immortan.electrum.ElectrumClientPool._
 
 class ElectrumClientPool(
     blockCount: AtomicLong,
@@ -84,7 +84,12 @@ class ElectrumClientPool(
 
   lazy val serverAddresses: Set[ElectrumServerAddress] = customAddress match {
     case Some(address) =>
-      Set(ElectrumServerAddress(address.socketAddress, SSL.DECIDE))
+      Set(
+        ElectrumServerAddress(
+          new InetSocketAddress(address.host, address.port),
+          SSL.DECIDE
+        )
+      )
     case None => {
       val addresses = loadFromChainHash(chainHash)
       if (useOnion) addresses

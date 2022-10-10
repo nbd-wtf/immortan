@@ -329,7 +329,7 @@ class SyncParams {
         "02cd1b7bc418fac2dc99f0ba350d60fa6c45fde5ab6017ee14df6425df485fb1dd"
       )
     ),
-    NodeAddress.unresolved(80, host = 134, 209, 228, 207),
+    NodeAddress.fromParts("134.209.228.207", 80).get,
     "SATM"
   )
   val motherbase: RemoteNodeInfo = RemoteNodeInfo(
@@ -338,7 +338,7 @@ class SyncParams {
         "021e7ea08e31a576b4fd242761d701452a8ac98113eac3074c153db85d2dcc7d27"
       )
     ),
-    NodeAddress.unresolved(9001, host = 5, 9, 83, 143),
+    NodeAddress.fromParts("5.9.83.143", 9001).get,
     "Motherbase"
   )
   val bCashIsTrash: RemoteNodeInfo = RemoteNodeInfo(
@@ -347,7 +347,7 @@ class SyncParams {
         "0298f6074a454a1f5345cb2a7c6f9fce206cd0bf675d177cdbf0ca7508dd28852f"
       )
     ),
-    NodeAddress.unresolved(9735, host = 73, 119, 255, 56),
+    NodeAddress.fromParts("73.119.255.56", 9735).get,
     "bCashIsTrash"
   )
   val zeroFeeRouting: RemoteNodeInfo = RemoteNodeInfo(
@@ -356,7 +356,7 @@ class SyncParams {
         "038fe1bd966b5cb0545963490c631eaa1924e2c4c0ea4e7dcb5d4582a1e7f2f1a5"
       )
     ),
-    NodeAddress.unresolved(9735, host = 144, 76, 24, 71),
+    NodeAddress.fromParts("144.76.24.71", 9735).get,
     "zero-fee-routing"
   )
   val ergveinNet: RemoteNodeInfo = RemoteNodeInfo(
@@ -365,7 +365,7 @@ class SyncParams {
         "034a7b1ac1239ff2ac8438ce0a7ade1048514b77d4322f514e96918e6c13944861"
       )
     ),
-    NodeAddress.unresolved(9735, host = 188, 244, 4, 78),
+    NodeAddress.fromParts("188.244.4.78", 9735).get,
     "ergvein.net"
   )
   val conductor: RemoteNodeInfo = RemoteNodeInfo(
@@ -374,7 +374,7 @@ class SyncParams {
         "03c436af41160a355fc1ed230a64f6a64bcbd2ae50f12171d1318f9782602be601"
       )
     ),
-    NodeAddress.unresolved(9735, host = 18, 191, 89, 219),
+    NodeAddress.fromParts("18.191.89.219", 9735).get,
     "Conductor"
   )
   val jiraiya: RemoteNodeInfo = RemoteNodeInfo(
@@ -383,7 +383,7 @@ class SyncParams {
         "02c16cca44562b590dd279c942200bdccfd4f990c3a69fad620c10ef2f8228eaff"
       )
     ),
-    NodeAddress.unresolved(9735, host = 107, 189, 30, 195),
+    NodeAddress.fromParts("107.189.30.195", 9735).get,
     "Jiraiya"
   )
   val kamenRiderBlack: RemoteNodeInfo = RemoteNodeInfo(
@@ -392,7 +392,7 @@ class SyncParams {
         "02d5562ef0eb09c29b9ebe2393134292aa0cfd8bd0b022eed02dc2dcafd6f7097d"
       )
     ),
-    NodeAddress.unresolved(9735, host = 54, 87, 19, 126),
+    NodeAddress.fromParts("54.87.19.126", 9735).get,
     "Kamen Rider Black"
   )
   val silentBob: RemoteNodeInfo = RemoteNodeInfo(
@@ -401,7 +401,7 @@ class SyncParams {
         "02e9046555a9665145b0dbd7f135744598418df7d61d3660659641886ef1274844"
       )
     ),
-    NodeAddress.unresolved(9735, host = 31, 16, 52, 37),
+    NodeAddress.fromParts("31.16.52.37", 9735).get,
     "SilentBob"
   )
   val lightning: RemoteNodeInfo = RemoteNodeInfo(
@@ -410,7 +410,7 @@ class SyncParams {
         "03baa70886d9200af0ffbd3f9e18d96008331c858456b16e3a9b41e735c6208fef"
       )
     ),
-    NodeAddress.unresolved(9735, host = 45, 20, 67, 1),
+    NodeAddress.fromParts("45.20.67.1", 9735).get,
     "LIGHTNING"
   )
   val acinq: RemoteNodeInfo = RemoteNodeInfo(
@@ -419,7 +419,7 @@ class SyncParams {
         "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"
       )
     ),
-    NodeAddress.unresolved(9735, host = 34, 239, 230, 56),
+    NodeAddress.fromParts("34.239.230.56", 9735).get,
     "ACINQ"
   )
   val syncNodes: Set[RemoteNodeInfo] = Set(
@@ -465,7 +465,7 @@ class TestNetSyncParams extends SyncParams {
         "03b8534f2d84de39a68d1359f6833fde819b731e188ddf633a666f7bf8c1d7650a"
       )
     ),
-    NodeAddress.unresolved(9735, host = 45, 61, 187, 156),
+    NodeAddress.fromParts("45.61.187.156", 9735).get,
     "SBW"
   )
   val endurance: RemoteNodeInfo = RemoteNodeInfo(
@@ -474,7 +474,7 @@ class TestNetSyncParams extends SyncParams {
         "03933884aaf1d6b108397e5efe5c86bcf2d8ca8d2f700eda99db9214fc2712b134"
       )
     ),
-    NodeAddress.unresolved(9735, host = 76, 223, 71, 211),
+    NodeAddress.fromParts("76.223.71.211", 9735).get,
     "Endurance"
   )
   val localhost: RemoteNodeInfo = RemoteNodeInfo(
@@ -483,7 +483,7 @@ class TestNetSyncParams extends SyncParams {
         "038d5cdea665f68e597da00ae0612238bd30a06bdf08d34fa9af783b1f1b3ba9b7"
       )
     ),
-    NodeAddress.unresolved(9735, host = 10, 0, 2, 2),
+    NodeAddress.fromParts("10.0.2.2", 9735).get,
     "localhost"
   )
   override val syncNodes: Set[RemoteNodeInfo] = Set(endurance, localhost, sbw)
