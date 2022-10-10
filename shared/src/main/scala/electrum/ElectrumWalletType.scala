@@ -23,7 +23,7 @@ object ElectrumWalletType {
       makeSigningType(tag, xPriv49(master, chainHash), chainHash)
     case EclairWallet.BIP84 =>
       makeSigningType(tag, xPriv84(master, chainHash), chainHash)
-    case _ => throw new RuntimeException
+    case t => throw new RuntimeException(s"signing wallet type unknown: $t")
   }
 
   def makeSigningType(
@@ -39,7 +39,7 @@ object ElectrumWalletType {
       new ElectrumWallet49(Some(secrets), publicKey(secrets.xPriv), chainHash)
     case EclairWallet.BIP84 =>
       new ElectrumWallet84(Some(secrets), publicKey(secrets.xPriv), chainHash)
-    case _ => throw new RuntimeException
+    case t => throw new RuntimeException(s"signing wallet type unkown: $t")
   }
 
   def xPriv32(
@@ -47,6 +47,11 @@ object ElectrumWalletType {
       chainHash: ByteVector32
   ): AccountAndXPrivKey = chainHash match {
     case Block.RegtestGenesisBlock.hash =>
+      AccountAndXPrivKey(
+        derivePrivateKey(master, hardened(1L) :: 0L :: Nil),
+        master
+      )
+    case Block.SignetGenesisBlock.hash =>
       AccountAndXPrivKey(
         derivePrivateKey(master, hardened(1L) :: 0L :: Nil),
         master
@@ -61,7 +66,7 @@ object ElectrumWalletType {
         derivePrivateKey(master, hardened(0L) :: 0L :: Nil),
         master
       )
-    case _ => throw new RuntimeException
+    case _ => throw new RuntimeException("unknown chain on xpriv32 derivation")
   }
 
   def xPriv44(
@@ -69,6 +74,14 @@ object ElectrumWalletType {
       chainHash: ByteVector32
   ): AccountAndXPrivKey = chainHash match {
     case Block.RegtestGenesisBlock.hash =>
+      AccountAndXPrivKey(
+        derivePrivateKey(
+          master,
+          hardened(44L) :: hardened(1L) :: hardened(0L) :: Nil
+        ),
+        master
+      )
+    case Block.SignetGenesisBlock.hash =>
       AccountAndXPrivKey(
         derivePrivateKey(
           master,
@@ -92,7 +105,7 @@ object ElectrumWalletType {
         ),
         master
       )
-    case _ => throw new RuntimeException
+    case _ => throw new RuntimeException("unknown chain on xpriv44 derivation")
   }
 
   def xPriv49(
@@ -100,6 +113,14 @@ object ElectrumWalletType {
       chainHash: ByteVector32
   ): AccountAndXPrivKey = chainHash match {
     case Block.RegtestGenesisBlock.hash =>
+      AccountAndXPrivKey(
+        derivePrivateKey(
+          master,
+          hardened(49L) :: hardened(1L) :: hardened(0L) :: Nil
+        ),
+        master
+      )
+    case Block.SignetGenesisBlock.hash =>
       AccountAndXPrivKey(
         derivePrivateKey(
           master,
@@ -123,7 +144,7 @@ object ElectrumWalletType {
         ),
         master
       )
-    case _ => throw new RuntimeException
+    case _ => throw new RuntimeException("unknown chain on xpriv49 derivation")
   }
 
   def xPriv84(
@@ -131,6 +152,14 @@ object ElectrumWalletType {
       chainHash: ByteVector32
   ): AccountAndXPrivKey = chainHash match {
     case Block.RegtestGenesisBlock.hash =>
+      AccountAndXPrivKey(
+        derivePrivateKey(
+          master,
+          hardened(84L) :: hardened(1L) :: hardened(0L) :: Nil
+        ),
+        master
+      )
+    case Block.SignetGenesisBlock.hash =>
       AccountAndXPrivKey(
         derivePrivateKey(
           master,
@@ -154,35 +183,25 @@ object ElectrumWalletType {
         ),
         master
       )
-    case _ => throw new RuntimeException
+    case _ => throw new RuntimeException("unknown chain on xpriv84 derivation")
   }
 }
 
 abstract class ElectrumWalletType {
   val secrets: Option[AccountAndXPrivKey]
-
   val xPub: ExtendedPublicKey
-
   val chainHash: ByteVector32
-
   val changeMaster: ExtendedPublicKey = derivePublicKey(xPub, 1L :: Nil)
-
   val accountMaster: ExtendedPublicKey = derivePublicKey(xPub, 0L :: Nil)
-
   def textAddress(key: ExtendedPublicKey): String
-
   def computePublicKeyScript(key: PublicKey): Seq[ScriptElt]
-
   def extractPubKeySpentFrom(txIn: TxIn): Option[PublicKey]
-
   def signTransaction(usableUtxos: Seq[Utxo], tx: Transaction): Transaction
-
   def setUtxosWithDummySig(
       usableUtxos: Seq[Utxo],
       tx: Transaction,
       sequenceFlag: Long
   ): Transaction
-
   def writePublicKeyScriptHash(key: PublicKey): ByteVector = {
     val scriptProgram = computePublicKeyScript(key)
     Script.write(scriptProgram)
@@ -230,7 +249,7 @@ class ElectrumWallet44(
       utxo <- usableUtxos.find(_.item.outPoint == txIn.outPoint)
       previousOutputScript = Script.pay2pkh(pubKey = utxo.key.publicKey)
       privateKey = derivePrivateKey(
-        secrets.map(_.master).getOrElse(dummyExtPrivKey),
+        secrets.map(_.master).getOrElse(fr.acinq.eclair.dummyExtPrivKey),
         utxo.key.path
       ).privateKey
       sig = Transaction.signInput(
@@ -316,7 +335,7 @@ class ElectrumWallet49(
       utxo <- usableUtxos.find(_.item.outPoint == txIn.outPoint)
       pubKeyScript = Script.write(Script pay2wpkh utxo.key.publicKey)
       privateKey = derivePrivateKey(
-        secrets.map(_.master).getOrElse(dummyExtPrivKey),
+        secrets.map(_.master).getOrElse(fr.acinq.eclair.dummyExtPrivKey),
         utxo.key.path
       ).privateKey
       sig = Transaction.signInput(
@@ -378,7 +397,7 @@ class ElectrumWallet84(
       (txIn, idx) <- tx.txIn.zipWithIndex
       utxo <- usableUtxos.find(_.item.outPoint == txIn.outPoint)
       privateKey = derivePrivateKey(
-        secrets.map(_.master).getOrElse(dummyExtPrivKey),
+        secrets.map(_.master).getOrElse(fr.acinq.eclair.dummyExtPrivKey),
         utxo.key.path
       ).privateKey
       sig = Transaction.signInput(

@@ -26,7 +26,8 @@ object CheckPoint {
         )
       )
     case Block.RegtestGenesisBlock.hash => Vector.empty[CheckPoint]
-    case _                              => throw new RuntimeException
+    case Block.SignetGenesisBlock.hash  => Vector.empty[CheckPoint]
+    case _ => throw new RuntimeException("missing checkpoints for given chain")
   }
 
   def load(stream: InputStream): Vector[CheckPoint] = {

@@ -18,7 +18,7 @@ object EclairWallet {
 }
 
 trait EclairWallet {
-  def getData: Future[GetDataResponse]
+  def getData: ElectrumData
 
   def getReceiveAddresses: Future[GetCurrentReceiveAddressesResponse]
 

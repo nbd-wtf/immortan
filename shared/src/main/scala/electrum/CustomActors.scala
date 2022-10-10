@@ -2,8 +2,6 @@ package immortan.electrum
 
 import castor._
 
-case object PoisonPill
-
 abstract class CastorStateMachineActorWithSetState[T]()(implicit ac: Context)
     extends StateMachineActor[T]() {
   var state0: State = null
@@ -54,5 +52,9 @@ abstract class CastorStateMachineActorWithState[T]()(implicit
 
   def run(msg: T): Unit = {
     state0 = state.run((msg, state0))
+  }
+
+  def setState(newState: State): Unit = {
+    state0 = newState
   }
 }
