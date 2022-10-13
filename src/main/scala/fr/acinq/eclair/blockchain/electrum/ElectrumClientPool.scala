@@ -82,11 +82,11 @@ class ElectrumClientPool(
       }
     }
 
-  lazy val serverAddresses: Set[ElectrumServerAddress] = customAddress match {
+  lazy val serverAddresses: List[ElectrumServerAddress] = customAddress match {
     case Some(address) =>
-      Set(ElectrumServerAddress(address.socketAddress, SSL.DECIDE))
+      List(ElectrumServerAddress(address.socketAddress, SSL.DECIDE))
     case None => {
-      val addresses = loadFromChainHash(chainHash)
+      val addresses = Random.shuffle(loadFromChainHash(chainHash).toList)
       if (useOnion) addresses
       else
         addresses.filterNot(address =>
@@ -156,7 +156,7 @@ class ElectrumClientPool(
       clientsToUse: Int
   ): Future[List[R]] =
     Future.sequence[R, List, List[R]](
-      scala.util.Random
+      Random
         .shuffle(addresses.keys.toList)
         .take(clientsToUse)
         .map { client =>
@@ -239,7 +239,7 @@ object ElectrumClientPool {
     try {
       val JObject(values) = JsonMethods.parse(stream)
 
-      for ((name, fields) <- Random.shuffle(values.toSet)) yield {
+      for ((name, fields) <- values.toSet) yield {
         val port = Try((fields \ "s").asInstanceOf[JString].s.toInt).toOption
           .getOrElse(0)
         val address = InetSocketAddress.createUnresolved(name, port)
@@ -250,7 +250,7 @@ object ElectrumClientPool {
     }
 
   def pickAddress(
-      serverAddresses: Set[ElectrumServerAddress],
+      serverAddresses: List[ElectrumServerAddress],
       usedAddresses: Set[InetSocketAddress] = Set.empty
   ): Option[ElectrumServerAddress] =
     serverAddresses
