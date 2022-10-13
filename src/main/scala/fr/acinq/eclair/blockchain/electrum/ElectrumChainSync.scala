@@ -113,13 +113,10 @@ class ElectrumChainSync(
                   ChainSyncProgress(start + max, blockchain.height)
                 )
 
-                System.err.println("~ ~~  ~ ~~~~~~~~ ~~ ~~~~ ~~ ~")
-
                 Try(Blockchain.addHeaders(blockchain, start, headers)) match {
                   case Success(bc) =>
                     state match {
                       case SYNCING => {
-                        System.err.println("///// / / / // / / /  ////////// /")
                         val (obc, chunks) = Blockchain.optimize(bc)
                         headerDb.addHeaders(
                           chunks.map(_.header),
@@ -128,7 +125,6 @@ class ElectrumChainSync(
                         getHeaders(obc.height + 1, RETARGETING_PERIOD)
                         blockchain = obc
                         state = SYNCING
-                        System.err.println("%%%%%% %%% % % %%% %% % %% %%%")
                         resolve
                       }
 
@@ -205,11 +201,7 @@ class ElectrumChainSync(
             state = SYNCING
           }
 
-        case SYNCING =>
-          System.err.println(
-            s"[info][chain-sync] ignoring header for ${tip.height} since we are syncing"
-          )
-
+        case SYNCING => // ignore new tip header since we are syncing
         case RUNNING if blockchain.tip.map(_.header) != Some(tip.header) =>
           val difficultyOk = Blockchain
             .getDifficulty(blockchain, tip.height, headerDb)
