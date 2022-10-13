@@ -1,7 +1,7 @@
 package fr.acinq.eclair.blockchain.electrum
 
 import scala.util.{Failure, Success, Try}
-import scala.concurrent.Future
+import scala.concurrent.{Future, Promise}
 import scala.concurrent.ExecutionContext.Implicits.global
 import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.blockchain.electrum.Blockchain.RETARGETING_PERIOD
@@ -72,73 +72,98 @@ class ElectrumChainSync(
 
   var state: State = DISCONNECTED
 
-  def getHeaders(startHeight: Int, count: Int): Future[Unit] = {
-    System.err.println(
-      s"[debug][chain-sync] requesting headers from $startHeight to ${startHeight + count}"
-    )
-    pool
-      .request[GetHeadersResponse](GetHeaders(startHeight, count))
-      .andThen {
-        case Success(GetHeadersResponse(source, start, headers, max)) =>
-          if (headers.isEmpty) {
-            System.err.println(
-              "[debug][chain-sync] no more headers, sync done"
-            )
-            EventStream.publish(
-              ChainSyncEnded(blockchain.height)
-            )
-            EventStream.publish(BlockchainReady(blockchain))
-            state = RUNNING
-          } else {
-            System.err.println(
-              s"[debug][chain-sync] got headers from $start to ${start + max}"
-            )
+  // keep track here to prevent multiple wallet sync calls to request the same chunk again and again
+  private val headerChunkBeingRequested =
+    scala.collection.mutable.Map.empty[Int, Promise[Unit]]
+  def getHeaders(startHeight: Int, count: Int): Future[Unit] =
+    headerChunkBeingRequested.get(startHeight) match {
+      case Some(p) => p.future
+      case None =>
+        val p = Promise[Unit]()
+        synchronized {
+          headerChunkBeingRequested += (startHeight -> p)
+        }
+        def resolve = synchronized {
+          headerChunkBeingRequested.remove(startHeight)
+        }.foreach(_.success(()))
 
-            EventStream.publish(
-              ChainSyncProgress(start + max, blockchain.height)
-            )
+        System.err.println(
+          s"[debug][chain-sync] requesting headers from $startHeight to ${startHeight + count}"
+        )
+        pool
+          .request[GetHeadersResponse](GetHeaders(startHeight, count))
+          .onComplete {
+            case Success(GetHeadersResponse(source, start, headers, max)) =>
+              if (headers.isEmpty) {
+                System.err.println(
+                  "[debug][chain-sync] no more headers, sync done"
+                )
+                EventStream.publish(
+                  ChainSyncEnded(blockchain.height)
+                )
+                EventStream.publish(BlockchainReady(blockchain))
+                state = RUNNING
+                resolve
+              } else {
+                System.err.println(
+                  s"[debug][chain-sync] got headers from $start to ${start + max}"
+                )
 
-            Try(Blockchain.addHeaders(blockchain, start, headers)) match {
-              case Success(bc) =>
-                state match {
-                  case SYNCING => {
-                    val (obc, chunks) = Blockchain.optimize(bc)
-                    headerDb.addHeaders(
-                      chunks.map(_.header),
-                      chunks.head.height
-                    )
-                    getHeaders(obc.height + 1, RETARGETING_PERIOD)
-                    blockchain = obc
-                    state = SYNCING
+                EventStream.publish(
+                  ChainSyncProgress(start + max, blockchain.height)
+                )
+
+                System.err.println("~ ~~  ~ ~~~~~~~~ ~~ ~~~~ ~~ ~")
+
+                Try(Blockchain.addHeaders(blockchain, start, headers)) match {
+                  case Success(bc) =>
+                    state match {
+                      case SYNCING => {
+                        System.err.println("///// / / / // / / /  ////////// /")
+                        val (obc, chunks) = Blockchain.optimize(bc)
+                        headerDb.addHeaders(
+                          chunks.map(_.header),
+                          chunks.head.height
+                        )
+                        getHeaders(obc.height + 1, RETARGETING_PERIOD)
+                        blockchain = obc
+                        state = SYNCING
+                        System.err.println("%%%%%% %%% % % %%% %% % %% %%%")
+                        resolve
+                      }
+
+                      case RUNNING => {
+                        headerDb.addHeaders(headers, start)
+                        EventStream.publish(BlockchainReady(bc))
+                        blockchain = bc
+                        resolve
+                      }
+
+                      case _ =>
+                        System.err.println(
+                          s"[error][chain-sync] can't add headers while in state $state"
+                        )
+                        resolve
+                    }
+                  case Failure(err) => {
+                    System.err
+                      .println(
+                        s"[warn][chain-sync] electrum peer sent bad headers: $err"
+                      )
+                    resolve
                   }
-
-                  case RUNNING => {
-                    headerDb.addHeaders(headers, start)
-                    EventStream.publish(BlockchainReady(bc))
-                    blockchain = bc
-                  }
-
-                  case _ =>
-                    System.err.println(
-                      s"[error][chain-sync] can't add headers while in state $state"
-                    )
                 }
-              case Failure(err) => {
-                System.err
-                  .println(
-                    s"[warn][chain-sync] electrum peer sent bad headers: $err"
-                  )
               }
-            }
+
+            case Failure(err) =>
+              System.err.println(
+                s"[warn][chain-sync] failed to get headers: $err"
+              )
+              resolve
           }
 
-        case Failure(err) =>
-          System.err.println(
-            s"[warn][chain-sync] failed to get headers: $err"
-          )
-      }
-      .map(_ => ())
-  }
+        p.future
+    }
 
   def getSyncedBlockchain = if (state == RUNNING) Some(blockchain) else None
 
