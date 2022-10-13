@@ -62,7 +62,9 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool) {
   }
 
   def watch(w: WatchSpent)(cb: Function[WatchEventSpent, Unit]): Unit = {
-    watchSpents += (w -> cb)
+    synchronized {
+      watchSpents += (w -> cb)
+    }
     val scriptHash = computeScriptHash(w.publicKeyScript)
     System.err.println(
       s"[info][watcher] added watch-spent on output=${w.txId}:${w.outputIndex} scriptHash=$scriptHash"
@@ -73,7 +75,9 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool) {
   def watch(
       w: WatchConfirmed
   )(cb: Function[WatchEventConfirmed, Unit]): Unit = {
-    watchConfirmeds += (w -> cb)
+    synchronized {
+      watchConfirmeds += (w -> cb)
+    }
     val scriptHash = computeScriptHash(w.publicKeyScript)
     System.err.println(
       s"[info][watcher] added watch-confirmed on txid=${w.txId} scriptHash=$scriptHash"
@@ -190,9 +194,9 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool) {
   } yield transactions.foreach {
     case GetTransactionResponse(tx, Some(item: TransactionHistoryItem)) =>
       // this is for WatchSpent/WatchSpentBasic
-      watchSpents --= tx.txIn
+      val removedSpents = tx.txIn
         .map(_.outPoint)
-        .flatMap(outPoint =>
+        .flatMap { outPoint =>
           watchSpents.collect {
             case (WatchSpent(txid, pos, _, event, _), cb)
                 if txid == outPoint.txid && pos == outPoint.index.toInt => {
@@ -205,11 +209,15 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool) {
               None
             }
           }
-        )
+        }
         .flatten
 
+      synchronized {
+        watchSpents --= removedSpents
+      }
+
       // this is for WatchConfirmed
-      watchConfirmeds --= watchConfirmeds.collect {
+      val removedConfirmeds = watchConfirmeds.collect {
         case (
               w @ WatchConfirmed(
                 txid,
@@ -244,24 +252,26 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool) {
               .request[GetMerkleResponse](GetMerkle(item.txHash, item.height))
               .onComplete {
                 case Success(merkle: GetMerkleResponse) =>
-                  watchConfirmeds --= watchConfirmeds.collect {
-                    case (
-                          w @ WatchConfirmed(
-                            txid,
-                            _,
-                            minDepth,
-                            event
-                          ),
-                          cb
-                        ) if txid == merkle.txid =>
-                      cb(
-                        WatchEventConfirmed(
-                          event,
-                          TxConfirmedAt(txheight.toInt, tx),
-                          merkle.pos
+                  synchronized {
+                    watchConfirmeds --= watchConfirmeds.collect {
+                      case (
+                            w @ WatchConfirmed(
+                              txid,
+                              _,
+                              minDepth,
+                              event
+                            ),
+                            cb
+                          ) if txid == merkle.txid =>
+                        cb(
+                          WatchEventConfirmed(
+                            event,
+                            TxConfirmedAt(txheight.toInt, tx),
+                            merkle.pos
+                          )
                         )
-                      )
-                      w
+                        w
+                    }
                   }
                 case Failure(err) =>
                   System.err.println(
@@ -323,15 +333,13 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool) {
           error_opt match {
             case None =>
               System.err.println(
-                s"[info][watcher] broadcast succeeded for txid=${tx.txid} tx={}",
-                tx
+                s"[info][watcher] broadcast succeeded for txid=${tx.txid} tx=$tx"
               )
             case Some(error)
                 if error.message
                   .contains("transaction already in block chain") =>
               System.err.println(
-                s"[info][watcher] broadcast ignored for txid=${tx.txid} tx={} (tx was already in blockchain)",
-                tx
+                s"[info][watcher] broadcast ignored for txid=${tx.txid} tx=$tx (tx was already in blockchain)"
               )
             case Some(error) =>
               System.err.println(
