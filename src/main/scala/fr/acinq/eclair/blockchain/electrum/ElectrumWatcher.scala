@@ -51,14 +51,45 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool) {
   var publishQueue: Queue[Transaction] = Queue.empty
   var published: Queue[Transaction] = Queue.empty
 
-  EventStream.subscribe { case ElectrumDisconnected =>
-    state match {
-      case Disconnected =>
-      case Running      =>
-        // we remember the txes that we previously sent but hadn't yet received the confirmation to resend
-        publishQueue = publishQueue ++ published
-        state = Disconnected
-    }
+  EventStream.subscribe {
+    case ElectrumDisconnected =>
+      state match {
+        case Disconnected =>
+        case Running      =>
+          // we remember the txes that we previously sent but hadn't yet received the confirmation to resend
+          publishQueue = publishQueue ++ published
+          state = Disconnected
+      }
+    case CurrentBlockCount(tipHeight) =>
+      state match {
+        case Disconnected =>
+          // we got a blockchain header, means we're up and running now
+
+          // restart the watchers
+          watchConfirmeds.foreach { case (w: WatchConfirmed, cb) =>
+            watch(w)(cb)
+          }
+          watchSpents.foreach { case (w: WatchSpent, cb) => watch(w)(cb) }
+
+          state = Running
+          // publish all pending transactions (after changing the state to Running)
+          publishQueue.foreach(maybePublish(_))
+
+        case Running =>
+          // a new block was found
+          // ~
+          // for all transactions we are watching to be confirmed, try to get their statuses
+          watchConfirmeds.collect { case (w: WatchConfirmed, _) =>
+            inspectScriptHash(computeScriptHash(w.publicKeyScript))
+          }
+
+          // publish all txs that we must have published at this point
+          val toPublish = block2tx.view.filterKeys(_ <= tipHeight)
+          toPublish.values.flatten.foreach(publish(_))
+
+          // and remove them from the list
+          block2tx = block2tx -- toPublish.keys
+      }
   }
 
   def watch(w: WatchSpent)(cb: Function[WatchEventSpent, Unit]): Unit = {
@@ -283,39 +314,12 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool) {
           None
       }.flatten
 
+      synchronized {
+        watchConfirmeds --= removedConfirmeds
+      }
+
     case GetTransactionResponse(tx, _) =>
       System.err.println("[error][watcher] tx response with wrong context?")
-  }
-
-  // as the class is instantiated, begin watching for headers
-  pool.subscribeToHeaders("watcher") { case tip: HeaderSubscriptionResponse =>
-    state match {
-      case Disconnected =>
-        // we got a blockchain header, means we're up and running now
-
-        // restart the watchers
-        watchConfirmeds.foreach { case (w: WatchConfirmed, cb) => watch(w)(cb) }
-        watchSpents.foreach { case (w: WatchSpent, cb) => watch(w)(cb) }
-
-        state = Running
-        // publish all pending transactions (after changing the state to Running)
-        publishQueue.foreach(maybePublish(_))
-
-      case Running =>
-        // a new block was found
-        // ~
-        // for all transactions we are watching to be confirmed, try to get their statuses
-        watchConfirmeds.collect { case (w: WatchConfirmed, _) =>
-          inspectScriptHash(computeScriptHash(w.publicKeyScript))
-        }
-
-        // publish all txs that we must have published at this point
-        val toPublish = block2tx.view.filterKeys(_ <= tip.height)
-        toPublish.values.flatten.foreach(publish(_))
-
-        // and remove them from the list
-        block2tx = block2tx -- toPublish.keys
-    }
   }
 
   private def publish(tx: Transaction): Unit = {
