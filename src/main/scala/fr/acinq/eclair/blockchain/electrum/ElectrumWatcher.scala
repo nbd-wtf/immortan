@@ -1,7 +1,6 @@
 package fr.acinq.eclair.blockchain.electrum
 
 import java.util.concurrent.atomic.AtomicLong
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.collection.immutable.{Queue, SortedMap}
 import scala.util.{Try, Failure, Success}
@@ -27,6 +26,8 @@ import fr.acinq.eclair.channel.{
   BITCOIN_PARENT_TX_CONFIRMED
 }
 import fr.acinq.eclair.transactions.Scripts
+
+import immortan.LNParams.ec
 
 class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool) {
   sealed trait State

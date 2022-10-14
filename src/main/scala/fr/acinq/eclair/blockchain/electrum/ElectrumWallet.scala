@@ -5,7 +5,6 @@ import scala.util.chaining._
 import scala.annotation.tailrec
 import scala.concurrent.duration._
 import scala.concurrent.Future
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Success, Failure, Try}
 
 import fr.acinq.bitcoin.DeterministicWallet._
@@ -22,6 +21,24 @@ import fr.acinq.eclair.transactions.Transactions
 import immortan.crypto.Tools._
 import immortan.sqlite.SQLiteTx
 import scodec.bits.ByteVector
+
+import immortan.LNParams.ec
+
+import Debugggg._
+
+object Debugggg {
+  val shs = List(
+    "0df0dd195d9a1d36c6ac61af28efea21f64efe376b60895815057e63c3e0a6aa", // account 17
+    "d88c76d2c9b1985359574659ced0059e5159710db6fc4783c85ed7453f344fd6", // account 18
+    "9db0f693c209127a672625a3a1d4009e0b52d64f82342ba38d9af93b348e8cb9" // change 11
+  )
+  val txids = List(
+    "7cf8414d2a2069c200c299aac77a1abade95591e329f7382f2f64a237cee7b95",
+    "99de3e9a21f4b1f3cbbafe67a9fad51cc6c1c646487e5bb73f091347944ab2b6",
+    "49d76ac7ca241a973410ef9cb0429a2a990ca7599e4cba1aed7ffa39158654ec",
+    "c3fa4e094ef6edbc8058f3e7945a4594fa03ee93b08f791c2be80dbf0c29e05d"
+  )
+}
 
 class BadElectrumData(msg: String) extends Exception(msg)
 class BadMerkleProof(
@@ -41,7 +58,7 @@ class ElectrumWallet(
     chainSync: ElectrumChainSync,
     params: WalletParameters,
     ewt: ElectrumWalletType
-) { self =>
+) {
   sealed trait State
   case object Disconnected extends State
   case object Running extends State
@@ -51,30 +68,28 @@ class ElectrumWallet(
 
   val scriptHashesSyncing: AtomicInteger = new AtomicInteger(0)
   var maxEverInConcurrentSync = 0 // this is used in the UI
+  val lastStatusReceivedForScriptHash =
+    scala.collection.mutable.Map.empty[ByteVector32, String]
+  val scriptHashesBeingTracked =
+    scala.collection.mutable.Set.empty[ByteVector32]
 
   def persistAndNotify(nextData: ElectrumData): Unit = {
-    val t = new java.util.Timer()
-    val task = new java.util.TimerTask { def run() = { self.keyRefill() } }
-    t.schedule(task, 100L)
-
     EventStream.publish(nextData.readyMessage)
 
-    params.walletDb.persist(
-      nextData.toPersistent,
-      nextData.balance,
-      ewt.xPub.publicKey
-    )
-
-    data = nextData
+    synchronized {
+      params.walletDb.persist(
+        nextData.toPersistent,
+        nextData.balance,
+        ewt.xPub.publicKey
+      )
+      data = nextData
+    }
   }
 
   EventStream
     .subscribe {
-      case BlockchainReady(bc) => self.blockchainReady(bc)
-      case ElectrumDisconnected => {
-        state = Disconnected
-        data = data.reset
-      }
+      case BlockchainReady(bc)  => blockchainReady(bc)
+      case ElectrumDisconnected => state = Disconnected
     }
 
   def load(encoded: ByteVector): Unit =
@@ -154,13 +169,18 @@ class ElectrumWallet(
         master,
         keys.last.path.lastChildNumber + 1
       )
+
       val sh = computeScriptHash(ewt.writePublicKeyScriptHash(xp.publicKey))
       (xp, sh)
     }
 
     if (data.firstUnusedAccountKeys.size < MAX_RECEIVE_ADDRESSES) {
       val (xp, sh) = newKey(ewt.accountMaster, data.accountKeys)
-      trackScriptHash(sh)
+      System.err.println(
+        s"[debug][wallet] refilling account key (${xp.path.lastChildNumber}): ${sh.toHex.take(6)}"
+      )
+
+      if (shs.contains(sh.toHex)) { System.err.println("    ==============") }
 
       synchronized {
         data = data.copy(
@@ -168,13 +188,16 @@ class ElectrumWallet(
           accountKeys = data.accountKeys :+ xp
         )
       }
-
-      persistAndNotify(data)
+      trackScriptHash(sh)
     }
 
     if (data.firstUnusedChangeKeys.size < MAX_RECEIVE_ADDRESSES) {
       val (xp, sh) = newKey(ewt.changeMaster, data.changeKeys)
-      trackScriptHash(sh)
+      System.err.println(
+        s"[debug][wallet] refilling change key (${xp.path.lastChildNumber}): ${sh.toHex.take(6)}"
+      )
+
+      if (shs.contains(sh.toHex)) { System.err.println("    ==============") }
 
       synchronized {
         data = data.copy(
@@ -182,293 +205,315 @@ class ElectrumWallet(
           changeKeys = data.changeKeys :+ xp
         )
       }
-
-      persistAndNotify(data)
+      trackScriptHash(sh)
     }
   }
 
-  def trackScriptHash(scriptHash: ByteVector32): Unit = {
-    pool
-      .subscribeToScriptHash("wallet", scriptHash) {
-        case ScriptHashSubscriptionResponse(scriptHash, status) =>
-          if (
-            status != "" &&
-            !data.status.get(scriptHash).contains(status) &&
-            (data.accountKeyMap.contains(scriptHash) ||
-              data.changeKeyMap.contains(scriptHash))
-          ) {
-            // save the new status to the data so we don't run this same thing twice for the same updates
-            //   (this shouldn't happen in general because of the debouncing, but it's still a good idea
-            //    to put this here just after the check)
-            val previousScriptHashStatus = data.status.get(scriptHash)
+  def trackScriptHash(scriptHash: ByteVector32): Unit =
+    if (!scriptHashesBeingTracked.contains(scriptHash)) {
+      synchronized {
+        scriptHashesBeingTracked += scriptHash
+      }
 
-            synchronized {
-              data = data.copy(status = data.status.updated(scriptHash, status))
-            }
+      pool
+        .subscribeToScriptHash("wallet", scriptHash) {
+          case ScriptHashSubscriptionResponse(scriptHash, status) =>
+            if (
+              status != "" &&
+              Some(status) != data.status.get(scriptHash) &&
+              Some(status) != lastStatusReceivedForScriptHash.get(scriptHash) &&
+              (data.accountKeyMap.contains(scriptHash) ||
+                data.changeKeyMap.contains(scriptHash))
+            ) {
+              // keep track of this status so we don't run this same thing twice for the same updates
+              //   (this shouldn't happen in general because of the debouncing, but it's still a good idea
+              //    to put this here just after the check)
+              synchronized {
+                lastStatusReceivedForScriptHash += (scriptHash -> status)
+              }
 
-            System.err.println(
-              s"[debug][wallet] script hash ${scriptHash.toString().take(6)} has changed (${status.take(6)}), requesting history"
-            )
-
-            // emit events so wallets can display nice things
-            if (scriptHashesSyncing.getAndIncrement() == 0)
-              EventStream.publish(WalletSyncStarted)
-            if (scriptHashesSyncing.get > maxEverInConcurrentSync)
-              maxEverInConcurrentSync += 1
-            EventStream.publish(
-              WalletSyncProgress(
-                maxEverInConcurrentSync,
-                scriptHashesSyncing.get
+              System.err.println(
+                s"[debug][wallet] script hash ${scriptHash.toString().take(6)} has changed (${status.take(6)}), requesting history"
               )
-            )
+              if (shs.contains(scriptHash.toHex))
+                System.err.println("    !!!!!!!!!!!!!!!!!")
 
-            val result = for {
-              history <- pool
-                .requestMany[GetScriptHashHistoryResponse](
-                  GetScriptHashHistory(scriptHash),
-                  2
+              // emit events so wallets can display nice things
+              if (scriptHashesSyncing.getAndIncrement() == 0)
+                EventStream.publish(WalletSyncStarted)
+              if (scriptHashesSyncing.get > maxEverInConcurrentSync)
+                maxEverInConcurrentSync += 1
+              EventStream.publish(
+                WalletSyncProgress(
+                  maxEverInConcurrentSync,
+                  scriptHashesSyncing.get
                 )
-                .map(_.map { case GetScriptHashHistoryResponse(_, items) =>
-                  items
-                })
-                .map(histories =>
-                  histories.reduce[List[TransactionHistoryItem]] {
-                    case (
-                          itemsA,
-                          itemsB
-                        ) =>
-                      itemsA ++ itemsB.filterNot(i => itemsA.contains(i))
+              )
+
+              val result = for {
+                history <- pool
+                  .request[GetScriptHashHistoryResponse](
+                    GetScriptHashHistory(scriptHash)
+                  )
+                  .map { case GetScriptHashHistoryResponse(_, items) =>
+                    items
                   }
+                  .map(_.sortBy(_.height))
+                _ = System.err.println(
+                  s"[debug][wallet] got history for ${scriptHash.toHex.take(6)} : ${history}"
                 )
-                .map(_.sortBy(_.height))
-              _ = System.err.println(
-                s"[debug][wallet] got history $scriptHash ::> ${history}"
-              )
+                _ = if (shs.contains(scriptHash.toHex))
+                  System.err.println("    @@@@@@@@@@@@@@@2")
 
-              // fetch headers if missing for any of these items
-              _ <- Future.sequence(history.map { item =>
-                if (
-                  item.height > 0 /* we don't want headers for unconfirmed transactions */ &&
-                  data.blockchain
-                    .getHeader(item.height)
-                    .orElse(params.headerDb.getHeader(item.height))
-                    .isEmpty
-                ) {
-                  System.err.println(
-                    s"[debug][wallet] downloading missing header ${item.height} for transaction ${item.txHash}"
-                  )
-                  // we don't have this header because it is older than our checkpoints => request the entire chunk
-                  //   and wait for chainsync to process it
-                  chainSync
-                    .getHeaders(
-                      item.height / RETARGETING_PERIOD * RETARGETING_PERIOD,
-                      RETARGETING_PERIOD
+                // fetch headers if missing for any of these items
+                _ <- Future.sequence(history.map { item =>
+                  if (
+                    item.height > 0 /* we don't want headers for unconfirmed transactions */ &&
+                    data.blockchain
+                      .getHeader(item.height)
+                      .orElse(params.headerDb.getHeader(item.height))
+                      .isEmpty
+                  ) {
+                    System.err.println(
+                      s"[debug][wallet] downloading missing header ${item.height} for transaction ${item.txHash}"
                     )
-                    .andThen { _ =>
-                      System.err.println(
-                        s"[debug][wallet] got missing headers for ${item.txHash}"
+                    // we don't have this header because it is older than our checkpoints => request the entire chunk
+                    //   and wait for chainsync to process it
+                    chainSync
+                      .getHeaders(
+                        item.height / RETARGETING_PERIOD * RETARGETING_PERIOD,
+                        RETARGETING_PERIOD
                       )
-                    }
-                } else Future { () }
-              })
+                    // .andThen { _ =>
+                    //   System.err.println(
+                    //     s"[debug][wallet] got missing headers for ${item.txHash}"
+                    //   )
+                    // }
+                  } else Future { () }
+                })
 
-              // fetch transaction and merkle proof for all these txids
-              // (if the user is doing things right we'll have at most 2 transactions for each script hash)
-              merkleProofs <- Future.sequence(
-                history
-                  .filter(_.height > 0) // only do this when the tx is confirmed
-                  .map(item =>
-                    data.proofs
-                      .get(item.txHash)
-                      .map(p => Future(p))
-                      .getOrElse(
-                        pool
-                          .request[GetMerkleResponse](
-                            GetMerkle(item.txHash, item.height)
-                          )
-                          .andThen { case Success(merkle) =>
-                            val headerOpt = data.blockchain
-                              .getHeader(merkle.blockHeight)
-                              .orElse(
-                                params.headerDb.getHeader(merkle.blockHeight)
-                              )
+                // fetch transaction and merkle proof for all these txids
+                // (if the user is doing things right we'll have at most 2 transactions for each script hash)
+                merkleProofs <- Future.sequence(
+                  history
+                    .filter(
+                      _.height > 0
+                    ) // only do this when the tx is confirmed
+                    .map(item =>
+                      data.proofs
+                        .get(item.txHash)
+                        .map(p => Future(p))
+                        .getOrElse(
+                          pool
+                            .request[GetMerkleResponse](
+                              GetMerkle(item.txHash, item.height)
+                            )
+                            .andThen { case Success(merkle) =>
+                              val headerOpt = data.blockchain
+                                .getHeader(merkle.blockHeight)
+                                .orElse(
+                                  params.headerDb.getHeader(merkle.blockHeight)
+                                )
 
-                            headerOpt match {
-                              case Some(existingHeader)
-                                  if existingHeader.hashMerkleRoot != merkle.root =>
-                                throw new BadMerkleProof(
-                                  item.txHash,
-                                  existingHeader.hashMerkleRoot,
-                                  merkle.root,
-                                  item.height,
-                                  merkle.blockHeight
-                                )
-                              case Some(_) =>
-                              // it's ok
-                              // merkle root matches block header
-                              case None =>
-                                throw new Exception(
-                                  s"no header ${merkle.blockHeight} for ${item.txHash} merkle proof? this should never happen."
-                                )
+                              headerOpt match {
+                                case Some(existingHeader)
+                                    if existingHeader.hashMerkleRoot != merkle.root =>
+                                  throw new BadMerkleProof(
+                                    item.txHash,
+                                    existingHeader.hashMerkleRoot,
+                                    merkle.root,
+                                    item.height,
+                                    merkle.blockHeight
+                                  )
+                                case Some(_) =>
+                                // it's ok
+                                // merkle root matches block header
+                                case None =>
+                                  throw new Exception(
+                                    s"no header ${merkle.blockHeight} for ${item.txHash} merkle proof? this should never happen."
+                                  )
+                              }
                             }
-                          }
-                      )
-                  )
-              )
-
-              transactions <- Future
-                .sequence(
-                  history.map(item =>
-                    data.transactions
-                      .get(item.txHash)
-                      .map(p => Future(p))
-                      .getOrElse(
-                        pool
-                          .request[GetTransactionResponse](
-                            GetTransaction(item.txHash)
-                          )
-                          .map(_.tx)
-                          .andThen {
-                            case Success(tx) if tx.txid != item.txHash =>
-                              throw new BadTxIdMismatched(item.txHash, tx.txid)
-                          }
-                      )
-                  )
+                        )
+                    )
                 )
 
-              // also fetch all parents of transactions
-              parents <- Future
-                .sequence(
-                  transactions
-                    .flatMap(_.txIn.map(_.outPoint.txid))
-                    .map(txid =>
+                transactions <- Future
+                  .sequence(
+                    history.map(item =>
                       data.transactions
-                        .get(txid)
+                        .get(item.txHash)
                         .map(p => Future(p))
                         .getOrElse(
                           pool
                             .request[GetTransactionResponse](
-                              GetTransaction(txid)
+                              GetTransaction(item.txHash)
                             )
                             .map(_.tx)
                             .andThen {
-                              case Success(tx) if tx.txid != txid =>
-                                throw new BadTxIdMismatched(txid, tx.txid)
+                              case Success(tx) if tx.txid != item.txHash =>
+                                throw new BadTxIdMismatched(
+                                  item.txHash,
+                                  tx.txid
+                                )
                             }
                         )
                     )
-                )
-            } yield {
-              // prepare updated data
-              synchronized {
-                data = data
-                  .copy(
-                    // add the history
-                    history = data.history.updatedWith(scriptHash) {
-                      case None           => Some(history)
-                      case Some(existing) =>
-                        // keep history items that we have and they don't
-                        // except unconfirmed transactions we had, these we discard
-                        //   since they may have been dropped from mempool or replaced
-                        Some(
-                          existing
-                            .filter(_.height > 0) ++
-                            history
-                              .filterNot(ni => existing.contains(ni))
-                        )
-                    },
-
-                    // add all transactions we got
-                    transactions = data.transactions ++
-                      transactions.map(tx => tx.txid -> tx) ++
-                      parents.map(tx => tx.txid -> tx),
-
-                    // add all merkle proofs
-                    proofs = data.proofs ++ merkleProofs.map(merkle =>
-                      merkle.txid -> merkle
-                    ),
-
-                    // even though we have excluded some utxos in this wallet user may still
-                    //   spend them from elsewhere, so clear excluded outpoints here
-                    excludedOutPoints =
-                      transactions.foldLeft(data.excludedOutPoints) {
-                        case (exc, tx) => exc.diff(tx.txIn.map(_.outPoint))
-                      }
                   )
-                  .withOverridingTxids // this accounts for double-spends like RBF
-              }
 
-              // update data
-              persistAndNotify(data)
-
-              // notify all transactions so they can be stored/displayed etc by wallet
-              transactions.foreach { tx =>
-                data.computeTransactionDelta(tx).map {
-                  case TransactionDelta(_, feeOpt, received, sent) =>
-                    EventStream.publish(
-                      TransactionReceived(
-                        tx = tx,
-                        depth = data.depth(tx.txid),
-                        stamp = data.timestamp(tx.txid, params.headerDb),
-                        received = received,
-                        sent = sent,
-                        walletAddreses = tx.txOut
-                          .filter(data.isMine)
-                          .map(_.publicKeyScript)
-                          .flatMap(data.publicScriptMap.get)
-                          .map(data.ewt.textAddress)
-                          .toList,
-                        xPub = ewt.xPub,
-                        feeOpt = feeOpt
+                // also fetch all parents of transactions
+                parents <- Future
+                  .sequence(
+                    transactions
+                      .flatMap(_.txIn.map(_.outPoint.txid))
+                      .map(txid =>
+                        data.transactions
+                          .get(txid)
+                          .map(p => Future(p))
+                          .getOrElse(
+                            pool
+                              .request[GetTransactionResponse](
+                                GetTransaction(txid)
+                              )
+                              .map(_.tx)
+                              .andThen {
+                                case Success(tx) if tx.txid != txid =>
+                                  throw new BadTxIdMismatched(txid, tx.txid)
+                              }
+                          )
                       )
-                    )
-                }
-              }
-            }
-
-            result
-              .andThen { _ =>
-                // emit events so wallets can show visual things to users
-                if (scriptHashesSyncing.decrementAndGet() == 0)
-                  EventStream.publish(WalletSyncEnded)
-
-                EventStream.publish(
-                  WalletSyncProgress(
-                    maxEverInConcurrentSync,
-                    scriptHashesSyncing.get
                   )
-                )
-              }
-              .andThen { case Failure(_) =>
-                // in case of any failure, set the script hash status to what it was before
-                //   so we'll try to update it again next time we connect to a new electrum
-                //   server or restart the wallet.
+              } yield {
+                // prepare updated data
                 synchronized {
-                  data = data.copy(status =
-                    data.status.updatedWith(scriptHash)(_ =>
-                      previousScriptHashStatus
+                  if (shs.contains(scriptHash.toHex))
+                    System.err.println(
+                      s" //// HISTORY ${scriptHash.toHex
+                          .take(6)} BEFORE: ${data.history.get(scriptHash).map(_.size).getOrElse(0)}"
+                    )
+
+                  if (shs.contains(scriptHash.toHex))
+                    System.err.println(
+                      s" ////// HISTORY ${scriptHash.toHex.take(6)} +++: ${history.size}"
+                    )
+
+                  data = data
+                    .copy(
+                      // save the status
+                      status = data.status.updated(scriptHash, status),
+
+                      // add the history
+                      history = {
+                        data.history.updatedWith(scriptHash) {
+                          case None           => Some(history)
+                          case Some(existing) =>
+                            // keep history items that we have and they don't
+                            // except unconfirmed transactions we had, these we discard
+                            //   since they may have been dropped from mempool or replaced
+                            val oldItems = existing.filter(_.height > 0)
+                            val newItems =
+                              history.filterNot(oldItems.contains(_))
+                            Some(oldItems ++ newItems)
+                        }
+                      },
+
+                      // add all transactions we got
+                      transactions = data.transactions ++
+                        transactions.map(tx => tx.txid -> tx) ++
+                        parents.map(tx => tx.txid -> tx),
+
+                      // add all merkle proofs
+                      proofs = data.proofs ++ merkleProofs.map(merkle =>
+                        merkle.txid -> merkle
+                      ),
+
+                      // even though we have excluded some utxos in this wallet user may still
+                      //   spend them from elsewhere, so clear excluded outpoints here
+                      excludedOutPoints =
+                        transactions.foldLeft(data.excludedOutPoints) {
+                          case (exc, tx) => exc.diff(tx.txIn.map(_.outPoint))
+                        }
+                    )
+                    .withOverridingTxids // this accounts for double-spends like RBF
+
+                  if (shs.contains(scriptHash.toHex))
+                    System.err.println(
+                      s" //////// HISTORY ${scriptHash.toHex
+                          .take(6)} AFTER: ${data.history.get(scriptHash).map(_.size).getOrElse(0)}"
+                    )
+                }
+
+                // update data
+                persistAndNotify(data)
+
+                // refill keys
+                Future { keyRefill() }
+
+                // notify all transactions so they can be stored/displayed etc by wallet
+                transactions.foreach { tx =>
+                  data.computeTransactionDelta(tx).map {
+                    case TransactionDelta(_, feeOpt, received, sent) =>
+                      EventStream.publish(
+                        TransactionReceived(
+                          tx = tx,
+                          depth = data.depth(tx.txid),
+                          stamp = data.timestamp(tx.txid, params.headerDb),
+                          received = received,
+                          sent = sent,
+                          walletAddreses = tx.txOut
+                            .filter(data.isMine)
+                            .map(_.publicKeyScript)
+                            .flatMap(data.publicScriptMap.get)
+                            .map(data.ewt.textAddress)
+                            .toList,
+                          xPub = ewt.xPub,
+                          feeOpt = feeOpt
+                        )
+                      )
+                  }
+                }
+              }
+
+              result
+                .andThen { _ =>
+                  // emit events so wallets can show visual things to users
+                  if (scriptHashesSyncing.decrementAndGet() == 0)
+                    EventStream.publish(WalletSyncEnded)
+
+                  EventStream.publish(
+                    WalletSyncProgress(
+                      maxEverInConcurrentSync,
+                      scriptHashesSyncing.get
                     )
                   )
                 }
-              }
-              .onComplete {
-                case Success(_) =>
-                  System.err.println(
-                    s"[info][wallet] scripthash $scriptHash updated successfully"
-                  )
-                case Failure(err: BadElectrumData) =>
-                  // kill this electrum client
-                  System.err.println(
-                    s"[error][wallet] got bad data from electrum server: $err"
-                  )
-                case Failure(err) =>
-                  System.err.println(
-                    s"[error][wallet] something wrong happened while updating script hashes: $err"
-                  )
-              }
-          }
-      }
-  }
+                .andThen { _ =>
+                  synchronized {
+                    if (
+                      lastStatusReceivedForScriptHash
+                        .get(scriptHash) == Some(status)
+                    )
+                      lastStatusReceivedForScriptHash.remove(scriptHash)
+                  }
+                }
+                .onComplete {
+                  case Success(_) =>
+                    System.err.println(
+                      s"[info][wallet] scripthash ${scriptHash.toHex.take(6)} updated successfully"
+                    )
+                  case Failure(err: BadElectrumData) =>
+                    // kill this electrum client
+                    System.err.println(
+                      s"[error][wallet] got bad data from electrum server: $err"
+                    )
+                  case Failure(err) =>
+                    System.err.println(
+                      s"[error][wallet] something wrong happened while updating script hashes: $err"
+                    )
+                }
+            } else keyRefill()
+        }
+    }
 
   def getData = data
 
@@ -810,8 +855,22 @@ case class ElectrumData(
     excludedOutPoints
   )
 
-  lazy val firstUnusedAccountKeys
-      : scala.collection.immutable.Iterable[ExtendedPublicKey] =
+  lazy val firstUnusedAccountKeys: Iterable[ExtendedPublicKey] = {
+    System.err.println(": counting unused account keys:")
+    var unusedCount = 0
+    accountKeyMap.foreach {
+      case (sh, _) if !status.contains(sh) =>
+        unusedCount += 1
+        System.err.println(
+          s":   non-existent ${sh.toHex.take(6)} = $unusedCount"
+        )
+      case (sh, _) if status(sh) == "" =>
+        unusedCount += 1
+        System.err.println(s":   empty ${sh.toHex.take(6)} = $unusedCount")
+      case (sh, _) =>
+        System.err.println(s":   used ${sh.toHex.take(6)} = $unusedCount")
+    }
+
     accountKeyMap.collect {
       case (nonExistentScriptHash, privKey)
           if !status.contains(nonExistentScriptHash) =>
@@ -819,9 +878,9 @@ case class ElectrumData(
       case (emptyScriptHash, privKey) if status(emptyScriptHash) == "" =>
         privKey
     }
+  }
 
-  lazy val firstUnusedChangeKeys
-      : scala.collection.immutable.Iterable[ExtendedPublicKey] = {
+  lazy val firstUnusedChangeKeys: Iterable[ExtendedPublicKey] = {
     val usedChangeNumbers = transactions.values
       .flatMap(_.txOut)
       .map(_.publicKeyScript)
@@ -839,15 +898,35 @@ case class ElectrumData(
 
   lazy val unExcludedUtxos: Seq[Utxo] = {
     history.toSeq.flatMap { case (scriptHash, historyItems) =>
-      accountKeyMap.get(scriptHash) orElse changeKeyMap.get(scriptHash) map {
-        key =>
+      accountKeyMap
+        .get(scriptHash)
+        .orElse(changeKeyMap.get(scriptHash))
+        .map { key =>
+          var print = false
+
+          historyItems.foreach { item =>
+            if (
+              shs
+                .contains(scriptHash.toHex) && txids.contains(item.txHash.toHex)
+            ) {
+              print = true
+              System.err.println(
+                s"GOT ${item.txHash.toString()} at ${scriptHash.toHex}"
+              )
+            }
+          }
+
           // We definitely have a private key generated for corresponding scriptHash here
-          val unspents = for {
+          val txos = for {
             item <- historyItems
             tx <- transactions.get(item.txHash).toList
             if !overriddenPendingTxids.contains(tx.txid)
             (txOut, index) <- tx.txOut.zipWithIndex
             if computeScriptHash(txOut.publicKeyScript) == scriptHash
+            _ = if (print)
+              System.err.println(
+                s"~ [outpoint: ${item.txHash.toHex}:$index | ${txOut.publicKeyScript.toHex} | ${computeScriptHash(txOut.publicKeyScript)}]"
+              )
           } yield Utxo(
             key,
             UnspentItem(
@@ -858,17 +937,36 @@ case class ElectrumData(
             )
           )
 
-          // Find all out points which spend from this script hash and make sure unspents do not contain them
-          unspents.filterNot(utxo =>
-            historyItems
+          if (print) {
+            System.err.println(s" TXOS: ${txos.map(_.item)}")
+            System.err.println(s" OUTPOINTS: ${txos.map(_.item.outPoint)}")
+          }
+
+          // Find all out points which spend from this script hash and make sure txos do not contain them
+          val x = txos.filterNot { txo =>
+            val txs = historyItems
               .map(_.txHash)
               .flatMap(transactions.get)
+
+            val out = txs
               .flatMap(_.txIn)
               .map(_.outPoint)
               .toSet
-              .contains(utxo.item.outPoint)
-          )
-      } getOrElse Nil
+
+            if (print)
+              System.err
+                .println(s"      OUT: $out")
+
+            out
+              .contains(txo.item.outPoint)
+          }
+
+          if (print)
+            System.err.println(s"        RESULT: $x")
+
+          x
+        }
+        .getOrElse(Seq.empty)
     }
   }
 
@@ -876,12 +974,6 @@ case class ElectrumData(
     unExcludedUtxos.filterNot(utxo =>
       excludedOutPoints.contains(utxo.item.outPoint)
     )
-
-  // Remove status for each script hash for which we have pending requests,
-  //   this will make us query script hash history for these script hashes again when we reconnect
-  def reset: ElectrumData = copy(
-    status = status
-  )
 
   def toPersistent: PersistentData = PersistentData(
     accountKeys.length,

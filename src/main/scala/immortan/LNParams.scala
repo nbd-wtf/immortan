@@ -28,6 +28,7 @@ import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext}
+import java.util.concurrent.Executors
 import scala.util.Try
 
 object LNParams {
@@ -105,6 +106,12 @@ object LNParams {
   var syncParams: SyncParams = _
   var fiatRates: FiatRates = _
   var feeRates: FeeRates = _
+
+  var threadPool = Executors.newFixedThreadPool(3)
+  implicit val ec = new ExecutionContext {
+    def execute(runnable: Runnable): Unit = threadPool.submit(runnable)
+    def reportFailure(t: Throwable): Unit = {}
+  }
 
   var trampoline: TrampolineOn = TrampolineOn(
     minPayment,

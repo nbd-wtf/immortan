@@ -36,13 +36,38 @@ class SQLiteChainWallet(val db: DBInterface) extends WalletDb {
       data: PersistentData,
       lastBalance: Satoshi,
       pub: PublicKey
-  ): Unit =
+  ): Unit = {
+    val existingHistories = db
+      .select(ChainWalletTable.selectSql)
+      .take(1)
+      .flatMap { rc =>
+        val data = rc.byteVec(ChainWalletTable.data)
+        scala.util
+          .Try(persistentDataCodec.decode(data.bits).require.value)
+          .toOption
+          .map(_.history.keySet)
+      }
+      .headOption
+      .getOrElse(Set.empty)
+      .map(_.toHex)
+      .map(_.take(6))
+
+    val saving = data.history.keySet.map(_.toHex).map(_.take(6))
+    val added = saving.diff(existingHistories)
+    val removed = existingHistories.diff(saving)
+
+    System.err.println(
+      s"********** saving ${saving.size} histories, added { ${added
+          .mkString(" ")} }, removed { ${removed.mkString(" ")} }"
+    )
+
     db.change(
       ChainWalletTable.updSql,
       persistentDataCodec.encode(data).require.toByteArray,
       lastBalance.toLong: java.lang.Long,
       pub.toString
     )
+  }
 
   def updateLabel(label: String, pub: PublicKey): Unit =
     db.change(ChainWalletTable.updLabelSql, label, pub.toString)

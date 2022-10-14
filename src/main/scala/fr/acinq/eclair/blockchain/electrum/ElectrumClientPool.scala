@@ -5,7 +5,6 @@ import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.{Promise, Future, ExecutionContext}
 import scala.concurrent.duration._
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Try, Random, Success, Failure}
 
 import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32}
@@ -27,6 +26,8 @@ import immortan.LNParams
 import org.json4s.JsonAST.{JObject, JString}
 import org.json4s.native.JsonMethods
 
+import LNParams.ec
+
 class ElectrumClientPool(
     blockCount: AtomicLong,
     chainHash: ByteVector32,
@@ -37,9 +38,7 @@ class ElectrumClientPool(
     scala.collection.mutable.Map.empty[ElectrumClient, InetSocketAddress]
   var usedAddresses = Set.empty[InetSocketAddress]
 
-  val tips: scala.collection.mutable.Map[ElectrumClient, TipAndHeader] =
-    scala.collection.mutable.Map.empty
-  def blockHeight: Int = tips.map(_._2._1).maxOption.getOrElse(0)
+  def blockHeight: Int = this.blockCount.get().toInt
 
   val scriptHashSubscriptions =
     scala.collection.mutable.Map
@@ -61,8 +60,7 @@ class ElectrumClientPool(
         "[warn][pool] we were asked to disconnect from this client, but since it is a custom server we won't do that"
       )
     } else {
-      client.disconnect()
-      client.cancelPingTrigger()
+      client.shutdown()
 
       if (addresses.contains(client)) {
         System.err.println(
@@ -70,7 +68,6 @@ class ElectrumClientPool(
         )
 
         addresses -= client
-        tips.remove(client)
 
         if (addresses.isEmpty) {
           System.err.println(s"[info][pool] no active connections left")
@@ -183,16 +180,12 @@ class ElectrumClientPool(
 
     updateBlockCount(height)
 
-    // if we didn't have any connection before, now we have one
-    if (tips.size == 0)
+    // if we didn't have any tips before, now we have one
+    if (!awaitForLatestTip.isCompleted) {
+      awaitForLatestTip.success(resp)
       EventStream.publish(ElectrumReady(height, tip))
+    }
 
-    System.err.println(
-      s"[debug][pool] bumping our tip for ${client.address} to $height->${tip.blockId.toHex.take(26)}"
-    )
-    tips += (client -> (height, tip))
-
-    if (!awaitForLatestTip.isCompleted) awaitForLatestTip.success(resp)
     latestTip = Future(resp)
 
     if (lastHeaderResponseEmitted != Some(resp)) {
@@ -209,7 +202,7 @@ class ElectrumClientPool(
   private def updateBlockCount(blockCount: Long): Unit = {
     // when synchronizing we don't want to advertise previous blocks
     if (this.blockCount.get() < blockCount) {
-      System.err.println(s"[debug][pool] current blockchain height=$blockCount")
+      // System.err.println(s"[debug][pool] current blockchain height=$blockCount")
       EventStream.publish(CurrentBlockCount(blockCount))
       this.blockCount.set(blockCount)
     }

@@ -5,7 +5,6 @@ import java.net.{InetSocketAddress, SocketAddress}
 import java.util
 import scala.annotation.{tailrec, nowarn}
 import scala.concurrent.{Promise, Future}
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
@@ -42,6 +41,8 @@ import org.json4s.native.JsonMethods
 import org.json4s.{JInt, JLong, JString}
 import scodec.bits.ByteVector
 import java.rmi
+
+import immortan.LNParams.ec
 
 trait ElectrumEvent
 
@@ -505,15 +506,7 @@ class ElectrumClient(
 
   var ctx: Option[ChannelHandlerContext] = None
 
-  @nowarn
-  def resetWaitForConnected(): Unit = {
-    val p = Promise[ChannelHandlerContext]()
-    reportConnected = (ctx: ChannelHandlerContext) => Future { p.success(ctx) }
-    waitForConnected = p.future
-  }
-  var reportConnected: Function[ChannelHandlerContext, Future[Unit]] = _
-  var waitForConnected: Future[ChannelHandlerContext] = _
-  resetWaitForConnected()
+  val waitForConnected = Promise[ChannelHandlerContext]()
 
   // We need to regularly send a ping in order not to get disconnected
   val pingTrigger = {
@@ -533,8 +526,19 @@ class ElectrumClient(
     task
   }
 
-  def cancelPingTrigger(): Unit = pingTrigger.cancel()
-  def disconnect(): Unit = ctx.foreach(_.close())
+  def shutdown(): Unit = {
+    System.err.println(s"[debug][electrum] shutting down $address")
+    ctx.foreach(_.close())
+    pingTrigger.cancel()
+    requests.foreach { case (_, (_, p: Promise[Response])) =>
+      if (!p.isCompleted) p.failure(new Exception("client shutdown"))
+    }
+    requests.clear()
+    if (!waitForConnected.isCompleted)
+      waitForConnected.failure(
+        new Exception("client shutdown before connecting")
+      )
+  }
 
   val b = new Bootstrap
   b.channel(classOf[NioSocketChannel])
@@ -545,7 +549,7 @@ class ElectrumClient(
   b.option[java.lang.Integer](ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000)
   b.option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
 
-  b handler new ChannelInitializer[SocketChannel] {
+  b.handler(new ChannelInitializer[SocketChannel] {
     override def initChannel(ch: SocketChannel): Unit = {
       if (server.ssl == SSL.LOOSE || server.address.getPort() == 50002) {
         val sslCtx = SslContextBuilder.forClient
@@ -579,7 +583,7 @@ class ElectrumClient(
         ch.pipeline.addFirst(handler)
       }
     }
-  }
+  })
 
   val channelOpenFuture: ChannelFuture =
     b.connect(server.address.getHostName(), server.address.getPort())
@@ -592,17 +596,21 @@ class ElectrumClient(
       if (!future.isSuccess) {
         // the connection was not open successfully, close this actor
         System.err.println(
-          s"[info][electrum] failed to connect to $address: $future"
+          s"[warn][electrum] failed to connect to $address: $future"
         )
         pool.killClient(self)
       } else {
         // if we are here it means the connection was opened successfully
         // listen for when the connection is closed
-        future.channel.closeFuture addListener new ChannelFutureListener {
-          override def operationComplete(future: ChannelFuture): Unit =
+        future.channel.closeFuture.addListener(new ChannelFutureListener {
+          override def operationComplete(future: ChannelFuture): Unit = {
             // this just means it was closed
+            System.err.println(
+              s"[warn][electrum] operation ended for $address"
+            )
             pool.killClient(self)
-        }
+          }
+        })
       }
     }
   }
@@ -616,7 +624,12 @@ class ElectrumClient(
     ): Unit = {
       val listener = new ChannelFutureListener {
         override def operationComplete(future: ChannelFuture): Unit =
-          if (!future.isSuccess) pool.killClient(self)
+          if (!future.isSuccess()) {
+            System.err.println(
+              s"[warn][electrum] channel closed on $address"
+            )
+            pool.killClient(self)
+          }
       }
       ctx.connect(remoteAddress, localAddress, promise addListener listener)
     }
@@ -630,7 +643,7 @@ class ElectrumClient(
         override def operationComplete(future: ChannelFuture): Unit = {
           if (!future.isSuccess) {
             System.err.println(
-              s"[info][electrum] failed to write to $address: $future"
+              s"[warn][electrum] failed to write to $address: $future"
             )
             pool.killClient(self)
           }
@@ -642,7 +655,12 @@ class ElectrumClient(
     override def exceptionCaught(
         ctx: ChannelHandlerContext,
         cause: Throwable
-    ): Unit = pool.killClient(self)
+    ): Unit = {
+      System.err.println(
+        s"[warn][electrum] exception on $address: $cause"
+      )
+      pool.killClient(self)
+    }
   }
 
   class ElectrumResponseDecoder extends MessageToMessageDecoder[String] {
@@ -683,15 +701,15 @@ class ElectrumClient(
 
   class ResponseHandler() extends ChannelInboundHandlerAdapter {
     override def channelActive(ctx: ChannelHandlerContext): Unit = {
-      self.ctx = Some(ctx)
       request[ServerVersionResponse](
         ServerVersion(CLIENT_NAME, PROTOCOL_VERSION),
         ctx
       )
         .onComplete {
           case Success(v: ServerVersionResponse) => {
+            self.ctx = Some(ctx)
             onReady(self)
-            reportConnected(ctx)
+            if (!waitForConnected.isCompleted) waitForConnected.success(ctx)
 
             request[HeaderSubscriptionResponse](HeaderSubscription(), ctx)
               .onComplete {
@@ -703,6 +721,9 @@ class ElectrumClient(
               }
           }
           case err => {
+            System.err.println(
+              s"[warn][electrum] bad response from $address: $err"
+            )
             pool.killClient(self)
           }
         }
@@ -764,8 +785,6 @@ class ElectrumClient(
     }
   }
 
-  def request[R <: Response](r: Request): Future[R] = waitForConnected.flatMap {
-    ctx =>
-      request(r, ctx)
-  }
+  def request[R <: Response](r: Request): Future[R] =
+    waitForConnected.future.flatMap { ctx => request(r, ctx) }
 }
