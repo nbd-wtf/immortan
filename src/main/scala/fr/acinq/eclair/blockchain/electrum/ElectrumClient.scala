@@ -518,12 +518,24 @@ class ElectrumClient(
             s"[warn][electrum] a long time has passed and $address has't got a connection yet, closing"
           )
           pool.killClient(self)
-        } else
-          self.request(Ping)
+        } else {
+          val pong = self.request[PingResponse.type](Ping)
+          val pongWaiter = new java.util.TimerTask {
+            def run(): Unit = {
+              if (!pong.isCompleted) {
+                System.err.println(
+                  s"[warn][electrum] server $address taking too long to answer our ping, closing"
+                )
+                pool.killClient(self)
+              }
+            }
+          }
+          t.schedule(pongWaiter, 14000L)
+        }
       }
     }
-    t.schedule(task, 30000L, 30000L)
-    task
+    t.schedule(task, 16000L, 16000L)
+    t
   }
 
   def shutdown(): Unit = {

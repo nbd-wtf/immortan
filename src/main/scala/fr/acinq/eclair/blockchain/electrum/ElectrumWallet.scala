@@ -73,17 +73,14 @@ class ElectrumWallet(
   val scriptHashesBeingTracked =
     scala.collection.mutable.Set.empty[ByteVector32]
 
-  def persistAndNotify(nextData: ElectrumData): Unit = {
-    EventStream.publish(nextData.readyMessage)
+  def persistAndNotify(): Unit = {
+    EventStream.publish(data.readyMessage)
 
-    synchronized {
-      params.walletDb.persist(
-        nextData.toPersistent,
-        nextData.balance,
-        ewt.xPub.publicKey
-      )
-      data = nextData
-    }
+    params.walletDb.persist(
+      data.toPersistent,
+      data.balance,
+      ewt.xPub.publicKey
+    )
   }
 
   EventStream
@@ -135,24 +132,12 @@ class ElectrumWallet(
     }
 
   def blockchainReady(bc: Blockchain): Unit = {
-    synchronized {
-      data = data.copy(blockchain = bc)
-    }
-    persistAndNotify(data)
+    synchronized { data = data.copy(blockchain = bc) }
+    persistAndNotify()
 
     state match {
       case Disconnected =>
         state = Running
-
-        // -- DEBUGGING STUFF
-        // (data.accountKeyMap ++ data.changeKeyMap).foreach { case (sh, e) =>
-        //   System.err.println(
-        //     s"> ${sh.toString().take(6)}: ${ewt.textAddress(e)}"
-        //   )
-        // }
-        // data.status.foreach { case (sh, status) =>
-        //   System.err.println(s"@ ${sh.toString().take(6)}: ${status.take(6)}")
-        // }
 
         data.accountKeyMap.keys.foreach(trackScriptHash(_))
         data.changeKeyMap.keys.foreach(trackScriptHash(_))
@@ -180,8 +165,6 @@ class ElectrumWallet(
         s"[debug][wallet] refilling account key (${xp.path.lastChildNumber}): ${sh.toHex.take(6)}"
       )
 
-      if (shs.contains(sh.toHex)) { System.err.println("    ==============") }
-
       synchronized {
         data = data.copy(
           status = data.status.updated(sh, ""),
@@ -196,8 +179,6 @@ class ElectrumWallet(
       System.err.println(
         s"[debug][wallet] refilling change key (${xp.path.lastChildNumber}): ${sh.toHex.take(6)}"
       )
-
-      if (shs.contains(sh.toHex)) { System.err.println("    ==============") }
 
       synchronized {
         data = data.copy(
@@ -235,8 +216,6 @@ class ElectrumWallet(
               System.err.println(
                 s"[debug][wallet] script hash ${scriptHash.toString().take(6)} has changed (${status.take(6)}), requesting history"
               )
-              if (shs.contains(scriptHash.toHex))
-                System.err.println("    !!!!!!!!!!!!!!!!!")
 
               // emit events so wallets can display nice things
               if (scriptHashesSyncing.getAndIncrement() == 0)
@@ -260,10 +239,8 @@ class ElectrumWallet(
                   }
                   .map(_.sortBy(_.height))
                 _ = System.err.println(
-                  s"[debug][wallet] got history for ${scriptHash.toHex.take(6)} : ${history}"
+                  s"[debug][wallet] got history for ${scriptHash.toHex.take(6)}: ${history}"
                 )
-                _ = if (shs.contains(scriptHash.toHex))
-                  System.err.println("    @@@@@@@@@@@@@@@2")
 
                 // fetch headers if missing for any of these items
                 _ <- Future.sequence(history.map { item =>
@@ -386,16 +363,26 @@ class ElectrumWallet(
               } yield {
                 // prepare updated data
                 synchronized {
-                  if (shs.contains(scriptHash.toHex))
-                    System.err.println(
-                      s" //// HISTORY ${scriptHash.toHex
-                          .take(6)} BEFORE: ${data.history.get(scriptHash).map(_.size).getOrElse(0)}"
-                    )
+                  val newHistory = {
+                    data.history.updatedWith(scriptHash) {
+                      case None           => Some(history)
+                      case Some(existing) =>
+                        // keep history items that we have and they don't
+                        // except unconfirmed transactions we had, these we discard
+                        //   since they may have been dropped from mempool or replaced
+                        val oldItems = existing.filter(_.height > 0)
+                        val newItems =
+                          history.filterNot(oldItems.contains(_))
+                        Some(oldItems ++ newItems)
+                    }
+                  }
 
-                  if (shs.contains(scriptHash.toHex))
-                    System.err.println(
-                      s" ////// HISTORY ${scriptHash.toHex.take(6)} +++: ${history.size}"
-                    )
+                  val added = newHistory.keySet -- data.history.keySet
+                  val removed = data.history.keySet -- data.history.keySet
+                  System.err.println(
+                    s"[debug][wallet] saving history (${newHistory.size}): added [${added
+                        .mkString(" ")}], removed [${removed.mkString(" ")}]"
+                  )
 
                   data = data
                     .copy(
@@ -403,19 +390,7 @@ class ElectrumWallet(
                       status = data.status.updated(scriptHash, status),
 
                       // add the history
-                      history = {
-                        data.history.updatedWith(scriptHash) {
-                          case None           => Some(history)
-                          case Some(existing) =>
-                            // keep history items that we have and they don't
-                            // except unconfirmed transactions we had, these we discard
-                            //   since they may have been dropped from mempool or replaced
-                            val oldItems = existing.filter(_.height > 0)
-                            val newItems =
-                              history.filterNot(oldItems.contains(_))
-                            Some(oldItems ++ newItems)
-                        }
-                      },
+                      history = newHistory,
 
                       // add all transactions we got
                       transactions = data.transactions ++
@@ -435,16 +410,10 @@ class ElectrumWallet(
                         }
                     )
                     .withOverridingTxids // this accounts for double-spends like RBF
-
-                  if (shs.contains(scriptHash.toHex))
-                    System.err.println(
-                      s" //////// HISTORY ${scriptHash.toHex
-                          .take(6)} AFTER: ${data.history.get(scriptHash).map(_.size).getOrElse(0)}"
-                    )
                 }
 
                 // update data
-                persistAndNotify(data)
+                persistAndNotify()
 
                 // refill keys
                 Future { keyRefill() }
@@ -517,8 +486,12 @@ class ElectrumWallet(
 
   def getData = data
 
-  def provideExcludedOutPoints(excluded: List[OutPoint]): Unit =
-    persistAndNotify(data.copy(excludedOutPoints = excluded))
+  def provideExcludedOutPoints(excluded: List[OutPoint]): Unit = {
+    synchronized {
+      data = data.copy(excludedOutPoints = excluded)
+    }
+    persistAndNotify()
+  }
 
   def isDoubleSpent(tx: Transaction) = Future {
     val doubleSpendTrials: Option[Boolean] = for {
@@ -855,22 +828,7 @@ case class ElectrumData(
     excludedOutPoints
   )
 
-  lazy val firstUnusedAccountKeys: Iterable[ExtendedPublicKey] = {
-    System.err.println(": counting unused account keys:")
-    var unusedCount = 0
-    accountKeyMap.foreach {
-      case (sh, _) if !status.contains(sh) =>
-        unusedCount += 1
-        System.err.println(
-          s":   non-existent ${sh.toHex.take(6)} = $unusedCount"
-        )
-      case (sh, _) if status(sh) == "" =>
-        unusedCount += 1
-        System.err.println(s":   empty ${sh.toHex.take(6)} = $unusedCount")
-      case (sh, _) =>
-        System.err.println(s":   used ${sh.toHex.take(6)} = $unusedCount")
-    }
-
+  lazy val firstUnusedAccountKeys: Iterable[ExtendedPublicKey] =
     accountKeyMap.collect {
       case (nonExistentScriptHash, privKey)
           if !status.contains(nonExistentScriptHash) =>
@@ -878,7 +836,6 @@ case class ElectrumData(
       case (emptyScriptHash, privKey) if status(emptyScriptHash) == "" =>
         privKey
     }
-  }
 
   lazy val firstUnusedChangeKeys: Iterable[ExtendedPublicKey] = {
     val usedChangeNumbers = transactions.values
@@ -902,20 +859,6 @@ case class ElectrumData(
         .get(scriptHash)
         .orElse(changeKeyMap.get(scriptHash))
         .map { key =>
-          var print = false
-
-          historyItems.foreach { item =>
-            if (
-              shs
-                .contains(scriptHash.toHex) && txids.contains(item.txHash.toHex)
-            ) {
-              print = true
-              System.err.println(
-                s"GOT ${item.txHash.toString()} at ${scriptHash.toHex}"
-              )
-            }
-          }
-
           // We definitely have a private key generated for corresponding scriptHash here
           val txos = for {
             item <- historyItems
@@ -923,10 +866,6 @@ case class ElectrumData(
             if !overriddenPendingTxids.contains(tx.txid)
             (txOut, index) <- tx.txOut.zipWithIndex
             if computeScriptHash(txOut.publicKeyScript) == scriptHash
-            _ = if (print)
-              System.err.println(
-                s"~ [outpoint: ${item.txHash.toHex}:$index | ${txOut.publicKeyScript.toHex} | ${computeScriptHash(txOut.publicKeyScript)}]"
-              )
           } yield Utxo(
             key,
             UnspentItem(
@@ -937,34 +876,16 @@ case class ElectrumData(
             )
           )
 
-          if (print) {
-            System.err.println(s" TXOS: ${txos.map(_.item)}")
-            System.err.println(s" OUTPOINTS: ${txos.map(_.item.outPoint)}")
-          }
-
           // Find all out points which spend from this script hash and make sure txos do not contain them
-          val x = txos.filterNot { txo =>
-            val txs = historyItems
+          txos.filterNot { txo =>
+            historyItems
               .map(_.txHash)
               .flatMap(transactions.get)
-
-            val out = txs
               .flatMap(_.txIn)
               .map(_.outPoint)
               .toSet
-
-            if (print)
-              System.err
-                .println(s"      OUT: $out")
-
-            out
               .contains(txo.item.outPoint)
           }
-
-          if (print)
-            System.err.println(s"        RESULT: $x")
-
-          x
         }
         .getOrElse(Seq.empty)
     }
