@@ -27,7 +27,7 @@ Existing implementations are of general purpose, that is, they neither address s
 Install it by adding to your `build.sbt`:
 
 ```sbt
-libraryDependencies += "com.fiatjaf" %% "immortan" % "0.7.7"
+libraryDependencies += "com.fiatjaf" %% "immortan" % "0.7.8"
 ```
 
 ### Very dense and confusing guide
