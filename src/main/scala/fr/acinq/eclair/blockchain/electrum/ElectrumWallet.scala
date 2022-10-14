@@ -5,7 +5,6 @@ import scala.util.chaining._
 import scala.annotation.tailrec
 import scala.concurrent.duration._
 import scala.concurrent.Future
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Success, Failure, Try}
 
 import fr.acinq.bitcoin.DeterministicWallet._
@@ -22,6 +21,8 @@ import fr.acinq.eclair.transactions.Transactions
 import immortan.crypto.Tools._
 import immortan.sqlite.SQLiteTx
 import scodec.bits.ByteVector
+
+import immortan.LNParams.ec
 
 class BadElectrumData(msg: String) extends Exception(msg)
 class BadMerkleProof(

@@ -5,7 +5,6 @@ import java.net.{InetSocketAddress, SocketAddress}
 import java.util
 import scala.annotation.{tailrec, nowarn}
 import scala.concurrent.{Promise, Future}
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
@@ -42,6 +41,8 @@ import org.json4s.native.JsonMethods
 import org.json4s.{JInt, JLong, JString}
 import scodec.bits.ByteVector
 import java.rmi
+
+import immortan.LNParams.ec
 
 trait ElectrumEvent
 

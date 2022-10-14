@@ -5,7 +5,6 @@ import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.{Promise, Future, ExecutionContext}
 import scala.concurrent.duration._
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Try, Random, Success, Failure}
 
 import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32}
@@ -26,6 +25,8 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool._
 import immortan.LNParams
 import org.json4s.JsonAST.{JObject, JString}
 import org.json4s.native.JsonMethods
+
+import LNParams.ec
 
 class ElectrumClientPool(
     blockCount: AtomicLong,
