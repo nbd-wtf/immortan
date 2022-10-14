@@ -5,7 +5,6 @@ import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.{Promise, Future, ExecutionContext}
 import scala.concurrent.duration._
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Try, Random, Success, Failure}
 import org.json4s._
 import org.json4s.native.JsonMethods
@@ -27,6 +26,8 @@ import immortan.electrum.ElectrumClient.{
 }
 import immortan.electrum.ElectrumClientPool._
 
+import LNParams.ec
+
 class ElectrumClientPool(
     blockCount: AtomicLong,
     chainHash: ByteVector32,
@@ -37,9 +38,7 @@ class ElectrumClientPool(
     scala.collection.mutable.Map.empty[ElectrumClient, InetSocketAddress]
   var usedAddresses = Set.empty[InetSocketAddress]
 
-  val tips: scala.collection.mutable.Map[ElectrumClient, TipAndHeader] =
-    scala.collection.mutable.Map.empty
-  def blockHeight: Int = tips.map(_._2._1).maxOption.getOrElse(0)
+  def blockHeight: Int = this.blockCount.get().toInt
 
   val scriptHashSubscriptions =
     scala.collection.mutable.Map
@@ -61,8 +60,7 @@ class ElectrumClientPool(
         "[warn][pool] we were asked to disconnect from this client, but since it is a custom server we won't do that"
       )
     } else {
-      client.disconnect()
-      client.cancelPingTrigger()
+      client.shutdown()
 
       if (addresses.contains(client)) {
         System.err.println(
@@ -70,7 +68,6 @@ class ElectrumClientPool(
         )
 
         addresses -= client
-        tips.remove(client)
 
         if (addresses.isEmpty) {
           System.err.println(s"[info][pool] no active connections left")
@@ -82,16 +79,11 @@ class ElectrumClientPool(
       }
     }
 
-  lazy val serverAddresses: Set[ElectrumServerAddress] = customAddress match {
+  lazy val serverAddresses: List[ElectrumServerAddress] = customAddress match {
     case Some(address) =>
-      Set(
-        ElectrumServerAddress(
-          new InetSocketAddress(address.host, address.port),
-          SSL.DECIDE
-        )
-      )
+      List(ElectrumServerAddress(address.socketAddress, SSL.DECIDE))
     case None => {
-      val addresses = loadFromChainHash(chainHash)
+      val addresses = Random.shuffle(loadFromChainHash(chainHash).toList)
       if (useOnion) addresses
       else
         addresses.filterNot(address =>
@@ -161,7 +153,7 @@ class ElectrumClientPool(
       clientsToUse: Int
   ): Future[List[R]] =
     Future.sequence[R, List, List[R]](
-      scala.util.Random
+      Random
         .shuffle(addresses.keys.toList)
         .take(clientsToUse)
         .map { client =>
@@ -188,16 +180,12 @@ class ElectrumClientPool(
 
     updateBlockCount(height)
 
-    // if we didn't have any connection before, now we have one
-    if (tips.size == 0)
+    // if we didn't have any tips before, now we have one
+    if (!awaitForLatestTip.isCompleted) {
+      awaitForLatestTip.success(resp)
       EventStream.publish(ElectrumReady(height, tip))
+    }
 
-    System.err.println(
-      s"[debug][pool] bumping our tip for ${client.address} to $height->${tip.blockId.toHex.take(26)}"
-    )
-    tips += (client -> (height, tip))
-
-    if (!awaitForLatestTip.isCompleted) awaitForLatestTip.success(resp)
     latestTip = Future(resp)
 
     if (lastHeaderResponseEmitted != Some(resp)) {
@@ -214,7 +202,7 @@ class ElectrumClientPool(
   private def updateBlockCount(blockCount: Long): Unit = {
     // when synchronizing we don't want to advertise previous blocks
     if (this.blockCount.get() < blockCount) {
-      System.err.println(s"[debug][pool] current blockchain height=$blockCount")
+      // System.err.println(s"[debug][pool] current blockchain height=$blockCount")
       EventStream.publish(CurrentBlockCount(blockCount))
       this.blockCount.set(blockCount)
     }
@@ -242,9 +230,9 @@ object ElectrumClientPool {
 
   def readServerAddresses(stream: InputStream): Set[ElectrumServerAddress] =
     try {
-      val JObject(values) = JsonMethods.parse(stream): @unchecked
+      val JObject(values) = JsonMethods.parse(stream)
 
-      for ((name, fields) <- Random.shuffle(values.toSet)) yield {
+      for ((name, fields) <- values.toSet) yield {
         val port = Try((fields \ "s").asInstanceOf[JString].s.toInt).toOption
           .getOrElse(0)
         val address = InetSocketAddress.createUnresolved(name, port)
@@ -255,7 +243,7 @@ object ElectrumClientPool {
     }
 
   def pickAddress(
-      serverAddresses: Set[ElectrumServerAddress],
+      serverAddresses: List[ElectrumServerAddress],
       usedAddresses: Set[InetSocketAddress] = Set.empty
   ): Option[ElectrumServerAddress] =
     serverAddresses

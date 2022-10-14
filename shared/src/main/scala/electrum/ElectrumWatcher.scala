@@ -1,7 +1,6 @@
 package immortan.electrum
 
 import java.util.concurrent.atomic.AtomicLong
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.collection.immutable.{Queue, SortedMap}
 import scala.util.{Try, Success, Failure}
@@ -30,6 +29,8 @@ import immortan.channel.{
   BITCOIN_PARENT_TX_CONFIRMED
 }
 
+import immortan.LNParams.ec
+
 class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool) {
   sealed trait State
 
@@ -53,18 +54,51 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool) {
   var publishQueue: Queue[Transaction] = Queue.empty
   var published: Queue[Transaction] = Queue.empty
 
-  EventStream.subscribe { case ElectrumDisconnected =>
-    state match {
-      case Disconnected =>
-      case Running      =>
-        // we remember the txes that we previously sent but hadn't yet received the confirmation to resend
-        publishQueue = publishQueue ++ published
-        state = Disconnected
-    }
+  EventStream.subscribe {
+    case ElectrumDisconnected =>
+      state match {
+        case Disconnected =>
+        case Running      =>
+          // we remember the txes that we previously sent but hadn't yet received the confirmation to resend
+          publishQueue = publishQueue ++ published
+          state = Disconnected
+      }
+    case CurrentBlockCount(tipHeight) =>
+      state match {
+        case Disconnected =>
+          // we got a blockchain header, means we're up and running now
+
+          // restart the watchers
+          watchConfirmeds.foreach { case (w: WatchConfirmed, cb) =>
+            watch(w)(cb)
+          }
+          watchSpents.foreach { case (w: WatchSpent, cb) => watch(w)(cb) }
+
+          state = Running
+          // publish all pending transactions (after changing the state to Running)
+          publishQueue.foreach(maybePublish(_))
+
+        case Running =>
+          // a new block was found
+          // ~
+          // for all transactions we are watching to be confirmed, try to get their statuses
+          watchConfirmeds.collect { case (w: WatchConfirmed, _) =>
+            inspectScriptHash(computeScriptHash(w.publicKeyScript))
+          }
+
+          // publish all txs that we must have published at this point
+          val toPublish = block2tx.view.filterKeys(_ <= tipHeight)
+          toPublish.values.flatten.foreach(publish(_))
+
+          // and remove them from the list
+          block2tx = block2tx -- toPublish.keys
+      }
   }
 
   def watch(w: WatchSpent)(cb: Function[WatchEventSpent, Unit]): Unit = {
-    watchSpents += (w -> cb)
+    synchronized {
+      watchSpents += (w -> cb)
+    }
     val scriptHash = computeScriptHash(w.publicKeyScript)
     System.err.println(
       s"[info][watcher] added watch-spent on output=${w.txId}:${w.outputIndex} scriptHash=$scriptHash"
@@ -75,7 +109,9 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool) {
   def watch(
       w: WatchConfirmed
   )(cb: Function[WatchEventConfirmed, Unit]): Unit = {
-    watchConfirmeds += (w -> cb)
+    synchronized {
+      watchConfirmeds += (w -> cb)
+    }
     val scriptHash = computeScriptHash(w.publicKeyScript)
     System.err.println(
       s"[info][watcher] added watch-confirmed on txid=${w.txId} scriptHash=$scriptHash"
@@ -139,8 +175,7 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool) {
                   cltvTimeout,
                   block2tx.getOrElse(cltvTimeout, Seq.empty) :+ tx
                 )
-              } else
-                publish(tx)
+              } else publish(tx)
             }
             case _ =>
               System.err.println("[error][watcher] this should never happen")
@@ -191,9 +226,9 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool) {
   } yield transactions.foreach {
     case GetTransactionResponse(tx, Some(item: TransactionHistoryItem)) =>
       // this is for WatchSpent/WatchSpentBasic
-      watchSpents --= tx.txIn
+      val removedSpents = tx.txIn
         .map(_.outPoint)
-        .flatMap(outPoint =>
+        .flatMap { outPoint =>
           watchSpents.collect {
             case (WatchSpent(txid, pos, _, event, _), cb)
                 if txid == outPoint.txid && pos == outPoint.index.toInt => {
@@ -206,11 +241,15 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool) {
               None
             }
           }
-        )
+        }
         .flatten
 
+      synchronized {
+        watchSpents --= removedSpents
+      }
+
       // this is for WatchConfirmed
-      watchConfirmeds --= watchConfirmeds.collect {
+      val removedConfirmeds = watchConfirmeds.collect {
         case (
               w @ WatchConfirmed(
                 txid,
@@ -245,24 +284,26 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool) {
               .request[GetMerkleResponse](GetMerkle(item.txHash, item.height))
               .onComplete {
                 case Success(merkle: GetMerkleResponse) =>
-                  watchConfirmeds --= watchConfirmeds.collect {
-                    case (
-                          w @ WatchConfirmed(
-                            txid,
-                            _,
-                            minDepth,
-                            event
-                          ),
-                          cb
-                        ) if txid == merkle.txid =>
-                      cb(
-                        WatchEventConfirmed(
-                          event,
-                          TxConfirmedAt(txheight.toInt, tx),
-                          merkle.pos
+                  synchronized {
+                    watchConfirmeds --= watchConfirmeds.collect {
+                      case (
+                            w @ WatchConfirmed(
+                              txid,
+                              _,
+                              minDepth,
+                              event
+                            ),
+                            cb
+                          ) if txid == merkle.txid =>
+                        cb(
+                          WatchEventConfirmed(
+                            event,
+                            TxConfirmedAt(txheight.toInt, tx),
+                            merkle.pos
+                          )
                         )
-                      )
-                      w
+                        w
+                    }
                   }
                 case Failure(err) =>
                   System.err.println(
@@ -274,39 +315,12 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool) {
           None
       }.flatten
 
+      synchronized {
+        watchConfirmeds --= removedConfirmeds
+      }
+
     case GetTransactionResponse(tx, _) =>
       System.err.println("[error][watcher] tx response with wrong context?")
-  }
-
-  // as the class is instantiated, begin watching for headers
-  pool.subscribeToHeaders("watcher") { case tip: HeaderSubscriptionResponse =>
-    state match {
-      case Disconnected =>
-        // we got a blockchain header, means we're up and running now
-
-        // restart the watchers
-        watchConfirmeds.foreach { case (w: WatchConfirmed, cb) => watch(w)(cb) }
-        watchSpents.foreach { case (w: WatchSpent, cb) => watch(w)(cb) }
-
-        state = Running
-        // publish all pending transactions (after changing the state to Running)
-        publishQueue.foreach(maybePublish(_))
-
-      case Running =>
-        // a new block was found
-        // ~
-        // for all transactions we are watching to be confirmed, try to get their statuses
-        watchConfirmeds.collect { case (w: WatchConfirmed, _) =>
-          inspectScriptHash(computeScriptHash(w.publicKeyScript))
-        }
-
-        // publish all txs that we must have published at this point
-        val toPublish = block2tx.view.filterKeys(_ <= tip.height)
-        toPublish.values.flatten.foreach(publish(_))
-
-        // and remove them from the list
-        block2tx = block2tx -- toPublish.keys
-    }
   }
 
   private def publish(tx: Transaction): Unit = {

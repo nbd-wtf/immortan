@@ -3,6 +3,7 @@ package immortan
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext}
+import java.util.concurrent.Executors
 import scala.util.Try
 import com.softwaremill.quicklens._
 import scodec.bits.ByteVector
@@ -114,6 +115,12 @@ object LNParams {
   var syncParams: SyncParams = _
   var fiatRates: FiatRates = _
   var feeRates: FeeRates = _
+
+  implicit var ec: ExecutionContext = new ExecutionContext {
+    var threadPool = Executors.newFixedThreadPool(3)
+    def execute(runnable: Runnable): Unit = threadPool.submit(runnable)
+    def reportFailure(t: Throwable): Unit = {}
+  }
 
   var trampoline: TrampolineOn = TrampolineOn(
     minPayment,

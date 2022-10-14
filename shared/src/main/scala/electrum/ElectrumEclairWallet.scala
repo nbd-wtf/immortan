@@ -62,13 +62,16 @@ case class ElectrumEclairWallet(
       )
 
   override def broadcast(tx: Transaction): Future[Boolean] = {
-    wallet.broadcastTransaction(tx) flatMap {
+    wallet.broadcastTransaction(tx).flatMap {
       case ElectrumClient.BroadcastTransactionResponse(_, None) => Future(true)
       case res: ElectrumClient.BroadcastTransactionResponse
           if res.error.exists(isInChain) =>
         Future(true)
       case res: ElectrumClient.BroadcastTransactionResponse
           if res.error.isDefined =>
+        System.err.println(
+          s"[eee][warn] error broadcasting transaction: ${res.error.get}"
+        )
         Future(false)
       case _ => Future(false)
     }

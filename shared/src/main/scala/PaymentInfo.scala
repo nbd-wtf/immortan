@@ -293,7 +293,7 @@ case class TxInfo(
   override val identity: String = txidString
   lazy val isIncoming: Boolean = 1L == incoming
   lazy val isDoubleSpent: Boolean = 1L == doubleSpent
-  lazy val isConfirmed: Boolean = depth >= LNParams.minDepthBlocks
+  lazy val isConfirmed: Boolean = depth >= 1
   lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
   lazy val pubKey: PublicKey = PublicKey(ByteVector fromValidHex pubKeyString)
   lazy val txid: ByteVector32 = ByteVector32.fromValidHex(txidString)
