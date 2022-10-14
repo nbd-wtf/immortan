@@ -18,13 +18,7 @@ Existing implementations are of general purpose, that is, they neither address s
 
 - **Routing**. Lite nodes can have much more powerful MPP and pathfinding algorithms when compared to full nodes exactly because they are not supposed to run thousands of channels by design. Immortan makes a compromise here by running all local channels within a single thread and thus obtaining a far greater degree of control over the dynamics of multipart payment, which in turn results in more successful deliveries.
 
-- **Liquidity via private routing**. Unless private channels are able to route 3rd party payments, a remote peer can not unilaterally get its money out of channel, so its liquidity gets locked, ultimately making a whole enterprise a money-losing affair. This issue is fixed here by utilizing relevant properties of trampoline routing, introduction of new extensions to LN protocol and development of mobile-aware Bitcoin wallet good enough to provide routing safety.
-
 - **Liquidity via hosted channels**. IMMORTAN provides an implementation of private hosted channels which enables private and auditable custodians on the Lightning Network.
-
-### Approach
-
-Whatever possible is taken from Acinq's [Eclair](https://github.com/ACINQ/eclair) codebase; this mostly includes low level stuff such as cryptography, messaging codecs, Bitcoin script utilities and so on. Then, a very different choices are made on a higher level when it comes to graph sync, MPP, pathfinding, peer and channel management.
 
 ## Usage
 
@@ -33,7 +27,7 @@ Whatever possible is taken from Acinq's [Eclair](https://github.com/ACINQ/eclair
 Install it by adding to your `build.sbt`:
 
 ```sbt
-libraryDependencies += "com.fiatjaf" %% "immortan" % "0.7.2"
+libraryDependencies += "com.fiatjaf" %% "immortan" % "0.7.7"
 ```
 
 ### Very dense and confusing guide
@@ -58,28 +52,13 @@ After that you should be able to easily
 
 Again, [Cliché's `Commands.scala`](https://github.com/fiatjaf/cliche/blob/b00cb3fdf62cd65854a14b005825dcab45df1002/src/main/scala/Commands.scala) has some implementations you might be able to understand and copy (the listeners are in [Main.scala](https://github.com/fiatjaf/cliche/blob/b00cb3fdf62cd65854a14b005825dcab45df1002/src/main/scala/Main.scala)).
 
-### [API Documentation (Scaladoc)](https://fiatjaf.github.io/IMMORTAN/immortan/index.html)
+### [API Documentation (Scaladoc)](https://javadoc.io/doc/com.fiatjaf/immortan_2.13/latest/index.html)
 
-Or maybe start here at [LNParams](https://fiatjaf.github.io/IMMORTAN/immortan/LNParams$.html).
+Or maybe start here at [LNParams](https://javadoc.io/doc/com.fiatjaf/immortan_2.13/latest/index.html/LNParams$.html).
 
 ## Library users
 
-- An updated, private-routing-enabled [Simple Bitcoin Wallet](https://github.com/btcontract/wallet).
+- The [Open Bitcoin Wallet](https://github.com/nbd-wtf/obw), an SBW fork with improved openness
 - [Cliché](https://github.com/fiatjaf/cliche), a lightweight node daemon to be embedded into applications
 - The seamless hosted fiat channels provider [StandardSats](https://github.com/standardsats/wallet) wallet
-
-## Attribution
-
-This is a fork of [Anton Kumaigorodski](https://github.com/btcontract)'s [code](https://github.com/btcontract/immortan) that was ported to Scala 2.13, prettified with `scalafmt`, had some things refactored due to the port and was published as a library to Maven Central. Aside from that, all credit is due to Anton and his backers:
-
-<table>
-  <tbody>
-    <tr>
-      <td align="center" valign="middle">
-        <a href="https://lnbig.com/" target="_blank">
-          <img width="146px" src="https://i.imgur.com/W4A92Ym.png">
-        </a>
-      </td>
-    </tr>
-  </tbody>
-</table>
+- [Simple Bitcoin Wallet](https://github.com/btcontract/wallet), the wallet that started it all, now abandoned
