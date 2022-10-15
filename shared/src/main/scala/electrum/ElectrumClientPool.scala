@@ -81,7 +81,12 @@ class ElectrumClientPool(
 
   lazy val serverAddresses: List[ElectrumServerAddress] = customAddress match {
     case Some(address) =>
-      List(ElectrumServerAddress(address.socketAddress, SSL.DECIDE))
+      List(
+        ElectrumServerAddress(
+          new InetSocketAddress(address.host, address.port),
+          SSL.DECIDE
+        )
+      )
     case None => {
       val addresses = Random.shuffle(loadFromChainHash(chainHash).toList)
       if (useOnion) addresses

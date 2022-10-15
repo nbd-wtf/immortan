@@ -1,7 +1,7 @@
 package immortan.electrum
 
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
+import scala.concurrent.{Future, Promise}
 import scala.util.{Failure, Success, Try}
 import scoin.{Block, ByteVector32}
 
