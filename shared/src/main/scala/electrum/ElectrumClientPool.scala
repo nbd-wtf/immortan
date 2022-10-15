@@ -53,18 +53,16 @@ class ElectrumClientPool(
   private val awaitForLatestTip = Promise[HeaderSubscriptionResponse]()
   var latestTip: Future[HeaderSubscriptionResponse] = awaitForLatestTip.future
 
-  def killClient(client: ElectrumClient): Unit =
+  def killClient(client: ElectrumClient, reason: String): Unit =
     if (customAddress.isDefined) {
       // we only have one, do not disconnect from it
       System.err.println(
         "[warn][pool] we were asked to disconnect from this client, but since it is a custom server we won't do that"
       )
     } else {
-      client.shutdown()
-
       if (addresses.contains(client)) {
         System.err.println(
-          s"[info][pool] disconnecting from client ${client.address}"
+          s"[info][pool] disconnecting from client ${client.address}: $reason"
         )
 
         addresses -= client
@@ -77,6 +75,8 @@ class ElectrumClientPool(
         // connect to a new one
         Future { self.connect() }
       }
+
+      client.shutdown()
     }
 
   lazy val serverAddresses: List[ElectrumServerAddress] = customAddress match {
@@ -165,10 +165,7 @@ class ElectrumClientPool(
           client.request[R](r).transformWith {
             case Success(resp) => Future(resp)
             case Failure(err) => {
-              System.err.println(
-                s"[warn][pool] request $r to ${client.address} has failed with error $err, disconnecting from it and trying with another"
-              )
-              killClient(client)
+              killClient(client, s"request $r has failed with error $err")
               request[R](r)
             }
           }
@@ -235,7 +232,7 @@ object ElectrumClientPool {
 
   def readServerAddresses(stream: InputStream): Set[ElectrumServerAddress] =
     try {
-      val JObject(values) = JsonMethods.parse(stream)
+      val JObject(values) = JsonMethods.parse(stream): @unchecked
 
       for ((name, fields) <- values.toSet) yield {
         val port = Try((fields \ "s").asInstanceOf[JString].s.toInt).toOption

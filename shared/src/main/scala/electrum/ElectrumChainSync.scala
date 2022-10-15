@@ -175,11 +175,11 @@ class ElectrumChainSync(
           System.err
             .println(s"[debug][chain-sync] got the chain tip: ${tip.height}")
 
-          if (tip.height < blockchain.height) {
-            System.err.println(
-              s"[warn][chain-sync] ${tip.source.address} is out of sync, its tip is ${tip.height}, disconnecting"
+          if (tip.height + 2 < blockchain.height) {
+            pool.killClient(
+              tip.source,
+              s"out of sync, tip is ${tip.height} but blockchain is at ${blockchain.height}"
             )
-            pool.killClient(tip.source)
             state = DISCONNECTED
           } else if (blockchain.bestchain.isEmpty) {
             System.err.println("[debug][chain-sync] starting sync from scratch")
@@ -208,10 +208,10 @@ class ElectrumChainSync(
             .forall(tip.header.bits == _)
 
           if (!difficultyOk) {
-            System.err.println(
-              s"[warn][chain-sync] difficulty not ok from header subscription"
+            pool.killClient(
+              tip.source,
+              "difficulty not ok from header subscription"
             )
-            pool.killClient(tip.source)
           } else
             Try(
               Blockchain.addHeader(blockchain, tip.height, tip.header)
@@ -230,10 +230,7 @@ class ElectrumChainSync(
                 getHeaders(height - 1, RETARGETING_PERIOD)
                 state = SYNCING
               case Failure(err) => {
-                System.err.println(
-                  s"[warn][chain-sync] bad headers from subscription: $err"
-                )
-                pool.killClient(tip.source)
+                pool.killClient(tip.source, s"bad headers: $err")
               }
             }
 

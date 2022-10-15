@@ -522,21 +522,14 @@ class ElectrumClient(
     val t = new java.util.Timer()
     val task = new java.util.TimerTask {
       def run() = {
-        if (ctx.isEmpty) {
-          System.err.println(
-            s"[warn][electrum] a long time has passed and $address has't got a connection yet, closing"
-          )
-          pool.killClient(self)
-        } else {
+        if (ctx.isEmpty)
+          pool.killClient(self, "a long time has passed without a connection")
+        else {
           val pong = self.request[PingResponse.type](Ping)
           val pongWaiter = new java.util.TimerTask {
             def run(): Unit = {
-              if (!pong.isCompleted) {
-                System.err.println(
-                  s"[warn][electrum] server $address taking too long to answer our ping, closing"
-                )
-                pool.killClient(self)
-              }
+              if (!pong.isCompleted)
+                pool.killClient(self, "taking too long to answer our ping")
             }
           }
           t.schedule(pongWaiter, 14000L)
@@ -616,20 +609,14 @@ class ElectrumClient(
     override def operationComplete(future: ChannelFuture): Unit = {
       if (!future.isSuccess) {
         // the connection was not open successfully, close this actor
-        System.err.println(
-          s"[warn][electrum] failed to connect to $address: $future"
-        )
-        pool.killClient(self)
+        pool.killClient(self, s"failed to connect: $future")
       } else {
         // if we are here it means the connection was opened successfully
         // listen for when the connection is closed
         future.channel.closeFuture.addListener(new ChannelFutureListener {
           override def operationComplete(future: ChannelFuture): Unit =
             // this just means it was closed
-            System.err.println(
-              s"[warn][electrum] operation ended for $address"
-            )
-            pool.killClient(self)
+            pool.killClient(self, s"operation ended: $future")
         })
       }
     }
@@ -644,12 +631,8 @@ class ElectrumClient(
     ): Unit = {
       val listener = new ChannelFutureListener {
         override def operationComplete(future: ChannelFuture): Unit =
-          if (!future.isSuccess()) {
-            System.err.println(
-              s"[warn][electrum] channel closed on $address"
-            )
-            pool.killClient(self)
-          }
+          if (!future.isSuccess())
+            pool.killClient(self, s"channel closed: $future")
       }
       ctx.connect(remoteAddress, localAddress, promise addListener listener)
     }
@@ -661,12 +644,8 @@ class ElectrumClient(
     ): Unit = {
       val listener = new ChannelFutureListener {
         override def operationComplete(future: ChannelFuture): Unit = {
-          if (!future.isSuccess) {
-            System.err.println(
-              s"[warn][electrum] failed to write to $address: $future"
-            )
-            pool.killClient(self)
-          }
+          if (!future.isSuccess)
+            pool.killClient(self, s"failed to write: $future")
         }
       }
       ctx.write(msg, promise addListener listener)
@@ -675,12 +654,8 @@ class ElectrumClient(
     override def exceptionCaught(
         ctx: ChannelHandlerContext,
         cause: Throwable
-    ): Unit = {
-      System.err.println(
-        s"[warn][electrum] exception on $address: $cause"
-      )
-      pool.killClient(self)
-    }
+    ): Unit =
+      pool.killClient(self, s"exception: $cause")
   }
 
   class ElectrumResponseDecoder extends MessageToMessageDecoder[String] {
@@ -726,7 +701,7 @@ class ElectrumClient(
         ctx
       )
         .onComplete {
-          case Success(v: ServerVersionResponse) => {
+          case Success(v: ServerVersionResponse) =>
             self.ctx = Some(ctx)
             onReady(self)
             if (!waitForConnected.isCompleted) waitForConnected.success(ctx)
@@ -739,13 +714,8 @@ class ElectrumClient(
                     s"[warn][electrum] ${address} failed to get a header subscription"
                   )
               }
-          }
-          case err => {
-            System.err.println(
-              s"[warn][electrum] bad response from $address: $err"
-            )
-            pool.killClient(self)
-          }
+          case err =>
+            pool.killClient(self, s"bad response: $err")
         }
     }
 
@@ -790,7 +760,7 @@ class ElectrumClient(
       ctx.channel.writeAndFlush(makeRequest(r, reqId))
       requests += (reqId -> ((r, promise)))
     } else {
-      pool.killClient(self)
+      pool.killClient(self, "channel not writable")
       promise.failure(
         new Exception(
           s"channel not writable. connection to $address was closed."
