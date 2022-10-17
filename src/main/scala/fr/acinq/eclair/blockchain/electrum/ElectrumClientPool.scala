@@ -53,35 +53,37 @@ class ElectrumClientPool(
   private val awaitForLatestTip = Promise[HeaderSubscriptionResponse]()
   var latestTip: Future[HeaderSubscriptionResponse] = awaitForLatestTip.future
 
-  def killClient(client: ElectrumClient): Unit =
-    if (customAddress.isDefined) {
-      // we only have one, do not disconnect from it
+  def killClient(client: ElectrumClient): Unit = {
+    if (addresses.contains(client)) {
       System.err.println(
-        "[warn][pool] we were asked to disconnect from this client, but since it is a custom server we won't do that"
+        s"[info][pool] disconnecting from client ${client.address}"
       )
-    } else {
-      client.shutdown()
 
-      if (addresses.contains(client)) {
-        System.err.println(
-          s"[info][pool] disconnecting from client ${client.address}"
-        )
+      addresses -= client
 
-        addresses -= client
-
-        if (addresses.isEmpty) {
-          System.err.println(s"[info][pool] no active connections left")
-          EventStream.publish(ElectrumDisconnected)
-        }
-
-        // connect to a new one
-        Future { self.connect() }
+      if (addresses.isEmpty) {
+        System.err.println(s"[info][pool] no active connections left")
+        EventStream.publish(ElectrumDisconnected)
       }
+
+      // connect to a new one after a while
+      val t = new java.util.Timer()
+      val task = new java.util.TimerTask {
+        def run() = {
+          connect()
+        }
+      }
+      t.schedule(task, 3000L)
     }
+
+    // shutdown this one
+    client.shutdown()
+  }
 
   lazy val serverAddresses: List[ElectrumServerAddress] = customAddress match {
     case Some(address) =>
-      List(ElectrumServerAddress(address.socketAddress, SSL.DECIDE))
+      List(
+      )
     case None => {
       val addresses = Random.shuffle(loadFromChainHash(chainHash).toList)
       if (useOnion) addresses
@@ -92,30 +94,45 @@ class ElectrumClientPool(
     }
   }
 
-  def initConnect(): Unit = {
-    val connections =
-      Math.min(LNParams.maxChainConnectionsCount, serverAddresses.size)
-    (0 until connections).foreach(_ => self.connect())
+  def initConnect(): Unit = customAddress match {
+    case Some(_) => connect()
+    case None =>
+      val connections =
+        Math.min(LNParams.maxChainConnectionsCount, serverAddresses.size)
+      (0 until connections).foreach(_ => self.connect())
   }
 
   def connect(): Unit = {
-    pickAddress(serverAddresses, usedAddresses)
-      .foreach { esa =>
-        usedAddresses = usedAddresses + esa.address
-
-        val client = new ElectrumClient(
-          self,
-          esa,
-          client =>
-            // upon connecting to a new client, tell it to subscribe to all script hashes
-            scriptHashSubscriptions.keys.foreach { sh =>
-              client.request[ScriptHashSubscriptionResponse](
-                ScriptHashSubscription(sh)
-              )
-            }
+    val pickedAddress = customAddress match {
+      case Some(address) =>
+        Some(
+          ElectrumServerAddress(
+            address.socketAddress,
+            SSL.DECIDE
+          )
         )
-        addresses += (client -> esa.address)
-      }
+      case None =>
+        pickAddress(serverAddresses, usedAddresses)
+          .map { esa =>
+            usedAddresses = usedAddresses + esa.address
+            esa
+          }
+    }
+
+    pickedAddress.foreach { esa =>
+      val client = new ElectrumClient(
+        self,
+        esa,
+        client =>
+          // upon connecting to a new client, tell it to subscribe to all script hashes
+          scriptHashSubscriptions.keys.foreach { sh =>
+            client.request[ScriptHashSubscriptionResponse](
+              ScriptHashSubscription(sh)
+            )
+          }
+      )
+      addresses += (client -> esa.address)
+    }
   }
 
   def subscribeToHeaders(listenerId: String)(
