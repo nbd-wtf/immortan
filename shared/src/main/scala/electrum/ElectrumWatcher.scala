@@ -198,11 +198,7 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool) {
   }
 
   def inspectScriptHash(scriptHash: ByteVector32): Unit = for {
-    history <- pool
-      .request[GetScriptHashHistoryResponse](GetScriptHashHistory(scriptHash))
-      .map { case GetScriptHashHistoryResponse(_, items) =>
-        items
-      }
+    history <- pool.getScriptHashHistory(scriptHash)
 
     transactions <- Future
       .sequence(

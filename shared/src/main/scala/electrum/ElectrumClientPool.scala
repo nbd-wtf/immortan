@@ -20,8 +20,12 @@ import immortan.electrum.{
 }
 import immortan.electrum.ElectrumClient.{
   SSL,
+  scriptHashStatusMatches,
+  TransactionHistoryItem,
   ScriptHashSubscription,
   HeaderSubscriptionResponse,
+  GetScriptHashHistory,
+  GetScriptHashHistoryResponse,
   ScriptHashSubscriptionResponse
 }
 import immortan.electrum.ElectrumClientPool._
@@ -37,6 +41,7 @@ class ElectrumClientPool(
   val addresses =
     scala.collection.mutable.Map.empty[ElectrumClient, InetSocketAddress]
   var usedAddresses = Set.empty[InetSocketAddress]
+  var connected: Boolean = false
 
   def blockHeight: Int = this.blockCount.get().toInt
 
@@ -64,6 +69,7 @@ class ElectrumClientPool(
       if (addresses.isEmpty) {
         System.err.println(s"[info][pool] no active connections left")
         EventStream.publish(ElectrumDisconnected)
+        connected = false
       }
 
       // connect to a new one after a while
@@ -119,6 +125,20 @@ class ElectrumClientPool(
           }
     }
 
+    if (pickedAddress.isEmpty) {
+      // we've exhausted all our addresses, this only happens
+      //  when there is some weird problem with our connection
+      //  so wait a while and start over
+      val t = new java.util.Timer()
+      val task = new java.util.TimerTask {
+        def run() = {
+          usedAddresses = Set.empty
+          initConnect()
+        }
+      }
+      t.schedule(task, 10000L)
+    }
+
     pickedAddress.foreach { esa =>
       val client = new ElectrumClient(
         self,
@@ -161,6 +181,40 @@ class ElectrumClientPool(
     }
   }
 
+  def getScriptHashHistory(
+      scriptHash: ByteVector32,
+      matchStatus: Option[String] = None,
+      attemptN: Int = 0
+  ): Future[List[TransactionHistoryItem]] =
+    request[GetScriptHashHistoryResponse](GetScriptHashHistory(scriptHash))
+      .map { case GetScriptHashHistoryResponse(_, items) => items }
+      .flatMap { items =>
+        matchStatus match {
+          case None => Future(items)
+          case Some(status) =>
+            if (scriptHashStatusMatches(items, status)) Future(items)
+            else if (attemptN < 5) {
+              // the history didn't match the status we were looking for, wait a little and try again
+              val p = Promise[List[TransactionHistoryItem]]()
+              val t = new java.util.Timer()
+              val task = new java.util.TimerTask {
+                def run() = {
+                  getScriptHashHistory(scriptHash, Some(status), attemptN + 1)
+                    .onComplete(
+                      p.complete(_)
+                    )
+                }
+              }
+              t.schedule(task, 3000L)
+              p.future
+            } else
+              // we only try that for a while, then we give up and fail
+              Future.failed(
+                new Exception("failed to get a script hash history that works")
+              )
+        }
+      }
+
   def request[R <: ElectrumClient.Response](
       r: ElectrumClient.Request
   ): Future[R] = requestMany[R](r, 1).map(_.head)
@@ -197,7 +251,12 @@ class ElectrumClientPool(
     // if we didn't have any tips before, now we have one
     if (!awaitForLatestTip.isCompleted) {
       awaitForLatestTip.success(resp)
+    }
+
+    // mark us as connected and emit event
+    if (!connected) {
       EventStream.publish(ElectrumReady(height, tip))
+      connected = true
     }
 
     latestTip = Future(resp)

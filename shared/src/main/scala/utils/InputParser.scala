@@ -24,7 +24,7 @@ object InputParser {
     case _                       => value = null // Erase recorded value
   }
 
-  private[this] val prefixes = Bolt11Invoice.prefixes.values mkString "|"
+  private[this] val prefixes = Bolt11Invoice.prefixes.map(_._2).mkString("|")
 
   private[this] val lnUrl = "(?im).*?(lnurl)([0-9]+[a-z0-9]+)".r.unanchored
 

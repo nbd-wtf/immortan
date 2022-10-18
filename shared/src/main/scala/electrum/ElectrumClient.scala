@@ -57,6 +57,45 @@ object ElectrumClient {
   def computeScriptHash(publicKeyScript: ByteVector): ByteVector32 =
     Crypto.sha256(publicKeyScript).reverse
 
+  def computeScriptHashStatus(items: List[TransactionHistoryItem]): String =
+    Crypto
+      .sha256(
+        ByteVector.view(
+          items
+            .map { case TransactionHistoryItem(height, txid) =>
+              s"${txid.toHex}:$height:"
+            }
+            .mkString("")
+            .getBytes()
+        )
+      )
+      .toHex
+
+  def scriptHashStatusMatches(
+      history: List[TransactionHistoryItem],
+      status: String
+  ): Boolean =
+    product(
+      history
+        .groupBy {
+          case TransactionHistoryItem(height, _) if height <= 0 => 99999999
+          case TransactionHistoryItem(height, _)                => height
+        }
+        .toList
+        .sortBy(_._1)
+        .map(_._2)
+        .map(items => items.permutations.toList)
+    )
+      .map(_.flatten)
+      .map(computeScriptHashStatus(_))
+      .find(_ == status)
+      .isDefined
+
+  private def product[T](xss: List[List[T]]): List[List[T]] = xss match {
+    case Nil    => List(Nil)
+    case h :: t => for (xh <- h; xt <- product(t)) yield xh :: xt
+  }
+
   sealed trait Request { def contextOpt: Option[Any] = None }
   sealed trait Response extends ElectrumEvent {
     def contextOpt: Option[Any] = None
