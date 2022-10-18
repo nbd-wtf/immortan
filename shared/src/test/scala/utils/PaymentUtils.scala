@@ -160,7 +160,7 @@ object PaymentUtils {
 
     // We send to a receiver who does not support trampoline, so relay node will send a basic MPP with inner payment secret provided and revealed
     val finalInnerPayload = PaymentOnion.createSinglePartPayload(
-      pr.amount_opt.get,
+      pr.amountOpt.get,
       CltvExpiry(18),
       pr.paymentSecret.get,
       None
@@ -203,7 +203,7 @@ object PaymentUtils {
     // We send to a receiver who does not support trampoline, so relay node will send a basic MPP with inner payment secret provided and revealed
     val finalInnerPayload = PaymentOnion.createMultiPartPayload(
       partAmount,
-      pr.amount_opt.get,
+      pr.amountOpt.get,
       CltvExpiry(18),
       pr.paymentSecret.get,
       None

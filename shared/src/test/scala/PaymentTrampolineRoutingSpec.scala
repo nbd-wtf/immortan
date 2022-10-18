@@ -310,7 +310,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
 
       // We send to a receiver who does not support trampoline, so relay node will send a basic MPP with inner payment secret provided and revealed
       val finalInnerPayload = PaymentOnion.createSinglePartPayload(
-        pr.amount_opt.get,
+        pr.amountOpt.get,
         CltvExpiry(18),
         pr.paymentSecret.get,
         None
@@ -353,8 +353,8 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       val Right(NodeRelayPacket(_, outer_s, inner_s, packet_s)) =
         decrypt(add_e_s, sP)
 
-      assert(outer_s.amount == pr.amount_opt.get + feeReserve * 2)
-      assert(outer_s.totalAmount == pr.amount_opt.get + feeReserve * 2)
+      assert(outer_s.amount == pr.amountOpt.get + feeReserve * 2)
+      assert(outer_s.totalAmount == pr.amountOpt.get + feeReserve * 2)
       assert(
         CltvExpiryDelta(
           outer_s.expiry.toLong.toInt
@@ -363,7 +363,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       assert(
         pr.paymentSecret.isEmpty || outer_s.paymentSecret != pr.paymentSecret.get
       )
-      assert(inner_s.amountToForward == pr.amount_opt.get + feeReserve)
+      assert(inner_s.amountToForward == pr.amountOpt.get + feeReserve)
       assert(
         CltvExpiryDelta(
           inner_s.outgoingCltv.toLong.toInt
@@ -410,8 +410,8 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
       val Right(NodeRelayPacket(_, outer_s_us, inner_s_us, _)) =
         decrypt(add_s_us, upstreamRemoteNodeInfo.nodeSpecificPrivKey)
 
-      assert(outer_s_us.amount == pr.amount_opt.get + feeReserve)
-      assert(outer_s_us.totalAmount == pr.amount_opt.get + feeReserve)
+      assert(outer_s_us.amount == pr.amountOpt.get + feeReserve)
+      assert(outer_s_us.totalAmount == pr.amountOpt.get + feeReserve)
       assert(
         CltvExpiryDelta(
           outer_s_us.expiry.toLong.toInt
@@ -421,10 +421,10 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
         case Some(s) => { assert(outer_s_us.paymentSecret != s) }
         case None    => {}
       }
-      assert(inner_s_us.amountToForward == pr.amount_opt.get)
+      assert(inner_s_us.amountToForward == pr.amountOpt.get)
       assert(inner_s_us.outgoingCltv.toLong == 18)
       assert(inner_s_us.outgoingNodeId == d)
-      assert(inner_s_us.totalAmount == pr.amount_opt.get)
+      assert(inner_s_us.totalAmount == pr.amountOpt.get)
       assert(inner_s_us.paymentSecret == pr.paymentSecret)
       assert(inner_s_us.invoiceRoutingInfo == Some(pr.routingInfo))
     }
@@ -557,7 +557,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
           .data
           .cmd
           .split
-          .myPart == pr.amount_opt.get
+          .myPart == pr.amountOpt.get
       ) // With trampoline-to-legacy we find out a final amount
       assert(
         cm.opm.data
@@ -601,7 +601,7 @@ object PaymentTrampolineRoutingSpec extends TestSuite {
         .listRecentRelays(10)
         .headTry(cm.payBag.toRelayedPreimageInfo)
         .get
-      WAIT_UNTIL_TRUE(history.relayed == pr.amount_opt.get)
+      WAIT_UNTIL_TRUE(history.relayed == pr.amountOpt.get)
       WAIT_UNTIL_TRUE(history.earned == MilliSatoshi(6984L))
     }
 

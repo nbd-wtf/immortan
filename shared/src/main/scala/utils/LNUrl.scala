@@ -332,8 +332,8 @@ case class PayRequest(
           s"Metadata hash mismatch, expected=${expectedHash}, provided in invoice=$descriptionHashOpt"
         )
         require(
-          payRequestFinal.prExt.pr.amount_opt == Some(amount),
-          s"Payment amount mismatch, requested by wallet=$amount, provided in invoice=${payRequestFinal.prExt.pr.amount_opt}"
+          payRequestFinal.prExt.pr.amountOpt == Some(amount),
+          s"Payment amount mismatch, requested by wallet=$amount, provided in invoice=${payRequestFinal.prExt.pr.amountOpt}"
         )
         payRequestFinal
           .modify(_.successAction.each.domain)

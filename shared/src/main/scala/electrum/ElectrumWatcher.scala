@@ -333,9 +333,9 @@ class ElectrumWatcher(blockCount: AtomicLong, pool: ElectrumClientPool) {
       )
       .onComplete {
         case Success(
-              BroadcastTransactionResponse(tx, error_opt)
+              BroadcastTransactionResponse(tx, errorOpt)
             ) =>
-          error_opt match {
+          errorOpt match {
             case None =>
               System.err.println(
                 s"[info][watcher] broadcast succeeded for txid=${tx.txid} tx=$tx"

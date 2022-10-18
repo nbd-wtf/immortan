@@ -46,8 +46,8 @@ case class SyncWorkerShortIdsData(
   // This class contains a list of scid ranges collected from a single remote peer,
   //   we need to make sure all of them are sound, that is, TLV data is of same size as main data
   def isHolistic: Boolean = ranges.forall(range =>
-    range.shortChannelIds.array.size == range.timestamps_opt.get.timestamps.size &&
-      range.timestamps_opt.get.timestamps.size == range.checksums_opt.get.checksums.size
+    range.shortChannelIds.array.size == range.timestampsOpt.get.timestamps.size &&
+      range.timestampsOpt.get.timestamps.size == range.checksumsOpt.get.checksums.size
   )
   lazy val allShortIds: Seq[ShortChannelId] =
     ranges.flatMap(_.shortChannelIds.array)
@@ -592,8 +592,8 @@ abstract class SyncMaster(
 
   def reply2Query(reply: ReplyChannelRange): Iterator[QueryShortChannelIds] = {
     val stack = reply.shortChannelIds.array
-      .lazyZip(reply.timestamps_opt.get.timestamps)
-      .lazyZip(reply.checksums_opt.get.checksums)
+      .lazyZip(reply.timestampsOpt.get.timestamps)
+      .lazyZip(reply.checksumsOpt.get.checksums)
 
     val scidFlagSeq = for {
       (scid, theirTimestamps, theirChecksums) <- stack

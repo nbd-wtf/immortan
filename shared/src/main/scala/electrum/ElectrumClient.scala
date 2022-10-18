@@ -413,9 +413,9 @@ object ElectrumClient {
             })
             GetScriptHashMempoolResponse(scripthash, items)
           }
-          case GetTransaction(_, context_opt) => {
+          case GetTransaction(_, contextOpt) => {
             val JString(hex) = json.result: @unchecked
-            GetTransactionResponse(Transaction.read(hex), context_opt)
+            GetTransactionResponse(Transaction.read(hex), contextOpt)
           }
           case HeaderSubscription() => {
             val (height, header) = parseBlockHeader(json.result)
@@ -464,7 +464,7 @@ object ElectrumClient {
             val blockHeaders = bin.grouped(80).map(BlockHeader.read).toList
             GetHeadersResponse(source, start_height, blockHeaders, max)
           }
-          case GetMerkle(txid, _, context_opt) => {
+          case GetMerkle(txid, _, contextOpt) => {
             val JArray(hashes) = json.result \ "merkle": @unchecked
             val leaves = hashes collect { case JString(value) =>
               ByteVector32.fromValidHex(value)
@@ -477,7 +477,7 @@ object ElectrumClient {
               leaves,
               blockHeight,
               pos.toInt,
-              context_opt
+              contextOpt
             )
           }
           case other => IrrelevantResponse

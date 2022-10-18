@@ -1162,19 +1162,19 @@ object Helpers {
     ): Set[UpdateAddHtlc] = {
       val localCommit = d.commitments.localCommit
       val remoteCommit = d.commitments.remoteCommit
-      val nextRemoteCommit_opt =
+      val nextRemoteCommitOpt =
         d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit)
       if (localCommit.publishableTxs.commitTx.tx.txid == tx.txid) {
         // our commit got confirmed, so any htlc that is in their commitment but not in ours will never reach the chain
         val htlcsInRemoteCommit =
-          remoteCommit.spec.htlcs ++ nextRemoteCommit_opt
+          remoteCommit.spec.htlcs ++ nextRemoteCommitOpt
             .map(_.spec.htlcs)
             .getOrElse(Set.empty)
         // NB: from the POV of remote, their incoming htlcs are our outgoing htlcs
         htlcsInRemoteCommit.collect(incoming) -- localCommit.spec.outgoingAdds
       } else if (remoteCommit.txid == tx.txid) {
         // their commit got confirmed
-        nextRemoteCommit_opt match {
+        nextRemoteCommitOpt match {
           case Some(nextRemoteCommit) =>
             // we had signed a new commitment but they committed the previous one
             nextRemoteCommit.spec.incomingAdds -- localCommit.spec.outgoingAdds
@@ -1182,7 +1182,7 @@ object Helpers {
             // their last commitment got confirmed, so no htlcs will be overridden, they will timeout or be fulfilled on chain
             Set.empty
         }
-      } else if (nextRemoteCommit_opt.map(_.txid).contains(tx.txid)) {
+      } else if (nextRemoteCommitOpt.map(_.txid).contains(tx.txid)) {
         // their last commitment got confirmed, so no htlcs will be overridden, they will timeout or be fulfilled on chain
         Set.empty
       } else if (
@@ -1192,7 +1192,7 @@ object Helpers {
         //  - outgoing htlcs that are in the local commitment but not in remote/nextRemote have already been fulfilled/failed so we don't care about them
         //  - outgoing htlcs that are in the remote/nextRemote commitment may not really be overridden, but since we are going to claim their output as a
         //    punishment we will never get the preimage and may as well consider them failed in the context of relaying htlcs
-        nextRemoteCommit_opt.getOrElse(remoteCommit).spec.incomingAdds
+        nextRemoteCommitOpt.getOrElse(remoteCommit).spec.incomingAdds
       } else {
         Set.empty
       }

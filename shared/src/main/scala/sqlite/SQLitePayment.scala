@@ -182,7 +182,7 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
         PaymentInfo.NO_ACTION,
         prex.pr.paymentHash.toHex,
         prex.pr.paymentSecret.get.toHex,
-        prex.pr.amount_opt
+        prex.pr.amountOpt
           .getOrElse(MilliSatoshi(0L))
           .toLong: JLong /* 0 WHEN UNDEFINED */,
         0L: JLong /* SENT = 0 MSAT, NOTHING TO SEND */,

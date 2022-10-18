@@ -118,7 +118,7 @@ object PaymentRequestExt {
 
 case class PaymentRequestExt(uri: Try[Uri], pr: Bolt11Invoice, raw: String) {
   def isEnough(collected: MilliSatoshi): Boolean =
-    pr.amount_opt.exists(requested => collected >= requested)
+    pr.amountOpt.exists(requested => collected >= requested)
   def withNewSplit(anotherPart: MilliSatoshi): String =
     s"$lightning$raw?splits=" + (anotherPart :: splits)
       .map(_.toLong)
@@ -134,11 +134,11 @@ case class PaymentRequestExt(uri: Try[Uri], pr: Bolt11Invoice, raw: String) {
         .map(_.toLong) map MilliSatoshi.apply
     )
     .getOrElse(Nil)
-  val hasSplitIssue: Boolean = pr.amount_opt.exists(
+  val hasSplitIssue: Boolean = pr.amountOpt.exists(
     _ < (splits.fold(MilliSatoshi(0))(_ + _) + LNParams.minPayment)
-  ) || (pr.amount_opt.isEmpty && splits.nonEmpty)
+  ) || (pr.amountOpt.isEmpty && splits.nonEmpty)
   val splitLeftover: MilliSatoshi =
-    pr.amount_opt
+    pr.amountOpt
       .map(amt => amt - splits.fold(MilliSatoshi(0))(_ + _))
       .getOrElse(MilliSatoshi(0L))
 
