@@ -17,8 +17,12 @@ import fr.acinq.eclair.blockchain.electrum.{
 }
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{
   SSL,
+  scriptHashStatusMatches,
+  TransactionHistoryItem,
   ScriptHashSubscription,
   HeaderSubscriptionResponse,
+  GetScriptHashHistory,
+  GetScriptHashHistoryResponse,
   ScriptHashSubscriptionResponse
 }
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool._
@@ -162,6 +166,41 @@ class ElectrumClientPool(
         Some(subs.concat(List(listenerId -> debouncedCallback)))
     }
   }
+
+  def getScriptHashHistory(
+      scriptHash: ByteVector32,
+      matchStatus: Option[String] = None,
+      attemptN: Int = 0
+  ): Future[List[TransactionHistoryItem]] =
+    request[GetScriptHashHistoryResponse](GetScriptHashHistory(scriptHash))
+      .map { case GetScriptHashHistoryResponse(_, items) => items }
+      .flatMap { items =>
+        matchStatus match {
+          case None => Future(items)
+          case Some(status) =>
+            if (scriptHashStatusMatches(items, status))
+              Future(items)
+            else if (attemptN < 5) {
+              // the history didn't match the status we were looking for, wait a little and try again
+              val p = Promise[List[TransactionHistoryItem]]()
+              val t = new java.util.Timer()
+              val task = new java.util.TimerTask {
+                def run() = {
+                  getScriptHashHistory(scriptHash, Some(status), attemptN + 1)
+                    .onComplete(
+                      p.complete(_)
+                    )
+                }
+              }
+              t.schedule(task, 3000L)
+              p.future
+            } else
+              // we only try that for a while, then we give up and fail
+              Future.failed(
+                new Exception("failed to get a script hash history that works")
+              )
+        }
+      }
 
   def request[R <: ElectrumClient.Response](
       r: ElectrumClient.Request

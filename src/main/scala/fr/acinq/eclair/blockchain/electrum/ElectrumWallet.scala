@@ -215,12 +215,7 @@ class ElectrumWallet(
 
               val result = for {
                 history <- pool
-                  .request[GetScriptHashHistoryResponse](
-                    GetScriptHashHistory(scriptHash)
-                  )
-                  .map { case GetScriptHashHistoryResponse(_, items) =>
-                    items
-                  }
+                  .getScriptHashHistory(scriptHash, Some(status))
                   .map(_.sortBy(_.height))
                 _ = System.err.println(
                   s"[debug][wallet] got history for ${scriptHash.toHex.take(6)}: ${history}"
