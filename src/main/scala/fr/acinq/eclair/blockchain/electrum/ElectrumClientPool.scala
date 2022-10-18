@@ -125,6 +125,20 @@ class ElectrumClientPool(
           }
     }
 
+    if (pickedAddress.isEmpty) {
+      // we've exhausted all our addresses, this only happens
+      //  when there is some weird problem with our connection
+      //  so wait a while and start over
+      val t = new java.util.Timer()
+      val task = new java.util.TimerTask {
+        def run() = {
+          usedAddresses = Set.empty
+          initConnect()
+        }
+      }
+      t.schedule(task, 10000L)
+    }
+
     pickedAddress.foreach { esa =>
       val client = new ElectrumClient(
         self,
