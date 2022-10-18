@@ -37,6 +37,7 @@ class ElectrumClientPool(
   val addresses =
     scala.collection.mutable.Map.empty[ElectrumClient, InetSocketAddress]
   var usedAddresses = Set.empty[InetSocketAddress]
+  var connected: Boolean = false
 
   def blockHeight: Int = this.blockCount.get().toInt
 
@@ -64,6 +65,7 @@ class ElectrumClientPool(
       if (addresses.isEmpty) {
         System.err.println(s"[info][pool] no active connections left")
         EventStream.publish(ElectrumDisconnected)
+        connected = false
       }
 
       // connect to a new one after a while
@@ -200,7 +202,12 @@ class ElectrumClientPool(
     // if we didn't have any tips before, now we have one
     if (!awaitForLatestTip.isCompleted) {
       awaitForLatestTip.success(resp)
+    }
+
+    // mark us as connected and emit event
+    if (!connected) {
       EventStream.publish(ElectrumReady(height, tip))
+      connected = true
     }
 
     latestTip = Future(resp)
