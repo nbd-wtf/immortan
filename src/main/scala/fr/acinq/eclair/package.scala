@@ -154,7 +154,7 @@ package object eclair { me =>
           case Success(("tb", 1, bin))
               if chainHash == Block.TestnetGenesisBlock.hash =>
             OP_1 :: OP_PUSHDATA(bin) :: Nil
-          case Success(("tbs", 1, bin))
+          case Success(("tb", 1, bin))
               if chainHash == Block.SignetGenesisBlock.hash =>
             OP_1 :: OP_PUSHDATA(bin) :: Nil
           case Success(("bcrt", 1, bin))
@@ -166,7 +166,7 @@ package object eclair { me =>
           case Success(("tb", 0, bin))
               if chainHash == Block.TestnetGenesisBlock.hash =>
             OP_0 :: OP_PUSHDATA(bin) :: Nil
-          case Success(("tbs", 0, bin))
+          case Success(("tb", 0, bin))
               if chainHash == Block.SignetGenesisBlock.hash =>
             OP_0 :: OP_PUSHDATA(bin) :: Nil
           case Success(("bcrt", 0, bin))

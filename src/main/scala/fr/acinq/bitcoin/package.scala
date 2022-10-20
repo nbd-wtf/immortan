@@ -171,7 +171,7 @@ package object bitcoin {
     val hrp = chainHash match {
       case Block.LivenetGenesisBlock.hash => "bc"
       case Block.TestnetGenesisBlock.hash => "tb"
-      case Block.SignetGenesisBlock.hash  => "tbs"
+      case Block.SignetGenesisBlock.hash  => "tb"
       case Block.RegtestGenesisBlock.hash => "bcrt"
       case _ =>
         throw new IllegalArgumentException("Unknown chain hash: " + chainHash)
