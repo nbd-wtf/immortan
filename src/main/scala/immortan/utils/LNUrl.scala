@@ -111,6 +111,15 @@ case class LNUrl(request: String) {
     )
   }
 
+  lazy val fastHostedChannelAttempt: Try[HostedChannelRequest] = Try {
+    require(url.query.param("tag").get == "hostedChannelRequest")
+    HostedChannelRequest(
+      url.query.param("uri").get,
+      url.query.param("alias"),
+      url.query.param("k1").get
+    )
+  }
+
   def level1DataResponse: Observable[LNUrlData] = Rx.ioQueue.map { _ =>
     to[LNUrlData](
       LNUrl.guardResponse(LNParams.connectionProvider.get(url.toString))
