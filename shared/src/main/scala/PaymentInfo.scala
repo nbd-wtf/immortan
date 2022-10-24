@@ -2,7 +2,6 @@ package immortan
 
 import java.util.Date
 import scala.util.{Success, Failure, Try}
-import org.bouncycastle.util.encoders.Base64
 import scodec.bits.ByteVector
 import spray.json._
 import scoin.Crypto.PublicKey
@@ -121,7 +120,9 @@ case class LNUrlPayLink(
     Try(payMetaString.parseJson.asInstanceOf[JsArray].elements)
       .map(PayRequestMeta(_))
   lazy val imageBytes: Option[Array[Byte]] =
-    payMetaData.toOption.flatMap(_.imageBase64).map(Base64.decode)
+    payMetaData.toOption
+      .flatMap(_.imageBase64)
+      .map(ByteVector.fromValidBase64(_).toArray)
   lazy val lastComment: Option[String] =
     Option(lastCommentString).filter(_.nonEmpty)
 }
