@@ -90,7 +90,7 @@ object PaymentUtils {
       Nil
     )
     val prExt = PaymentRequestExt(
-      uri = Failure(new RuntimeException),
+      url = Failure(new RuntimeException),
       invoice,
       invoice.toString
     )

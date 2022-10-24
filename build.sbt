@@ -26,6 +26,7 @@ libraryDependencies   ++= Seq(
   "com.softwaremill.quicklens" % "quicklens_2.13" % "1.8.4",
   "org.bouncycastle" % "bcprov-jdk15to18" % "1.68",
   "com.lihaoyi" % "castor_2.13" % "0.2.1",
+  "io.lemonlabs" % "scala-uri_2.13" % "4.0.2",
 
   "com.lihaoyi" % "utest_2.13" % "0.7.11" % Test,
   "com.lihaoyi" % "requests_2.13" % "0.7.0" % Test,
