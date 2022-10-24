@@ -8,9 +8,7 @@ import immortan.utils._
 
 object InputParserSpec extends TestSuite {
   val req: String =
-    "lnbc1psy596qpp5umsexzwdmh2a5uwwjunwq0nnl56l09kjx0ht93h3ys9088h0023sdzq235hqurfdcsxz6m4d4skjem0wfhkgumtdyszsarfwpcxjm3wd4jjj2r" +
-      "4xyerqvffcqzpgxqyz5vqsp5dcu2nprdalp7wuglpvnep45mygs6ksq8m7xkvyrzae7lw80ttjds9qyyssq3g5xv50amvyq0526zh3f4wf3z0qhh9vnr0up8uaa948cawjx9n" +
-      "rjaz7rlnjtkg4ejapccrrme2jp7za8mdjfmurv7wc9wm8wg0ja4lgqwyv8he"
+    "lnbc1psy596qpp5umsexzwdmh2a5uwwjunwq0nnl56l09kjx0ht93h3ys9088h0023sdzq235hqurfdcsxz6m4d4skjem0wfhkgumtdyszsarfwpcxjm3wd4jjj2r4xyerqvffcqzpgxqyz5vqsp5dcu2nprdalp7wuglpvnep45mygs6ksq8m7xkvyrzae7lw80ttjds9qyyssq3g5xv50amvyq0526zh3f4wf3z0qhh9vnr0up8uaa948cawjx9nrjaz7rlnjtkg4ejapccrrme2jp7za8mdjfmurv7wc9wm8wg0ja4lgqwyv8he"
 
   val tests = Tests {
     test("Parse payment requests with splits") {
@@ -112,7 +110,9 @@ object InputParserSpec extends TestSuite {
       val allAscii = "https://www.website.com.ua"
       val nonAscii = "https://www.websוte.com.ua"
 
-      assert(LNUrl(allAscii).warnUri == LNUrl(allAscii).uri.getHost)
+      assert(
+        LNUrl(allAscii).warnUri == LNUrl(allAscii).url.hostOption.get.value
+      )
       assert(LNUrl(nonAscii).warnUri == "www.webs<b>[ו]</b>te.com.ua")
     }
 

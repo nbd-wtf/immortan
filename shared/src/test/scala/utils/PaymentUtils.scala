@@ -86,7 +86,7 @@ object PaymentUtils {
       paymentSecret = secret
     )
     val prExt = PaymentRequestExt(
-      uri = Failure(new RuntimeException),
+      url = Failure(new RuntimeException),
       invoice,
       invoice.toString
     )

@@ -35,6 +35,7 @@ lazy val immortan = crossProject(JVMPlatform, JSPlatform)
       "com.fiatjaf" %%% "scoin" % "0.5.0-SNAPSHOT",
       "org.scala-lang.modules" %%% "scala-parser-combinators" % "2.1.1",
       "com.softwaremill.quicklens" %%% "quicklens" % "1.8.4",
+      "io.lemonlabs" %%% "scala-uri" % "4.0.2"
     )
   )
   .jvmSettings(

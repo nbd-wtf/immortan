@@ -5,6 +5,7 @@ import scala.util.chaining._
 import scala.concurrent.Future
 import com.softwaremill.quicklens._
 import scodec.bits.ByteVector
+import io.lemonlabs.uri.Url
 import spray.json._
 import scoin._
 import scoin.Crypto.PublicKey
@@ -35,11 +36,15 @@ object LNUrl {
     LNUrl(request)
   }
 
-  def checkHost(host: String): Uri = Uri.parse(host) match {
+  def checkHost(host: String): Url = Url.parse(host) match {
     case uri =>
-      val isOnion = host.startsWith("http://") && uri.getHost.endsWith(".onion")
+      val isOnion =
+        host.startsWith("http://") && uri.hostOption.get.value
+          .endsWith(".onion")
       val isSSLPlain =
-        host.startsWith("https://") && !uri.getHost.endsWith(".onion")
+        host.startsWith("https://") && !uri.hostOption.get.value.endsWith(
+          ".onion"
+        )
       require(
         isSSLPlain || isOnion,
         "URI is neither Plain/HTTPS nor Onion/HTTP request"
@@ -66,58 +71,52 @@ object LNUrl {
     raw
   }
 
-  def level2DataResponse(bld: Uri.Builder): Future[String] =
+  def level2DataResponse(url: Url): Future[String] =
     LNParams.connectionProvider
-      .get(bld.build.toString)
+      .get(url.toString)
       .map(guardResponse(_))
 }
 
 case class LNUrl(request: String) {
-  val uri: Uri = LNUrl.checkHost(request)
+  val url: Url = LNUrl.checkHost(request)
 
   def warnUri: String = {
-    val host = uri.getHost.map { char =>
+    val host = url.hostOption.get.value.map { char =>
       if (AsciiCharMatcher.matches(char)) char.toString
       else s"<b>[$char]</b>"
     }.mkString
 
-    uri.getPath().split("/.well-known/lnurlp/").toList match {
+    url.path.toString.split("/.well-known/lnurlp/").toList match {
       case _ :: name :: Nil => s"${name}@${host}"
       case _                => host
     }
   }
 
-  lazy val k1: Try[String] = Try(uri getQueryParameter "k1")
+  lazy val k1: Option[String] = url.query.param("k1")
   lazy val isAuth: Boolean = {
-    val authTag =
-      Try(uri.getQueryParameter("tag").toLowerCase == "login").getOrElse(false)
-    val validK1 = k1
-      .flatMap(k1str => Try(ByteVector.fromValidHex(k1str)))
-      .map(_.size == 32)
-      .getOrElse(false)
-    authTag && validK1
+    val authTag = url.query.param("tag").map(_.toLowerCase == "login")
+    val validK1 = k1.map(ByteVector.fromValidHex(_)).map(_.size == 32)
+    authTag.getOrElse(false) && validK1.getOrElse(false)
   }
-  lazy val authAction: String =
-    Try(uri.getQueryParameter("action").toLowerCase).getOrElse("login")
 
   lazy val fastWithdrawAttempt: Try[WithdrawRequest] = Try {
-    require(uri.getQueryParameter("tag") equals "withdrawRequest")
+    require(url.query.param("tag").get == "withdrawRequest")
     WithdrawRequest(
-      uri.getQueryParameter("callback"),
-      uri.getQueryParameter("k1"),
-      uri.getQueryParameter("maxWithdrawable").toLong,
-      uri.getQueryParameter("defaultDescription"),
-      Some(uri.getQueryParameter("minWithdrawable").toLong)
+      url.query.param("callback").get,
+      url.query.param("k1").get,
+      url.query.param("maxWithdrawable").get.toLong,
+      url.query.param("defaultDescription").get,
+      url.query.param("minWithdrawable").map(_.toLong)
     )
   }
 
   def level1DataResponse: Future[LNUrlData] =
-    LNParams.connectionProvider.get(uri.toString).map(to[LNUrlData](_))
+    LNParams.connectionProvider.get(url.toString).map(to[LNUrlData](_))
 }
 
 sealed trait LNUrlData
 sealed trait CallbackLNUrlData extends LNUrlData {
-  val callbackUri: Uri = LNUrl.checkHost(callback)
+  val callbackUrl: Url = LNUrl.checkHost(callback)
   def callback: String
 }
 
@@ -134,23 +133,23 @@ case class NormalChannelRequest(uri: String, callback: String, k1: String)
     with HasRemoteInfo {
 
   def requestChannel: Future[String] = LNUrl.level2DataResponse {
-    callbackUri.buildUpon
-      .appendQueryParameter("k1", k1)
-      .appendQueryParameter("private", "1")
-      .appendQueryParameter("remoteid", remoteInfo.nodeSpecificPubKey.toString)
+    callbackUrl.withQueryString(
+      callbackUrl.query
+        .addParam("k1", k1)
+        .addParam("private", "1")
+        .addParam("remoteid", remoteInfo.nodeSpecificPubKey.toString())
+    )
   }
 
-  override def cancel(): Unit =
-    LNUrl
-      .level2DataResponse {
-        callbackUri.buildUpon
-          .appendQueryParameter("k1", k1)
-          .appendQueryParameter("cancel", "1")
-          .appendQueryParameter(
-            "remoteid",
-            remoteInfo.nodeSpecificPubKey.toString
-          )
-      }
+  override def cancel(): Unit = LNUrl
+    .level2DataResponse {
+      callbackUrl.withQueryString(
+        callbackUrl.query
+          .addParam("k1", k1)
+          .addParam("cancel", "1")
+          .addParam("remoteid", remoteInfo.nodeSpecificPubKey.toString)
+      )
+    }
 
   val InputParser.nodeLink(nodeKey, hostAddress, portNumber) = uri: @unchecked
   val pubKey: PublicKey = PublicKey.fromBin(ByteVector.fromValidHex(nodeKey))
@@ -184,9 +183,11 @@ case class WithdrawRequest(
 ) extends CallbackLNUrlData {
   def requestWithdraw(ext: PaymentRequestExt): Future[String] =
     LNUrl.level2DataResponse {
-      callbackUri.buildUpon
-        .appendQueryParameter("pr", ext.raw)
-        .appendQueryParameter("k1", k1)
+      callbackUrl.withQueryString(
+        callbackUrl.query
+          .addParam("pr", ext.raw)
+          .addParam("k1", k1)
+      )
     }
 
   val minCanReceive: MilliSatoshi = minWithdrawable
@@ -286,7 +287,7 @@ case class PayRequest(
       randomKey: Option[Crypto.PublicKey] = None,
       authKeyHost: Option[String] = None // None means never include auth key
   ): Future[PayRequestFinal] = {
-    val rawPayerdata: Option[String] = this.payerData
+    val rawPayerdata: Option[String] = payerData
       .map(spec =>
         PayerData(
           name = if (spec.name.isDefined) name else None,
@@ -304,17 +305,17 @@ case class PayRequest(
       .flatMap(d => if (d == PayerData()) None else Some(d))
       .map(_.toJson.compactPrint)
 
-    val url = this.callbackUri.buildUpon
-      .appendQueryParameter("amount", amount.toLong.toString)
+    val url = callbackUrl
+      .addParam("amount", amount.toLong.toString)
       .pipe(base =>
-        (this.commentAllowed.getOrElse(0) > 0, comment) match {
-          case (true, Some(c)) => base.appendQueryParameter("comment", c)
+        (commentAllowed.getOrElse(0) > 0, comment) match {
+          case (true, Some(c)) => base.addParam("comment", c)
           case _               => base
         }
       )
       .pipe(base =>
         rawPayerdata match {
-          case Some(r) => base.appendQueryParameter("payerdata", r)
+          case Some(r) => base.addParam("payerdata", r)
           case _       => base
         }
       )
@@ -325,7 +326,7 @@ case class PayRequest(
       .map { payRequestFinal =>
         val descriptionHashOpt =
           payRequestFinal.prExt.pr.description.toOption
-        val expectedHash = this.metadataHash(rawPayerdata.getOrElse(""))
+        val expectedHash = metadataHash(rawPayerdata.getOrElse(""))
         require(
           descriptionHashOpt == Some(expectedHash),
           s"Metadata hash mismatch, expected=${expectedHash}, provided in invoice=$descriptionHashOpt"
@@ -336,7 +337,7 @@ case class PayRequest(
         )
         payRequestFinal
           .modify(_.successAction.each.domain)
-          .setTo(Some(this.callbackUri.getHost))
+          .setTo(Some(callbackUrl.hostOption.get.value))
       }
   }
 }

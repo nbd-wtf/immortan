@@ -4,6 +4,7 @@ import scala.util.matching.{Regex, UnanchoredRegex}
 import scala.util.parsing.combinator.RegexParsers
 import scala.util.{Failure, Success, Try}
 import scodec.bits.ByteVector
+import io.lemonlabs.uri.Url
 import scoin.Crypto.PublicKey
 import scoin._
 import scoin.ln._
@@ -99,24 +100,24 @@ object PaymentRequestExt {
     case _ => raw
   }
 
-  def withoutSlashes(prefix: String, uri: Uri): String =
-    prefix + removePrefix(uri.toString)
+  def withoutSlashes(prefix: String, url: Url): String =
+    prefix + removePrefix(url.toString)
 
   def fromUri(invoiceWithoutSlashes: String): PaymentRequestExt =
     invoiceWithoutSlashes match {
       case lnPayReq(invoicePrefix, invoiceData) =>
         val pr = Bolt11Invoice.fromString(s"$invoicePrefix$invoiceData").get
-        val uri = Try(Uri parse s"$lightning//$invoiceWithoutSlashes")
-        PaymentRequestExt(uri, pr, s"$invoicePrefix$invoiceData")
+        val url = Url.parseTry(s"$lightning//$invoiceWithoutSlashes")
+        PaymentRequestExt(url, pr, s"$invoicePrefix$invoiceData")
     }
 
   def from(pr: Bolt11Invoice): PaymentRequestExt = {
-    val noUri: Try[Uri] = Failure(new RuntimeException)
+    val noUri: Try[Url] = Failure(new RuntimeException("no uri"))
     PaymentRequestExt(noUri, pr, pr.toString)
   }
 }
 
-case class PaymentRequestExt(uri: Try[Uri], pr: Bolt11Invoice, raw: String) {
+case class PaymentRequestExt(url: Try[Url], pr: Bolt11Invoice, raw: String) {
   def isEnough(collected: MilliSatoshi): Boolean =
     pr.amountOpt.exists(requested => collected >= requested)
   def withNewSplit(anotherPart: MilliSatoshi): String =
@@ -126,14 +127,18 @@ case class PaymentRequestExt(uri: Try[Uri], pr: Bolt11Invoice, raw: String) {
   lazy val extraEdges: Set[GraphStructure.GraphEdge] =
     RouteCalculation.makeExtraEdges(pr.routingInfo, pr.nodeId)
 
-  val splits: List[MilliSatoshi] = uri
-    .map(
-      _.getQueryParameter("splits")
-        .split(',')
-        .toList
-        .map(_.toLong) map MilliSatoshi.apply
+  val splits: List[MilliSatoshi] = url.toOption
+    .flatMap(
+      _.query
+        .param("splits")
+        .filterNot(_.isEmpty)
+        .map(
+          _.split(',').toList
+            .map(_.toLong)
+            .map(MilliSatoshi(_))
+        )
     )
-    .getOrElse(Nil)
+    .getOrElse(List.empty)
   val hasSplitIssue: Boolean = pr.amountOpt.exists(
     _ < (splits.fold(MilliSatoshi(0))(_ + _) + LNParams.minPayment)
   ) || (pr.amountOpt.isEmpty && splits.nonEmpty)
@@ -151,31 +156,27 @@ case class PaymentRequestExt(uri: Try[Uri], pr: Bolt11Invoice, raw: String) {
 object BitcoinUri {
   def fromRaw(raw: String): BitcoinUri = {
     val dataWithoutPrefix = PaymentRequestExt.removePrefix(raw)
-    val uri = Uri.parse(s"$bitcoin//$dataWithoutPrefix")
-    BitcoinUri(Success(uri), uri.getHost)
+    val url = Url.parse(s"$bitcoin//$dataWithoutPrefix")
+    BitcoinUri(Some(url), url.hostOption.get.value)
   }
 }
 
-case class BitcoinUri(uri: Try[Uri], address: String) {
-  val amount: Option[MilliSatoshi] = uri
-    .map(_ getQueryParameter "amount")
-    .map(BigDecimal.apply)
+case class BitcoinUri(url: Option[Url], address: String) {
+  val amount: Option[MilliSatoshi] = url
+    .flatMap(_.query.param("amount"))
+    .map(BigDecimal(_))
     .map(Denomination.btcBigDecimal2MSat)
-    .toOption
-  val prExt: Option[PaymentRequestExt] = uri
-    .map(_ getQueryParameter "lightning")
-    .map(PaymentRequestExt.fromUri)
-    .toOption
-  val message: Option[String] = uri
-    .map(_ getQueryParameter "message")
+  val prExt: Option[PaymentRequestExt] = url
+    .flatMap(_.query.param("lightning"))
+    .map(PaymentRequestExt.fromUri(_))
+  val message: Option[String] = url
+    .flatMap(_.query.param("message"))
     .map(trimmed)
     .filter(_.nonEmpty)
-    .toOption
-  val label: Option[String] = uri
-    .map(_ getQueryParameter "label")
+  val label: Option[String] = url
+    .flatMap(_.query.param("label"))
     .map(trimmed)
     .filter(_.nonEmpty)
-    .toOption
 }
 
 object MultiAddressParser extends RegexParsers {
