@@ -24,7 +24,6 @@ lazy val immortan = crossProject(JVMPlatform, JSPlatform)
       // electrum client
       "org.json4s" % "json4s-native_2.13" % "3.6.7",
       "io.netty" % "netty-all" % "4.1.42.Final",
-      "com.lihaoyi" % "castor_2.13" % "0.2.1",
 
       // must be replaced
       "io.spray" % "spray-json_2.13" % "1.3.5",
