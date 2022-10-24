@@ -854,7 +854,7 @@ object MPPSpec extends TestSuite {
       // Suppose this time we attempt a send when all channels are connected already
       cm.all.values.foreach(chan => chan.BECOME(chan.data, Channel.Open))
 
-      cm.pf.loadGraph()
+      cm.pf.process(PathFinder.CMDLoadGraph)
       cm.pf process makeUpdate(
         3L,
         b,

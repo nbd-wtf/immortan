@@ -329,7 +329,7 @@ object PathfinderSpec extends TestSuite {
 
       // Assisted channel is now reachable
       pf process edgeDSFromD
-      pf.loadGraph()
+      pf.process(PathFinder.CMDLoadGraph)
       pf process PathFinder.FindRoute(sender, routeRequest)
       WAIT_UNTIL_TRUE(
         response
