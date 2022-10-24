@@ -1,6 +1,7 @@
 package immortan
 
 import java.net.InetSocketAddress
+import scala.concurrent.Future
 import scoin.ln.NodeAddress
 
 trait Socket {
@@ -14,6 +15,6 @@ trait ConnectionProvider {
   val proxyAddress: Option[InetSocketAddress]
   def getSocket: Socket
   def doWhenReady(action: => Unit): Unit
-  def get(url: String): String
+  def get(url: String): Future[String]
   def notifyAppAvailable(): Unit = {}
 }

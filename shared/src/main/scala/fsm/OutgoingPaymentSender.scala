@@ -580,7 +580,7 @@ class OutgoingPaymentSender(
     // It may happen that all chans are to stay offline indefinitely, payment parts will then await indefinitely
     // so set a timer to abort a payment in case if we have no in-flight parts after some reasonable amount of time
     // note that timer gets reset each time this method gets called
-    delayedCMDWorker.replaceWork(CMDAbort)
+    processDebounced(CMDAbort)
   }
 
   // Turn in-flight into waiting-for-route and expect for subsequent CMDAskForRoute

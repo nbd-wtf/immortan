@@ -48,7 +48,7 @@ class SQLiteTx(val db: DBInterface) {
         txid.toHex
       )
       for (label <- description.label) addSearchableTransaction(label, txid)
-      ChannelMaster.next(ChannelMaster.txDbStream)
+      ChannelMaster.txDbStream.fire()
       updateDescriptionSqlPQ.close()
     }
 
@@ -65,12 +65,12 @@ class SQLiteTx(val db: DBInterface) {
       updatedStamp: JLong,
       txid.toHex
     )
-    ChannelMaster.next(ChannelMaster.txDbStream)
+    ChannelMaster.txDbStream.fire()
   }
 
   def removeByPub(xPub: ExtendedPublicKey): Unit = {
     db.change(TxTable.killByPubSql, xPub.publicKey.toString)
-    ChannelMaster.next(ChannelMaster.txDbStream)
+    ChannelMaster.txDbStream.fire()
   }
 
   def txSummary: Try[TxSummary] =
@@ -114,7 +114,7 @@ class SQLiteTx(val db: DBInterface) {
       isIncoming: JLong,
       0L: JLong /* NOT DOUBLE SPENT YET */
     )
-    ChannelMaster.next(ChannelMaster.txDbStream)
+    ChannelMaster.txDbStream.fire()
     newSqlPQ.close()
   }
 

@@ -60,7 +60,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
     become(null, IncomingPaymentProcessor.Shutdown)
 
   require(fullTag.tag == PaymentTagTlv.FINAL_INCOMING)
-  delayedCMDWorker.replaceWork(CMDTimeout)
+  processDebounced(CMDTimeout)
   become(null, IncomingPaymentProcessor.Receiving)
 
   def doProcess(msg: Any): Unit = (msg, data, state) match {
@@ -165,7 +165,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
 
     case (_: ReasonableLocal, null, IncomingPaymentProcessor.Receiving) =>
       // Just saw another related add so prolong timeout
-      delayedCMDWorker.replaceWork(CMDTimeout)
+      processDebounced(CMDTimeout)
 
     case (CMDTimeout, null, IncomingPaymentProcessor.Receiving) =>
       // User is explicitly requesting failing of held payment
@@ -240,7 +240,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
     // Extend timer to hold timeout instead of revealing
     // actual revealing or failing will happen on user request
     TOTAL_INTERVAL_SECONDS = holdPeriodSeconds
-    delayedCMDWorker.replaceWork(CMDTimeout)
+    processDebounced(CMDTimeout)
     isHolding = true
   }
 
@@ -370,7 +370,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
 
   require(fullTag.tag == PaymentTagTlv.TRAMPLOINE_ROUTED)
   cm.opm.createSenderFSM(Set(self), fullTag)
-  delayedCMDWorker.replaceWork(CMDTimeout)
+  processDebounced(CMDTimeout)
   become(null, IncomingPaymentProcessor.Receiving)
 
   def doProcess(msg: Any): Unit = (msg, data, state) match {
@@ -501,7 +501,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
           IncomingPaymentProcessor.Receiving
         ) =>
       // Just saw another related add so prolong timeout
-      delayedCMDWorker.replaceWork(CMDTimeout)
+      processDebounced(CMDTimeout)
 
     case (CMDTimeout, null, IncomingPaymentProcessor.Receiving) =>
       // Sender must not have outgoing payments in this state

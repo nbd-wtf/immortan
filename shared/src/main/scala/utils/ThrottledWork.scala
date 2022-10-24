@@ -1,62 +1,78 @@
 package immortan.utils
 
-import rx.lang.scala.Subscription
+import java.util.concurrent.atomic.AtomicLong
+import scala.concurrent.Future
+import scala.util.{Success, Failure}
+import scala.collection.mutable.Queue
 
 import immortan.none
+import immortan.LNParams.ec
 
 abstract class ThrottledWork[T, V] {
-  private var lastWork: Option[T] = None
-  private var subscription: Option[Subscription] = None
+  private var workQueue: Queue[T] = Queue.empty
+  private var currentWork: Option[Long] = None
+  private var ignored = scala.collection.mutable.Set.empty[Long]
+  private val nextIdx = new AtomicLong(0L)
 
   def error(error: Throwable): Unit = none
-  def work(input: T): rx.lang.scala.Observable[V]
+  def work(input: T): Future[V]
   def process(data: T, res: V): Unit
 
   private def runOnError(err: Throwable): Unit = {
     // First nullify sunscription, then process error
-    subscription = None
+    currentWork = None
     error(err)
   }
 
   private def runOnNext(data: T, res: V): Unit = {
     // First nullify sunscription, then process callback
-    subscription = None
+    currentWork = None
     process(data, res)
   }
 
   def addWork(data: T): Unit =
-    if (subscription.isEmpty) {
+    if (currentWork.isEmpty) {
       // Previous work has already been finished by now or has never started at all
       // schedule a new one and then look if more work is added once this one is done
 
-      subscription = Some(
-        work(data)
-          .doOnSubscribe { lastWork = None }
-          .doAfterTerminate(lastWork foreach addWork)
-          .subscribe(res => runOnNext(data, res), runOnError)
-      )
+      // keep track of the work being done here
+      val n = nextIdx.getAndIncrement()
+      currentWork = Some(n)
 
+      // actually start the work here
+      work(data).onComplete { result =>
+        if (ignored.contains(n)) {
+          // if this work was canceled at some point in the future we ignore the result completely
+          ignored.remove(n) // cleanup this
+        } else {
+          // otherwise we proceed
+          result match {
+            case Success(res) =>
+              if (!workQueue.isEmpty)
+                addWork(workQueue.dequeue())
+              runOnNext(data, res)
+            case Failure(err) => runOnError(err)
+          }
+        }
+      }
     } else {
       // Current work has not finished yet
       // schedule new work once this is done
-      lastWork = Some(data)
+      workQueue.enqueue(data)
     }
 
-  def replaceWork(data: T): Unit =
-    if (subscription.isEmpty) {
+  def replaceWork(data: T): Unit = currentWork match {
+    case None =>
       // Previous work has already finished or was interrupted or has never been started
-      subscription = Some(
-        work(data).subscribe(res => process(data, res), error)
-      )
-    } else {
+      addWork(data)
+    case Some(_) =>
       // Current work has not finished yet
       // disconnect subscription and replace
-      unsubscribeCurrentWork()
+      ignoreCurrentWork()
       replaceWork(data)
-    }
+  }
 
-  def unsubscribeCurrentWork(): Unit = {
-    subscription.foreach(_.unsubscribe())
-    subscription = None
+  def ignoreCurrentWork(): Unit = {
+    currentWork.foreach { n => ignored.add(n) }
   }
 }

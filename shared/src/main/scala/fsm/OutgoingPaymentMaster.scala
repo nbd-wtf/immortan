@@ -283,7 +283,7 @@ class OutgoingPaymentMaster(val cm: ChannelMaster)
     if (data.paymentSenders.contains(fullTag)) {
       // First we get their fail, then stateUpdateStream fires, then we fire it here again if FSM is to be removed
       become(data.copy(paymentSenders = data.paymentSenders - fullTag), state)
-      ChannelMaster.next(ChannelMaster.stateUpdateStream)
+      ChannelMaster.stateUpdateStream.fire()
     }
   }
 

@@ -5,7 +5,6 @@ import scala.jdk.CollectionConverters._
 import scala.collection.mutable
 import scala.concurrent._
 import scala.concurrent.duration._
-import rx.lang.scala.{Observable, Subscription}
 import scodec.bits.ByteVector
 import scodec.Attempt
 import scoin.hc.HostedChannelMessage
@@ -16,11 +15,7 @@ import scoin.ln.LightningMessageCodecs.lightningMessageCodec
 import scoin.hc.HostedChannelCodecs.hostedMessageCodec
 
 import immortan.crypto.Noise.KeyPair
-import immortan.IrrelevantChannelKind
-import immortan.IrrelevantChannelKind
-import immortan.NormalChannelKind
-import immortan.NormalChannelKind
-import immortan.IrrelevantChannelKind
+import immortan._
 
 case class KeyPairAndPubKey(keyPair: KeyPair, them: PublicKey)
 
@@ -104,7 +99,7 @@ object CommsTower {
 
     var lastMessage: Long = System.currentTimeMillis
     var theirInit: Option[Init] = Option.empty
-    var pinging: Subscription = _
+    var pinging: java.util.Timer = _
 
     val handler: TransportHandler =
       new TransportHandler(pair.keyPair, info.nodeId.value) {
@@ -138,7 +133,9 @@ object CommsTower {
               }
             case Attempt.Failure(_) =>
               // in this case this is probably a hosted channel message
-              hostedMessageCodec.decode(data.bits) match {
+              hostedMessageCodec.decode(
+                (data.take(2) ++ data.drop(4)).toBitVector
+              ) match {
                 case Attempt.Successful(result) =>
                   result.value match {
                     case message: HostedChannelMessage =>
@@ -153,7 +150,7 @@ object CommsTower {
         }
 
         def handleEnterOperationalState(): Unit = {
-          pinging = Observable.interval(10.seconds) subscribe { _ =>
+          pinging = every(10.seconds) {
             if (lastMessage < System.currentTimeMillis - 45 * 1000L)
               disconnect()
             else if (lastMessage < System.currentTimeMillis - 20 * 1000L)
@@ -178,7 +175,7 @@ object CommsTower {
 
     thread.onComplete { _ =>
       // Will also run after forget
-      try pinging.unsubscribe()
+      try pinging.cancel()
       catch none
       listeners(pair).foreach(_.onDisconnect(self))
       // Once disconnected, worker gets removed

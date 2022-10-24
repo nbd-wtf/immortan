@@ -148,17 +148,13 @@ trait Channel
   EventStream.subscribe {
     case currentBlockCount: CurrentBlockCount
         if lastSeenBlockCount.isEmpty && useDelay => {
-      val t = new java.util.Timer()
-      val task = new java.util.TimerTask {
-        def run() = {
-          // Propagate subsequent block counts right away
-          useDelay = false
-          lastSeenBlockCount = None
-          // Popagate the last delayed block count
-          lastSeenBlockCount.foreach(process)
-        }
+      after(10.seconds) {
+        // Propagate subsequent block counts right away
+        useDelay = false
+        lastSeenBlockCount = None
+        // Popagate the last delayed block count
+        lastSeenBlockCount.foreach(process)
       }
-      t.schedule(task, 10000L)
       lastSeenBlockCount = Some(currentBlockCount)
       useDelay = true
     }

@@ -2,9 +2,8 @@ package immortan.utils
 
 import scala.util.Try
 import scala.util.chaining._
-import com.google.common.base.CharMatcher
+import scala.concurrent.Future
 import com.softwaremill.quicklens._
-import rx.lang.scala.Observable
 import scodec.bits.ByteVector
 import spray.json._
 import scoin._
@@ -15,6 +14,7 @@ import scoin.ln.NodeAddress
 import immortan._
 import immortan.utils.ImplicitJsonFormats._
 import immortan.utils.uri.Uri
+import immortan.LNParams.ec
 
 object LNUrl {
   case class ErrorFromVendor(msg: String)
@@ -66,10 +66,10 @@ object LNUrl {
     raw
   }
 
-  def level2DataResponse(bld: Uri.Builder): Observable[String] =
-    Rx.ioQueue.map { _ =>
-      guardResponse(LNParams.connectionProvider.get(bld.build.toString))
-    }
+  def level2DataResponse(bld: Uri.Builder): Future[String] =
+    LNParams.connectionProvider
+      .get(bld.build.toString)
+      .map(guardResponse(_))
 }
 
 case class LNUrl(request: String) {
@@ -77,7 +77,7 @@ case class LNUrl(request: String) {
 
   def warnUri: String = {
     val host = uri.getHost.map { char =>
-      if (CharMatcher.ascii.matches(char)) char.toString
+      if (AsciiCharMatcher.matches(char)) char.toString
       else s"<b>[$char]</b>"
     }.mkString
 
@@ -111,9 +111,8 @@ case class LNUrl(request: String) {
     )
   }
 
-  def level1DataResponse: Observable[LNUrlData] = Rx.ioQueue.map { _ =>
-    to[LNUrlData](LNParams.connectionProvider.get(uri.toString))
-  }
+  def level1DataResponse: Future[LNUrlData] =
+    LNParams.connectionProvider.get(uri.toString).map(to[LNUrlData](_))
 }
 
 sealed trait LNUrlData
@@ -134,24 +133,24 @@ case class NormalChannelRequest(uri: String, callback: String, k1: String)
     extends CallbackLNUrlData
     with HasRemoteInfo {
 
-  def requestChannel: Observable[String] = LNUrl.level2DataResponse {
+  def requestChannel: Future[String] = LNUrl.level2DataResponse {
     callbackUri.buildUpon
       .appendQueryParameter("k1", k1)
       .appendQueryParameter("private", "1")
       .appendQueryParameter("remoteid", remoteInfo.nodeSpecificPubKey.toString)
   }
 
-  override def cancel(): Unit = LNUrl
-    .level2DataResponse {
-      callbackUri.buildUpon
-        .appendQueryParameter("k1", k1)
-        .appendQueryParameter("cancel", "1")
-        .appendQueryParameter(
-          "remoteid",
-          remoteInfo.nodeSpecificPubKey.toString
-        )
-    }
-    .foreach(none, none)
+  override def cancel(): Unit =
+    LNUrl
+      .level2DataResponse {
+        callbackUri.buildUpon
+          .appendQueryParameter("k1", k1)
+          .appendQueryParameter("cancel", "1")
+          .appendQueryParameter(
+            "remoteid",
+            remoteInfo.nodeSpecificPubKey.toString
+          )
+      }
 
   val InputParser.nodeLink(nodeKey, hostAddress, portNumber) = uri: @unchecked
   val pubKey: PublicKey = PublicKey.fromBin(ByteVector.fromValidHex(nodeKey))
@@ -183,7 +182,7 @@ case class WithdrawRequest(
     balanceCheck: Option[String] = None,
     payLink: Option[String] = None
 ) extends CallbackLNUrlData {
-  def requestWithdraw(ext: PaymentRequestExt): Observable[String] =
+  def requestWithdraw(ext: PaymentRequestExt): Future[String] =
     LNUrl.level2DataResponse {
       callbackUri.buildUpon
         .appendQueryParameter("pr", ext.raw)
@@ -286,7 +285,7 @@ case class PayRequest(
       name: Option[String] = None,
       randomKey: Option[Crypto.PublicKey] = None,
       authKeyHost: Option[String] = None // None means never include auth key
-  ): Observable[PayRequestFinal] = {
+  ): Future[PayRequestFinal] = {
     val rawPayerdata: Option[String] = this.payerData
       .map(spec =>
         PayerData(

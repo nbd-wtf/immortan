@@ -3,7 +3,6 @@ package immortan.fsm
 import java.util.concurrent.Executors
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
-import rx.lang.scala.Observable
 import scoin.Crypto.PublicKey
 import scoin.MilliSatoshi
 import scoin.ln._
@@ -65,8 +64,8 @@ class TrampolineBroadcaster(cm: ChannelMaster)
 
   def initialState = TrampolineBroadcaster.RoutingDisabled
 
-  private val subscription =
-    Observable.interval(10.seconds).subscribe(_ => process(CMDBroadcast))
+  private val timer = every(10.seconds) { process(CMDBroadcast) }
+
   var broadcasters: Map[PublicKey, LastBroadcast] = Map.empty
 
   def doBroadcast(msg: Option[TrampolineStatus], info: RemoteNodeInfo): Unit =
@@ -75,7 +74,7 @@ class TrampolineBroadcaster(cm: ChannelMaster)
   def process(message: Any): Unit =
     scala.concurrent.Future(doProcess(message))
 
-  override def becomeShutDown(): Unit = subscription.unsubscribe()
+  override def becomeShutDown(): Unit = timer.cancel()
   become(RoutingOff, TrampolineBroadcaster.RoutingDisabled)
 
   override def onOperational(

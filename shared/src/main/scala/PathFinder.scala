@@ -3,10 +3,11 @@ package immortan
 import java.util.concurrent.{Executors, TimeUnit}
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable
+import scala.concurrent.duration._
+import scala.concurrent.Future
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import scala.util.Random.shuffle
 import com.google.common.cache.CacheBuilder
-import rx.lang.scala.Subscription
 import scoin._
 import scoin.Crypto.PublicKey
 import scoin.ln._
@@ -14,7 +15,6 @@ import scoin.ln._
 import immortan._
 import immortan.PathFinder._
 import immortan.fsm.SendMultiPart
-import immortan.utils.Rx
 import immortan.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import immortan.router.RouteCalculation.handleRouteRequest
 import immortan.router.Router.{Data, PublicChannel, RouteRequest}
@@ -72,8 +72,8 @@ abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag)
     extraEdgesCache.asMap.asScala
 
   var listeners: Set[CanBeRepliedTo] = Set.empty
-  var subscription: Option[Subscription] = None
   var syncMaster: Option[SyncMaster] = None
+  var periodicResync: Option[java.util.Timer] = None
 
   implicit val context: ExecutionContextExecutor =
     ExecutionContext fromExecutor Executors.newSingleThreadExecutor
@@ -104,17 +104,18 @@ abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag)
     case (
           CMDStartPeriodicResync,
           PathFinder.Waiting | PathFinder.Operational
-        ) if subscription.isEmpty =>
-      val repeat =
-        Rx.repeat(Rx.ioQueue, Rx.incHour, times = 97 to Int.MaxValue by 97)
+        ) if periodicResync.isEmpty =>
       // Resync every RESYNC_PERIOD hours + 1 hour to trigger a full resync, not just PHC resync
-      val delay = Rx.initDelay(
-        repeat,
-        getLastTotalResyncStamp,
-        RESYNC_PERIOD,
-        preStartMsec = 500
-      )
-      subscription = Some(delay.subscribe(_ => process(CMDResync)))
+      val futureProtectedStartMillis =
+        if (getLastTotalResyncStamp > System.currentTimeMillis) 0
+        else getLastTotalResyncStamp
+      val timeout =
+        futureProtectedStartMillis + RESYNC_PERIOD - System.currentTimeMillis
+
+      val t = new java.util.Timer()
+      val task = new java.util.TimerTask { def run() = process(CMDResync) }
+      t.schedule(task, 500L.max(timeout), RESYNC_PERIOD)
+      periodicResync = Some(t)
 
     case (calc: GetExpectedRouteFees, PathFinder.Operational) =>
       calc.sender process calcExpectedFees(calc.payee, calc.interHops)
@@ -235,10 +236,9 @@ abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag)
       updateLastNormalResyncStamp(System.currentTimeMillis)
 
       // Perform database cleaning in a different thread since it's slow and we are operational
-      Rx.ioQueue.foreach(
-        _ => normalBag.removeGhostChannels(ghostIds, oneSideScids),
-        none
-      )
+      Future {
+        normalBag.removeGhostChannels(ghostIds, oneSideScids)
+      }
       // Remove by now useless reference, this may be used to define if sync is on
       syncMaster = None
 

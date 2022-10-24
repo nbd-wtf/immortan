@@ -1,9 +1,11 @@
 package immortan.utils
 
+import scala.concurrent.Future
 import scoin.Crypto
 
 import immortan._
 import immortan.utils.ImplicitJsonFormats._
+import immortan.LNParams.ec
 
 object FiatRates {
   type BlockchainInfoItemMap = Map[String, BlockchainInfoItem]
@@ -53,24 +55,28 @@ class FiatRates(bag: DataBag) extends CanBeShutDown {
     "huf" -> "Hungarian forint"
   )
 
-  def reloadData: Fiat2Btc =
+  def reloadData(): Future[Fiat2Btc] =
     (Crypto.randomBytes(1).toInt(signed = false) % 3) match {
       case 0 =>
-        to[CoinGecko](
-          LNParams.connectionProvider.get(
-            "https://api.coingecko.com/api/v3/exchange_rates"
+        LNParams.connectionProvider
+          .get("https://api.coingecko.com/api/v3/exchange_rates")
+          .map(to[CoinGecko](_))
+          .map(
+            _.rates
+              .map { case (code, item) => code.toLowerCase -> item.value }
           )
-        ).rates.map { case (code, item) => code.toLowerCase -> item.value }
       case 1 =>
-        to[FiatRates.BlockchainInfoItemMap](
-          LNParams.connectionProvider.get("https://blockchain.info/ticker")
-        ).map { case (code, item) => code.toLowerCase -> item.last }
+        LNParams.connectionProvider
+          .get("https://blockchain.info/ticker")
+          .map(to[FiatRates.BlockchainInfoItemMap](_))
+          .map(_.map { case (code, item) => code.toLowerCase -> item.last })
       case _ =>
-        to[Bitpay](
-          LNParams.connectionProvider.get("https://bitpay.com/rates")
-        ).data.map { case BitpayItem(code, rate) =>
-          code.toLowerCase -> rate
-        }.toMap
+        LNParams.connectionProvider
+          .get("https://bitpay.com/rates")
+          .map(to[Bitpay](_))
+          .map(_.data.map { case BitpayItem(code, rate) =>
+            code.toLowerCase -> rate
+          }.toMap)
     }
 
   def updateInfo(newRates: Fiat2Btc): Unit = {

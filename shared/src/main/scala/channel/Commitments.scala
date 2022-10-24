@@ -7,8 +7,8 @@ import scoin._
 import scoin.ln._
 
 import immortan._
-import immortan.utils.Rx
 import immortan.channel._
+import immortan.LNParams.ec
 import immortan.channel.DirectedHtlc._
 import immortan.channel.Transactions._
 import immortan.channel.Helpers.HashToPreimage
@@ -424,12 +424,12 @@ case class NormalCommits(
 
     if (dangerousState) {
       // We force feerate update and block this thread while it's being executed, will have an updated info once done
-      Rx.retry(
-        Rx.ioQueue.map(_ => LNParams.feeRates.reloadData),
-        Rx.incSec,
-        1 to 3
-      ).toBlocking
-        .subscribe(LNParams.feeRates.updateInfo, none)
+      val wait = scala.collection.mutable.Stack(1, 2, 3)
+      LNParams.feeRates
+        .reloadData()
+        .foreach { data =>
+          LNParams.feeRates.updateInfo(data)
+        }
       // We have seen a suspiciously lower feerate update from peer, then force-checked current network feerates and they are NOT THAT low
       val stillDangerousState = newFeerate(
         LNParams.feeRates.info,

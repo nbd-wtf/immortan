@@ -1,11 +1,11 @@
 import java.util.concurrent.TimeUnit
 import scala.collection.mutable
 import scala.concurrent.duration._
+import scala.concurrent.{Future, Promise}
 import scala.language.implicitConversions
 import scodec.{Codec, DecodeResult}
 import scodec.bits.ByteVector
 import scodec.codecs._
-import rx.lang.scala.Observable
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import scoin.Crypto.{PrivateKey, PublicKey, ChaCha20Poly1305}
 import scoin.Psbt.KeyPathWithMaster
@@ -24,6 +24,7 @@ import immortan.crypto.Noise.KeyPair
 import immortan.utils.{FeeRatesInfo, ThrottledWork}
 import immortan.Channel
 import immortan._
+import immortan.LNParams.ec
 
 package object immortan {
   sealed trait ChannelKind
@@ -175,21 +176,68 @@ package object immortan {
     var state: S = initialState
     var data: T = _
 
-    lazy val delayedCMDWorker: ThrottledWork[String, Long] =
-      new ThrottledWork[String, Long] {
-        def work(cmd: String): Observable[Long] =
-          Observable.interval(1.second).doOnSubscribe {
-            secondsLeft = TOTAL_INTERVAL_SECONDS
-          }
+    val processDebounced = debounce(doProcess, TOTAL_INTERVAL_SECONDS.seconds)
+  }
 
-        def process(cmd: String, tickUpdateInterval: Long): Unit = {
-          secondsLeft = TOTAL_INTERVAL_SECONDS - (tickUpdateInterval + 1)
-          if (secondsLeft <= 0L) {
-            doProcess(cmd)
-            unsubscribeCurrentWork()
-          }
+  // perform an action after x seconds
+  def after(duration: FiniteDuration)(operation: => Unit): java.util.Timer = {
+    val timer = new java.util.Timer()
+    val task = new java.util.TimerTask {
+      def run() = operation
+    }
+    timer.schedule(task, duration.toMillis)
+    timer
+  }
+
+  // perform an action every x seconds
+  def every(duration: FiniteDuration)(operation: => Unit): java.util.Timer = {
+    val timer = new java.util.Timer()
+    val task = new java.util.TimerTask {
+      def run() = operation
+    }
+    timer.schedule(task, duration.toMillis, duration.toMillis)
+    timer
+  }
+
+  class DebouncedFunctionCanceled
+      extends Exception("debounced function canceled")
+
+  def debounce[A, B](
+      fn: Function[A, B],
+      duration: FiniteDuration
+  ): Function[A, Future[B]] = {
+    var timer = new java.util.Timer()
+    var task = new java.util.TimerTask { def run(): Unit = {} }
+    var promise = Promise[B]()
+
+    def debounced(arg: A): Future[B] = {
+      // every time the debounced function is called
+
+      // clear the timeout that might have existed from before
+      task.cancel()
+
+      // fail the promise that might be pending from before
+      //   a failed promise just means this call was canceled and replaced
+      //   by a more a recent one
+      if (!promise.isCompleted) promise.failure(new DebouncedFunctionCanceled)
+
+      // create a new promise and a new timer
+      promise = Promise[B]()
+      task = new java.util.TimerTask {
+        // actually run the function when the timer ends
+        def run(): Unit = {
+          val res = fn(arg)
+          if (!promise.isCompleted) promise.success(res)
         }
       }
+      timer.schedule(task, duration.toMillis)
+
+      // if this was the last time this function was called in rapid succession
+      //   the last promise will be fulfilled
+      promise.future
+    }
+
+    debounced
   }
 
   type Fiat2Btc = Map[String, Double]

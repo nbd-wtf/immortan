@@ -17,7 +17,6 @@ import scoin.hc._
 import immortan._
 import immortan.SyncMaster._
 import immortan.crypto.Noise.KeyPair
-import immortan.utils.Rx
 import immortan.router.Router.Data
 import immortan.router.{Announcements, Sync}
 
@@ -449,7 +448,7 @@ abstract class SyncMaster(
         data1.copy(ranges = data1.ranges - sd.sync.pair.them).withoutSync(sd),
         SyncMaster.ShortIDSync
       )
-      Rx.ioQueue.delay(5.seconds).foreach(_ => process(CMDAddSync))
+      after(5.seconds) { process(CMDAddSync) }
 
     case (
           CMDShortIdsComplete(sync, ranges1),
@@ -516,7 +515,7 @@ abstract class SyncMaster(
           data1: SyncMasterGossipData,
           SyncMaster.GossipSync
         ) =>
-      Rx.ioQueue.delay(5.seconds).foreach(_ => process(sd.sync.data))
+      after(5.seconds) { process(sd.sync.data) }
       become(data1.withoutSync(sd), SyncMaster.GossipSync)
 
     case (
@@ -719,7 +718,7 @@ abstract class PHCSyncMaster(routerData: Data)
         data1.copy(attemptsLeft = data1.attemptsLeft - 1).withoutSync(sd),
         SyncMaster.PHCSync
       )
-      Rx.ioQueue.delay(5.seconds).foreach(_ => process(CMDAddSync))
+      after(5.seconds) { process(CMDAddSync) }
 
     case (_: SyncWorker, _, SyncMaster.PHCSync) =>
       // No more reconnection attempts left

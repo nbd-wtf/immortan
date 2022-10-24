@@ -16,13 +16,13 @@ class SQLiteLNUrlPay(db: DBInterface) {
       db.makePreparedQuery(LNUrlPayTable.updateDescriptionSql)
     db.change(updateDescriptionSqlPQ, description.toJson.compactPrint, pay)
     for (label <- description.label) addSearchableLink(label, domain)
-    ChannelMaster.next(ChannelMaster.payMarketDbStream)
+    ChannelMaster.payMarketDbStream.fire()
     updateDescriptionSqlPQ.close()
   }
 
   def remove(pay: String): Unit = {
     db.change(LNUrlPayTable.killSql, pay)
-    ChannelMaster.next(ChannelMaster.payMarketDbStream)
+    ChannelMaster.payMarketDbStream.fire()
   }
 
   def saveLink(info: LNUrlPayLink): Unit = db txWrap {
@@ -50,7 +50,7 @@ class SQLiteLNUrlPay(db: DBInterface) {
       info.payString
     )
     addSearchableLink(info.payMetaData.get.queryText(info.domain), info.domain)
-    ChannelMaster.next(ChannelMaster.payMarketDbStream)
+    ChannelMaster.payMarketDbStream.fire()
     updInfoSqlPQ.close()
     newSqlPQ.close()
   }

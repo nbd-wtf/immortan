@@ -33,7 +33,7 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
 
   def removePaymentInfo(paymentHash: ByteVector32): Unit = {
     db.change(PaymentTable.killSql, paymentHash.toHex)
-    ChannelMaster.next(ChannelMaster.paymentDbStream)
+    ChannelMaster.paymentDbStream.fire()
   }
 
   def addSearchablePayment(search: String, paymentHash: ByteVector32): Unit = {
@@ -86,7 +86,7 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
       payHash.toHex
     )
     for (label <- description.label) addSearchablePayment(label, payHash)
-    ChannelMaster.next(ChannelMaster.paymentDbStream)
+    ChannelMaster.paymentDbStream.fire()
     updateDescriptionSqlPQ.close()
   }
 
@@ -98,7 +98,7 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
       System.currentTimeMillis: JLong /* UPDATED */,
       fulfill.ourAdd.paymentHash.toHex
     )
-    ChannelMaster.next(ChannelMaster.paymentDbStream)
+    ChannelMaster.paymentDbStream.fire()
   }
 
   def updOkIncoming(
@@ -112,7 +112,7 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
       System.currentTimeMillis: JLong /* UPDATED */,
       paymentHash.toHex
     )
-    ChannelMaster.next(ChannelMaster.paymentDbStream)
+    ChannelMaster.paymentDbStream.fire()
   }
 
   def updAbortedOutgoing(paymentHash: ByteVector32): Unit = {
@@ -122,7 +122,7 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
       System.currentTimeMillis: JLong /* UPDATED */,
       paymentHash.toHex
     )
-    ChannelMaster.next(ChannelMaster.paymentDbStream)
+    ChannelMaster.paymentDbStream.fire()
   }
 
   def replaceOutgoingPayment(
@@ -157,7 +157,7 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
         chainFee.toLong: JLong,
         0: JInt /* INCOMING TYPE = 0 */
       )
-      ChannelMaster.next(ChannelMaster.paymentDbStream)
+      ChannelMaster.paymentDbStream.fire()
       newSqlPQ.close()
     }
 
@@ -192,7 +192,7 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
         0L: JLong /* NO CHAIN FEE FOR INCOMING PAYMENTS */,
         1: JInt /* INCOMING TYPE = 1 */
       )
-      ChannelMaster.next(ChannelMaster.paymentDbStream)
+      ChannelMaster.paymentDbStream.fire()
       newSqlPQ.close()
     }
 
@@ -256,7 +256,7 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
       relayed.toLong: JLong,
       earned.toLong: JLong
     )
-    ChannelMaster.next(ChannelMaster.relayDbStream)
+    ChannelMaster.relayDbStream.fire()
   }
 
   def relaySummary: Try[RelaySummary] =

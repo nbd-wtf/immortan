@@ -8,6 +8,7 @@ import scoin.ln.Init
 import scoin.hc.{HostedChannelMessage, QueryPreimages, ReplyPreimages}
 
 import immortan.{
+  after,
   randomKeyPair,
   StateMachine,
   CommsTower,
@@ -16,7 +17,6 @@ import immortan.{
   RemoteNodeInfo
 }
 import immortan.channel.Helpers.HashToPreimage
-import immortan.utils.Rx
 
 object PreimageCheck {
   sealed trait State
@@ -71,8 +71,10 @@ abstract class PreimageCheck
   def doProcess(change: Any): Unit = (change, state) match {
     case (msg: PreimageCheck.PeerDisconnected, PreimageCheck.Operational) =>
       // Keep trying to reconnect with delays until final timeout
-      Rx.ioQueue.delay(3.seconds).foreach(_ => process(msg.worker))
-      CommsTower forget msg.worker.pair
+      after(3.seconds) {
+        process(msg.worker)
+      }
+      CommsTower.forget(msg.worker.pair)
 
     case (worker: CommsTower.Worker, PreimageCheck.Operational) =>
       val newPair @ (info, pair) = randomPair(worker.info)
@@ -105,7 +107,10 @@ abstract class PreimageCheck
       )
       for ((info, pair) <- data.pairs)
         CommsTower.listen(Set(listener), pair, info)
-      Rx.ioQueue.delay(30.seconds).foreach(_ => doCheck(true))
+
+      after(30.seconds) {
+        doCheck(true)
+      }
 
     case _ =>
   }

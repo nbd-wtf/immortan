@@ -4,6 +4,7 @@ import java.nio.ByteOrder
 import java.util.concurrent.Executors
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
 import scodec.bits.ByteVector
+import scodec.codecs.uint16
 import scoin._
 import scoin.Protocol
 import scoin.ln.{LightningMessage, LightningMessageCodecs, Pong, Init}
@@ -136,7 +137,17 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
           case _ if msg.isInstanceOf[Init] || msg.isInstanceOf[Pong] =>
             LightningMessageCodecs.lightningMessageCodec.encode(msg)
           case HostedChannelKind =>
-            HostedChannelCodecs.hostedMessageCodec.encode(msg)
+            HostedChannelCodecs.hostedMessageCodec
+              .encode(msg)
+              .map(_.toByteVector)
+              .map(s =>
+                s.take(2) ++ uint16
+                  .encode(s.size.toInt - 4)
+                  .require
+                  .toByteVector ++ s
+                  .drop(2)
+              )
+              .map(_.toBitVector)
         }
 
         val (enc, ciphertext) =

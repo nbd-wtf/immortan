@@ -30,7 +30,7 @@ import org.json4s.{JInt, JLong, JString}
 import scodec.bits.ByteVector
 import scoin._
 
-import immortan.LNParams
+import immortan.{LNParams, every, after}
 import immortan.LNParams.ec
 import immortan.electrum.ElectrumClient._
 
@@ -558,25 +558,17 @@ class ElectrumClient(
 
   // We need to regularly send a ping in order not to get disconnected
   val pingTrigger = {
-    val t = new java.util.Timer()
-    val task = new java.util.TimerTask {
-      def run() = {
-        if (ctx.isEmpty)
-          pool.killClient(self, "a long time has passed without a connection")
-        else {
-          val pong = self.request[PingResponse.type](Ping)
-          val pongWaiter = new java.util.TimerTask {
-            def run(): Unit = {
-              if (!pong.isCompleted)
-                pool.killClient(self, "taking too long to answer our ping")
-            }
-          }
-          t.schedule(pongWaiter, 14000L)
+    every(16.seconds) {
+      if (ctx.isEmpty)
+        pool.killClient(self, "a long time has passed without a connection")
+      else {
+        val pong = self.request[PingResponse.type](Ping)
+        after(14.seconds) {
+          if (!pong.isCompleted)
+            pool.killClient(self, "taking too long to answer our ping")
         }
       }
     }
-    t.schedule(task, 16000L, 16000L)
-    t
   }
 
   def shutdown(): Unit = {

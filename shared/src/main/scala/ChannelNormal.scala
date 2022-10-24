@@ -2,6 +2,7 @@ package immortan
 
 import scala.collection.immutable.Queue
 import scala.concurrent.duration._
+import scala.concurrent.Future
 import scala.annotation.nowarn
 import scala.util.Try
 import com.softwaremill.quicklens._
@@ -13,7 +14,6 @@ import scoin.ln._
 import immortan._
 import immortan.Channel._
 import immortan.sqlite.ChannelTxFeesTable
-import immortan.utils.Rx
 import immortan.blockchain._
 import immortan.electrum._
 import immortan.electrum.ElectrumWallet.GenerateTxResponse
@@ -731,16 +731,15 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
           nextRemoteCommit.spec,
           norm.commitments.channelFeatures.commitmentFormat
         )
-        // This includes hashing and db calls on potentially dozens of in-flight HTLCs, do this in separate thread but throw if it fails to know early
-        Rx.ioQueue.foreach(
-          _ =>
-            bag.putHtlcInfos(
-              out ++ in,
-              norm.shortChannelId,
-              nextRemoteCommit.index
-            ),
-          throw _
-        )
+        // This includes hashing and db calls on potentially dozens of in-flight HTLCs,
+        //   do this in separate thread but throw if it fails to know early
+        Future {
+          bag.putHtlcInfos(
+            out ++ in,
+            norm.shortChannelId,
+            nextRemoteCommit.index
+          )
+        }
         StoreBecomeSend(
           norm.copy(commitments = newCommits),
           Channel.Open,
@@ -782,10 +781,11 @@ abstract class ChannelNormal(bag: ChannelBag) extends Channel {
       case (norm: DATA_NORMAL, commitSig: CommitSig, Channel.Open) =>
         val (newCommits, revocation) = norm.commitments.receiveCommit(commitSig)
         // If feerate update is required AND becomes possible then we schedule another check shortly
-        if (norm.feeUpdateRequired)
-          Rx.ioQueue
-            .delay(1.second)
-            .foreach(_ => process(CMD_CHECK_FEERATE), none)
+        if (norm.feeUpdateRequired) {
+          after(1.second) {
+            process(CMD_CHECK_FEERATE)
+          }
+        }
         StoreBecomeSend(
           norm.copy(commitments = newCommits),
           Channel.Open,

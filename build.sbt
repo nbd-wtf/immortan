@@ -20,25 +20,27 @@ lazy val immortan = crossProject(JVMPlatform, JSPlatform)
     name := "immortan",
     description := "A lightweight client-side Lightning and Hosted Channels implementation.",
     libraryDependencies ++= Seq(
+
       // electrum client
       "org.json4s" % "json4s-native_2.13" % "3.6.7",
       "io.netty" % "netty-all" % "4.1.42.Final",
       "com.lihaoyi" % "castor_2.13" % "0.2.1",
 
       // must be replaced
-      "com.google.guava" % "guava" % "31.1-jre",
-      "io.reactivex" % "rxscala_2.13" % "0.27.0",
       "io.spray" % "spray-json_2.13" % "1.3.5",
 
-      // good
-      "com.fiatjaf" %% "scoin" % "0.5.0-SNAPSHOT",
-      "org.scala-lang.modules" %% "scala-parser-combinators" % "2.1.1",
-      "com.softwaremill.quicklens" %% "quicklens" % "1.8.4",
+      // non-essencial stuff
+      "com.google.guava" % "guava" % "31.1-jre",
+
+      "com.fiatjaf" %%% "scoin" % "0.5.0-SNAPSHOT",
+      "org.scala-lang.modules" %%% "scala-parser-combinators" % "2.1.1",
+      "com.softwaremill.quicklens" %%% "quicklens" % "1.8.4",
     )
   )
   .jvmSettings(
     crossScalaVersions := List("2.13.8", "3.2.0"),
     libraryDependencies ++= Seq(
+
       // test
       "com.lihaoyi" % "utest_2.13" % "0.7.11" % Test,
       "com.lihaoyi" % "requests_2.13" % "0.7.0" % Test,

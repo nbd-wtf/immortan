@@ -1,11 +1,13 @@
 package immortan.utils
 
+import scala.concurrent.Future
 import scoin._
 
 import immortan.{CanBeShutDown, DataBag, LNParams}
 import immortan.utils.FeeRates._
 import immortan.utils.ImplicitJsonFormats._
 import immortan.blockchain.fee._
+import immortan.LNParams.ec
 
 object FeeRates {
   val minPerKw: FeeratePerKw = FeeratePerKw(1000L.sat)
@@ -48,27 +50,19 @@ object FeeRates {
 class FeeRates(bag: DataBag) extends CanBeShutDown {
   override def becomeShutDown(): Unit = listeners = Set.empty
 
-  def reloadData: FeeratesPerKB =
+  def reloadData(): Future[FeeratesPerKB] =
     Crypto.randomBytes(4).toInt(signed = false) % 3 match {
       case 0 =>
-        new EsploraFeeProvider(
-          "https://blockstream.info/api/fee-estimates"
-        ).provide
+        EsploraFeeProvider("https://blockstream.info/api/fee-estimates").provide
       case 1 =>
-        new EsploraFeeProvider(
-          "https://mempool.space/api/fee-estimates"
-        ).provide
+        EsploraFeeProvider("https://mempool.space/api/fee-estimates").provide
       case _ => BitgoFeeProvider.provide
     }
 
   def updateInfo(newPerKB: FeeratesPerKB): Unit = {
-    val history1 =
+    val h =
       (newPerKB :: info.history).diff(defaultFeerates :: Nil).take(2)
-    info = FeeRatesInfo(
-      smoothedFeeratesPerKw(history1),
-      history1,
-      System.currentTimeMillis
-    )
+    info = FeeRatesInfo(smoothedFeeratesPerKw(h), h, System.currentTimeMillis)
     for (lst <- listeners) lst.onFeeRates(info)
   }
 
@@ -106,26 +100,24 @@ trait FeeRatesProvider {
 }
 
 // Esplora
-
-class EsploraFeeProvider(val url: String) extends FeeRatesProvider {
+case class EsploraFeeProvider(url: String) extends FeeRatesProvider {
   type EsploraFeeStructure = Map[String, Long]
 
-  def provide: FeeratesPerKB = {
-    val structure =
-      to[EsploraFeeStructure](LNParams.connectionProvider.get(url))
-
-    FeeratesPerKB(
-      mempoolMinFee = extractFeerate(structure, 1008),
-      block_1 = extractFeerate(structure, 1),
-      blocks_2 = extractFeerate(structure, 2),
-      blocks_6 = extractFeerate(structure, 6),
-      blocks_12 = extractFeerate(structure, 12),
-      blocks_36 = extractFeerate(structure, 36),
-      blocks_72 = extractFeerate(structure, 72),
-      blocks_144 = extractFeerate(structure, 144),
-      blocks_1008 = extractFeerate(structure, 1008)
-    )
-  }
+  def provide: Future[FeeratesPerKB] =
+    LNParams.connectionProvider.get(url).map(to[EsploraFeeStructure](_)).map {
+      structure =>
+        FeeratesPerKB(
+          mempoolMinFee = extractFeerate(structure, 1008),
+          block_1 = extractFeerate(structure, 1),
+          blocks_2 = extractFeerate(structure, 2),
+          blocks_6 = extractFeerate(structure, 6),
+          blocks_12 = extractFeerate(structure, 12),
+          blocks_36 = extractFeerate(structure, 36),
+          blocks_72 = extractFeerate(structure, 72),
+          blocks_144 = extractFeerate(structure, 144),
+          blocks_1008 = extractFeerate(structure, 1008)
+        )
+    }
 
   // First we keep only fee ranges with a max block delay below the limit
   // out of all the remaining fee ranges, we select the one with the minimum higher bound
@@ -148,22 +140,21 @@ case class BitGoFeeRateStructure(
 object BitgoFeeProvider extends FeeRatesProvider {
   val url = "https://www.bitgo.com/api/v2/btc/tx/fee"
 
-  def provide: FeeratesPerKB = {
-    val structure =
-      to[BitGoFeeRateStructure](LNParams.connectionProvider.get(url))
-
-    FeeratesPerKB(
-      mempoolMinFee = extractFeerate(structure, 1008),
-      block_1 = extractFeerate(structure, 1),
-      blocks_2 = extractFeerate(structure, 2),
-      blocks_6 = extractFeerate(structure, 6),
-      blocks_12 = extractFeerate(structure, 12),
-      blocks_36 = extractFeerate(structure, 36),
-      blocks_72 = extractFeerate(structure, 72),
-      blocks_144 = extractFeerate(structure, 144),
-      blocks_1008 = extractFeerate(structure, 1008)
-    )
-  }
+  def provide: Future[FeeratesPerKB] =
+    LNParams.connectionProvider.get(url).map(to[BitGoFeeRateStructure](_)).map {
+      structure =>
+        FeeratesPerKB(
+          mempoolMinFee = extractFeerate(structure, 1008),
+          block_1 = extractFeerate(structure, 1),
+          blocks_2 = extractFeerate(structure, 2),
+          blocks_6 = extractFeerate(structure, 6),
+          blocks_12 = extractFeerate(structure, 12),
+          blocks_36 = extractFeerate(structure, 36),
+          blocks_72 = extractFeerate(structure, 72),
+          blocks_144 = extractFeerate(structure, 144),
+          blocks_1008 = extractFeerate(structure, 1008)
+        )
+    }
 
   // first we keep only fee ranges with a max block delay below the limit
   // out of all the remaining fee ranges, we select the one with the minimum higher bound

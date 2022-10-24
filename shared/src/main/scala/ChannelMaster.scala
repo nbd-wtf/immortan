@@ -6,7 +6,6 @@ import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Try
 import com.google.common.cache.LoadingCache
-import rx.lang.scala.Subject
 import scoin._
 import scoin.Crypto.{PrivateKey, PublicKey}
 import scoin.ln._
@@ -22,7 +21,7 @@ import immortan.ChannelListener.{Malfunction, Transition}
 import immortan.ChannelMaster._
 import immortan.fsm._
 import immortan.fsm.OutgoingPaymentMaster.CMDChanGotOnline
-import immortan.utils.{PaymentRequestExt, Rx}
+import immortan.utils.{PaymentRequestExt, ThrottledEventStream, EventStream}
 
 object ChannelMaster {
   type PreimageTry = Try[ByteVector32]
@@ -35,19 +34,16 @@ object ChannelMaster {
   type ReasonableTrampolines = Iterable[ReasonableTrampoline]
   type ReasonableLocals = Iterable[ReasonableLocal]
 
-  final val updateCounter = new AtomicLong(0)
-  final val stateUpdateStream: Subject[Long] = Subject[Long]()
-  final val statusUpdateStream: Subject[Long] = Subject[Long]()
+  final val stateUpdateStream = new ThrottledEventStream(600.millis)
+  final val statusUpdateStream = new ThrottledEventStream(600.millis)
 
-  final val payMarketDbStream: Subject[Long] = Subject[Long]()
-  final val paymentDbStream: Subject[Long] = Subject[Long]()
-  final val relayDbStream: Subject[Long] = Subject[Long]()
-  final val txDbStream: Subject[Long] = Subject[Long]()
+  final val payMarketDbStream = new ThrottledEventStream(600.millis)
+  final val paymentDbStream = new ThrottledEventStream(600.millis)
+  final val relayDbStream = new ThrottledEventStream(600.millis)
+  final val txDbStream = new ThrottledEventStream(600.millis)
 
-  def next(stream: Subject[Long] = null): Unit =
-    stream.onNext(updateCounter.incrementAndGet)
-  final val inFinalized: Subject[IncomingProcessorData] =
-    Subject[IncomingProcessorData]()
+  final val inFinalized =
+    new EventStream[IncomingProcessorData]
 
   final val NO_PREIMAGE = ByteVector32.One
   final val NO_SECRET = ByteVector32.Zeroes
@@ -240,7 +236,7 @@ class ChannelMaster(
     // Let subscribers know after no incoming payment parts are left
     // payment itself may be fulfilled with preimage revealed or failed
     inProcessors -= data.fullTag
-    inFinalized.onNext(data)
+    inFinalized.fire(data)
   }
 
   // CONNECTION LISTENER
@@ -272,7 +268,7 @@ class ChannelMaster(
   override def onDisconnect(worker: CommsTower.Worker): Unit = {
     allFromNode(worker.info.nodeId).foreach(_.chan process CMD_SOCKET_OFFLINE)
     opm process TrampolinePeerDisconnected(worker.info.nodeId)
-    Rx.ioQueue.delay(5.seconds).foreach(_ => initConnect())
+    after(5.seconds) { initConnect() }
   }
 
   // CHANNEL MANAGEMENT
@@ -280,7 +276,7 @@ class ChannelMaster(
     // Outgoing FSMs won't receive anything without channel listeners
     for (channel <- all.values) channel.listeners = Set.empty
     for (fsm <- inProcessors.values) fsm.becomeShutDown()
-    for (sub <- pf.subscription) sub.unsubscribe()
+    for (sub <- pf.periodicResync) sub.cancel()
     pf.listeners = Set.empty
     tb.becomeShutDown()
   }
@@ -510,33 +506,33 @@ class ChannelMaster(
 
   override def onBecome: PartialFunction[Transition, Unit] = {
     case (_, _, nextNc: DATA_NORMAL, _, _) if nextNc.localShutdown.nonEmpty =>
-      next(stateUpdateStream)
+      stateUpdateStream.fire()
     case (_, _: DATA_NORMAL, _: DATA_NEGOTIATING, _, _) =>
-      next(stateUpdateStream)
+      stateUpdateStream.fire()
     case (_, _, _, prev, Channel.Closing) if prev != Channel.Closing =>
-      next(stateUpdateStream)
+      stateUpdateStream.fire()
 
     case (_, prevHc: HostedCommits, nextHc: HostedCommits, _, _)
         if prevHc.error.isEmpty && nextHc.error.nonEmpty =>
       // Previously operational HC got suspended
-      next(stateUpdateStream)
+      stateUpdateStream.fire()
 
     case (_, prevHc: HostedCommits, nextHc: HostedCommits, _, _)
         if prevHc.error.nonEmpty && nextHc.error.isEmpty =>
       // Previously suspended HC got operational
       opm process CMDChanGotOnline
-      next(stateUpdateStream)
+      stateUpdateStream.fire()
 
     case (_, _, _, prev, Channel.Sleeping) if prev != Channel.Sleeping =>
       // Channel which was not SLEEPING became SLEEPING
-      next(statusUpdateStream)
+      statusUpdateStream.fire()
 
     case (chan, _, _, prev, Channel.Open) if prev != Channel.Open =>
       // Channel which was not open became operational and open
       // We may get here after getting fresh feerates so check again
       chan process CMD_CHECK_FEERATE
       opm process CMDChanGotOnline
-      next(statusUpdateStream)
+      statusUpdateStream.fire()
   }
 
   // Used to notify about an existance of preimage BEFORE new state is committed in origin channel
@@ -593,7 +589,7 @@ class ChannelMaster(
     // Maybe remove successful outgoing FSMs
     opm.stateUpdated(inFlightsBag)
 
-    next(stateUpdateStream)
+    stateUpdateStream.fire()
   }
 
   // Mainly to prolong FSM timeouts once another add is seen (but not yet committed)

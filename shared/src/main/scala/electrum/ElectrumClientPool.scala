@@ -11,7 +11,6 @@ import org.json4s.native.JsonMethods
 import scoin.{Block, BlockHeader, ByteVector32}
 import scoin.ln.NodeAddress
 
-import immortan.LNParams
 import immortan.electrum.{
   CurrentBlockCount,
   ElectrumReady,
@@ -29,8 +28,8 @@ import immortan.electrum.ElectrumClient.{
   ScriptHashSubscriptionResponse
 }
 import immortan.electrum.ElectrumClientPool._
-
-import LNParams.ec
+import immortan.{LNParams, after, debounce}
+import immortan.LNParams.ec
 
 class ElectrumClientPool(
     blockCount: AtomicLong,
@@ -73,13 +72,9 @@ class ElectrumClientPool(
       }
 
       // connect to a new one after a while
-      val t = new java.util.Timer()
-      val task = new java.util.TimerTask {
-        def run() = {
-          connect()
-        }
+      after(3.seconds) {
+        connect()
       }
-      t.schedule(task, 3000L)
     }
 
     // shutdown this one
@@ -129,14 +124,10 @@ class ElectrumClientPool(
       // we've exhausted all our addresses, this only happens
       //  when there is some weird problem with our connection
       //  so wait a while and start over
-      val t = new java.util.Timer()
-      val task = new java.util.TimerTask {
-        def run() = {
-          usedAddresses = Set.empty
-          initConnect()
-        }
+      after(10.seconds) {
+        usedAddresses = Set.empty
+        initConnect()
       }
-      t.schedule(task, 10000L)
     }
 
     pickedAddress.foreach { esa =>
@@ -196,16 +187,10 @@ class ElectrumClientPool(
             else if (attemptN < 5) {
               // the history didn't match the status we were looking for, wait a little and try again
               val p = Promise[List[TransactionHistoryItem]]()
-              val t = new java.util.Timer()
-              val task = new java.util.TimerTask {
-                def run() = {
-                  getScriptHashHistory(scriptHash, Some(status), attemptN + 1)
-                    .onComplete(
-                      p.complete(_)
-                    )
-                }
+              after(3.seconds) {
+                getScriptHashHistory(scriptHash, Some(status), attemptN + 1)
+                  .onComplete(p.complete(_))
               }
-              t.schedule(task, 3000L)
               p.future
             } else
               // we only try that for a while, then we give up and fail

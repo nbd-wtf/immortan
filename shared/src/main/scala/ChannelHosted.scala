@@ -294,6 +294,7 @@ abstract class ChannelHosted extends Channel {
           cmd: CMD_ADD_HTLC,
           Channel.Open | Channel.Sleeping
         ) =>
+      System.err.println(s"~> sending HTLC ${cmd.firstAmount}")
       hc.sendAdd(cmd, blockHeight = LNParams.blockCount.get) match {
         case _ if hc.error.isDefined =>
           events.addRejectedLocally(ChannelNotAbleToSend(cmd.incompleteAdd))
