@@ -29,9 +29,6 @@ lazy val immortan = crossProject(JVMPlatform, JSPlatform)
       // must be replaced
       "io.spray" % "spray-json_2.13" % "1.3.5",
 
-      // non-essencial stuff
-      "com.google.guava" % "guava" % "31.1-jre",
-
       "com.fiatjaf" %%% "scoin" % "0.5.0-SNAPSHOT",
       "org.scala-lang.modules" %%% "scala-parser-combinators" % "2.1.1",
       "com.softwaremill.quicklens" %%% "quicklens" % "1.8.4",
@@ -41,6 +38,8 @@ lazy val immortan = crossProject(JVMPlatform, JSPlatform)
   .jvmSettings(
     crossScalaVersions := List("2.13.8", "3.2.0"),
     libraryDependencies ++= Seq(
+      // non-essencial stuff
+      "com.google.guava" % "guava" % "31.1-jre",
 
       // test
       "com.lihaoyi" % "utest_2.13" % "0.7.11" % Test,

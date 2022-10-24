@@ -45,7 +45,9 @@ object PaymentIncomingFinalSpec extends TestSuite {
         cm
       )
 
-      assert(cm.getPreimageMemo.get(invoice.paymentHash).isFailure)
+      assert(
+        cm.getPreimage(invoice.paymentHash, None).isEmpty
+      )
       assert(
         cm.payBag
           .getPaymentInfo(invoice.paymentHash)
@@ -63,7 +65,7 @@ object PaymentIncomingFinalSpec extends TestSuite {
         fsm.data.asInstanceOf[IncomingRevealed].preimage == preimage
       )
       WAIT_UNTIL_TRUE(
-        cm.getPreimageMemo.get(invoice.paymentHash).get == preimage
+        cm.getPreimage(invoice.paymentHash, None).get == preimage
       )
       WAIT_UNTIL_TRUE(
         cm.payBag
@@ -143,7 +145,8 @@ object PaymentIncomingFinalSpec extends TestSuite {
         fsm.data.asInstanceOf[IncomingRevealed].preimage == preimage
       )
       WAIT_UNTIL_TRUE(
-        cm.getPreimageMemo.get(invoice.paymentHash).get == preimage
+        cm.getPreimage(invoice.paymentHash, invoice.paymentSecret)
+          .get == preimage
       )
       WAIT_UNTIL_TRUE(
         cm.payBag
@@ -167,7 +170,8 @@ object PaymentIncomingFinalSpec extends TestSuite {
         fsm2.data.asInstanceOf[IncomingRevealed].preimage == preimage
       )
       WAIT_UNTIL_TRUE(
-        cm.getPreimageMemo.get(invoice.paymentHash).get == preimage
+        cm.getPreimage(invoice.paymentHash, invoice.paymentSecret)
+          .get == preimage
       )
       WAIT_UNTIL_TRUE(
         cm.payBag

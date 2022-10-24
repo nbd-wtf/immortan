@@ -13,7 +13,6 @@ import immortan.{LNParams, RemoteNodeInfo, trimmed}
 import immortan.router.Graph.GraphStructure
 import immortan.router.RouteCalculation
 import immortan.utils.InputParser._
-import immortan.utils.uri.Uri
 
 object InputParser {
   var value: Any = new String
@@ -87,7 +86,9 @@ object InputParser {
       else if (isLightningInvoice)
         PaymentRequestExt.fromUri(withoutSlashes.toLowerCase)
       else
-        addressToAmount getOrElse BitcoinUri.fromRaw(s"$bitcoin$withoutSlashes")
+        addressToAmount.getOrElse(
+          BitcoinUri.fromRaw(s"$bitcoin$withoutSlashes")
+        )
   }
 }
 

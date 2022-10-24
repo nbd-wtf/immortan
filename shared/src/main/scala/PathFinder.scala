@@ -7,7 +7,6 @@ import scala.concurrent.duration._
 import scala.concurrent.Future
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import scala.util.Random.shuffle
-import com.google.common.cache.CacheBuilder
 import scoin._
 import scoin.Crypto.PublicKey
 import scoin.ln._
@@ -64,12 +63,18 @@ abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag)
     extends StateMachine[Data, PathFinder.State] { self =>
   def initialState = PathFinder.Waiting
 
-  private val extraEdgesCache = CacheBuilder.newBuilder
-    .expireAfterWrite(1, TimeUnit.DAYS)
-    .maximumSize(500)
-    .build[ShortChannelId, GraphEdge]
-  val extraEdges: mutable.Map[ShortChannelId, GraphEdge] =
-    extraEdgesCache.asMap.asScala
+  val extraEdges = scala.collection.mutable.Map.empty[ShortChannelId, GraphEdge]
+  private val extraEdgesOrdered =
+    scala.collection.mutable.Queue.empty[ShortChannelId]
+
+  private def addExtraEdge(scid: ShortChannelId, ge: GraphEdge): Unit =
+    synchronized {
+      if (extraEdges.size > 350)
+        extraEdges.remove(extraEdgesOrdered.dequeue())
+
+      extraEdgesOrdered.enqueue(scid)
+      extraEdges += (scid -> ge)
+    }
 
   var listeners: Set[CanBeRepliedTo] = Set.empty
   var syncMaster: Option[SyncMaster] = None
@@ -281,7 +286,7 @@ abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag)
         if !data.channels.contains(edge.desc.shortChannelId) =>
       // We add assisted routes to graph as if they are normal channels, also rememeber them to refill later if graph gets reloaded
       // these edges will be private most of the time, but they also may be public but yet not visible to us for some reason
-      extraEdgesCache.put(edge.updExt.update.shortChannelId, edge)
+      addExtraEdge(edge.updExt.update.shortChannelId, edge)
       become(
         data.copy(graph = data.graph replaceEdge edge),
         state
@@ -326,7 +331,7 @@ abstract class PathFinder(val normalBag: NetworkBag, val hostedBag: NetworkBag)
 
       case None =>
         // This is a legitimate private/unknown-public update
-        extraEdgesCache.put(edge.updExt.update.shortChannelId, edge)
+        addExtraEdge(edge.updExt.update.shortChannelId, edge)
         // Don't save this in DB but update runtime graph
         data.copy(graph = data.graph replaceEdge edge)
     }

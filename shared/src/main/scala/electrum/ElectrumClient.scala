@@ -636,7 +636,7 @@ class ElectrumClient(
   if (LNParams.connectionProvider.proxyAddress.isDefined)
     b.resolver(NoopAddressResolverGroup.INSTANCE)
 
-  channelOpenFuture addListeners new ChannelFutureListener {
+  channelOpenFuture.addListeners(new ChannelFutureListener {
     override def operationComplete(future: ChannelFuture): Unit = {
       if (!future.isSuccess) {
         // the connection was not open successfully, close this actor
@@ -651,7 +651,7 @@ class ElectrumClient(
         })
       }
     }
-  }
+  })
 
   class ExceptionHandler extends ChannelDuplexHandler {
     override def connect(

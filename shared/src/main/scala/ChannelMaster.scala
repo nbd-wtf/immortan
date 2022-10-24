@@ -5,7 +5,7 @@ import scala.collection.mutable
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Try
-import com.google.common.cache.LoadingCache
+import scodec.bits.ByteVector
 import scoin._
 import scoin.Crypto.{PrivateKey, PublicKey}
 import scoin.ln._
@@ -24,16 +24,6 @@ import immortan.fsm.OutgoingPaymentMaster.CMDChanGotOnline
 import immortan.utils.{PaymentRequestExt, ThrottledEventStream, EventStream}
 
 object ChannelMaster {
-  type PreimageTry = Try[ByteVector32]
-  type PaymentInfoTry = Try[PaymentInfo]
-  type RevealedLocalFulfills = Iterable[LocalFulfill]
-  type TxConfirmedAtOpt = Option[TxConfirmedAt]
-
-  type OutgoingAdds = Iterable[UpdateAddHtlc]
-  type ReasonableResolutions = Iterable[ReasonableResolution]
-  type ReasonableTrampolines = Iterable[ReasonableTrampoline]
-  type ReasonableLocals = Iterable[ReasonableLocal]
-
   final val stateUpdateStream = new ThrottledEventStream(600.millis)
   final val statusUpdateStream = new ThrottledEventStream(600.millis)
 
@@ -49,7 +39,7 @@ object ChannelMaster {
   final val NO_SECRET = ByteVector32.Zeroes
 
   def dangerousHCRevealed(
-      allRevealed: Map[ByteVector32, RevealedLocalFulfills],
+      allRevealed: Map[ByteVector32, Iterable[LocalFulfill]],
       tip: Long,
       hash: ByteVector32
   ): Iterable[LocalFulfill] = {
@@ -64,8 +54,8 @@ object ChannelMaster {
 }
 
 case class InFlightPayments(
-    out: Map[FullPaymentTag, OutgoingAdds],
-    in: Map[FullPaymentTag, ReasonableResolutions] = Map.empty
+    out: Map[FullPaymentTag, Iterable[UpdateAddHtlc]],
+    in: Map[FullPaymentTag, Iterable[ReasonableResolution]] = Map.empty
 ) {
   // Incoming HTLC tag is extracted from onion, corresponsing outgoing HTLC tag is stored in TLV, this way in/out can be linked
   val allTags: Set[FullPaymentTag] = out.keySet ++ in.keySet
@@ -79,13 +69,20 @@ class ChannelMaster(
 ) extends ChannelListener
     with ConnectionListener
     with CanBeShutDown {
-  val initResolveMemo: LoadingCache[UpdateAddHtlcExt, IncomingResolution] =
-    memoize(initResolve)
-  val getPreimageMemo: LoadingCache[ByteVector32, PreimageTry] = memoize(
-    payBag.getPreimage
-  )
   val opm: OutgoingPaymentMaster = new OutgoingPaymentMaster(this)
   val tb: TrampolineBroadcaster = new TrampolineBroadcaster(this)
+
+  def getPreimage(
+      hash: ByteVector32,
+      secret: ByteVector32
+  ): Option[ByteVector32] = {
+    val preimage = preimageFromSecret(secret)
+    if (Crypto.sha256(preimage) == hash) Some(preimage)
+    else payBag.getPreimage(hash).toOption
+  }
+
+  def preimageFromSecret(secret: ByteVector32): ByteVector32 =
+    Crypto.sha256(secret ++ LNParams.secret.seed)
 
   val localPaymentListeners: mutable.Set[OutgoingPaymentListener] = {
     val defListener: OutgoingPaymentListener = new OutgoingPaymentListener {
@@ -130,7 +127,6 @@ class ChannelMaster(
           }
 
         payBag.setPreimage(fulfill.ourAdd.paymentHash, fulfill.theirPreimage)
-        getPreimageMemo.invalidate(fulfill.ourAdd.paymentHash)
       }
     }
 
@@ -298,10 +294,11 @@ class ChannelMaster(
     }
     .foreach(payBag.updAbortedOutgoing(_))
 
-  def allInChannelOutgoing: Map[FullPaymentTag, OutgoingAdds] = all.values
-    .flatMap(Channel.chanAndCommitsOpt)
-    .flatMap(_.commits.allOutgoing)
-    .groupBy(_.fullTag)
+  def allInChannelOutgoing: Map[FullPaymentTag, Iterable[UpdateAddHtlc]] =
+    all.values
+      .flatMap(Channel.chanAndCommitsOpt)
+      .flatMap(_.commits.allOutgoing)
+      .groupBy(_.fullTag)
 
   def allHostedCommits: Iterable[HostedCommits] =
     all.values.flatMap(Channel.chanAndCommitsOpt).collect {
@@ -457,7 +454,7 @@ class ChannelMaster(
           fsm.fullTag.tag == PaymentTagTlv.LOCALLY_SENT && fsm.fullTag.paymentHash == paymentHash
         )
     ) PaymentInfo.NotSendableInFlight
-    else if (getPreimageMemo.get(paymentHash).isSuccess)
+    else if (payBag.getPreimage(paymentHash).isSuccess)
       PaymentInfo.NotSendableSuccess
     else PaymentInfo.Sendable
 
@@ -471,7 +468,7 @@ class ChannelMaster(
       localPaymentListeners ++ extraListeners,
       cmd.fullTag
     )
-    pf process PathFinder.GetExpectedPaymentFees(opm, cmd, interHops = 3)
+    pf.process(PathFinder.GetExpectedPaymentFees(opm, cmd, interHops = 3))
   }
 
   // These are executed in Channel context
@@ -555,7 +552,7 @@ class ChannelMaster(
     val allIns = all.values
       .flatMap(Channel.chanAndCommitsOpt)
       .flatMap(_.commits.crossSignedIncoming)
-      .map(initResolveMemo.get)
+      .map(initResolve(_))
     val reasonableIncoming = allIns
       .collect { case resolution: ReasonableResolution => resolution }
       .groupBy(_.fullTag)
@@ -594,7 +591,7 @@ class ChannelMaster(
 
   // Mainly to prolong FSM timeouts once another add is seen (but not yet committed)
   override def addReceived(add: UpdateAddHtlcExt): Unit =
-    initResolveMemo.getUnchecked(add) match {
+    initResolve(add) match {
       case resolution: ReasonableResolution =>
         inProcessors.get(resolution.fullTag).foreach(_ doProcess resolution)
       case _ => // Do nothing, invalid add will be failed after it gets committed

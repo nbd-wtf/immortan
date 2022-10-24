@@ -8,7 +8,6 @@ import scoin.ln._
 
 import immortan._
 import immortan.router._
-import immortan.ChannelMaster.{ReasonableLocals, ReasonableTrampolines}
 import immortan.fsm.IncomingPaymentProcessor._
 import immortan.fsm.PaymentFailure.Failures
 import immortan.channel.{
@@ -79,7 +78,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
           null,
           IncomingPaymentProcessor.Receiving
         ) =>
-      val adds = inFlight.in(fullTag).asInstanceOf[ReasonableLocals]
+      val adds = inFlight.in(fullTag).asInstanceOf[Iterable[ReasonableLocal]]
       // Important: when creating new invoice we SPECIFICALLY DO NOT put a preimage into preimage storage
       // we only do that once we reveal a preimage, thus letting us know that we have already revealed it on restart
       // having PaymentStatus.SUCCEEDED in payment db is not enough because that table does not get included in backup
@@ -87,7 +86,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
 
       paymentInfoOpt match {
         case None =>
-          cm.getPreimageMemo.get(fullTag.paymentHash).toOption match {
+          cm.getPreimage(fullTag.paymentHash, fullTag.paymentSecret) match {
             case Some(preimage) =>
               becomeRevealed(
                 preimage,
@@ -193,7 +192,7 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
           revealed: IncomingRevealed,
           IncomingPaymentProcessor.Finalizing
         ) =>
-      val adds = inFlight.in(fullTag).asInstanceOf[ReasonableLocals]
+      val adds = inFlight.in(fullTag).asInstanceOf[Iterable[ReasonableLocal]]
       fulfill(revealed.preimage, adds)
 
     case (
@@ -201,17 +200,17 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
           aborted: IncomingAborted,
           IncomingPaymentProcessor.Finalizing
         ) =>
-      val adds = inFlight.in(fullTag).asInstanceOf[ReasonableLocals]
+      val adds = inFlight.in(fullTag).asInstanceOf[Iterable[ReasonableLocal]]
       abort(aborted, adds)
 
     case _ =>
   }
 
-  def fulfill(preimage: ByteVector32, adds: ReasonableLocals): Unit =
+  def fulfill(preimage: ByteVector32, adds: Iterable[ReasonableLocal]): Unit =
     for (local <- adds)
       cm.sendTo(CMD_FULFILL_HTLC(preimage, local.add), local.add.channelId)
 
-  def abort(data1: IncomingAborted, adds: ReasonableLocals): Unit =
+  def abort(data1: IncomingAborted, adds: Iterable[ReasonableLocal]): Unit =
     data1.failure match {
       case None =>
         for (local <- adds)
@@ -244,23 +243,25 @@ class IncomingPaymentReceiver(val fullTag: FullPaymentTag, cm: ChannelMaster)
     isHolding = true
   }
 
-  def becomeAborted(data1: IncomingAborted, adds: ReasonableLocals): Unit = {
+  def becomeAborted(
+      ia: IncomingAborted,
+      adds: Iterable[ReasonableLocal]
+  ): Unit = {
     // Fail parts and retain a failure message to maybe re-fail using the same error
-    become(data1, IncomingPaymentProcessor.Finalizing)
-    abort(data1, adds)
+    become(ia, IncomingPaymentProcessor.Finalizing)
+    abort(ia, adds)
   }
 
   def becomeRevealed(
       preimage: ByteVector32,
       queryText: String,
-      adds: ReasonableLocals
+      adds: Iterable[ReasonableLocal]
   ): Unit = cm.chanBag.db txWrap {
     // With final payment we ALREADY know a preimage, but also put it into storage once preimage gets revealed
     // doing so makes it transferrable and fulfillable on a new device as storage db gets included in backup
     cm.payBag.addSearchablePayment(queryText, fullTag.paymentHash)
     cm.payBag.updOkIncoming(lastAmountIn, fullTag.paymentHash)
     cm.payBag.setPreimage(fullTag.paymentHash, preimage)
-    cm.getPreimageMemo.invalidate(fullTag.paymentHash)
 
     // First record things in db, then send out fulfill commands
     become(
@@ -300,18 +301,18 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
   override def wholePaymentFailed(data: OutgoingPaymentSenderData): Unit =
     self doProcess data
 
-  def collectedEnough(adds: ReasonableTrampolines): Boolean =
+  def collectedEnough(adds: Iterable[ReasonableTrampoline]): Boolean =
     firstOpt(adds).exists(lastAmountIn >= _.outerPayload.totalAmount)
   def firstOpt(
-      adds: ReasonableTrampolines
+      adds: Iterable[ReasonableTrampoline]
   ): Option[IncomingPaymentPacket.NodeRelayPacket] =
     adds.headOption.map(_.packet)
-  def expiryIn(adds: ReasonableTrampolines): CltvExpiry =
+  def expiryIn(adds: Iterable[ReasonableTrampoline]): CltvExpiry =
     adds.map(_.add.cltvExpiry).minBy(_.toLong)
 
   def validateRelay(
       params: TrampolineOn,
-      adds: ReasonableTrampolines,
+      adds: Iterable[ReasonableTrampoline],
       blockHeight: Long
   ): Option[FailureMessage] = firstOpt(adds) collectFirst {
     case pkt
@@ -391,7 +392,9 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
         ) =>
       // A special case after we have just received a first preimage and can become revealed
       val ins =
-        inFlight.in.getOrElse(fullTag, Nil).asInstanceOf[ReasonableTrampolines]
+        inFlight.in
+          .getOrElse(fullTag, Nil)
+          .asInstanceOf[Iterable[ReasonableTrampoline]]
       becomeFinalRevealed(preimage, ins)
 
       firstOpt(ins).foreach { packet =>
@@ -472,12 +475,12 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
       val outs = inFlight.out.getOrElse(fullTag, default = Nil)
       val ins = inFlight.in
         .getOrElse(fullTag, default = Nil)
-        .asInstanceOf[ReasonableTrampolines]
+        .asInstanceOf[Iterable[ReasonableTrampoline]]
       // We have either just got another incoming notification or restored an app with some parts present
       lastAmountIn = ins.foldLeft(MilliSatoshi(0L))(_ + _.add.amountMsat)
 
-      cm.getPreimageMemo.get(fullTag.paymentHash) match {
-        case Success(preimage) => becomeFinalRevealed(preimage, ins)
+      cm.getPreimage(fullTag.paymentHash, fullTag.paymentSecret) match {
+        case Some(preimage) => becomeFinalRevealed(preimage, ins)
         case _ if outs.isEmpty && collectedEnough(ins) =>
           becomeSendingOrAborted(
             ins
@@ -517,7 +520,9 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
           IncomingPaymentProcessor.Finalizing
         ) =>
       val ins =
-        inFlight.in.getOrElse(fullTag, Nil).asInstanceOf[ReasonableTrampolines]
+        inFlight.in
+          .getOrElse(fullTag, Nil)
+          .asInstanceOf[Iterable[ReasonableTrampoline]]
       fulfill(revealed.preimage, ins)
 
     case (
@@ -526,24 +531,32 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
           IncomingPaymentProcessor.Finalizing
         ) =>
       val ins =
-        inFlight.in.getOrElse(fullTag, Nil).asInstanceOf[ReasonableTrampolines]
+        inFlight.in
+          .getOrElse(fullTag, Nil)
+          .asInstanceOf[Iterable[ReasonableTrampoline]]
       abort(aborted, ins)
 
     case _ =>
   }
 
-  def fulfill(preimage: ByteVector32, adds: ReasonableTrampolines): Unit =
+  def fulfill(
+      preimage: ByteVector32,
+      adds: Iterable[ReasonableTrampoline]
+  ): Unit =
     for (local <- adds)
       cm.sendTo(CMD_FULFILL_HTLC(preimage, local.add), local.add.channelId)
 
-  def abort(data1: TrampolineAborted, adds: ReasonableTrampolines): Unit =
+  def abort(
+      data1: TrampolineAborted,
+      adds: Iterable[ReasonableTrampoline]
+  ): Unit =
     for (local <- adds)
       cm.sendTo(
         CMD_FAIL_HTLC(Right(data1.failure), local.secret, local.add),
         local.add.channelId
       )
 
-  def becomeSendingOrAborted(adds: ReasonableTrampolines): Unit = {
+  def becomeSendingOrAborted(adds: Iterable[ReasonableTrampoline]): Unit = {
     require(adds.nonEmpty, "A set of incoming HTLCs must be non-empty here")
     val result =
       validateRelay(LNParams.trampoline, adds, LNParams.blockCount.get)
@@ -614,7 +627,6 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
   def becomeInitRevealed(revealed: TrampolineRevealed): Unit = {
     // First, unconditionally persist a preimage before doing anything else
     cm.payBag.setPreimage(fullTag.paymentHash, revealed.preimage)
-    cm.getPreimageMemo.invalidate(fullTag.paymentHash)
     // Await for subsequent incoming leftovers
     become(revealed, IncomingPaymentProcessor.Sending)
     cm.notifyResolvers()
@@ -622,7 +634,7 @@ class TrampolinePaymentRelayer(val fullTag: FullPaymentTag, cm: ChannelMaster)
 
   def becomeFinalRevealed(
       preimage: ByteVector32,
-      adds: ReasonableTrampolines
+      adds: Iterable[ReasonableTrampoline]
   ): Unit = {
     // We might not have enough OR no incoming payments at all in pathological states
     become(

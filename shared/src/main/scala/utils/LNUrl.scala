@@ -14,7 +14,6 @@ import scoin.ln.NodeAddress
 
 import immortan._
 import immortan.utils.ImplicitJsonFormats._
-import immortan.utils.uri.Uri
 import immortan.LNParams.ec
 
 object LNUrl {

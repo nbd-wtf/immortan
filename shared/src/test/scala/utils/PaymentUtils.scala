@@ -128,7 +128,7 @@ object PaymentUtils {
 
   def makeInFlightPayments(
       out: OutgoingAdds,
-      in: ReasonableResolutions
+      in: Iterable[ReasonableResolution]
   ): InFlightPayments =
     InFlightPayments(out.groupBy(_.fullTag), in.groupBy(_.fullTag))
 

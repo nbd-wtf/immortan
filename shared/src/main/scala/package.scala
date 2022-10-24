@@ -6,7 +6,6 @@ import scala.language.implicitConversions
 import scodec.{Codec, DecodeResult}
 import scodec.bits.ByteVector
 import scodec.codecs._
-import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import scoin.Crypto.{PrivateKey, PublicKey, ChaCha20Poly1305}
 import scoin.Psbt.KeyPathWithMaster
 import scoin._
@@ -280,18 +279,6 @@ package object immortan {
     items.map { case (key, value) =>
       mapper(key) -> value
     } withDefaultValue defVal
-
-  def memoize[In <: Object, Out <: Object](
-      fun: In => Out
-  ): LoadingCache[In, Out] = {
-    val loader = new CacheLoader[In, Out] {
-      override def load(key: In): Out = fun apply key
-    }
-    CacheBuilder.newBuilder
-      .expireAfterAccess(7, TimeUnit.DAYS)
-      .maximumSize(2000)
-      .build[In, Out](loader)
-  }
 
   def mkFakeLocalEdge(from: PublicKey, toPeer: PublicKey): GraphEdge = {
     // Augments a graph with local edge corresponding to our local channel

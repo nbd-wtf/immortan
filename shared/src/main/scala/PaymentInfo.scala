@@ -8,7 +8,7 @@ import scoin.Crypto.PublicKey
 import scoin._
 import scoin.ln._
 
-import immortan.ChannelMaster.TxConfirmedAtOpt
+import immortan.electrum.TxConfirmedAt
 import immortan.channel.{DATA_CLOSING, HasNormalCommitments}
 import immortan.fsm.{IncomingPaymentProcessor, SendMultiPart, SplitInfo}
 import immortan.utils.ImplicitJsonFormats._
@@ -128,7 +128,7 @@ case class LNUrlPayLink(
 }
 
 case class DelayedRefunds(
-    txToParent: Map[Transaction, TxConfirmedAtOpt] = Map.empty
+    txToParent: Map[Transaction, Option[TxConfirmedAt]] = Map.empty
 ) extends TransactionDetails {
   val totalAmount: MilliSatoshi =
     txToParent.keys.flatMap(_.txOut).map(_.amount).sum.toMilliSatoshi
