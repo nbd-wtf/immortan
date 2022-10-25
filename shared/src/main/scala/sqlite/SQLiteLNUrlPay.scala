@@ -69,12 +69,12 @@ class SQLiteLNUrlPay(db: DBInterface) {
 
   def toLinkInfo(rc: RichCursor): LNUrlPayLink =
     LNUrlPayLink(
-      domain = rc string LNUrlPayTable.domain,
-      payString = rc string LNUrlPayTable.pay,
-      payMetaString = rc string LNUrlPayTable.payMeta,
-      updatedAt = rc long LNUrlPayTable.updatedAt,
-      description = to[LNUrlDescription](rc string LNUrlPayTable.description),
-      lastNodeIdString = rc string LNUrlPayTable.lastNodeId,
-      lastCommentString = rc string LNUrlPayTable.lastComment
+      domain = rc.string(LNUrlPayTable.domain),
+      payString = rc.string(LNUrlPayTable.pay),
+      payMetaString = rc.string(LNUrlPayTable.payMeta),
+      updatedAt = rc.long(LNUrlPayTable.updatedAt),
+      description = to[LNUrlDescription](rc.string(LNUrlPayTable.description)),
+      lastNodeIdString = rc.string(LNUrlPayTable.lastNodeId),
+      lastCommentString = rc.string(LNUrlPayTable.lastComment)
     )
 }

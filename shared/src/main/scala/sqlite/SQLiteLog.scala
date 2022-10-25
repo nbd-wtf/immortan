@@ -20,8 +20,8 @@ class SQLiteLog(db: DBInterface) {
   )
 
   def toLog(rc: RichCursor): LogRecord = LogRecord(
-    stamp = rc long LogTable.stamp,
-    tag = rc string LogTable.tag,
-    content = rc string LogTable.content
+    stamp = rc.long(LogTable.stamp),
+    tag = rc.string(LogTable.tag),
+    content = rc.string(LogTable.content)
   )
 }

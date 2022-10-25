@@ -48,14 +48,14 @@ class SQLiteData(val db: DBInterface) extends HeaderDb with DataBag {
     )
 
   def putFiatRatesInfo(data: FiatRatesInfo): Unit =
-    put(LABEL_FIAT_RATES, data.toJson.compactPrint getBytes "UTF-8")
+    put(LABEL_FIAT_RATES, data.toJson.compactPrint.getBytes("UTF-8"))
 
   def tryGetFiatRatesInfo: Try[FiatRatesInfo] = tryGet(LABEL_FIAT_RATES).map(
     _.decodeUtf8.toOption.get
   ) map to[FiatRatesInfo]
 
   def putFeeRatesInfo(data: FeeRatesInfo): Unit =
-    put(LABEL_FEE_RATES, data.toJson.compactPrint getBytes "UTF-8")
+    put(LABEL_FEE_RATES, data.toJson.compactPrint.getBytes("UTF-8"))
 
   def tryGetFeeRatesInfo: Try[FeeRatesInfo] =
     tryGet(LABEL_FEE_RATES).map(_.decodeUtf8.toOption.get) map to[FeeRatesInfo]
@@ -64,7 +64,7 @@ class SQLiteData(val db: DBInterface) extends HeaderDb with DataBag {
 
   def putReport(paymentHash: ByteVector32, report: String): Unit = put(
     LABEL_PAYMENT_REPORT_PREFIX + paymentHash.toHex,
-    report getBytes "UTF-8"
+    report.getBytes("UTF-8")
   )
 
   def tryGetReport(paymentHash: ByteVector32): Try[String] =
@@ -110,7 +110,7 @@ class SQLiteData(val db: DBInterface) extends HeaderDb with DataBag {
   override def getHeader(height: Int): Option[BlockHeader] =
     db.select(ElectrumHeadersTable.selectByHeightSql, height.toString)
       .headTry { rc =>
-        BlockHeader.read(rc bytes ElectrumHeadersTable.header)
+        BlockHeader.read(rc.bytes(ElectrumHeadersTable.header))
       }
       .toOption
 
@@ -118,8 +118,8 @@ class SQLiteData(val db: DBInterface) extends HeaderDb with DataBag {
   override def getHeader(blockHash: ByteVector32): Option[HeightAndHeader] =
     db.select(ElectrumHeadersTable.selectByBlockHashSql, blockHash.toHex)
       .headTry { rc =>
-        val header = BlockHeader.read(rc bytes ElectrumHeadersTable.header)
-        val height = rc int ElectrumHeadersTable.height
+        val header = BlockHeader.read(rc.bytes(ElectrumHeadersTable.header))
+        val height = rc.int(ElectrumHeadersTable.height)
         (height, header)
       }
       .toOption
@@ -130,14 +130,14 @@ class SQLiteData(val db: DBInterface) extends HeaderDb with DataBag {
       startHeight.toString,
       maxCount.toString
     ).iterable { rc =>
-      BlockHeader.read(rc bytes ElectrumHeadersTable.header)
+      BlockHeader.read(rc.bytes(ElectrumHeadersTable.header))
     }.toList
 
   override def getTip: Option[HeightAndHeader] =
     db.select(ElectrumHeadersTable.selectTipSql)
       .headTry { rc =>
-        val header = BlockHeader.read(rc bytes ElectrumHeadersTable.header)
-        val height = rc int ElectrumHeadersTable.height
+        val header = BlockHeader.read(rc.bytes(ElectrumHeadersTable.header))
+        val height = rc.int(ElectrumHeadersTable.height)
         (height, header)
       }
       .toOption

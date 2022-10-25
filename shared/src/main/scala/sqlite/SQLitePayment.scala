@@ -199,32 +199,32 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
   def paymentSummary: Try[PaymentSummary] =
     db.select(PaymentTable.selectSummarySql).headTry { rc =>
       PaymentSummary(
-        fees = MilliSatoshi(rc long 0),
-        chainFees = MilliSatoshi(rc long 1),
-        received = MilliSatoshi(rc long 2),
-        sent = MilliSatoshi(rc long 3),
-        count = rc long 4
+        fees = MilliSatoshi(rc.long(0)),
+        chainFees = MilliSatoshi(rc.long(1)),
+        received = MilliSatoshi(rc.long(2)),
+        sent = MilliSatoshi(rc.long(3)),
+        count = rc.long(4)
       )
     }
 
   def toPaymentInfo(rc: RichCursor): PaymentInfo =
     PaymentInfo(
-      prString = rc string PaymentTable.pr,
-      preimage = ByteVector32.fromValidHex(rc string PaymentTable.preimage),
-      status = rc int PaymentTable.status,
-      seenAt = rc long PaymentTable.seenAt,
-      updatedAt = rc long PaymentTable.updatedAt,
-      description = to[PaymentDescription](rc string PaymentTable.description),
-      actionString = rc string PaymentTable.action,
-      paymentHash = ByteVector32.fromValidHex(rc string PaymentTable.hash),
-      paymentSecret = ByteVector32.fromValidHex(rc string PaymentTable.secret),
-      received = MilliSatoshi(rc long PaymentTable.receivedMsat),
-      sent = MilliSatoshi(rc long PaymentTable.sentMsat),
-      fee = MilliSatoshi(rc long PaymentTable.feeMsat),
-      balanceSnapshot = MilliSatoshi(rc long PaymentTable.balanceMsat),
-      fiatRatesString = rc string PaymentTable.fiatRates,
-      chainFee = MilliSatoshi(rc long PaymentTable.chainFeeMsat),
-      incoming = rc long PaymentTable.incoming
+      prString = rc.string(PaymentTable.pr),
+      preimage = ByteVector32.fromValidHex(rc.string(PaymentTable.preimage)),
+      status = rc.int(PaymentTable.status),
+      seenAt = rc.long(PaymentTable.seenAt),
+      updatedAt = rc.long(PaymentTable.updatedAt),
+      description = to[PaymentDescription](rc.string(PaymentTable.description)),
+      actionString = rc.string(PaymentTable.action),
+      paymentHash = ByteVector32.fromValidHex(rc.string(PaymentTable.hash)),
+      paymentSecret = ByteVector32.fromValidHex(rc.string(PaymentTable.secret)),
+      received = MilliSatoshi(rc.long(PaymentTable.receivedMsat)),
+      sent = MilliSatoshi(rc.long(PaymentTable.sentMsat)),
+      fee = MilliSatoshi(rc.long(PaymentTable.feeMsat)),
+      balanceSnapshot = MilliSatoshi(rc.long(PaymentTable.balanceMsat)),
+      fiatRatesString = rc.string(PaymentTable.fiatRates),
+      chainFee = MilliSatoshi(rc.long(PaymentTable.chainFeeMsat)),
+      incoming = rc.long(PaymentTable.incoming)
     )
 
   // Preimage storage
@@ -262,20 +262,20 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
   def relaySummary: Try[RelaySummary] =
     db.select(RelayTable.selectSummarySql).headTry { rc =>
       RelaySummary(
-        relayed = MilliSatoshi(rc long 0),
-        earned = MilliSatoshi(rc long 1),
-        count = rc long 2
+        relayed = MilliSatoshi(rc.long(0)),
+        earned = MilliSatoshi(rc.long(1)),
+        count = rc.long(2)
       )
     }
 
   def toRelayedPreimageInfo(rc: RichCursor): RelayedPreimageInfo =
     RelayedPreimageInfo(
-      rc string RelayTable.hash,
-      rc string RelayTable.secret,
-      rc string RelayTable.preimage,
-      MilliSatoshi(rc long RelayTable.relayed),
-      MilliSatoshi(rc long RelayTable.earned),
-      rc long RelayTable.seenAt,
-      rc long RelayTable.updatedAt
+      rc.string(RelayTable.hash),
+      rc.string(RelayTable.secret),
+      rc.string(RelayTable.preimage),
+      MilliSatoshi(rc.long(RelayTable.relayed)),
+      MilliSatoshi(rc.long(RelayTable.earned)),
+      rc.long(RelayTable.seenAt),
+      rc.long(RelayTable.updatedAt)
     )
 }

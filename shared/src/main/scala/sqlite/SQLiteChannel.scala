@@ -48,8 +48,8 @@ class SQLiteChannel(val db: DBInterface, channelTxFeesDb: DBInterface)
       commitNumer: Long
   ): Iterable[ChannelBag.Hash160AndCltv] =
     db.select(HtlcInfoTable.selectAllSql, commitNumer.toString).iterable { rc =>
-      val cltvExpiry = CltvExpiry(rc int HtlcInfoTable.cltvExpiry)
-      val hash160 = rc byteVec HtlcInfoTable.paymentHash160
+      val cltvExpiry = CltvExpiry(rc.int(HtlcInfoTable.cltvExpiry))
+      val hash160 = rc.byteVec(HtlcInfoTable.paymentHash160)
       ChannelBag.Hash160AndCltv(hash160, cltvExpiry)
     }
 
@@ -82,7 +82,7 @@ class SQLiteChannel(val db: DBInterface, channelTxFeesDb: DBInterface)
   // Channel related tx fees
   def channelTxFeesSummary: Try[ChannelTxFeesSummary] =
     channelTxFeesDb.select(ChannelTxFeesTable.selectSummarySql).headTry { rc =>
-      ChannelTxFeesSummary(fees = Satoshi(rc long 0), count = rc long 1)
+      ChannelTxFeesSummary(fees = Satoshi(rc.long(0)), count = rc.long(1))
     }
 
   def addChannelTxFee(feePaid: Satoshi, idenitifer: String, tag: String): Unit =

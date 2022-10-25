@@ -24,8 +24,8 @@ class SQLiteTx(val db: DBInterface) {
   def listAllDescriptions: Map[String, TxDescription] =
     db.select(TxTable.selectRecentSql, 10000.toString)
       .iterable { rc =>
-        val description = to[TxDescription](rc string TxTable.description)
-        (rc string TxTable.txid, description)
+        val description = to[TxDescription](rc.string(TxTable.description))
+        (rc.string(TxTable.txid, description))
       }
       .toMap
 
@@ -76,10 +76,10 @@ class SQLiteTx(val db: DBInterface) {
   def txSummary: Try[TxSummary] =
     db.select(TxTable.selectSummarySql).headTry { rc =>
       TxSummary(
-        fees = Satoshi(rc long 0),
-        received = Satoshi(rc long 1),
-        sent = Satoshi(rc long 2),
-        count = rc long 3
+        fees = Satoshi(rc.long(0)),
+        received = Satoshi(rc.long(1)),
+        sent = Satoshi(rc.long(2)),
+        count = rc.long(3)
       )
     }
 
@@ -120,19 +120,19 @@ class SQLiteTx(val db: DBInterface) {
 
   def toTxInfo(rc: RichCursor): TxInfo =
     TxInfo(
-      txString = rc string TxTable.rawTx,
-      txidString = rc string TxTable.txid,
-      pubKeyString = rc string TxTable.pub,
-      depth = rc long TxTable.depth,
-      receivedSat = Satoshi(rc long TxTable.receivedSat),
-      sentSat = Satoshi(rc long TxTable.sentSat),
-      feeSat = Satoshi(rc long TxTable.feeSat),
-      seenAt = rc long TxTable.seenAt,
-      updatedAt = rc long TxTable.updatedAt,
-      description = to[TxDescription](rc string TxTable.description),
-      balanceSnapshot = MilliSatoshi(rc long TxTable.balanceMsat),
-      fiatRatesString = rc string TxTable.fiatRates,
-      incoming = rc long TxTable.incoming,
-      doubleSpent = rc long TxTable.doubleSpent
+      txString = rc.string(TxTable.rawTx),
+      txidString = rc.string(TxTable.txid),
+      pubKeyString = rc.string(TxTable.pub),
+      depth = rc.long(TxTable.depth),
+      receivedSat = Satoshi(rc.long(TxTable.receivedSat)),
+      sentSat = Satoshi(rc.long(TxTable.sentSat)),
+      feeSat = Satoshi(rc.long(TxTable.feeSat)),
+      seenAt = rc.long(TxTable.seenAt),
+      updatedAt = rc.long(TxTable.updatedAt),
+      description = to[TxDescription](rc.string(TxTable.description)),
+      balanceSnapshot = MilliSatoshi(rc.long(TxTable.balanceMsat)),
+      fiatRatesString = rc.string(TxTable.fiatRates),
+      incoming = rc.long(TxTable.incoming),
+      doubleSpent = rc.long(TxTable.doubleSpent)
     )
 }

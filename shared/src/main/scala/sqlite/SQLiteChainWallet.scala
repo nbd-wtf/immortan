@@ -4,11 +4,7 @@ import scoin.Crypto.PublicKey
 import scoin.Satoshi
 import immortan.electrum.PersistentData
 import immortan.electrum.db.sqlite.SqliteWalletDb.persistentDataCodec
-import immortan.electrum.db.{
-  ChainWalletInfo,
-  CompleteChainWalletInfo,
-  WalletDb
-}
+import immortan.electrum.db.{ChainWalletInfo, CompleteChainWalletInfo, WalletDb}
 import immortan.utils.ImplicitJsonFormats._
 import scodec.bits.ByteVector
 import spray.json._
@@ -50,10 +46,10 @@ class SQLiteChainWallet(val db: DBInterface) extends WalletDb {
   def listWallets: Iterable[CompleteChainWalletInfo] =
     db.select(ChainWalletTable.selectSql).iterable { rc =>
       CompleteChainWalletInfo(
-        to[ChainWalletInfo](rc string ChainWalletTable.info),
-        rc byteVec ChainWalletTable.data,
-        Satoshi(rc long ChainWalletTable.lastBalance),
-        rc string ChainWalletTable.label,
+        to[ChainWalletInfo](rc.string(ChainWalletTable.info)),
+        rc.byteVec(ChainWalletTable.data),
+        Satoshi(rc.long(ChainWalletTable.lastBalance)),
+        rc.string(ChainWalletTable.label),
         isCoinControlOn = false
       )
     }

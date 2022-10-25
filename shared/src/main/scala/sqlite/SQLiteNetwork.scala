@@ -132,9 +132,9 @@ class SQLiteNetwork(
         bitcoinSignature2 = ByteVector64.Zeroes,
         features = Features.empty,
         chainHash = LNParams.chainHash,
-        shortChannelId = ShortChannelId(rc long announceTable.shortChannelId),
-        nodeId1 = PublicKey(rc byteVec announceTable.nodeId1),
-        nodeId2 = PublicKey(rc byteVec announceTable.nodeId2),
+        shortChannelId = ShortChannelId(rc.long(announceTable.shortChannelId)),
+        nodeId1 = PublicKey(rc.byteVec(announceTable.nodeId1)),
+        nodeId2 = PublicKey(rc.byteVec(announceTable.nodeId2)),
         bitcoinKey1 = invalidPubKey,
         bitcoinKey2 = invalidPubKey
       )
@@ -142,26 +142,26 @@ class SQLiteNetwork(
 
   def listChannelUpdates: Iterable[ChannelUpdateExt] =
     db.select(updateTable.selectAllSql).iterable { rc =>
-      val htlcMaximumMsat: MilliSatoshi = MilliSatoshi(rc long 9)
+      val htlcMaximumMsat: MilliSatoshi = MilliSatoshi(rc.long(9))
       ChannelUpdateExt(
         ChannelUpdate(
           signature = ByteVector64.Zeroes,
           chainHash = LNParams.chainHash,
-          shortChannelId = ShortChannelId(rc long 1),
-          timestamp = TimestampSecond(rc long 2),
-          // messageFlags = (rc int 3).toByte,
+          shortChannelId = ShortChannelId(rc.long(1)),
+          timestamp = TimestampSecond(rc.long(2)),
+          // messageFlags = (rc.int(3)).toByte,
           channelFlags = channelFlagsCodec
-            .decode(BitVector(Array((rc int 4).toByte)))
+            .decode(BitVector(Array((rc.int(4)).toByte)))
             .require
             .value,
-          cltvExpiryDelta = CltvExpiryDelta(rc int 5),
-          htlcMinimumMsat = MilliSatoshi(rc long 6),
-          feeBaseMsat = MilliSatoshi(rc long 7),
-          feeProportionalMillionths = rc long 8,
+          cltvExpiryDelta = CltvExpiryDelta(rc.int(5)),
+          htlcMinimumMsat = MilliSatoshi(rc.long(6)),
+          feeBaseMsat = MilliSatoshi(rc.long(7)),
+          feeProportionalMillionths = rc.long(8),
           htlcMaximumMsat = htlcMaximumMsat
         ),
-        crc32 = rc long 12,
-        score = rc long 11,
+        crc32 = rc.long(12),
+        score = rc.long(11),
         updateTable.useHeuristics
       )
     }
