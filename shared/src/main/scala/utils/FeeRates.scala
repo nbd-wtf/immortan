@@ -95,7 +95,7 @@ trait FeeRatesListener {
 }
 
 trait FeeRatesProvider {
-  def provide: FeeratesPerKB
+  def provide: Future[FeeratesPerKB]
   val url: String
 }
 

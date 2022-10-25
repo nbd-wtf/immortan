@@ -1,9 +1,9 @@
 package immortan.electrum
 
 import java.io.InputStream
-import org.json4s.JsonAST.{JArray, JInt, JString}
-import org.json4s.StreamInput
-import org.json4s.native.JsonMethods
+import scala.math.BigInt
+import io.circe._
+import io.circe.parser.decode
 import scoin.{Block, ByteVector32, encodeCompact}
 
 import immortan.electrum.db.HeaderDb
@@ -32,15 +32,16 @@ object CheckPoint {
   }
 
   def load(stream: InputStream): Vector[CheckPoint] = {
-    val JArray(values) = JsonMethods.parse(StreamInput(stream)): @unchecked
-    val checkpoints = values.collect {
-      case JArray(JString(a) :: JInt(b) :: Nil) =>
-        CheckPoint(
-          ByteVector32.fromValidHex(a).reverse,
-          encodeCompact(b.bigInteger)
-        )
-    }
-    checkpoints.toVector
+    val inputBytes = Array.ofDim[Byte](20000)
+    stream.read(inputBytes)
+    val input = new String(inputBytes, "UTF-8")
+
+    decode[List[(String, BigInt)]](input).toTry.get.toSet.map { (hash, bits) =>
+      CheckPoint(
+        ByteVector32.fromValidHex(hash).reverse,
+        encodeCompact(bits.bigInteger)
+      )
+    }.toVector
   }
 
   def load(chainHash: ByteVector32, headerDb: HeaderDb): Vector[CheckPoint] = {

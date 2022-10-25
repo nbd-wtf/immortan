@@ -6,8 +6,8 @@ import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.{Promise, Future, ExecutionContext}
 import scala.concurrent.duration._
 import scala.util.{Try, Random, Success, Failure}
-import org.json4s._
-import org.json4s.native.JsonMethods
+import io.circe._
+import io.circe.parser.decode
 import scoin.{Block, BlockHeader, ByteVector32}
 import scoin.ln.NodeAddress
 
@@ -131,7 +131,7 @@ class ElectrumClientPool(
     }
 
     pickedAddress.foreach { esa =>
-      val client = new ElectrumClient(
+      val client = ElectrumClient(
         self,
         esa,
         client =>
@@ -288,12 +288,13 @@ object ElectrumClientPool {
 
   def readServerAddresses(stream: InputStream): Set[ElectrumServerAddress] =
     try {
-      val JObject(values) = JsonMethods.parse(stream): @unchecked
+      val inputBytes = Array.ofDim[Byte](20000)
+      stream.read(inputBytes)
+      val input = new String(inputBytes, "UTF-8")
 
-      for ((name, fields) <- values.toSet) yield {
-        val port = Try((fields \ "s").asInstanceOf[JString].s.toInt).toOption
-          .getOrElse(0)
-        val address = InetSocketAddress.createUnresolved(name, port)
+      decode[Map[String, Json]](input).toTry.get.toSet.map { (hostname, data) =>
+        val port = data.hcursor.get[String]("s").toTry.get.toInt
+        val address = InetSocketAddress.createUnresolved(hostname, port)
         ElectrumServerAddress(address, SSL.LOOSE)
       }
     } finally {

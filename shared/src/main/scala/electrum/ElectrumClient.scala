@@ -1,37 +1,17 @@
 package immortan.electrum
 
-import java.util.concurrent.atomic.AtomicInteger
-import java.net.{InetSocketAddress, SocketAddress}
 import scala.annotation.tailrec
-import scala.concurrent.{Promise, Future}
+import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
-import io.netty.bootstrap.Bootstrap
-import io.netty.buffer.PooledByteBufAllocator
-import io.netty.channel._
-import io.netty.channel.nio.NioEventLoopGroup
-import io.netty.channel.socket.SocketChannel
-import io.netty.channel.socket.nio.NioSocketChannel
-import io.netty.handler.codec.string.{LineEncoder, StringDecoder}
-import io.netty.handler.codec.{
-  LineBasedFrameDecoder,
-  MessageToMessageDecoder,
-  MessageToMessageEncoder
-}
-import io.netty.handler.proxy.Socks5ProxyHandler
-import io.netty.handler.ssl.SslContextBuilder
-import io.netty.handler.ssl.util.InsecureTrustManagerFactory
-import io.netty.resolver.NoopAddressResolverGroup
-import io.netty.util.CharsetUtil
-import io.netty.util.internal.logging.{InternalLoggerFactory, JdkLoggerFactory}
-import org.json4s._
-import org.json4s.native.JsonMethods
-import org.json4s.{JInt, JLong, JString}
 import scodec.bits.ByteVector
+import io.circe._
+import io.circe.parser.parse
+import io.circe.generic.semiauto._
+import io.circe.syntax._
 import scoin._
 
 import immortan.{LNParams, every, after}
-import immortan.LNParams.ec
 import immortan.electrum.ElectrumClient._
 
 trait ElectrumEvent
@@ -43,16 +23,23 @@ case object ElectrumDisconnected extends ElectrumClientStatus
 
 case class CurrentBlockCount(blockCount: Long) extends ElectrumEvent
 
+trait ElectrumClient {
+  def address: String
+  def shutdown(): Unit
+  def request[R <: Response](r: Request): Future[R]
+}
+
 object ElectrumClient {
   val CLIENT_NAME = "3.3.6"
   val PROTOCOL_VERSION = "1.4"
 
-  InternalLoggerFactory.setDefaultFactory(JdkLoggerFactory.INSTANCE)
-
   class ElectrumServerError(msg: String) extends Exception
 
-  // this is expensive and shared with all clients
-  val workerGroup = new NioEventLoopGroup
+  def apply(
+      pool: ElectrumClientPool,
+      server: ElectrumClientPool.ElectrumServerAddress,
+      onReady: ElectrumClient => Unit
+  ) = new ElectrumClientPlatform(pool, server, onReady)
 
   def computeScriptHash(publicKeyScript: ByteVector): ByteVector32 =
     Crypto.sha256(publicKeyScript).reverse
@@ -101,6 +88,9 @@ object ElectrumClient {
     def contextOpt: Option[Any] = None
   }
 
+  // this is for when we don't care about the response
+  case object IrrelevantResponse extends Response
+
   case class ServerVersion(clientName: String, protocolVersion: String)
       extends Request
   case class ServerVersionResponse(
@@ -111,21 +101,11 @@ object ElectrumClient {
   case object Ping extends Request
   case object PingResponse extends Response
 
-  // this is for when we don't care about the response
-  case object IrrelevantResponse extends Response
-
-  case class TransactionHistoryItem(height: Int, txHash: ByteVector32)
-
   case class GetScriptHashHistory(scriptHash: ByteVector32) extends Request
+  case class TransactionHistoryItem(height: Int, txHash: ByteVector32)
   case class GetScriptHashHistoryResponse(
       scriptHash: ByteVector32,
       history: List[TransactionHistoryItem] = Nil
-  ) extends Response
-
-  case class GetScriptHashMempool(scriptHash: ByteVector32) extends Request
-  case class GetScriptHashMempoolResponse(
-      scriptHash: ByteVector32,
-      mempool: List[TransactionHistoryItem] = Nil
   ) extends Response
 
   case class BroadcastTransaction(tx: Transaction) extends Request
@@ -142,13 +122,6 @@ object ElectrumClient {
       tx: Transaction,
       override val contextOpt: Option[Any]
   ) extends Response
-
-  case class GetHeader(height: Int) extends Request
-  case class GetHeaderResponse(height: Int, header: BlockHeader)
-      extends Response
-  object GetHeaderResponse {
-    def apply(t: (Int, BlockHeader)) = new GetHeaderResponse(t._1, t._2)
-  }
 
   case class GetHeaders(startHeight: Int, count: Int, cpHeight: Int = 0)
       extends Request
@@ -256,88 +229,6 @@ object ElectrumClient {
     case object LOOSE extends SSL
   }
 
-  def parseResponse(
-      receiver: ElectrumClient,
-      input: String
-  ): Either[Response, JSONRPC.Response] = {
-    val json = JsonMethods.parse(input)
-    json \ "method" match {
-      case JString(method) =>
-        // this is a jsonrpc request, i.e. a subscription response
-        val JArray(params) = json \ "params": @unchecked
-        Left(((method, params): @unchecked) match {
-          case ("blockchain.headers.subscribe", jheader :: Nil) => {
-            val (height, header) = parseBlockHeader(jheader)
-            HeaderSubscriptionResponse(receiver, height, header)
-          }
-          case (
-                "blockchain.scripthash.subscribe",
-                JString(scriptHashHex) :: JNull :: Nil
-              ) =>
-            ScriptHashSubscriptionResponse(
-              ByteVector32.fromValidHex(scriptHashHex),
-              ""
-            )
-          case (
-                "blockchain.scripthash.subscribe",
-                JString(scriptHashHex) :: JString(status) :: Nil
-              ) =>
-            ScriptHashSubscriptionResponse(
-              ByteVector32.fromValidHex(scriptHashHex),
-              status
-            )
-        })
-      case _ => Right(parseJsonRpcResponse(receiver, json))
-    }
-  }
-
-  def parseJsonRpcResponse(
-      receiver: ElectrumClient,
-      json: JValue
-  ): JSONRPC.Response = {
-    val result = json \ "result"
-    val error = json \ "error" match {
-      case JNull    => None
-      case JNothing => None
-      case other =>
-        val message = other \ "message" match {
-          case JString(value) => value
-          case _              => ""
-        }
-        val code = other \ " code" match {
-          case JInt(value)  => value.intValue
-          case JLong(value) => value.intValue
-          case _            => 0
-        }
-        Some(JSONRPC.Error(code, message))
-    }
-    val id = json \ "id" match {
-      case JString(value) => value
-      case JInt(value)    => value.toString()
-      case JLong(value)   => value.toString
-      case _              => ""
-    }
-    JSONRPC.Response(result, error, id)
-  }
-
-  def longField(jvalue: JValue, field: String): Long =
-    (jvalue \ field: @unchecked) match {
-      case JLong(value) => value.longValue
-      case JInt(value)  => value.longValue
-    }
-
-  def intField(jvalue: JValue, field: String): Int =
-    (jvalue \ field: @unchecked) match {
-      case JLong(value) => value.intValue
-      case JInt(value)  => value.intValue
-    }
-
-  def parseBlockHeader(json: JValue): (Int, BlockHeader) = {
-    val height = intField(json, "height")
-    val JString(hex) = json \ "hex": @unchecked
-    (height, BlockHeader.read(hex))
-  }
-
   def makeRequest(request: Request, reqId: String): JSONRPC.Request =
     request match {
       case ServerVersion(clientName, protocolVersion) =>
@@ -352,12 +243,6 @@ object ElectrumClient {
         JSONRPC.Request(
           id = reqId,
           method = "blockchain.scripthash.get_history",
-          params = scripthash.toHex :: Nil
-        )
-      case GetScriptHashMempool(scripthash) =>
-        JSONRPC.Request(
-          id = reqId,
-          method = "blockchain.scripthash.get_mempool",
           params = scripthash.toHex :: Nil
         )
       case ScriptHashSubscription(scriptHash) =>
@@ -384,12 +269,6 @@ object ElectrumClient {
           method = "blockchain.headers.subscribe",
           params = Nil
         )
-      case GetHeader(height) =>
-        JSONRPC.Request(
-          id = reqId,
-          method = "blockchain.block.header",
-          params = height :: Nil
-        )
       case GetHeaders(start_height, count, _) =>
         JSONRPC.Request(
           id = reqId,
@@ -404,408 +283,165 @@ object ElectrumClient {
         )
     }
 
+  def parseElectrumMessage(
+      receiver: ElectrumClient,
+      input: String
+  ): Either[Response, JSONRPC.Response] = {
+    val json = parse(input).toTry.get
+    val c = json.hcursor
+    val params = c.downField("params")
+
+    // presence of method indicates this is a json-rpc request, i.e. a subscription notification
+    //   otherwise this is a json-rpc response
+    c.get[String]("method") match {
+      case Left(_) =>
+        Right(json.as[JSONRPC.Response].toTry.get)
+      case Right("blockchain.headers.subscribe") =>
+        val height = params.downN(0).downField("height").as[Int].toTry.get
+        val header = BlockHeader.read(
+          params.downN(0).downField("hex").as[String].toTry.get
+        )
+        Left(HeaderSubscriptionResponse(receiver, height, header))
+      case Right("blockchain.scripthash.subscribe") =>
+        val scripthash = ByteVector32.fromValidHex(
+          params.downN(0).downField("scripthash").as[String].toTry.get
+        )
+        val status =
+          params.downN(0).downField("status").as[String].getOrElse("")
+        Left(ScriptHashSubscriptionResponse(scripthash, status))
+      case Right(other) =>
+        System.err.println(
+          s"[debug][electrum] got unexpected '$other' at ${receiver.address}, ignoring"
+        )
+        Right(JSONRPC.Response("ignored", None, None))
+    }
+  }
+
   def parseJsonResponse(
       source: ElectrumClient,
       request: Request,
       json: JSONRPC.Response
-  ): Response = {
-    json.error match {
-      case Some(error) =>
-        (request: @unchecked) match {
-          case BroadcastTransaction(tx) =>
-            BroadcastTransactionResponse(
-              tx,
-              Some(error)
-            ) // for this request type, error are considered a "normal" response
-          case _ => ServerError(request, error)
-        }
-      case None =>
-        (request: @unchecked) match {
-          case _: ServerVersion => {
-            val JArray(jitems) = json.result: @unchecked
-            val JString(clientName) = jitems.head: @unchecked
-            val JString(protocolVersion) = jitems(1): @unchecked
-            ServerVersionResponse(clientName, protocolVersion)
-          }
-          case Ping => PingResponse
-          case GetScriptHashHistory(scripthash) => {
-            val JArray(jitems) = json.result: @unchecked
-            val items = jitems.map(jvalue => {
-              val JString(tx_hash) = jvalue \ "tx_hash": @unchecked
-              val height = intField(jvalue, "height")
-              TransactionHistoryItem(
-                height,
-                ByteVector32.fromValidHex(tx_hash)
+  ): Response = (json.error, json.result) match {
+    case (Some(error), _) =>
+      request match {
+        case BroadcastTransaction(tx) =>
+          // for this request type, error are considered a "normal" response
+          BroadcastTransactionResponse(tx, Some(error))
+        case _ => ServerError(request, error)
+      }
+    case (_, Some(response)) =>
+      val c = response.hcursor
+      request match {
+        case _: ServerVersion =>
+          val software = c.downN(0).as[String].toTry.get
+          val version = c.downN(1).as[String].toTry.get
+          ServerVersionResponse(software, version)
+        case Ping => PingResponse
+        case GetScriptHashHistory(scripthash) =>
+          val items = c.values.get.map { it =>
+            TransactionHistoryItem(
+              it.hcursor.get[Int]("height").toTry.get,
+              ByteVector32.fromValidHex(
+                it.hcursor.get[String]("tx_hash").toTry.get
               )
-            })
-            GetScriptHashHistoryResponse(scripthash, items)
-          }
-          case GetScriptHashMempool(scripthash) => {
-            val JArray(jitems) = json.result: @unchecked
-            val items = jitems.map(jvalue => {
-              val JString(tx_hash) = jvalue \ "tx_hash": @unchecked
-              val height = intField(jvalue, "height")
-              TransactionHistoryItem(
-                height,
-                ByteVector32.fromValidHex(tx_hash)
-              )
-            })
-            GetScriptHashMempoolResponse(scripthash, items)
-          }
-          case GetTransaction(_, contextOpt) => {
-            val JString(hex) = json.result: @unchecked
-            GetTransactionResponse(Transaction.read(hex), contextOpt)
-          }
-          case HeaderSubscription() => {
-            val (height, header) = parseBlockHeader(json.result)
-            HeaderSubscriptionResponse(source, height, header)
-          }
-          case ScriptHashSubscription(scriptHash) => {
-            json.result match {
-              case JString(status) =>
-                ScriptHashSubscriptionResponse(scriptHash, status)
-              case _ => ScriptHashSubscriptionResponse(scriptHash, "")
-            }
-          }
-          case BroadcastTransaction(tx) => {
-            val JString(message) = json.result: @unchecked
-            // if we got here, it means that the server's response does not contain an error and message should be our
-            // transaction id. However, it seems that at least on testnet some servers still use an older version of the
-            // Electrum protocol and return an error message in the result field
-            Try(ByteVector32.fromValidHex(message)) match {
-              case Success(txid) if txid == tx.txid =>
-                BroadcastTransactionResponse(tx, None)
-              case Success(txid) =>
-                BroadcastTransactionResponse(
-                  tx,
-                  Some(
-                    JSONRPC.Error(
-                      1,
-                      s"response txid $txid does not match request txid ${tx.txid}"
-                    )
-                  )
-                )
-              case Failure(_) =>
-                BroadcastTransactionResponse(
-                  tx,
-                  Some(JSONRPC.Error(1, message))
-                )
-            }
-          }
-          case GetHeader(height) => {
-            val JString(hex) = json.result: @unchecked
-            GetHeaderResponse(height, BlockHeader.read(hex))
-          }
-          case GetHeaders(start_height, _, _) => {
-            val max = intField(json.result, "max")
-            val JString(hex) = json.result \ "hex": @unchecked
-            val bin = ByteVector.fromValidHex(hex).toArray
-            val blockHeaders = bin.grouped(80).map(BlockHeader.read).toList
-            GetHeadersResponse(source, start_height, blockHeaders, max)
-          }
-          case GetMerkle(txid, _, contextOpt) => {
-            val JArray(hashes) = json.result \ "merkle": @unchecked
-            val leaves = hashes collect { case JString(value) =>
-              ByteVector32.fromValidHex(value)
-            }
-            val blockHeight = intField(json.result, "block_height")
-            val JInt(pos) = json.result \ "pos": @unchecked
-            GetMerkleResponse(
-              Some(source),
-              txid,
-              leaves,
-              blockHeight,
-              pos.toInt,
-              contextOpt
             )
           }
-          case other => IrrelevantResponse
-        }
-    }
+          GetScriptHashHistoryResponse(scripthash, items.toList)
+        case GetTransaction(_, cOpt) =>
+          val tx = Transaction.read(c.as[String].toTry.get)
+          GetTransactionResponse(tx, cOpt)
+        case HeaderSubscription() =>
+          val height = c.get[Int]("height").toTry.get
+          val header = BlockHeader.read(c.get[String]("hex").toTry.get)
+          HeaderSubscriptionResponse(source, height, header)
+        case ScriptHashSubscription(scriptHash) =>
+          val status = c.as[String].getOrElse("")
+          ScriptHashSubscriptionResponse(scriptHash, status)
+        case BroadcastTransaction(tx) =>
+          // if we got here, it means that the server's response does not contain an error and message should be our
+          // transaction id. However, it seems that at least on testnet some servers still use an older version of the
+          // Electrum protocol and return an error message in the result field
+          val msg = c
+            .as[String]
+            .getOrElse(
+              "error: response from BroadcastTransaction is not a string"
+            )
+          Try(ByteVector32.fromValidHex(msg)) match {
+            case Success(txid) if txid == tx.txid =>
+              BroadcastTransactionResponse(tx, None)
+            case Success(txid) =>
+              val err = Some(
+                JSONRPC.Error(
+                  1,
+                  s"response txid $txid does not match request txid ${tx.txid}"
+                )
+              )
+              BroadcastTransactionResponse(tx, err)
+            case Failure(_) =>
+              BroadcastTransactionResponse(tx, Some(JSONRPC.Error(1, msg)))
+          }
+        case GetHeaders(start_height, _, _) =>
+          val max = c.get[Int]("max").toTry.get
+          val hex = c.get[String]("hex").toTry.get
+          val bin = ByteVector.fromValidHex(hex).toArray
+          val blockHeaders = bin.grouped(80).map(BlockHeader.read).toList
+          GetHeadersResponse(source, start_height, blockHeaders, max)
+        case GetMerkle(txid, _, cOpt) =>
+          val pos = c.get[Int]("pos").toTry.get
+          val height = c.get[Int]("block_height").toTry.get
+          val hashes =
+            c.downField("merkle")
+              .values
+              .get
+              .map(_.as[String].toTry.get)
+              .map(ByteVector32.fromValidHex(_))
+              .toList
+          GetMerkleResponse(Some(source), txid, hashes, height, pos, cOpt)
+      }
+    case _ => IrrelevantResponse
   }
 }
 
 object JSONRPC {
   case class Request(
-      jsonrpc: String = "2.0",
       id: String,
       method: String,
       params: Seq[Any] = Nil
   )
+  given Encoder[Request] = new Encoder {
+    final def apply(req: Request): Json = Json.obj(
+      "jsonrpc" := "2.0",
+      "id" := req.id,
+      "method" := req.method,
+      "params" := Json.fromValues(req.params.map {
+        case s: String       => s.asJson
+        case b: ByteVector32 => b.toHex.asJson
+        case f: FeeratePerKw => f.toLong.asJson
+        case b: Boolean      => b.asJson
+        case t: Int          => t.asJson
+        case t: Long         => t.asJson
+        case t: Double       => t.asJson
+      })
+    )
+  }
+
   case class Response(
-      result: org.json4s.JsonAST.JValue,
+      id: String,
       error: Option[Error],
-      id: String
+      result: Option[Json]
   )
+  given Decoder[Response] = new Decoder {
+    final def apply(c: HCursor): Decoder.Result[Response] =
+      for {
+        id <- c.downField("id").as[String]
+        error = c.downField("error").as[Error].toOption
+        result = c.downField("result").focus
+      } yield {
+        new Response(id, error, result)
+      }
+  }
+
   case class Error(code: Int, message: String)
-}
-
-class ElectrumClient(
-    pool: ElectrumClientPool,
-    server: ElectrumClientPool.ElectrumServerAddress,
-    onReady: ElectrumClient => Unit
-) { self =>
-  def address = server.address.getHostName()
-  System.err.println(s"[info][electrum] connecting to $address")
-
-  var nextRequestId = new AtomicInteger(0)
-  var requests =
-    scala.collection.mutable.Map.empty[String, (Request, Promise[Response])]
-
-  var ctx: Option[ChannelHandlerContext] = None
-
-  val waitForConnected = Promise[ChannelHandlerContext]()
-
-  // We need to regularly send a ping in order not to get disconnected
-  val pingTrigger = {
-    every(16.seconds) {
-      if (ctx.isEmpty)
-        pool.killClient(self, "a long time has passed without a connection")
-      else {
-        val pong = self.request[PingResponse.type](Ping)
-        after(14.seconds) {
-          if (!pong.isCompleted)
-            pool.killClient(self, "taking too long to answer our ping")
-        }
-      }
-    }
-  }
-
-  def shutdown(): Unit = {
-    System.err.println(s"[debug][electrum] shutting down $address")
-    ctx.foreach(_.close())
-    pingTrigger.cancel()
-    requests.foreach { case (_, (_, p: Promise[Response])) =>
-      if (!p.isCompleted) p.failure(new Exception("client shutdown"))
-    }
-    requests.clear()
-    if (!waitForConnected.isCompleted)
-      waitForConnected.failure(
-        new Exception("client shutdown before connecting")
-      )
-  }
-
-  val b = new Bootstrap
-  b.channel(classOf[NioSocketChannel])
-  b.group(workerGroup)
-
-  b.option[java.lang.Boolean](ChannelOption.TCP_NODELAY, true)
-  b.option[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
-  b.option[java.lang.Integer](ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000)
-  b.option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-
-  b.handler(new ChannelInitializer[SocketChannel] {
-    override def initChannel(ch: SocketChannel): Unit = {
-      if (server.ssl == SSL.LOOSE || server.address.getPort() == 50002) {
-        val sslCtx = SslContextBuilder.forClient
-          .trustManager(InsecureTrustManagerFactory.INSTANCE)
-          .build
-        ch.pipeline.addLast(
-          sslCtx.newHandler(
-            ch.alloc,
-            server.address.getHostName(),
-            server.address.getPort()
-          )
-        )
-      }
-
-      // Inbound
-      ch.pipeline.addLast(new LineBasedFrameDecoder(Int.MaxValue, true, true))
-      ch.pipeline.addLast(new StringDecoder(CharsetUtil.UTF_8))
-      ch.pipeline.addLast(new ElectrumResponseDecoder)
-      ch.pipeline.addLast(new ResponseHandler())
-
-      // Outbound
-      ch.pipeline.addLast(new LineEncoder)
-      ch.pipeline.addLast(new JsonRPCRequestEncoder)
-
-      // Error handler
-      ch.pipeline.addLast(new ExceptionHandler)
-
-      LNParams.connectionProvider.proxyAddress.foreach { address =>
-        // Optional proxy which must be the first handler
-        val handler = new Socks5ProxyHandler(address)
-        ch.pipeline.addFirst(handler)
-      }
-    }
-  })
-
-  val channelOpenFuture: ChannelFuture =
-    b.connect(server.address.getHostName(), server.address.getPort())
-
-  if (LNParams.connectionProvider.proxyAddress.isDefined)
-    b.resolver(NoopAddressResolverGroup.INSTANCE)
-
-  channelOpenFuture.addListeners(new ChannelFutureListener {
-    override def operationComplete(future: ChannelFuture): Unit = {
-      if (!future.isSuccess) {
-        // the connection was not open successfully, close this actor
-        pool.killClient(self, s"failed to connect: $future")
-      } else {
-        // if we are here it means the connection was opened successfully
-        // listen for when the connection is closed
-        future.channel.closeFuture.addListener(new ChannelFutureListener {
-          override def operationComplete(future: ChannelFuture): Unit =
-            // this just means it was closed
-            pool.killClient(self, s"operation ended: $future")
-        })
-      }
-    }
-  })
-
-  class ExceptionHandler extends ChannelDuplexHandler {
-    override def connect(
-        ctx: ChannelHandlerContext,
-        remoteAddress: SocketAddress,
-        localAddress: SocketAddress,
-        promise: ChannelPromise
-    ): Unit = {
-      val listener = new ChannelFutureListener {
-        override def operationComplete(future: ChannelFuture): Unit =
-          if (!future.isSuccess())
-            pool.killClient(self, s"channel closed: $future")
-      }
-      ctx.connect(remoteAddress, localAddress, promise addListener listener)
-    }
-
-    override def write(
-        ctx: ChannelHandlerContext,
-        msg: scala.Any,
-        promise: ChannelPromise
-    ): Unit = {
-      val listener = new ChannelFutureListener {
-        override def operationComplete(future: ChannelFuture): Unit = {
-          if (!future.isSuccess)
-            pool.killClient(self, s"failed to write: $future")
-        }
-      }
-      ctx.write(msg, promise addListener listener)
-    }
-
-    override def exceptionCaught(
-        ctx: ChannelHandlerContext,
-        cause: Throwable
-    ): Unit =
-      pool.killClient(self, s"exception: $cause")
-  }
-
-  class ElectrumResponseDecoder extends MessageToMessageDecoder[String] {
-    override def decode(
-        ctx: ChannelHandlerContext,
-        msg: String,
-        out: java.util.List[AnyRef]
-    ): Unit = {
-      val s = msg.asInstanceOf[String]
-      val r = parseResponse(self, s)
-      out.add(r)
-    }
-  }
-
-  class JsonRPCRequestEncoder extends MessageToMessageEncoder[JSONRPC.Request] {
-    override def encode(
-        ctx: ChannelHandlerContext,
-        request: JSONRPC.Request,
-        out: java.util.List[AnyRef]
-    ): Unit = {
-      import org.json4s.JsonDSL._
-      import org.json4s._
-
-      val json =
-        ("method" -> request.method) ~ ("params" -> request.params.map {
-          case s: String       => new JString(s)
-          case b: ByteVector32 => new JString(b.toHex)
-          case f: FeeratePerKw => new JLong(f.toLong)
-          case b: Boolean      => new JBool(b)
-          case t: Int          => new JInt(t)
-          case t: Long         => new JLong(t)
-          case t: Double       => new JDouble(t)
-        }) ~ ("id" -> request.id) ~ ("jsonrpc" -> request.jsonrpc)
-      val serialized = JsonMethods.compact(JsonMethods.render(json))
-      out.add(serialized)
-    }
-  }
-
-  class ResponseHandler() extends ChannelInboundHandlerAdapter {
-    override def channelActive(ctx: ChannelHandlerContext): Unit = {
-      request[ServerVersionResponse](
-        ServerVersion(CLIENT_NAME, PROTOCOL_VERSION),
-        ctx
-      )
-        .onComplete {
-          case Success(v: ServerVersionResponse) =>
-            self.ctx = Some(ctx)
-            onReady(self)
-            if (!waitForConnected.isCompleted) waitForConnected.success(ctx)
-
-            request[HeaderSubscriptionResponse](HeaderSubscription(), ctx)
-              .onComplete {
-                case Success(resp: HeaderSubscriptionResponse) =>
-                case Failure(err) =>
-                  System.err.println(
-                    s"[warn][electrum] ${address} failed to get a header subscription"
-                  )
-              }
-          case err =>
-            pool.killClient(self, s"bad response: $err")
-        }
-    }
-
-    override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit =
-      msg match {
-        case Right(json: JSONRPC.Response) =>
-          requests.get(json.id) match {
-            case Some((request, promise)) => {
-              val response = parseJsonResponse(self, request, json)
-
-              // always return the response to the caller
-              promise.success(response)
-              requests.remove(json.id)
-
-              // but also fire events when it is a subscription response
-              response match {
-                case response: HeaderSubscriptionResponse =>
-                  pool.onHeader(response)
-                case response: ScriptHashSubscriptionResponse =>
-                  pool.onScriptHash(response)
-                case _ =>
-              }
-            }
-            case None => {}
-          }
-
-        case Left(response: HeaderSubscriptionResponse) =>
-          pool.onHeader(response)
-        case Left(response: ScriptHashSubscriptionResponse) =>
-          pool.onScriptHash(response)
-      }
-  }
-
-  def request[R <: Response](
-      r: Request,
-      ctx: ChannelHandlerContext
-  ): Future[R] = {
-    val promise = Promise[Response]()
-
-    val reqId = nextRequestId.getAndIncrement().toString()
-    if (ctx.channel.isWritable) {
-      ctx.channel.writeAndFlush(makeRequest(r, reqId))
-      requests += (reqId -> ((r, promise)))
-    } else {
-      pool.killClient(self, "channel not writable")
-      promise.failure(
-        new Exception(
-          s"channel not writable. connection to $address was closed."
-        )
-      )
-    }
-
-    promise.future.map {
-      case resp: ServerError =>
-        throw new ElectrumServerError(s"$address has sent an error: $resp")
-      case any => any.asInstanceOf[R]
-    }
-  }
-
-  def request[R <: Response](r: Request): Future[R] =
-    waitForConnected.future.flatMap { ctx => request(r, ctx) }
+  given Decoder[Error] = deriveDecoder
+  given Encoder[Error] = deriveEncoder
 }
