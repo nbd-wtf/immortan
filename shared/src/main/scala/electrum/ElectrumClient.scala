@@ -408,7 +408,7 @@ object JSONRPC {
       method: String,
       params: Seq[Any] = Nil
   )
-  given Encoder[Request] = new Encoder {
+  implicit val encodeRequest: Encoder[Request] = new Encoder[Request] {
     final def apply(req: Request): Json = Json.obj(
       "jsonrpc" := "2.0",
       "id" := req.id,
@@ -430,7 +430,7 @@ object JSONRPC {
       error: Option[Error],
       result: Option[Json]
   )
-  given Decoder[Response] = new Decoder {
+  implicit val decodeResponse: Decoder[Response] = new Decoder[Response] {
     final def apply(c: HCursor): Decoder.Result[Response] =
       for {
         id <- c.downField("id").as[String]
@@ -442,6 +442,6 @@ object JSONRPC {
   }
 
   case class Error(code: Int, message: String)
-  given Decoder[Error] = deriveDecoder
-  given Encoder[Error] = deriveEncoder
+  implicit val decodeError: Decoder[Error] = deriveDecoder
+  implicit val encodeError: Encoder[Error] = deriveEncoder
 }

@@ -36,7 +36,7 @@ object CheckPoint {
     stream.read(inputBytes)
     val input = new String(inputBytes, "UTF-8")
 
-    decode[List[(String, BigInt)]](input).toTry.get.toSet.map { (hash, bits) =>
+    decode[List[(String, BigInt)]](input).toTry.get.map { case (hash, bits) =>
       CheckPoint(
         ByteVector32.fromValidHex(hash).reverse,
         encodeCompact(bits.bigInteger)

@@ -292,11 +292,12 @@ object ElectrumClientPool {
       stream.read(inputBytes)
       val input = new String(inputBytes, "UTF-8")
 
-      decode[Map[String, Json]](input).toTry.get.toSet.map { (hostname, data) =>
-        val port = data.hcursor.get[String]("s").toTry.get.toInt
-        val address = InetSocketAddress.createUnresolved(hostname, port)
-        ElectrumServerAddress(address, SSL.LOOSE)
-      }
+      decode[Map[String, Json]](input).toTry.get.toList.map {
+        case (hostname, data) =>
+          val port = data.hcursor.get[String]("s").toTry.get.toInt
+          val address = InetSocketAddress.createUnresolved(hostname, port)
+          ElectrumServerAddress(address, SSL.LOOSE)
+      }.toSet
     } finally {
       stream.close
     }
