@@ -6,7 +6,9 @@ import scala.concurrent.Future
 import com.softwaremill.quicklens._
 import scodec.bits.ByteVector
 import io.lemonlabs.uri.Url
-import spray.json._
+import io.circe._
+import io.circe.syntax._
+import io.circe.parser.{parse, decode}
 import scoin._
 import scoin.Crypto.PublicKey
 import scoin.ln._
@@ -52,20 +54,20 @@ object LNUrl {
   }
 
   def guardResponse(raw: String): String = {
-    val parseAttempt = Try(raw.parseJson.asJsObject.fields)
+    val parseAttempt = parse(raw).map(_.hcursor)
     val hasErrorDescription = parseAttempt
-      .map(_("reason"))
-      .map(json2String)
+      .flatMap(_.get[String]("reason"))
+      .toTry
     val hasError = parseAttempt
-      .map(_("status"))
-      .map(json2String)
+      .flatMap(_.get[String]("status"))
+      .toTry
       .filter(_.toUpperCase == "ERROR")
 
     if (hasErrorDescription.isSuccess)
       throw ErrorFromVendor(hasErrorDescription.get)
     else if (hasError.isSuccess)
       throw ErrorFromVendor("")
-    else if (parseAttempt.isFailure)
+    else if (parseAttempt.toTry.isFailure)
       throw InvalidJsonFromVendor
     raw
   }
@@ -110,7 +112,9 @@ case class LNUrl(request: String) {
   }
 
   def level1DataResponse: Future[LNUrlData] =
-    LNParams.connectionProvider.get(url.toString).map(to[LNUrlData](_))
+    LNParams.connectionProvider
+      .get(url.toString)
+      .map(decode[LNUrlData](_).toTry.get)
 }
 
 sealed trait LNUrlData
@@ -208,33 +212,28 @@ case class WithdrawRequest(
 }
 
 // LNURL-PAY
-object PayRequest {
-  type TagAndContent = Vector[JsValue]
-}
+case class PayRequestMeta(jsonString: String) {
+  val records = decode[Vector[Json]](jsonString).toTry.get
+    .filter(_.isArray)
+    .map(_.asArray.get.filter(_.isString).map(_.asString.get))
 
-case class PayRequestMeta(records: PayRequest.TagAndContent) {
   val text: Option[String] = records.collectFirst {
-    case JsArray(JsString("text/plain") +: JsString(txt) +: _) => txt
+    case "text/plain" +: v +: _ => v
   }
   val longDesc: Option[String] = records.collectFirst {
-    case JsArray(JsString("text/long-desc") +: JsString(txt) +: _) => txt
+    case "text/long-desc" +: v +: _ => v
   }
   val email: Option[String] = records.collectFirst {
-    case JsArray(JsString("text/email") +: JsString(email) +: _) => email
+    case "text/email" +: v +: _ => v
   }
   val identity: Option[String] = records.collectFirst {
-    case JsArray(JsString("text/identifier") +: JsString(identifier) +: _) =>
-      identifier
+    case "text/identifier" +: v +: _ => v
   }
   val textFull: Option[String] = longDesc.orElse(text)
   val textShort: Option[String] = text.map(trimmed(_))
   val imageBase64: Option[String] = records.collectFirst {
-    case JsArray(
-          JsString("image/png;base64" | "image/jpeg;base64") +: JsString(
-            image
-          ) +: _
-        ) =>
-      image
+    case "image/jpeg;base64" +: v +: _ => v
+    case "image/png;base64" +: v +: _  => v
   }
 
   def queryText(domain: String): String = {
@@ -252,9 +251,7 @@ case class PayRequest(
     commentAllowed: Option[Int] = None,
     payerData: Option[PayerDataSpec] = None
 ) extends CallbackLNUrlData {
-  val meta: PayRequestMeta = PayRequestMeta(
-    metadata.parseJson.asInstanceOf[JsArray].elements
-  )
+  val meta: PayRequestMeta = PayRequestMeta(metadata)
 
   private[this] val identifiers = meta.email ++ meta.identity
   require(
@@ -302,7 +299,7 @@ case class PayRequest(
         )
       )
       .flatMap(d => if (d == PayerData()) None else Some(d))
-      .map(_.toJson.compactPrint)
+      .map(_.asJson.noSpaces)
 
     val url = callbackUrl
       .addParam("amount", amount.toLong.toString)
@@ -321,7 +318,7 @@ case class PayRequest(
 
     LNUrl
       .level2DataResponse(url)
-      .map(to[PayRequestFinal](_))
+      .map(decode[PayRequestFinal](_).toTry.get)
       .map { payRequestFinal =>
         val descriptionHashOpt =
           payRequestFinal.prExt.pr.description.toOption

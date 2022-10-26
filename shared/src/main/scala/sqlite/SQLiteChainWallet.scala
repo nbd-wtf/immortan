@@ -1,13 +1,15 @@
 package immortan.sqlite
 
+import scodec.bits.ByteVector
+import io.circe.syntax._
+import io.circe.parser.decode
 import scoin.Crypto.PublicKey
 import scoin.Satoshi
+
 import immortan.electrum.PersistentData
 import immortan.electrum.db.sqlite.SqliteWalletDb.persistentDataCodec
 import immortan.electrum.db.{ChainWalletInfo, CompleteChainWalletInfo, WalletDb}
 import immortan.utils.ImplicitJsonFormats._
-import scodec.bits.ByteVector
-import spray.json._
 
 class SQLiteChainWallet(val db: DBInterface) extends WalletDb {
   def remove(pub: PublicKey): Unit =
@@ -21,7 +23,7 @@ class SQLiteChainWallet(val db: DBInterface) extends WalletDb {
   ): Unit =
     db.change(
       ChainWalletTable.newSql,
-      info.core.toJson.compactPrint,
+      info.core.asJson.noSpaces,
       pub.toString,
       data.toArray,
       info.lastBalance.toLong: java.lang.Long,
@@ -46,7 +48,7 @@ class SQLiteChainWallet(val db: DBInterface) extends WalletDb {
   def listWallets: Iterable[CompleteChainWalletInfo] =
     db.select(ChainWalletTable.selectSql).iterable { rc =>
       CompleteChainWalletInfo(
-        to[ChainWalletInfo](rc.string(ChainWalletTable.info)),
+        decode[ChainWalletInfo](rc.string(ChainWalletTable.info)).toTry.get,
         rc.byteVec(ChainWalletTable.data),
         Satoshi(rc.long(ChainWalletTable.lastBalance)),
         rc.string(ChainWalletTable.label),

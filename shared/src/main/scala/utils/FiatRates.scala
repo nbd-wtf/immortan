@@ -1,6 +1,7 @@
 package immortan.utils
 
 import scala.concurrent.Future
+import io.circe.parser.decode
 import scoin.Crypto
 
 import immortan._
@@ -60,7 +61,7 @@ class FiatRates(bag: DataBag) extends CanBeShutDown {
       case 0 =>
         LNParams.connectionProvider
           .get("https://api.coingecko.com/api/v3/exchange_rates")
-          .map(to[CoinGecko](_))
+          .map(decode[CoinGecko](_).toTry.get)
           .map(
             _.rates
               .map { case (code, item) => code.toLowerCase -> item.value }
@@ -68,12 +69,12 @@ class FiatRates(bag: DataBag) extends CanBeShutDown {
       case 1 =>
         LNParams.connectionProvider
           .get("https://blockchain.info/ticker")
-          .map(to[FiatRates.BlockchainInfoItemMap](_))
+          .map(decode[FiatRates.BlockchainInfoItemMap](_).toTry.get)
           .map(_.map { case (code, item) => code.toLowerCase -> item.last })
       case _ =>
         LNParams.connectionProvider
           .get("https://bitpay.com/rates")
-          .map(to[Bitpay](_))
+          .map(decode[Bitpay](_).toTry.get)
           .map(_.data.map { case BitpayItem(code, rate) =>
             code.toLowerCase -> rate
           }.toMap)

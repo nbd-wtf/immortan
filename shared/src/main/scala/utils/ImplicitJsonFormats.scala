@@ -1,7 +1,10 @@
 package immortan.utils
 
+import scala.util.Try
 import scodec.bits.BitVector
-import spray.json._
+import io.circe._
+import io.circe.syntax._
+import io.circe.generic.semiauto._
 import scoin.Crypto.PublicKey
 import scoin.DeterministicWallet.ExtendedPublicKey
 import scoin._
@@ -15,540 +18,328 @@ import immortan.utils.FiatRates.{BitpayItemList, CoinGeckoItemMap}
 import immortan.electrum.db.{ChainWalletInfo, SigningWallet, WatchingWallet}
 import immortan.blockchain.fee._
 
-object ImplicitJsonFormats extends DefaultJsonProtocol {
-  val json2String: JsValue => String = (_: JsValue).convertTo[String]
-
+object ImplicitJsonFormats {
   final val TAG = "tag"
 
-  def writeExt[T](ext: (String, JsValue), base: JsValue): JsObject = JsObject(
-    base.asJsObject.fields + ext
-  )
-
-  def to[T: JsonFormat](raw: String): T = raw.parseJson.convertTo[T]
-
-  def taggedJsonFmt[T](base: JsonFormat[T], tag: String): JsonFormat[T] =
-    new JsonFormat[T] {
-      def write(unserialized: T): JsValue =
-        writeExt(TAG -> JsString(tag), base write unserialized)
-      def read(serialized: JsValue): T = base read serialized
+  def encodeWithTag[T](base: Encoder[T], tag: String): Encoder[T] =
+    new Encoder[T] {
+      final def apply(t: T): Json =
+        base(t).hcursor.downField("tag").set(tag.asJson).top.get
     }
 
-  def json2BitVec(json: JsValue): Option[BitVector] =
-    BitVector fromHex json2String(json)
+  def encodeWithCodec[T](codec: scodec.Codec[T]): Encoder[T] =
+    Encoder.encodeString.contramap(codec.encode(_).require.toHex)
+  def decodeWithCodec[T](codec: scodec.Codec[T]): Decoder[T] =
+    Decoder.decodeString.emapTry(s =>
+      Try(codec.decodeValue(BitVector.fromValidHex(s)).require)
+    )
 
-  def sCodecJsonFmt[T](codec: scodec.Codec[T] = null): JsonFormat[T] =
-    new JsonFormat[T] {
-      def read(serialized: JsValue): T =
-        codec.decode(json2BitVec(serialized).get).require.value
-      def write(unserialized: T): JsValue =
-        codec.encode(unserialized).require.toHex.toJson
-    }
+  implicit val encodePublicKey: Encoder[PublicKey] = encodeWithCodec(publickey)
+  implicit val decodePublicKey: Decoder[PublicKey] = decodeWithCodec(publickey)
 
-  implicit val publicKeyFmt: JsonFormat[PublicKey] = sCodecJsonFmt(publickey)
+  implicit val encodeExtendedPublicKey: Encoder[ExtendedPublicKey] =
+    encodeWithCodec(extendedPublicKeyCodec)
+  implicit val decodeExtendedPublicKey: Decoder[ExtendedPublicKey] =
+    decodeWithCodec(extendedPublicKeyCodec)
 
-  implicit val byteVector32Fmt: JsonFormat[ByteVector32] = sCodecJsonFmt(
-    bytes32
-  )
+  implicit val encodeByteVector32: Encoder[ByteVector32] =
+    encodeWithCodec(bytes32)
+  implicit val decodeByteVector32: Decoder[ByteVector32] =
+    decodeWithCodec(bytes32)
 
-  implicit val channelUpdateFmt: JsonFormat[ChannelUpdate] = sCodecJsonFmt(
-    channelUpdateCodec
-  )
+  implicit val encodeChannelUpdate: Encoder[ChannelUpdate] =
+    encodeWithCodec(channelUpdateCodec)
+  implicit val decodeChannelUpdate: Decoder[ChannelUpdate] =
+    decodeWithCodec(channelUpdateCodec)
 
-  implicit val milliSatoshiFmt: JsonFormat[MilliSatoshi] =
-    jsonFormat[Long, MilliSatoshi](MilliSatoshi.apply, "underlying")
+  implicit val encodeMilliSatoshi: Encoder[MilliSatoshi] =
+    Encoder.encodeLong.contramap(_.toLong)
+  implicit val decodeMilliSatoshi: Decoder[MilliSatoshi] =
+    Decoder.decodeLong.emap(l => Right(MilliSatoshi(l)))
 
-  implicit val satoshiFmt: JsonFormat[Satoshi] =
-    jsonFormat[Long, Satoshi](Satoshi.apply, "underlying")
-
-  implicit val extendedPublicKeyFmt: JsonFormat[ExtendedPublicKey] =
-    sCodecJsonFmt(extendedPublicKeyCodec)
+  implicit val encodeSatoshi: Encoder[Satoshi] =
+    Encoder.encodeLong.contramap(_.toLong)
+  implicit val decodeSatoshi: Decoder[Satoshi] =
+    Decoder.decodeLong.emap(l => Right(Satoshi(l)))
 
   // Chain wallet types
-  implicit object ChainWalletInfoFmt extends JsonFormat[ChainWalletInfo] {
-    def read(raw: JsValue): ChainWalletInfo = raw.asJsObject.fields(TAG) match {
-      case JsString("WatchingWallet") => raw.convertTo[WatchingWallet]
-      case JsString("SigningWallet")  => raw.convertTo[SigningWallet]
-      case _ => throw new Exception("unexpected chain wallet type")
+  // implicit val encodeChainWalletInfo: Encoder[ChainWalletInfo] =
+  implicit val encodeChainWalletInfo: Encoder[ChainWalletInfo] =
+    new Encoder[ChainWalletInfo] {
+      final def apply(cwi: ChainWalletInfo): Json = cwi match {
+        case wi: WatchingWallet => wi.asJson
+        case wi: SigningWallet  => wi.asJson
+      }
+    }
+  implicit val decodeChainWalletInfo: Decoder[ChainWalletInfo] =
+    new Decoder[ChainWalletInfo] {
+      final def apply(c: HCursor): Decoder.Result[ChainWalletInfo] =
+        c.get[String]("tag").flatMap {
+          case "WatchingWallet" => c.as[WatchingWallet]
+          case "SigningWallet"  => c.as[SigningWallet]
+          case t =>
+            Left(
+              DecodingFailure(
+                DecodingFailure.Reason
+                  .CustomReason(s"unexpected chain wallet tag $t"),
+                c
+              )
+            )
+        }
     }
 
-    def write(internal: ChainWalletInfo): JsValue = internal match {
-      case walletInfo: WatchingWallet => walletInfo.toJson
-      case walletInfo: SigningWallet  => walletInfo.toJson
-      case null => throw new Exception("unexpected chain wallet info")
-    }
-  }
-
-  implicit val signingWalletFmt: JsonFormat[SigningWallet] =
-    taggedJsonFmt(
-      jsonFormat[String, Boolean, SigningWallet](
-        SigningWallet.apply,
-        "walletType",
-        "isRemovable"
-      ),
+  implicit val encodeSigningWallet: Encoder[SigningWallet] =
+    encodeWithTag(
+      deriveEncoder[SigningWallet],
       tag = "SigningWallet"
     )
+  implicit val decodeSigningWallet: Decoder[SigningWallet] = deriveDecoder
 
-  implicit val watchingWalletFmt: JsonFormat[WatchingWallet] =
-    taggedJsonFmt(
-      jsonFormat[String, Option[
-        Long
-      ], ExtendedPublicKey, Boolean, WatchingWallet](
-        WatchingWallet.apply,
-        "walletType",
-        "masterFingerprint",
-        "xPub",
-        "isRemovable"
-      ),
+  implicit val encodeWatchingWallet: Encoder[WatchingWallet] =
+    encodeWithTag(
+      deriveEncoder[WatchingWallet],
       tag = "WatchingWallet"
     )
+  implicit val decodeWatchingWallet: Decoder[WatchingWallet] = deriveDecoder
 
   // PaymentInfo stuff
-  implicit val semanticOrderFmt: JsonFormat[SemanticOrder] =
-    jsonFormat[String, Long, SemanticOrder](SemanticOrder.apply, "id", "order")
+  implicit val encodeSemanticOrder: Encoder[SemanticOrder] = deriveEncoder
+  implicit val decodeSemanticOrder: Decoder[SemanticOrder] = deriveDecoder
 
-  implicit val lNUrlDescription: JsonFormat[LNUrlDescription] =
-    jsonFormat[
-      Option[String],
-      Option[SemanticOrder],
-      String,
-      ByteVector32,
-      ByteVector32,
-      MilliSatoshi,
-      LNUrlDescription
-    ](
-      LNUrlDescription.apply,
-      "label",
-      "semanticOrder",
-      "privKey",
-      "lastHash",
-      "lastSecret",
-      "lastMsat"
-    )
+  implicit val encodeLNUrlDescription: Encoder[LNUrlDescription] = deriveEncoder
+  implicit val decodeLNUrlDescription: Decoder[LNUrlDescription] = deriveDecoder
 
-  implicit object TxDescriptionFmt extends JsonFormat[TxDescription] {
-    def read(raw: JsValue): TxDescription = raw.asJsObject.fields(TAG) match {
-      case JsString("PlainTxDescription") => raw.convertTo[PlainTxDescription]
-      case JsString("OpReturnTxDescription") =>
-        raw.convertTo[OpReturnTxDescription]
-      case JsString("ChanFundingTxDescription") =>
-        raw.convertTo[ChanFundingTxDescription]
-      case JsString("ChanRefundingTxDescription") =>
-        raw.convertTo[ChanRefundingTxDescription]
-      case JsString("HtlcClaimTxDescription") =>
-        raw.convertTo[HtlcClaimTxDescription]
-      case JsString("PenaltyTxDescription") =>
-        raw.convertTo[PenaltyTxDescription]
-      case _ => throw new Exception
+  implicit val encodeTxDescription: Encoder[TxDescription] =
+    new Encoder[TxDescription] {
+      final def apply(cwi: TxDescription): Json = cwi match {
+        case txd: PlainTxDescription         => txd.asJson
+        case txd: OpReturnTxDescription      => txd.asJson
+        case txd: ChanFundingTxDescription   => txd.asJson
+        case txd: ChanRefundingTxDescription => txd.asJson
+        case txd: HtlcClaimTxDescription     => txd.asJson
+        case txd: PenaltyTxDescription       => txd.asJson
+      }
+    }
+  implicit val decodeTxDescription: Decoder[TxDescription] =
+    new Decoder[TxDescription] {
+      final def apply(c: HCursor): Decoder.Result[TxDescription] =
+        c.get[String]("tag").flatMap {
+          case "PlainTxDescription"         => c.as[PlainTxDescription]
+          case "OpReturnTxDescription"      => c.as[OpReturnTxDescription]
+          case "ChanFundingTxDescription"   => c.as[ChanFundingTxDescription]
+          case "ChanRefundingTxDescription" => c.as[ChanRefundingTxDescription]
+          case "HtlcClaimTxDescription"     => c.as[HtlcClaimTxDescription]
+          case "PenaltyTxDescription"       => c.as[PenaltyTxDescription]
+          case t =>
+            Left(
+              DecodingFailure(
+                DecodingFailure.Reason
+                  .CustomReason(s"unexpected tx description tag $t"),
+                c
+              )
+            )
+        }
     }
 
-    def write(internal: TxDescription): JsValue = internal match {
-      case txDescription: PlainTxDescription         => txDescription.toJson
-      case txDescription: OpReturnTxDescription      => txDescription.toJson
-      case txDescription: ChanFundingTxDescription   => txDescription.toJson
-      case txDescription: ChanRefundingTxDescription => txDescription.toJson
-      case txDescription: HtlcClaimTxDescription     => txDescription.toJson
-      case txDescription: PenaltyTxDescription       => txDescription.toJson
-      case null => throw new Exception("unexpected tx description")
-    }
-  }
+  implicit val encodeRBFParams: Encoder[RBFParams] = deriveEncoder
+  implicit val decodeRBFParams: Decoder[RBFParams] = deriveDecoder
 
-  implicit val rbfParams: JsonFormat[RBFParams] =
-    jsonFormat[ByteVector32, Long, RBFParams](RBFParams.apply, "ofTxid", "mode")
-
-  implicit val plainTxDescriptionFmt: JsonFormat[PlainTxDescription] =
-    taggedJsonFmt(
-      jsonFormat[List[String], Option[String], Option[SemanticOrder], Option[
-        ByteVector32
-      ], Option[ByteVector32], Option[RBFParams], PlainTxDescription](
-        PlainTxDescription.apply,
-        "addresses",
-        "label",
-        "semanticOrder",
-        "cpfpBy",
-        "cpfpOf",
-        "rbf"
-      ),
+  implicit val encodePlainTxDescription: Encoder[PlainTxDescription] =
+    encodeWithTag(
+      deriveEncoder[PlainTxDescription],
       tag = "PlainTxDescription"
     )
+  implicit val decodePlainTxDescription: Decoder[PlainTxDescription] =
+    deriveDecoder
 
-  implicit val opReturnTxDescriptionFmt: JsonFormat[OpReturnTxDescription] =
-    taggedJsonFmt(
-      jsonFormat[
-        List[ByteVector32],
-        Option[String],
-        Option[SemanticOrder],
-        Option[ByteVector32],
-        Option[ByteVector32],
-        Option[RBFParams],
-        OpReturnTxDescription
-      ](
-        OpReturnTxDescription.apply,
-        "preimages",
-        "label",
-        "semanticOrder",
-        "cpfpBy",
-        "cpfpOf",
-        "rbf"
-      ),
+  implicit val encodeOpReturnTxDescription: Encoder[OpReturnTxDescription] =
+    encodeWithTag(
+      deriveEncoder[OpReturnTxDescription],
       tag = "OpReturnTxDescription"
     )
+  implicit val decodeOpReturnTxDescription: Decoder[OpReturnTxDescription] =
+    deriveDecoder
 
-  implicit val chanFundingTxDescriptionFmt
-      : JsonFormat[ChanFundingTxDescription] =
-    taggedJsonFmt(
-      jsonFormat[PublicKey, Option[String], Option[SemanticOrder], Option[
-        ByteVector32
-      ], Option[ByteVector32], Option[RBFParams], ChanFundingTxDescription](
-        ChanFundingTxDescription.apply,
-        "nodeId",
-        "label",
-        "semanticOrder",
-        "cpfpBy",
-        "cpfpOf",
-        "rbf"
-      ),
+  implicit val encodeChanFundingTxDescription
+      : Encoder[ChanFundingTxDescription] =
+    encodeWithTag(
+      deriveEncoder[ChanFundingTxDescription],
       tag = "ChanFundingTxDescription"
     )
+  implicit val decodeChanFundingTxDescription
+      : Decoder[ChanFundingTxDescription] =
+    deriveDecoder
 
-  implicit val chanRefundingTxDescriptionFmt
-      : JsonFormat[ChanRefundingTxDescription] =
-    taggedJsonFmt(
-      jsonFormat[PublicKey, Option[String], Option[SemanticOrder], Option[
-        ByteVector32
-      ], Option[ByteVector32], Option[RBFParams], ChanRefundingTxDescription](
-        ChanRefundingTxDescription.apply,
-        "nodeId",
-        "label",
-        "semanticOrder",
-        "cpfpBy",
-        "cpfpOf",
-        "rbf"
-      ),
+  implicit val encodeChanRefundingTxDescription
+      : Encoder[ChanRefundingTxDescription] =
+    encodeWithTag(
+      deriveEncoder[ChanRefundingTxDescription],
       tag = "ChanRefundingTxDescription"
     )
+  implicit val decodeChanRefundingTxDescription
+      : Decoder[ChanRefundingTxDescription] =
+    deriveDecoder
 
-  implicit val htlcClaimTxDescriptionFmt: JsonFormat[HtlcClaimTxDescription] =
-    taggedJsonFmt(
-      jsonFormat[PublicKey, Option[String], Option[SemanticOrder], Option[
-        ByteVector32
-      ], Option[ByteVector32], Option[RBFParams], HtlcClaimTxDescription](
-        HtlcClaimTxDescription.apply,
-        "nodeId",
-        "label",
-        "semanticOrder",
-        "cpfpBy",
-        "cpfpOf",
-        "rbf"
-      ),
+  implicit val encodeHtlcClaimTxDescription: Encoder[HtlcClaimTxDescription] =
+    encodeWithTag(
+      deriveEncoder[HtlcClaimTxDescription],
       tag = "HtlcClaimTxDescription"
     )
+  implicit val decodeHtlcClaimTxDescription: Decoder[HtlcClaimTxDescription] =
+    deriveDecoder
 
-  implicit val penaltyTxDescriptionFmt: JsonFormat[PenaltyTxDescription] =
-    taggedJsonFmt(
-      jsonFormat[PublicKey, Option[String], Option[SemanticOrder], Option[
-        ByteVector32
-      ], Option[ByteVector32], Option[RBFParams], PenaltyTxDescription](
-        PenaltyTxDescription.apply,
-        "nodeId",
-        "label",
-        "semanticOrder",
-        "cpfpBy",
-        "cpfpOf",
-        "rbf"
-      ),
+  implicit val encodePenaltyTxDescription: Encoder[PenaltyTxDescription] =
+    encodeWithTag(
+      deriveEncoder[PenaltyTxDescription],
       tag = "PenaltyTxDescription"
     )
+  implicit val decodePenaltyTxDescription: Decoder[PenaltyTxDescription] =
+    deriveDecoder
 
-  implicit val splitInfoFmt: JsonFormat[SplitInfo] =
-    jsonFormat[MilliSatoshi, MilliSatoshi, SplitInfo](
-      SplitInfo.apply,
-      "totalSum",
-      "myPart"
-    )
+  implicit val encodeSplitInfo: Encoder[SplitInfo] = deriveEncoder
+  implicit val decodeSplitInfo: Decoder[SplitInfo] = deriveDecoder
 
-  implicit val paymentDescriptionFmt: JsonFormat[PaymentDescription] =
-    jsonFormat[Option[SplitInfo], Option[String], Option[
-      SemanticOrder
-    ], String, Option[String], Option[String], Option[Long], Option[
-      ByteVector32
-    ], PaymentDescription](
-      PaymentDescription.apply,
-      "split",
-      "label",
-      "semanticOrder",
-      "invoiceText",
-      "proofTxid",
-      "meta",
-      "holdPeriodSec",
-      "toSelfPreimage"
-    )
+  implicit val encodePaymentDesc: Encoder[PaymentDescription] = deriveEncoder
+  implicit val decodePaymentDesc: Decoder[PaymentDescription] = deriveDecoder
 
-  // Payment action
-
-  implicit object PaymentActionFmt extends JsonFormat[PaymentAction] {
-    def read(raw: JsValue): PaymentAction = raw.asJsObject.fields(TAG) match {
-      case JsString("message") => raw.convertTo[MessageAction]
-      case JsString("aes")     => raw.convertTo[AESAction]
-      case JsString("url")     => raw.convertTo[UrlAction]
-      case _                   => throw new Exception
+  // LNURL Payment action
+  implicit val encodePaymentAction: Encoder[PaymentAction] =
+    new Encoder[PaymentAction] {
+      final def apply(cwi: PaymentAction): Json = cwi match {
+        case pa: MessageAction => pa.asJson
+        case pa: UrlAction     => pa.asJson
+        case pa: AESAction     => pa.asJson
+      }
+    }
+  implicit val decodePaymentAction: Decoder[PaymentAction] =
+    new Decoder[PaymentAction] {
+      final def apply(c: HCursor): Decoder.Result[PaymentAction] =
+        c.get[String]("tag").flatMap {
+          case "message" => c.as[MessageAction]
+          case "aes"     => c.as[AESAction]
+          case "url"     => c.as[UrlAction]
+          case t =>
+            Left(
+              DecodingFailure(
+                DecodingFailure.Reason
+                  .CustomReason(s"unexpected payment action tag $t"),
+                c
+              )
+            )
+        }
     }
 
-    def write(internal: PaymentAction): JsValue = internal match {
-      case paymentAction: MessageAction => paymentAction.toJson
-      case paymentAction: UrlAction     => paymentAction.toJson
-      case paymentAction: AESAction     => paymentAction.toJson
-      case null => throw new Exception("unexpected payment action")
-    }
-  }
+  implicit val encodeAESAction: Encoder[AESAction] =
+    encodeWithTag(deriveEncoder[AESAction], tag = "aes")
+  implicit val decodeAESAction: Decoder[AESAction] = deriveDecoder
 
-  implicit val aesActionFmt: JsonFormat[AESAction] = taggedJsonFmt(
-    jsonFormat[Option[String], String, String, String, AESAction](
-      AESAction.apply,
-      "domain",
-      "description",
-      "ciphertext",
-      "iv"
-    ),
-    tag = "aes"
-  )
+  implicit val encodeMessageAction: Encoder[MessageAction] =
+    encodeWithTag(deriveEncoder[MessageAction], tag = "message")
+  implicit val decodeMessageAction: Decoder[MessageAction] = deriveDecoder
 
-  implicit val messageActionFmt: JsonFormat[MessageAction] = taggedJsonFmt(
-    jsonFormat[Option[String], String, MessageAction](
-      MessageAction.apply,
-      "domain",
-      "message"
-    ),
-    tag = "message"
-  )
-
-  implicit val urlActionFmt: JsonFormat[UrlAction] = taggedJsonFmt(
-    jsonFormat[Option[String], String, String, UrlAction](
-      UrlAction.apply,
-      "domain",
-      "description",
-      "url"
-    ),
-    tag = "url"
-  )
+  implicit val encodeUrlAction: Encoder[UrlAction] =
+    encodeWithTag(deriveEncoder[UrlAction], tag = "url")
+  implicit val decodeUrlAction: Decoder[UrlAction] = deriveDecoder
 
   // LNURL
-  implicit object LNUrlDataFmt extends JsonFormat[LNUrlData] {
-    def write(unserialized: LNUrlData): JsValue = throw new RuntimeException
-    def read(serialized: JsValue): LNUrlData =
-      serialized.asJsObject.fields(TAG) match {
-        case JsString("hostedChannelRequest") =>
-          serialized.convertTo[HostedChannelRequest]
-        case JsString("channelRequest") =>
-          serialized.convertTo[NormalChannelRequest]
-        case JsString("withdrawRequest") =>
-          serialized.convertTo[WithdrawRequest]
-        case JsString("payRequest") =>
-          serialized.convertTo[PayRequest]
-        case otherValue =>
-          throw new Exception(s"unknown tag $otherValue")
-      }
-  }
+  implicit val decodeLNUrlData: Decoder[LNUrlData] =
+    new Decoder[LNUrlData] {
+      final def apply(c: HCursor): Decoder.Result[LNUrlData] =
+        c.get[String]("tag").flatMap {
+          case "channelRequest"       => c.as[NormalChannelRequest]
+          case "payRequest"           => c.as[PayRequest]
+          case "withdrawRequest"      => c.as[WithdrawRequest]
+          case "hostedChannelRequest" => c.as[HostedChannelRequest]
+          case t =>
+            Left(
+              DecodingFailure(
+                DecodingFailure.Reason
+                  .CustomReason(s"unexpected lnurl tag $t"),
+                c
+              )
+            )
+        }
+    }
 
   // Note: tag on these MUST start with lower case because it is defined that way on protocol level
-  implicit val normalChannelRequestFmt: JsonFormat[NormalChannelRequest] =
-    taggedJsonFmt(
-      jsonFormat[String, String, String, NormalChannelRequest](
-        NormalChannelRequest.apply,
-        "uri",
-        "callback",
-        "k1"
-      ),
-      tag = "channelRequest"
-    )
+  implicit val encodeNormalChannelRequest: Encoder[NormalChannelRequest] =
+    encodeWithTag(deriveEncoder[NormalChannelRequest], tag = "channelRequest")
+  implicit val decodeNormalChannelRequest: Decoder[NormalChannelRequest] =
+    deriveDecoder
 
-  implicit val hostedChannelRequestFmt: JsonFormat[HostedChannelRequest] =
-    taggedJsonFmt(
-      jsonFormat[String, Option[String], String, HostedChannelRequest](
-        HostedChannelRequest.apply,
-        "uri",
-        "alias",
-        "k1"
-      ),
+  implicit val encodeHostedChannelRequest: Encoder[HostedChannelRequest] =
+    encodeWithTag(
+      deriveEncoder[HostedChannelRequest],
       tag = "hostedChannelRequest"
     )
+  implicit val decodeHostedChannelRequest: Decoder[HostedChannelRequest] =
+    deriveDecoder
 
-  implicit val withdrawRequestFmt: JsonFormat[WithdrawRequest] = taggedJsonFmt(
-    jsonFormat[String, String, Long, String, Option[Long], Option[Long], Option[
-      String
-    ], Option[String], WithdrawRequest](
-      WithdrawRequest.apply,
-      "callback",
-      "k1",
-      "maxWithdrawable",
-      "defaultDescription",
-      "minWithdrawable",
-      "balance",
-      "balanceCheck",
-      "payLink"
-    ),
-    tag = "withdrawRequest"
-  )
+  implicit val encodeWithdrawRequest: Encoder[WithdrawRequest] =
+    encodeWithTag(deriveEncoder[WithdrawRequest], tag = "withdrawRequest")
+  implicit val decodeWithdrawRequest: Decoder[WithdrawRequest] = deriveDecoder
 
-  implicit val payerDataSpecEntryFmt: JsonFormat[PayerDataSpecEntry] =
-    jsonFormat[
-      Boolean,
-      PayerDataSpecEntry
-    ](PayerDataSpecEntry.apply, "mandatory")
+  implicit val encodePDSEntry: Encoder[PayerDataSpecEntry] = deriveEncoder
+  implicit val decodePDSEntry: Decoder[PayerDataSpecEntry] = deriveDecoder
 
-  implicit val AuthPayerDataSpecEntryFmt: JsonFormat[AuthPayerDataSpecEntry] =
-    jsonFormat[
-      String,
-      Boolean,
-      AuthPayerDataSpecEntry
-    ](AuthPayerDataSpecEntry.apply, "k1", "mandatory")
+  implicit val encodeAPDSEntry: Encoder[AuthPayerDataSpecEntry] = deriveEncoder
+  implicit val decodeAPDSEntry: Decoder[AuthPayerDataSpecEntry] = deriveDecoder
 
-  implicit val payerDataSpecFmt: JsonFormat[PayerDataSpec] =
-    jsonFormat[
-      Option[PayerDataSpecEntry],
-      Option[PayerDataSpecEntry],
-      Option[AuthPayerDataSpecEntry],
-      PayerDataSpec
-    ](PayerDataSpec.apply, "name", "pubkey", "auth")
+  implicit val encodePayerDataSpec: Encoder[PayerDataSpec] = deriveEncoder
+  implicit val decodePayerDataSpec: Decoder[PayerDataSpec] = deriveDecoder
 
-  implicit val lnurlAuthDataFmt: JsonFormat[LNUrlAuthData] =
-    jsonFormat[
-      String,
-      String,
-      String,
-      LNUrlAuthData
-    ](LNUrlAuthData.apply, "key", "k1", "sig")
+  implicit val encodeLNUrlAuthData: Encoder[LNUrlAuthData] = deriveEncoder
+  implicit val decodeLNUrlAuthData: Decoder[LNUrlAuthData] = deriveDecoder
 
-  implicit val payerDataFmt: JsonFormat[PayerData] =
-    jsonFormat[
-      Option[String],
-      Option[String],
-      Option[LNUrlAuthData],
-      PayerData
-    ](PayerData.apply, "name", "pubkey", "auth")
+  implicit val encodePayerData: Encoder[PayerData] = deriveEncoder
+  implicit val decodePayerData: Decoder[PayerData] = deriveDecoder
 
-  implicit val payRequestFmt: JsonFormat[PayRequest] = taggedJsonFmt(
-    jsonFormat[
-      String,
-      Long,
-      Long,
-      String,
-      Option[Int],
-      Option[PayerDataSpec],
-      PayRequest
-    ](
-      PayRequest.apply,
-      "callback",
-      "maxSendable",
-      "minSendable",
-      "metadata",
-      "commentAllowed",
-      "payerData"
-    ),
+  implicit val encodePayRequest: Encoder[PayRequest] = encodeWithTag(
+    deriveEncoder[PayRequest],
     tag = "payRequest"
   )
+  implicit val decodePayRequest: Decoder[PayRequest] = deriveDecoder
 
-  implicit val payRequestFinalFmt: JsonFormat[PayRequestFinal] =
-    jsonFormat[Option[PaymentAction], Option[Boolean], String, PayRequestFinal](
-      PayRequestFinal.apply,
-      "successAction",
-      "disposable",
-      "pr"
-    )
+  implicit val encodePayRequestFinal: Encoder[PayRequestFinal] = deriveEncoder
+  implicit val decodePayRequestFinal: Decoder[PayRequestFinal] = deriveDecoder
 
   // Fiat feerates
-  implicit val blockchainInfoItemFmt: JsonFormat[BlockchainInfoItem] =
-    jsonFormat[Double, BlockchainInfoItem](BlockchainInfoItem.apply, "last")
+  implicit val encodeBCIItem: Encoder[BlockchainInfoItem] = deriveEncoder
+  implicit val decodeBCIItem: Decoder[BlockchainInfoItem] = deriveDecoder
 
-  implicit val bitpayItemFmt: JsonFormat[BitpayItem] =
-    jsonFormat[String, Double, BitpayItem](BitpayItem.apply, "code", "rate")
+  implicit val encodeCoinGeckoItem: Encoder[CoinGeckoItem] = deriveEncoder
+  implicit val decodeCoinGeckoItem: Decoder[CoinGeckoItem] = deriveDecoder
 
-  implicit val coinGeckoItemFmt: JsonFormat[CoinGeckoItem] =
-    jsonFormat[Double, CoinGeckoItem](CoinGeckoItem.apply, "value")
+  implicit val encodeCoinGecko: Encoder[CoinGecko] = deriveEncoder
+  implicit val decodeCoinGecko: Decoder[CoinGecko] = deriveDecoder
 
-  implicit val coinGeckoFmt: JsonFormat[CoinGecko] =
-    jsonFormat[CoinGeckoItemMap, CoinGecko](CoinGecko.apply, "rates")
+  implicit val encodeBitpayItem: Encoder[BitpayItem] = deriveEncoder
+  implicit val decodeBitpayItem: Decoder[BitpayItem] = deriveDecoder
 
-  implicit val bitpayFmt: JsonFormat[Bitpay] =
-    jsonFormat[BitpayItemList, Bitpay](Bitpay.apply, "data")
+  implicit val encodeBitpay: Encoder[Bitpay] = deriveEncoder
+  implicit val decodeBitpay: Decoder[Bitpay] = deriveDecoder
 
-  implicit val fiatRatesInfoFmt: JsonFormat[FiatRatesInfo] =
-    jsonFormat[Fiat2Btc, Fiat2Btc, Long, FiatRatesInfo](
-      FiatRatesInfo.apply,
-      "rates",
-      "oldRates",
-      "stamp"
-    )
+  implicit val encodeFiatRatesInfo: Encoder[FiatRatesInfo] = deriveEncoder
+  implicit val decodeFiatRatesInfo: Decoder[FiatRatesInfo] = deriveDecoder
 
   // Chain feerates
+  implicit val encodeBitGoFeeRateStructure: Encoder[BitGoFeeRateStructure] =
+    deriveEncoder
+  implicit val decodeBitGoFeeRateStructure: Decoder[BitGoFeeRateStructure] =
+    deriveDecoder
 
-  implicit val bitGoFeeRateStructureFmt: JsonFormat[BitGoFeeRateStructure] =
-    jsonFormat[Map[String, Long], Long, BitGoFeeRateStructure](
-      BitGoFeeRateStructure.apply,
-      "feeByBlockTarget",
-      "feePerKb"
-    )
+  implicit val encodeFeeratePerKB: Encoder[FeeratePerKB] = deriveEncoder
+  implicit val decodeFeeratePerKB: Decoder[FeeratePerKB] = deriveDecoder
 
-  implicit val feeratePerKBFmt: JsonFormat[FeeratePerKB] =
-    jsonFormat[Satoshi, FeeratePerKB](FeeratePerKB.apply, "feerate")
+  implicit val encodeFeeratesPerKB: Encoder[FeeratesPerKB] = deriveEncoder
+  implicit val decodeFeeratesPerKB: Decoder[FeeratesPerKB] = deriveDecoder
 
-  implicit val feeratesPerKBFmt: JsonFormat[FeeratesPerKB] =
-    jsonFormat[
-      FeeratePerKB,
-      FeeratePerKB,
-      FeeratePerKB,
-      FeeratePerKB,
-      FeeratePerKB,
-      FeeratePerKB,
-      FeeratePerKB,
-      FeeratePerKB,
-      FeeratePerKB,
-      FeeratesPerKB
-    ](
-      FeeratesPerKB.apply,
-      "mempoolMinFee",
-      "block_1",
-      "blocks_2",
-      "blocks_6",
-      "blocks_12",
-      "blocks_36",
-      "blocks_72",
-      "blocks_144",
-      "blocks_1008"
-    )
+  implicit val encodeFeeratePerKw: Encoder[FeeratePerKw] = deriveEncoder
+  implicit val decodeFeeratePerKw: Decoder[FeeratePerKw] = deriveDecoder
 
-  implicit val feeratePerKwFmt: JsonFormat[FeeratePerKw] =
-    jsonFormat[Satoshi, FeeratePerKw](FeeratePerKw.apply, "feerate")
+  implicit val encodeFeeratesPerKw: Encoder[FeeratesPerKw] = deriveEncoder
+  implicit val decodeFeeratesPerKw: Decoder[FeeratesPerKw] = deriveDecoder
 
-  implicit val feeratesPerKwFmt: JsonFormat[FeeratesPerKw] =
-    jsonFormat[
-      FeeratePerKw,
-      FeeratePerKw,
-      FeeratePerKw,
-      FeeratePerKw,
-      FeeratePerKw,
-      FeeratePerKw,
-      FeeratePerKw,
-      FeeratePerKw,
-      FeeratePerKw,
-      FeeratesPerKw
-    ](
-      FeeratesPerKw.apply,
-      "mempoolMinFee",
-      "block_1",
-      "blocks_2",
-      "blocks_6",
-      "blocks_12",
-      "blocks_36",
-      "blocks_72",
-      "blocks_144",
-      "blocks_1008"
-    )
-
-  implicit val feeRatesInfoFmt: JsonFormat[FeeRatesInfo] =
-    jsonFormat[FeeratesPerKw, List[FeeratesPerKB], Long, FeeRatesInfo](
-      FeeRatesInfo.apply,
-      "smoothed",
-      "history",
-      "stamp"
-    )
+  implicit val encodeFeeratesInfo: Encoder[FeeRatesInfo] = deriveEncoder
+  implicit val decodeFeeratesInfo: Decoder[FeeRatesInfo] = deriveDecoder
 }

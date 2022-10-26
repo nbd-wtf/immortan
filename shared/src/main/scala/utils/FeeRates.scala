@@ -1,6 +1,7 @@
 package immortan.utils
 
 import scala.concurrent.Future
+import io.circe.parser.decode
 import scoin._
 
 import immortan.{CanBeShutDown, DataBag, LNParams}
@@ -104,8 +105,10 @@ case class EsploraFeeProvider(url: String) extends FeeRatesProvider {
   type EsploraFeeStructure = Map[String, Long]
 
   def provide: Future[FeeratesPerKB] =
-    LNParams.connectionProvider.get(url).map(to[EsploraFeeStructure](_)).map {
-      structure =>
+    LNParams.connectionProvider
+      .get(url)
+      .map(decode[EsploraFeeStructure](_).toTry.get)
+      .map { structure =>
         FeeratesPerKB(
           mempoolMinFee = extractFeerate(structure, 1008),
           block_1 = extractFeerate(structure, 1),
@@ -117,7 +120,7 @@ case class EsploraFeeProvider(url: String) extends FeeRatesProvider {
           blocks_144 = extractFeerate(structure, 144),
           blocks_1008 = extractFeerate(structure, 1008)
         )
-    }
+      }
 
   // First we keep only fee ranges with a max block delay below the limit
   // out of all the remaining fee ranges, we select the one with the minimum higher bound
@@ -141,8 +144,10 @@ object BitgoFeeProvider extends FeeRatesProvider {
   val url = "https://www.bitgo.com/api/v2/btc/tx/fee"
 
   def provide: Future[FeeratesPerKB] =
-    LNParams.connectionProvider.get(url).map(to[BitGoFeeRateStructure](_)).map {
-      structure =>
+    LNParams.connectionProvider
+      .get(url)
+      .map(decode[BitGoFeeRateStructure](_).toTry.get)
+      .map { structure =>
         FeeratesPerKB(
           mempoolMinFee = extractFeerate(structure, 1008),
           block_1 = extractFeerate(structure, 1),
@@ -154,7 +159,7 @@ object BitgoFeeProvider extends FeeRatesProvider {
           blocks_144 = extractFeerate(structure, 144),
           blocks_1008 = extractFeerate(structure, 1008)
         )
-    }
+      }
 
   // first we keep only fee ranges with a max block delay below the limit
   // out of all the remaining fee ranges, we select the one with the minimum higher bound

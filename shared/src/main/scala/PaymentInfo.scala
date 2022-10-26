@@ -3,7 +3,8 @@ package immortan
 import java.util.Date
 import scala.util.{Success, Failure, Try}
 import scodec.bits.ByteVector
-import spray.json._
+import io.circe._
+import io.circe.parser.decode
 import scoin.Crypto.PublicKey
 import scoin._
 import scoin.ln._
@@ -99,7 +100,6 @@ case class LNUrlDescription(
     lastSecret: ByteVector32,
     lastMsat: MilliSatoshi
 ) extends TransactionDescription {
-
   lazy val fullTag: FullPaymentTag =
     FullPaymentTag(lastHash, lastSecret, PaymentTagTlv.LOCALLY_SENT)
 }
@@ -116,9 +116,7 @@ case class LNUrlPayLink(
   override val seenAt: Long = updatedAt
   override val identity: String = payString
   lazy val payLink: Option[LNUrl] = Try(payString).map(LNUrl.apply).toOption
-  lazy val payMetaData: Try[PayRequestMeta] =
-    Try(payMetaString.parseJson.asInstanceOf[JsArray].elements)
-      .map(PayRequestMeta(_))
+  lazy val payMetaData: Try[PayRequestMeta] = Try(PayRequestMeta(payMetaString))
   lazy val imageBytes: Option[Array[Byte]] =
     payMetaData.toOption
       .flatMap(_.imageBase64)
@@ -178,11 +176,12 @@ case class PaymentInfo(
 ) extends TransactionDetails {
   override val identity: String = prString
   lazy val isIncoming: Boolean = 1 == incoming
-  lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
+  lazy val fiatRateSnapshot: Fiat2Btc =
+    decode[Fiat2Btc](fiatRatesString).toTry.get
   lazy val prExt: PaymentRequestExt = PaymentRequestExt.fromUri(prString)
   lazy val action: Option[PaymentAction] =
     if (actionString == PaymentInfo.NO_ACTION) None
-    else Some(to[PaymentAction](actionString))
+    else Some(decode[PaymentAction](actionString).toTry.get)
   lazy val fullTag: FullPaymentTag = FullPaymentTag(
     paymentHash,
     paymentSecret,
@@ -295,7 +294,8 @@ case class TxInfo(
   lazy val isIncoming: Boolean = 1L == incoming
   lazy val isDoubleSpent: Boolean = 1L == doubleSpent
   lazy val isConfirmed: Boolean = depth >= 1
-  lazy val fiatRateSnapshot: Fiat2Btc = to[Fiat2Btc](fiatRatesString)
+  lazy val fiatRateSnapshot: Fiat2Btc =
+    decode[Fiat2Btc](fiatRatesString).toTry.get
   lazy val pubKey: PublicKey = PublicKey(ByteVector fromValidHex pubKeyString)
   lazy val txid: ByteVector32 = ByteVector32.fromValidHex(txidString)
   lazy val tx: Transaction = Transaction.read(txString)

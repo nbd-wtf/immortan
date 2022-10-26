@@ -2,8 +2,8 @@ package immortan.sqlite
 
 import java.lang.{Long => JLong}
 import scala.util.Try
-import spray.json._
-
+import io.circe.syntax._
+import io.circe.parser.decode
 import scoin._
 import scoin.DeterministicWallet.ExtendedPublicKey
 
@@ -24,8 +24,9 @@ class SQLiteTx(val db: DBInterface) {
   def listAllDescriptions: Map[String, TxDescription] =
     db.select(TxTable.selectRecentSql, 10000.toString)
       .iterable { rc =>
-        val description = to[TxDescription](rc.string(TxTable.description))
-        (rc.string(TxTable.txid, description))
+        val description =
+          decode[TxDescription](rc.string(TxTable.description)).toTry.get
+        (rc.string(TxTable.txid), description)
       }
       .toMap
 
@@ -39,12 +40,12 @@ class SQLiteTx(val db: DBInterface) {
     db.search(TxTable.searchSql, rawSearchQuery.toLowerCase)
 
   def updDescription(description: TxDescription, txid: ByteVector32): Unit =
-    db txWrap {
+    db.txWrap {
       val updateDescriptionSqlPQ =
         db.makePreparedQuery(TxTable.updateDescriptionSql)
       db.change(
         updateDescriptionSqlPQ,
-        description.toJson.compactPrint,
+        description.asJson.noSpaces,
         txid.toHex
       )
       for (label <- description.label) addSearchableTransaction(label, txid)
@@ -108,9 +109,9 @@ class SQLiteTx(val db: DBInterface) {
       feeOpt.map(_.toLong: JLong).getOrElse(0L: JLong),
       stamp: JLong /* SEEN */,
       stamp: JLong /* UPDATED */,
-      description.toJson.compactPrint,
+      description.asJson.noSpaces,
       balanceSnap.toLong: JLong,
-      fiatRateSnap.toJson.compactPrint,
+      fiatRateSnap.asJson.noSpaces,
       isIncoming: JLong,
       0L: JLong /* NOT DOUBLE SPENT YET */
     )
@@ -129,7 +130,8 @@ class SQLiteTx(val db: DBInterface) {
       feeSat = Satoshi(rc.long(TxTable.feeSat)),
       seenAt = rc.long(TxTable.seenAt),
       updatedAt = rc.long(TxTable.updatedAt),
-      description = to[TxDescription](rc.string(TxTable.description)),
+      description =
+        decode[TxDescription](rc.string(TxTable.description)).toTry.get,
       balanceSnapshot = MilliSatoshi(rc.long(TxTable.balanceMsat)),
       fiatRatesString = rc.string(TxTable.fiatRates),
       incoming = rc.long(TxTable.incoming),

@@ -1,10 +1,11 @@
 package immortan.sqlite
 
 import java.lang.{Long => JLong}
+import io.circe.syntax._
+import io.circe.parser.decode
 
 import immortan.utils.ImplicitJsonFormats._
 import immortan.{ChannelMaster, LNUrlDescription, LNUrlPayLink}
-import spray.json._
 
 class SQLiteLNUrlPay(db: DBInterface) {
   def updDescription(
@@ -14,7 +15,7 @@ class SQLiteLNUrlPay(db: DBInterface) {
   ): Unit = db txWrap {
     val updateDescriptionSqlPQ =
       db.makePreparedQuery(LNUrlPayTable.updateDescriptionSql)
-    db.change(updateDescriptionSqlPQ, description.toJson.compactPrint, pay)
+    db.change(updateDescriptionSqlPQ, description.asJson.noSpaces, pay)
     for (label <- description.label) addSearchableLink(label, domain)
     ChannelMaster.payMarketDbStream.fire()
     updateDescriptionSqlPQ.close()
@@ -26,7 +27,7 @@ class SQLiteLNUrlPay(db: DBInterface) {
   }
 
   def saveLink(info: LNUrlPayLink): Unit = db txWrap {
-    val descriptionString = info.description.toJson.compactPrint
+    val descriptionString = info.description.asJson.noSpaces
     val updInfoSqlPQ = db.makePreparedQuery(LNUrlPayTable.updInfoSql)
     val newSqlPQ = db.makePreparedQuery(LNUrlPayTable.newSql)
 
@@ -73,7 +74,9 @@ class SQLiteLNUrlPay(db: DBInterface) {
       payString = rc.string(LNUrlPayTable.pay),
       payMetaString = rc.string(LNUrlPayTable.payMeta),
       updatedAt = rc.long(LNUrlPayTable.updatedAt),
-      description = to[LNUrlDescription](rc.string(LNUrlPayTable.description)),
+      description = decode[LNUrlDescription](
+        rc.string(LNUrlPayTable.description)
+      ).toTry.get,
       lastNodeIdString = rc.string(LNUrlPayTable.lastNodeId),
       lastCommentString = rc.string(LNUrlPayTable.lastComment)
     )

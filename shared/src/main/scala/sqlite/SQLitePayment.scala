@@ -2,7 +2,8 @@ package immortan.sqlite
 
 import java.lang.{Integer => JInt, Long => JLong}
 import scala.util.Try
-import spray.json._
+import io.circe.syntax._
+import io.circe.parser.decode
 import scoin._
 import scoin.ln._
 
@@ -82,7 +83,7 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
       db.makePreparedQuery(PaymentTable.updateDescriptionSql)
     db.change(
       updateDescriptionSqlPQ,
-      description.toJson.compactPrint,
+      description.asJson.noSpaces,
       payHash.toHex
     )
     for (label <- description.label) addSearchablePayment(label, payHash)
@@ -145,15 +146,15 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
         PaymentStatus.PENDING: JInt,
         seenAt: JLong,
         System.currentTimeMillis: JLong /* UPDATED */,
-        description.toJson.compactPrint,
-        action.map(_.toJson.compactPrint).getOrElse(PaymentInfo.NO_ACTION),
+        description.asJson.noSpaces,
+        action.map(_.asJson.noSpaces).getOrElse(PaymentInfo.NO_ACTION),
         prex.pr.paymentHash.toHex,
         prex.pr.paymentSecret.get.toHex,
         0L: JLong /* RECEIVED AMOUNT = 0 FOR OUTGOING PAYMENT */,
         finalAmount.toLong: JLong,
         0L: JLong /* FEE IS UNCERTAIN YET */,
         balanceSnap.toLong: JLong,
-        fiatRateSnap.toJson.compactPrint,
+        fiatRateSnap.asJson.noSpaces,
         chainFee.toLong: JLong,
         0: JInt /* INCOMING TYPE = 0 */
       )
@@ -178,7 +179,7 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
         PaymentStatus.PENDING: JInt,
         System.currentTimeMillis: JLong /* SEEN */,
         System.currentTimeMillis: JLong /* UPDATED */,
-        description.toJson.compactPrint,
+        description.asJson.noSpaces,
         PaymentInfo.NO_ACTION,
         prex.pr.paymentHash.toHex,
         prex.pr.paymentSecret.get.toHex,
@@ -188,7 +189,7 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
         0L: JLong /* SENT = 0 MSAT, NOTHING TO SEND */,
         0L: JLong /* NO FEE FOR INCOMING PAYMENT */,
         balanceSnap.toLong: JLong,
-        fiatRateSnap.toJson.compactPrint,
+        fiatRateSnap.asJson.noSpaces,
         0L: JLong /* NO CHAIN FEE FOR INCOMING PAYMENTS */,
         1: JInt /* INCOMING TYPE = 1 */
       )
@@ -214,7 +215,9 @@ class SQLitePayment(db: DBInterface, preimageDb: DBInterface)
       status = rc.int(PaymentTable.status),
       seenAt = rc.long(PaymentTable.seenAt),
       updatedAt = rc.long(PaymentTable.updatedAt),
-      description = to[PaymentDescription](rc.string(PaymentTable.description)),
+      description = decode[PaymentDescription](
+        rc.string(PaymentTable.description)
+      ).toTry.get,
       actionString = rc.string(PaymentTable.action),
       paymentHash = ByteVector32.fromValidHex(rc.string(PaymentTable.hash)),
       paymentSecret = ByteVector32.fromValidHex(rc.string(PaymentTable.secret)),

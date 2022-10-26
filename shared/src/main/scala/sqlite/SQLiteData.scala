@@ -2,8 +2,9 @@ package immortan.sqlite
 
 import java.lang.{Integer => JInt}
 import scala.util.Try
-import spray.json._
 import scodec.bits.ByteVector
+import io.circe.syntax._
+import io.circe.parser.decode
 import scoin.Crypto.PublicKey
 import scoin.{BlockHeader, ByteVector32}
 import scoin.hc.HostedChannelCodecs.hostedChannelBrandingCodec
@@ -48,20 +49,22 @@ class SQLiteData(val db: DBInterface) extends HeaderDb with DataBag {
     )
 
   def putFiatRatesInfo(data: FiatRatesInfo): Unit =
-    put(LABEL_FIAT_RATES, data.toJson.compactPrint.getBytes("UTF-8"))
+    put(LABEL_FIAT_RATES, data.asJson.noSpaces.getBytes("UTF-8"))
 
-  def tryGetFiatRatesInfo: Try[FiatRatesInfo] = tryGet(LABEL_FIAT_RATES).map(
-    _.decodeUtf8.toOption.get
-  ) map to[FiatRatesInfo]
+  def tryGetFiatRatesInfo: Try[FiatRatesInfo] =
+    tryGet(LABEL_FIAT_RATES)
+      .map(_.decodeUtf8.toOption.get)
+      .flatMap(decode[FiatRatesInfo](_).toTry)
 
   def putFeeRatesInfo(data: FeeRatesInfo): Unit =
-    put(LABEL_FEE_RATES, data.toJson.compactPrint.getBytes("UTF-8"))
+    put(LABEL_FEE_RATES, data.asJson.noSpaces.getBytes("UTF-8"))
 
   def tryGetFeeRatesInfo: Try[FeeRatesInfo] =
-    tryGet(LABEL_FEE_RATES).map(_.decodeUtf8.toOption.get) map to[FeeRatesInfo]
+    tryGet(LABEL_FEE_RATES)
+      .map(_.decodeUtf8.toOption.get)
+      .flatMap(decode[FeeRatesInfo](_).toTry)
 
   // Payment reports
-
   def putReport(paymentHash: ByteVector32, report: String): Unit = put(
     LABEL_PAYMENT_REPORT_PREFIX + paymentHash.toHex,
     report.getBytes("UTF-8")

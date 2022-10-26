@@ -20,9 +20,6 @@ lazy val immortan = crossProject(JVMPlatform, JSPlatform)
     name := "immortan",
     description := "A lightweight client-side Lightning and Hosted Channels implementation.",
     libraryDependencies ++= Seq(
-      // must be replaced
-      "io.spray" % "spray-json_2.13" % "1.3.5",
-
       "io.circe" %%% "circe-core" % "0.14.3",
       "io.circe" %%% "circe-generic" % "0.14.3",
       "io.circe" %%% "circe-parser" % "0.14.3",
