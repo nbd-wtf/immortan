@@ -41,7 +41,7 @@ object ElectrumClientPlatform {
 
 class ElectrumClientPlatform(
     pool: ElectrumClientPool,
-    server: ElectrumClientPool.ElectrumServerAddress,
+    server: ElectrumServerAddress,
     onReady: ElectrumClient => Unit
 ) extends ElectrumClient { self =>
   def address = server.address.getHostName()
@@ -205,7 +205,7 @@ class ElectrumClientPlatform(
         request: JSONRPC.Request,
         out: java.util.List[AnyRef]
     ): Unit = {
-      out.add(request.asJson.toString)
+      out.add(request.asJson.noSpaces)
     }
   }
 

@@ -1,6 +1,5 @@
 package immortan.electrum
 
-import java.io.InputStream
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.{Promise, Future, ExecutionContext}
@@ -30,6 +29,25 @@ import immortan.electrum.ElectrumClient.{
 import immortan.electrum.ElectrumClientPool._
 import immortan.{LNParams, after, debounce}
 import immortan.LNParams.ec
+
+case class ElectrumServerAddress(address: InetSocketAddress, ssl: SSL)
+
+trait ServerLoader {
+  def loadFromChainHash(chainHash: ByteVector32): Set[ElectrumServerAddress]
+}
+
+object ElectrumClientPool extends ServerLoaderPlatform {
+  def pickAddress(
+      serverAddresses: List[ElectrumServerAddress],
+      usedAddresses: Set[InetSocketAddress] = Set.empty
+  ): Option[ElectrumServerAddress] =
+    serverAddresses
+      .filterNot(sa => usedAddresses.contains(sa.address))
+      .toSeq
+      .headOption
+
+  type TipAndHeader = (Int, BlockHeader)
+}
 
 class ElectrumClientPool(
     blockCount: AtomicLong,
@@ -82,17 +100,14 @@ class ElectrumClientPool(
   }
 
   lazy val serverAddresses: List[ElectrumServerAddress] = customAddress match {
-    case Some(address) =>
-      List(
-      )
-    case None => {
+    case Some(address) => List()
+    case None =>
       val addresses = Random.shuffle(loadFromChainHash(chainHash).toList)
       if (useOnion) addresses
       else
         addresses.filterNot(address =>
           address.address.getHostName().endsWith(".onion")
         )
-    }
   }
 
   def initConnect(): Unit = customAddress match {
@@ -260,56 +275,8 @@ class ElectrumClientPool(
   private def updateBlockCount(blockCount: Long): Unit = {
     // when synchronizing we don't want to advertise previous blocks
     if (this.blockCount.get() < blockCount) {
-      // System.err.println(s"[debug][pool] current blockchain height=$blockCount")
       EventStream.publish(CurrentBlockCount(blockCount))
       this.blockCount.set(blockCount)
     }
   }
-}
-
-object ElectrumClientPool {
-  case class ElectrumServerAddress(address: InetSocketAddress, ssl: SSL)
-  def loadFromChainHash(chainHash: ByteVector32): Set[ElectrumServerAddress] =
-    readServerAddresses(
-      classOf[
-        ElectrumServerAddress
-      ] getResourceAsStream ("/electrum/servers_" +
-        (chainHash match {
-          case Block.LivenetGenesisBlock.hash => "mainnet.json"
-          case Block.SignetGenesisBlock.hash  => "signet.json"
-          case Block.TestnetGenesisBlock.hash => "testnet.json"
-          case Block.RegtestGenesisBlock.hash => "regtest.json"
-          case _ =>
-            throw new RuntimeException(
-              "missing electrum servers for given chain"
-            )
-        }))
-    )
-
-  def readServerAddresses(stream: InputStream): Set[ElectrumServerAddress] =
-    try {
-      val inputBytes = Array.ofDim[Byte](20000)
-      stream.read(inputBytes)
-      val input = new String(inputBytes, "UTF-8")
-
-      decode[Map[String, Json]](input).toTry.get.toList.map {
-        case (hostname, data) =>
-          val port = data.hcursor.get[String]("s").toTry.get.toInt
-          val address = InetSocketAddress.createUnresolved(hostname, port)
-          ElectrumServerAddress(address, SSL.LOOSE)
-      }.toSet
-    } finally {
-      stream.close
-    }
-
-  def pickAddress(
-      serverAddresses: List[ElectrumServerAddress],
-      usedAddresses: Set[InetSocketAddress] = Set.empty
-  ): Option[ElectrumServerAddress] =
-    serverAddresses
-      .filterNot(serverAddress => usedAddresses contains serverAddress.address)
-      .toSeq
-      .headOption
-
-  type TipAndHeader = (Int, BlockHeader)
 }

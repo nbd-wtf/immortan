@@ -37,7 +37,7 @@ object ElectrumClient {
 
   def apply(
       pool: ElectrumClientPool,
-      server: ElectrumClientPool.ElectrumServerAddress,
+      server: ElectrumServerAddress,
       onReady: ElectrumClient => Unit
   ) = new ElectrumClientPlatform(pool, server, onReady)
 
@@ -436,9 +436,7 @@ object JSONRPC {
         id <- c.downField("id").as[String]
         error = c.downField("error").as[Error].toOption
         result = c.downField("result").focus
-      } yield {
-        new Response(id, error, result)
-      }
+      } yield Response(id, error, result)
   }
 
   case class Error(code: Int, message: String)

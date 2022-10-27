@@ -47,6 +47,9 @@ lazy val immortan = crossProject(JVMPlatform, JSPlatform)
   .jsConfigure { _.enablePlugins(NpmDependenciesPlugin) }
   .jsSettings(
     scalaVersion := "3.2.0",
+    libraryDependencies ++= Seq(
+      "io.circe" %%% "circe-scalajs" % "0.14.3"
+    ),
     Compile / npmDependencies ++= Seq(
       // electrum client
       "@keep-network/electrum-client-js" -> "0.1.1",

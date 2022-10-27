@@ -24,7 +24,7 @@ object ImplicitJsonFormats {
   def encodeWithTag[T](base: Encoder[T], tag: String): Encoder[T] =
     new Encoder[T] {
       final def apply(t: T): Json =
-        base(t).hcursor.downField("tag").set(tag.asJson).top.get
+        base(t).asObject.map(_.add("tag", tag.asJson)).get.asJson
     }
 
   def encodeWithCodec[T](codec: scodec.Codec[T]): Encoder[T] =

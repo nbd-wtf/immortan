@@ -9,7 +9,7 @@ object SQLiteUtils {
     DriverManager.getConnection("jdbc:sqlite::memory:")
 
   def interfaceWithTables(con: Connection, tables: Table*): DBInterface = {
-    val interface = DBInterfaceSQLiteGeneral(con)
+    val interface = JavaDBInterface(con)
 
     interface txWrap {
       val preparedStatement = interface.connection.createStatement

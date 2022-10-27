@@ -8,7 +8,7 @@ import immortan.LNParams.ec
 
 class ElectrumClientPlatform(
     pool: ElectrumClientPool,
-    server: ElectrumClientPool.ElectrumServerAddress,
+    server: ElectrumServerAddress,
     onReady: ElectrumClient => Unit
 ) extends ElectrumClient {
   def address: String = ""
