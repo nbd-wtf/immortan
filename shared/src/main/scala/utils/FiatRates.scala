@@ -8,12 +8,6 @@ import immortan._
 import immortan.utils.ImplicitJsonFormats._
 import immortan.LNParams.ec
 
-object FiatRates {
-  type BlockchainInfoItemMap = Map[String, BlockchainInfoItem]
-  type CoinGeckoItemMap = Map[String, CoinGeckoItem]
-  type BitpayItemList = List[BitpayItem]
-}
-
 class FiatRates(bag: DataBag) extends CanBeShutDown {
   override def becomeShutDown(): Unit = listeners = Set.empty
 
@@ -69,7 +63,7 @@ class FiatRates(bag: DataBag) extends CanBeShutDown {
       case 1 =>
         LNParams.connectionProvider
           .get("https://blockchain.info/ticker")
-          .map(decode[FiatRates.BlockchainInfoItemMap](_).toTry.get)
+          .map(decode[Map[String, BlockchainInfoItem]](_).toTry.get)
           .map(_.map { case (code, item) => code.toLowerCase -> item.last })
       case _ =>
         LNParams.connectionProvider
@@ -99,8 +93,8 @@ case class CoinGeckoItem(value: Double)
 case class BlockchainInfoItem(last: Double)
 case class BitpayItem(code: String, rate: Double)
 
-case class Bitpay(data: FiatRates.BitpayItemList)
-case class CoinGecko(rates: FiatRates.CoinGeckoItemMap)
+case class Bitpay(data: List[BitpayItem])
+case class CoinGecko(rates: Map[String, CoinGeckoItem])
 
 case class FiatRatesInfo(
     rates: Fiat2Btc,

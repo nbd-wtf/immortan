@@ -14,7 +14,6 @@ import scoin.ln.LightningMessageCodecs._
 
 import immortan._
 import immortan.fsm.SplitInfo
-import immortan.utils.FiatRates.{BitpayItemList, CoinGeckoItemMap}
 import immortan.electrum.db.{ChainWalletInfo, SigningWallet, WatchingWallet}
 import immortan.blockchain.fee._
 
@@ -328,14 +327,18 @@ object ImplicitJsonFormats {
   implicit val decodeBitGoFeeRateStructure: Decoder[BitGoFeeRateStructure] =
     deriveDecoder
 
-  implicit val encodeFeeratePerKB: Encoder[FeeratePerKB] = deriveEncoder
-  implicit val decodeFeeratePerKB: Decoder[FeeratePerKB] = deriveDecoder
+  implicit val encodeFeeratePerKB: Encoder[FeeratePerKB] =
+    encodeSatoshi.contramap(_.feerate)
+  implicit val decodeFeeratePerKB: Decoder[FeeratePerKB] =
+    decodeSatoshi.emap(s => Right(FeeratePerKB(s)))
 
   implicit val encodeFeeratesPerKB: Encoder[FeeratesPerKB] = deriveEncoder
   implicit val decodeFeeratesPerKB: Decoder[FeeratesPerKB] = deriveDecoder
 
-  implicit val encodeFeeratePerKw: Encoder[FeeratePerKw] = deriveEncoder
-  implicit val decodeFeeratePerKw: Decoder[FeeratePerKw] = deriveDecoder
+  implicit val encodeFeeratePerKw: Encoder[FeeratePerKw] =
+    encodeSatoshi.contramap(_.feerate)
+  implicit val decodeFeeratePerKw: Decoder[FeeratePerKw] =
+    decodeSatoshi.emap(s => Right(FeeratePerKw(s)))
 
   implicit val encodeFeeratesPerKw: Encoder[FeeratesPerKw] = deriveEncoder
   implicit val decodeFeeratesPerKw: Decoder[FeeratesPerKw] = deriveDecoder
