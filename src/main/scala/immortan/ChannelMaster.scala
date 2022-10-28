@@ -504,7 +504,7 @@ class ChannelMaster(
           hc: HostedCommits
         ) =>
       LNParams.logBag.put("hosted-channel-suspend", error.stackTraceAsString)
-      chan.localSuspend(hc, ErrorCodes.ERR_HOSTED_MANUAL_SUSPEND)
+      chan.localSuspend(hc, s"transition fail: $error")
   }
 
   override def onBecome: PartialFunction[Transition, Unit] = {

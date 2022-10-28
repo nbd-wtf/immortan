@@ -12,7 +12,6 @@ import fr.acinq.eclair.payment.OutgoingPaymentPacket
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import immortan.Channel._
-import immortan.ErrorCodes._
 import immortan.crypto.Tools._
 import immortan.fsm.PreimageCheck
 import scodec.bits.ByteVector
@@ -163,8 +162,16 @@ abstract class ChannelHosted extends Channel { me =>
         ChannelHosted.restoreCommits(remoteLCSS.reverse, wait.remoteInfo)
       val askBrandingInfo = AskBrandingInfo(hc.channelId)
 
-      if (!isRemoteSigOk) localSuspend(hc, ERR_HOSTED_WRONG_REMOTE_SIG)
-      else if (!isLocalSigOk) localSuspend(hc, ERR_HOSTED_WRONG_LOCAL_SIG)
+      if (!isRemoteSigOk)
+        localSuspend(
+          hc,
+          s"wrong remote sig at updates=${remoteLCSS.localUpdates}/${remoteLCSS.remoteUpdates}"
+        )
+      else if (!isLocalSigOk)
+        localSuspend(
+          hc,
+          s"wrong local sig at updates=${remoteLCSS.localUpdates}/${remoteLCSS.remoteUpdates}"
+        )
       else {
         // We have expected InitHostedChannel but got LastCrossSignedState so this channel exists already
         // make sure our signature match and if so then become Channel.Open using host supplied state data
@@ -188,14 +195,19 @@ abstract class ChannelHosted extends Channel { me =>
       val sentExpired = hc.allOutgoing
         .filter(tip > _.cltvExpiry.underlying)
         .groupBy(_.paymentHash)
-      val hasReceivedRevealedExpired =
-        hc.revealedFulfills.exists(tip > _.theirAdd.cltvExpiry.underlying)
+      val receivedRevealedExpired =
+        hc.revealedFulfills
+          .find(tip > _.theirAdd.cltvExpiry.underlying)
+          .map(_.theirAdd)
 
-      if (hasReceivedRevealedExpired) {
+      receivedRevealedExpired.foreach { add =>
         // We have incoming payments for which we have revealed a preimage but they are still unresolved and completely expired
         // unless we have published a preimage on chain we can not prove we have revealed a preimage in time at this point
         // at the very least it makes sense to halt further usage of this potentially malicious channel
-        localSuspend(hc, ERR_HOSTED_MANUAL_SUSPEND)
+        localSuspend(
+          hc,
+          s"revealed preimage expired for ${add.paymentHash}: ${add.cltvExpiry.underlying}"
+        )
       }
 
       if (sentExpired.nonEmpty) {
@@ -210,7 +222,7 @@ abstract class ChannelHosted extends Channel { me =>
             localSuspend(
               hc.modify(_.postErrorOutgoingResolvedIds)
                 .using(_ ++ settledOutgoingHtlcIds),
-              ERR_HOSTED_TIMED_OUT_OUTGOING_HTLC
+              "timed out incoming htlc"
             )
             for (add <- fulfilled)
               events fulfillReceived RemoteFulfill(
@@ -389,7 +401,7 @@ abstract class ChannelHosted extends Channel { me =>
         resize.verifyClientSig(hc.remoteInfo.nodeSpecificPubKey)
       if (isLocalSigOk)
         StoreBecomeSend(hc.copy(resizeProposal = Some(resize)), state)
-      else localSuspend(hc, ERR_HOSTED_INVALID_RESIZE)
+      else localSuspend(hc, "invalid resize")
 
     case (
           hc: HostedCommits,
@@ -527,8 +539,16 @@ abstract class ChannelHosted extends Channel { me =>
     val isRemoteSigOk =
       remoteLCSS.reverse.verifyRemoteSig(updated.remoteInfo.nodeId)
 
-    if (!isRemoteSigOk) localSuspend(updated, ERR_HOSTED_WRONG_REMOTE_SIG)
-    else if (!isLocalSigOk) localSuspend(updated, ERR_HOSTED_WRONG_LOCAL_SIG)
+    if (!isRemoteSigOk)
+      localSuspend(
+        updated,
+        s"wrong remote sig at resync updates=${remoteLCSS.localUpdates}/${remoteLCSS.remoteUpdates}"
+      )
+    else if (!isLocalSigOk)
+      localSuspend(
+        updated,
+        s"wrong local sig at resync updates=${remoteLCSS.localUpdates}/${remoteLCSS.remoteUpdates}"
+      )
     else if (weAreAhead || weAreEven) {
       SEND(
         List(
@@ -610,7 +630,11 @@ abstract class ChannelHosted extends Channel { me =>
       s"their updates are different from ours: remote=${remoteSU.remoteUpdates}/${remoteSU.localUpdates}, local=${lcssNew.localUpdates}/${lcssNew.remoteUpdates}"
       hc.resizeProposal.map(hc.withResize) match {
         case Some(resizedHC) => attemptStateUpdate(remoteSU, resizedHC)
-        case None            => localSuspend(hc, ERR_HOSTED_WRONG_REMOTE_SIG)
+        case None =>
+          localSuspend(
+            hc,
+            s"wrong remote sig on state update remote=${remoteSU.remoteUpdates}/${remoteSU.localUpdates}, local=${lcssNew.localUpdates}/${lcssNew.remoteUpdates}"
+          )
       }
     } else {
       val remoteRejects: Seq[RemoteReject] = hc.nextRemoteUpdates.collect {
