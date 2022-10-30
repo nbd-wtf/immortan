@@ -38,9 +38,9 @@ class ElectrumClientPool(
     useOnion: Boolean = false,
     customAddress: Option[NodeAddress] = None
 ) { self =>
-  val addresses =
-    scala.collection.mutable.Map.empty[ElectrumClient, InetSocketAddress]
-  var usedAddresses = Set.empty[InetSocketAddress]
+  val clients =
+    scala.collection.mutable.Map.empty[String, ElectrumClient]
+  val usedAddresses = scala.collection.mutable.Set.empty[InetSocketAddress]
   var connected: Boolean = false
 
   def blockHeight: Int = this.blockCount.get().toInt
@@ -59,14 +59,14 @@ class ElectrumClientPool(
   var latestTip: Future[HeaderSubscriptionResponse] = awaitForLatestTip.future
 
   def killClient(client: ElectrumClient): Unit = {
-    if (addresses.contains(client)) {
+    if (clients.contains(client.address)) {
       System.err.println(
         s"[info][pool] disconnecting from client ${client.address}"
       )
 
-      addresses -= client
+      clients.remove(client.address)
 
-      if (addresses.isEmpty) {
+      if (clients.isEmpty) {
         System.err.println(s"[info][pool] no active connections left")
         EventStream.publish(ElectrumDisconnected)
         connected = false
@@ -80,23 +80,19 @@ class ElectrumClientPool(
         }
       }
       t.schedule(task, 3000L)
-    }
 
-    // shutdown this one
-    client.shutdown()
+      // shutdown this one
+      client.shutdown()
+    }
   }
 
   lazy val serverAddresses: List[ElectrumServerAddress] = customAddress match {
     case Some(address) =>
-      List(
-      )
+      List()
     case None => {
-      val addresses = Random.shuffle(loadFromChainHash(chainHash).toList)
-      if (useOnion) addresses
-      else
-        addresses.filterNot(address =>
-          address.address.getHostName().endsWith(".onion")
-        )
+      val addrs = Random.shuffle(loadFromChainHash(chainHash).toList)
+      if (useOnion) addrs
+      else addrs.filterNot(_.address.getHostName().endsWith(".onion"))
     }
   }
 
@@ -114,29 +110,38 @@ class ElectrumClientPool(
         Some(
           ElectrumServerAddress(
             address.socketAddress,
-            SSL.DECIDE
+            if (address.socketAddress.getPort() == 50001) SSL.OFF
+            else SSL.STRICT
           )
         )
       case None =>
-        pickAddress(serverAddresses, usedAddresses)
-          .map { esa =>
-            usedAddresses = usedAddresses + esa.address
-            esa
+        if (usedAddresses.size == serverAddresses.size) {
+          // we've exhausted all our addresses, this only happens
+          //  when there is some weird problem with our connection
+          //  so wait a while and start over
+          if (clients.size == 0) {
+            val t = new java.util.Timer()
+            val task = new java.util.TimerTask {
+              def run() = {
+                if (
+                  usedAddresses.size == serverAddresses.size && clients.size == 0
+                ) {
+                  usedAddresses.clear()
+                  initConnect()
+                }
+              }
+            }
+            t.schedule(task, 20000L)
           }
-    }
+          None
+        } else {
+          val esa = serverAddresses
+            .filterNot(esa => usedAddresses.contains(esa.address))
+            .headOption
 
-    if (pickedAddress.isEmpty) {
-      // we've exhausted all our addresses, this only happens
-      //  when there is some weird problem with our connection
-      //  so wait a while and start over
-      val t = new java.util.Timer()
-      val task = new java.util.TimerTask {
-        def run() = {
-          usedAddresses = Set.empty
-          initConnect()
+          esa.foreach { usedAddresses += _.address }
+          esa
         }
-      }
-      t.schedule(task, 10000L)
     }
 
     pickedAddress.foreach { esa =>
@@ -151,7 +156,7 @@ class ElectrumClientPool(
             )
           }
       )
-      addresses += (client -> esa.address)
+      clients += (client.address -> client)
     }
   }
 
@@ -171,7 +176,7 @@ class ElectrumClientPool(
     scriptHashSubscriptions.updateWith(sh) {
       case None => {
         // no one has subscribed to this scripthash yet, start
-        addresses.keys.foreach {
+        clients.values.foreach {
           _.request[ScriptHashSubscriptionResponse](ScriptHashSubscription(sh))
         }
         Some(scala.collection.mutable.Map(listenerId -> debouncedCallback))
@@ -226,7 +231,7 @@ class ElectrumClientPool(
   ): Future[List[R]] =
     Future.sequence[R, List, List[R]](
       Random
-        .shuffle(addresses.keys.toList)
+        .shuffle(clients.values.toList)
         .take(clientsToUse)
         .map { client =>
           client.request[R](r).transformWith {
@@ -279,7 +284,6 @@ class ElectrumClientPool(
   private def updateBlockCount(blockCount: Long): Unit = {
     // when synchronizing we don't want to advertise previous blocks
     if (this.blockCount.get() < blockCount) {
-      // System.err.println(s"[debug][pool] current blockchain height=$blockCount")
       EventStream.publish(CurrentBlockCount(blockCount))
       this.blockCount.set(blockCount)
     }
@@ -318,15 +322,6 @@ object ElectrumClientPool {
     } finally {
       stream.close
     }
-
-  def pickAddress(
-      serverAddresses: List[ElectrumServerAddress],
-      usedAddresses: Set[InetSocketAddress] = Set.empty
-  ): Option[ElectrumServerAddress] =
-    serverAddresses
-      .filterNot(serverAddress => usedAddresses contains serverAddress.address)
-      .toSeq
-      .headOption
 
   type TipAndHeader = (Int, BlockHeader)
 }
