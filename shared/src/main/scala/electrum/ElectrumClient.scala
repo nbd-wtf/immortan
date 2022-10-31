@@ -225,7 +225,8 @@ object ElectrumClient {
   sealed trait SSL
 
   object SSL {
-    case object DECIDE extends SSL
+    case object OFF extends SSL
+    case object STRICT extends SSL
     case object LOOSE extends SSL
   }
 
