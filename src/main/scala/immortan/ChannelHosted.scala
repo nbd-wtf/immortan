@@ -510,9 +510,12 @@ abstract class ChannelHosted extends Channel { me =>
     for (add <- old.allOutgoing -- updated.allOutgoing)
       events addRejectedLocally InPrincipleNotSendable(add)
 
-  def localSuspend(hc: HostedCommits, errCode: String): Unit = {
+  def localSuspend(hc: HostedCommits, errMessage: String): Unit = {
     val localError =
-      Fail(data = ByteVector.fromValidHex(errCode), channelId = hc.channelId)
+      Fail(
+        data = ByteVector.view(errMessage.getBytes()),
+        channelId = hc.channelId
+      )
 
     if (hc.localError.isEmpty)
       StoreBecomeSend(
