@@ -82,8 +82,9 @@ case class LNUrl(request: String) {
   val url: Url = LNUrl.checkHost(request)
 
   def warnUri: String = {
+    val ascii = 'a' to 'z'
     val host = url.hostOption.get.value.map { char =>
-      if (AsciiCharMatcher.matches(char)) char.toString
+      if (ascii.contains(char.toLower)) char.toString
       else s"<b>[$char]</b>"
     }.mkString
 

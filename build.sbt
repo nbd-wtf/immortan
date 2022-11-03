@@ -35,9 +35,6 @@ lazy val immortan = crossProject(JVMPlatform, JSPlatform)
       // electrum client
       "io.netty" % "netty-all" % "4.1.42.Final",
 
-      // non-essencial stuff
-      "com.google.guava" % "guava" % "31.1-jre",
-
       // test
       "com.lihaoyi" % "utest_2.13" % "0.7.11" % Test,
       "com.lihaoyi" % "requests_2.13" % "0.7.0" % Test,
