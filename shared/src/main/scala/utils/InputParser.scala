@@ -150,8 +150,31 @@ case class PaymentRequestExt(url: Try[Url], pr: Bolt11Invoice, raw: String) {
 
   val descriptionOpt: Option[String] =
     pr.description.left.toOption.map(trimmed).filter(_.nonEmpty)
-  val brDescription: String =
-    descriptionOpt.map(desc => s"<br><br>$desc").getOrElse(new String)
+
+  def nameFromNameDesc(text: String): Option[String] =
+    descriptionOpt.flatMap(getNameFromNameDesc(_))
+
+  def descFromNameDesc(text: String): Option[String] =
+    descriptionOpt.map(expellNameFromNameDesc(_))
+}
+
+object NameDesc {
+  def getNameFromNameDesc(text: String): Option[String] = {
+    val spl = text.split(":  ")
+    spl.size match {
+      case 1                       => None
+      case _ if spl.head.size < 30 => Some(spl.head)
+      case _                       => None
+    }
+  }
+
+  def expellNameFromNameDesc(text: String): String = {
+    val spl = text.split(":  ")
+    spl.size match {
+      case 1 => text
+      case _ => spl.drop(1).mkString(": ")
+    }
+  }
 }
 
 object BitcoinUri {
