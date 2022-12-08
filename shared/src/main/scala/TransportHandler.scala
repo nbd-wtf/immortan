@@ -140,13 +140,15 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: ByteVector)
             HostedChannelCodecs.hostedMessageCodec
               .encode(msg)
               .map(_.toByteVector)
-              .map(s =>
-                s.take(2) ++ uint16
-                  .encode(s.size.toInt - 4)
+              .map { s =>
+                val t = s.take(2)
+                val l = uint16
+                  .encode(s.size.toInt - 2)
                   .require
-                  .toByteVector ++ s
-                  .drop(2)
-              )
+                  .toByteVector
+                val v = s.drop(2)
+                t ++ l ++ v
+              }
               .map(_.toBitVector)
         }
 
