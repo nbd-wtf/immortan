@@ -210,10 +210,6 @@ case class MessageAction(domain: Option[String], message: String)
 
 case class UrlAction(domain: Option[String], description: String, url: String)
     extends PaymentAction {
-  require(
-    domain.map(_.toLowerCase).forall(url.toLowerCase.contains),
-    "Payment action domain mismatch"
-  )
   def trimmedDescription: String = description.trim().stripSuffix(":")
   val finalMessage =
     s"<br>${trimmedDescription take 144}<br><br><tt>$url</tt><br>"

@@ -7,12 +7,14 @@ class ThrottledEventStream(interval: FiniteDuration) {
   val subscribers = scala.collection.mutable.Set.empty[Function0[Unit]]
 
   var isRunning = false
-  var task = new java.util.TimerTask { def run(): Unit = { isRunning = false } }
 
   def fire(): Unit = {
     if (!isRunning) {
       isRunning = true
       subscribers.foreach(_())
+      val task = new java.util.TimerTask {
+        def run(): Unit = { isRunning = false }
+      }
       timer.schedule(task, interval.toMillis)
     }
   }
