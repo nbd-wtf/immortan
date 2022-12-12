@@ -36,7 +36,7 @@ class ElectrumClientPool(
     blockCount: AtomicLong,
     chainHash: ByteVector32,
     useOnion: Boolean = false,
-    customAddress: Option[NodeAddress] = None
+    customAddress: Option[(NodeAddress, Option[SSL])] = None
 ) { self =>
   val clients =
     scala.collection.mutable.Map.empty[String, ElectrumClient]
@@ -87,7 +87,7 @@ class ElectrumClientPool(
   }
 
   lazy val serverAddresses: List[ElectrumServerAddress] = customAddress match {
-    case Some(address) =>
+    case Some(_) =>
       List()
     case None => {
       val addrs = Random.shuffle(loadFromChainHash(chainHash).toList)
@@ -106,12 +106,18 @@ class ElectrumClientPool(
 
   def connect(): Unit = {
     val pickedAddress = customAddress match {
-      case Some(address) =>
+      case Some((address, ssl)) =>
         Some(
           ElectrumServerAddress(
             address.socketAddress,
-            if (address.socketAddress.getPort() == 50001) SSL.OFF
-            else SSL.STRICT
+
+            // if a custom ssl policy has been specified, use that
+            ssl.getOrElse(
+              // or fall back to off for port 50001
+              if (address.socketAddress.getPort() == 50001) SSL.OFF
+              // and strict otherwise
+              else SSL.STRICT
+            )
           )
         )
       case None =>
