@@ -327,7 +327,6 @@ case class NodeAnnouncement(
     addresses: List[NodeAddress],
     unknownFields: ByteVector = ByteVector.empty
 ) extends LightningMessage {
-
   def toRemoteInfo: RemoteNodeInfo = RemoteNodeInfo(
     nodeId,
     addresses.minBy {

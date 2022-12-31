@@ -497,8 +497,9 @@ object TxDescription {
           .exists(_.txid == tx.txid) =>
       PenaltyTxDescription(closing.commitments.remoteInfo.nodeId)
     case some: HasNormalCommitments
-        if tx.txIn.exists(
-          _.outPoint.txid == some.commitments.commitInput.outPoint.txid
+        if tx.txIn.exists(inp =>
+          inp.outPoint.txid == some.commitments.commitInput.outPoint.txid
+            && inp.outPoint.index == some.commitments.commitInput.outPoint.index
         ) =>
       ChanRefundingTxDescription(some.commitments.remoteInfo.nodeId)
   }
