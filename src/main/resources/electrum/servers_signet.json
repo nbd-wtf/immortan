@@ -1,14 +1,17 @@
 {
-    "127.0.0.1": {
-        "s": "51002"
-    },
-    "signet-electrumx.wakiyamap.dev": {
-        "s": "50002"
-    },
-    "node202.fra.mempool.space": {
-        "s": "60602"
-    },
-    "signet-electrum.diynodes.com": {
-        "s": "50033"
-    }
+  "127.0.0.1": {
+    "s": "51002"
+  },
+  "signet-electrumx.wakiyamap.dev": {
+    "s": "50002"
+  },
+  "node202.fra.mempool.space": {
+    "s": "60602"
+  },
+  "signet-electrum.diynodes.com": {
+    "s": "50033"
+  },
+  "electrum.emzy.de:53002": {
+    "s": "53002"
+  }
 }
